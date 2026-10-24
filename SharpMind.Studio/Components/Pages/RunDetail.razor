@@ -1,0 +1,332 @@
+﻿@page "/runs/{RunId}"
+@implements IDisposable
+@using SharpMind.Studio.Core.Jobs
+@using SharpMind.Studio.Core.Runs
+@using SharpMind.Studio.Services
+@inject StudioWorkspaceService Workspace
+@inject ThemeService Theme
+@inject StudioCanaryService Canary
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Run @Short(@RunId)</PageTitle>
+
+<div class="spread" style="margin-bottom: 1.2rem;">
+    <a class="back-link" href="/">&larr; dashboard</a>
+    <span class="faint small mono">@RunId</span>
+</div>
+
+@if (_error is not null)
+{
+    <section class="panel">
+        <div class="panel-body">
+            <div class="error-line">@_error</div>
+        </div>
+    </section>
+}
+else if (_summary is null)
+{
+    <div class="empty">Loading run...</div>
+}
+else
+{
+    <section class="hero" style="padding-top: 0;">
+        <div class="hero-copy">
+            <div class="eyebrow">@(_summary.Kind ?? "run")</div>
+            <h1>@(_summary.Subject ?? "Run")</h1>
+            <p>@(_summary.Device ?? "Local device")</p>
+            <div class="small faint mono">
+                @(_summary.Generator ?? "unknown generator") | @(_summary.Cache ?? "unknown cache") | inference @(_summary.InferenceVersion ?? "unknown")
+            </div>
+        </div>
+        <div class="hero-mark">
+            <span class="status @StatusClass(_summary.Status)">@_summary.Status</span>
+        </div>
+    </section>
+
+    <section class="metric-grid">
+        <div class="metric">
+            <div class="metric-label">Decode</div>
+            <div class="metric-value">@(_summary.TokensPerSecond > 0 ? _summary.TokensPerSecond.ToString("F2") : "-")</div>
+            <div class="small faint">tok/s</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">Steps</div>
+            <div class="metric-value">@_summary.Steps</div>
+            <div class="small faint">measured tokens</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">Duration</div>
+            <div class="metric-value">@FormatDuration(_summary.Duration)</div>
+            <div class="small faint">including load</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">Tool call</div>
+            <div class="metric-value">
+                @if (_summary.ToolRunId is not null)
+                {
+                    <a class="run-link" href="/runs/@_summary.ToolRunId">@_summary.ToolStatus</a>
+                }
+                else
+                {
+                    @_summary.ToolStatus
+                }
+            </div>
+            <div class="small faint">option-selection probe</div>
+        </div>
+    </section>
+
+    <div class="row" style="margin-top: 1.2rem;">
+        <label class="tool-toggle">
+            <input type="checkbox" @bind="_toolProbe" disabled="@Canary.IsRunning" />
+            <span>Include tool call probe</span>
+        </label>
+        <button type="button" class="button primary" @onclick="RerunAsync" disabled="@Canary.IsRunning">
+            @(Canary.IsRunning ? "Running..." : "Re-run")
+        </button>
+        @if (Canary.IsRunning)
+        {
+            <span class="spinner-ring" title="Re-run active"></span>
+        }
+        <button type="button" class="button danger" @onclick="DeleteAsync" disabled="@Canary.IsRunning">
+            Delete run
+        </button>
+        <span class="status-line">@_rerunStatus</span>
+    </div>
+    @if (_rerunError is not null)
+    {
+        <div class="error-line" style="margin-top: .6rem;">@_rerunError</div>
+    }
+
+    @if (_summary.Kind == ToolProbeJob.Kind)
+    {
+        <div class="small faint" style="margin-top: .7rem;">
+            Tool probe runs do not decode tokens. Decode and step metrics are recorded on the linked benchmark run.
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_summary.ProbeText))
+    {
+        <section class="panel" style="margin-top: 1.2rem;">
+            <div class="panel-head">
+                <div>
+                    <div class="eyebrow">Probe</div>
+                    <h2>Output</h2>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="probe">@_summary.ProbeText</div>
+            </div>
+        </section>
+    }
+
+    @if (_summary.Error is not null)
+    {
+        <section class="panel" style="margin-top: 1.2rem;">
+            <div class="panel-body">
+                <div class="error-line">@_summary.Error</div>
+            </div>
+        </section>
+    }
+
+    <section class="panel" style="margin-top: 1.2rem;">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Event stream</div>
+                <h2>Timeline</h2>
+            </div>
+            <span class="faint small mono">@_events.Count events</span>
+        </div>
+        <div class="panel-body">
+            <div class="timeline">
+                @foreach (var runEvent in _events)
+                {
+                    <div class="timeline-row">
+                        <span class="timeline-time">@runEvent.AtUtc.ToLocalTime().ToString("HH:mm:ss.fff")</span>
+                        <span class="timeline-type">@EventType(runEvent)</span>
+                        <span class="timeline-body">@EventBody(runEvent)</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter] public string RunId { get; set; } = "";
+
+    private RunSummary? _summary;
+    private IReadOnlyList<RunEvent> _events = [];
+    private string? _error;
+    private bool _toolProbe = true;
+    private bool _pendingRerun;
+    private bool _wasRunning;
+
+    private bool IsRunning => Canary.IsRunning;
+    private string _rerunStatus = "";
+    private string? _rerunError;
+
+    protected override void OnInitialized()
+    {
+        Canary.Changed += OnCanaryChanged;
+        _wasRunning = Canary.IsRunning;
+        if (Canary.IsRunning) _rerunStatus = Canary.Status;
+    }
+
+    public void Dispose() => Canary.Changed -= OnCanaryChanged;
+
+    private void OnCanaryChanged() => _ = InvokeAsync(() =>
+    {
+        bool wasRunning = _wasRunning;
+        _wasRunning = Canary.IsRunning;
+        if (Canary.IsRunning)
+        {
+            _rerunStatus = Canary.Status;
+        }
+        else if (_pendingRerun)
+        {
+            _pendingRerun = false;
+            if (Canary.Error is not null)
+            {
+                _rerunError = Canary.Error;
+                _rerunStatus = "Failed.";
+            }
+            else
+            {
+                CanaryResult? result = Canary.Results.FirstOrDefault();
+                _rerunStatus = "Finished.";
+                if (result is not null) Nav.NavigateTo($"/runs/{result.RunId}");
+            }
+        }
+        else if (wasRunning)
+        {
+            _rerunStatus = Canary.Status;
+            if (Canary.Error is not null) _rerunError = Canary.Error;
+        }
+
+        StateHasChanged();
+    });
+    protected override async Task OnParametersSetAsync()
+    {
+        _summary = null;
+        _events = [];
+        _error = null;
+
+        try
+        {
+            RunHandle handle = Workspace.Runs.Open(RunId);
+            _summary = await RunCatalog.LoadAsync(handle);
+            _events = [.. await ReadAllAsync(handle)];
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Canary.IsRunning) return;
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", $"Delete run {Short(RunId)}? This cannot be undone.");
+        if (!confirmed) return;
+
+        try
+        {
+            Workspace.Runs.Delete(RunId);
+            Nav.NavigateTo("/");
+        }
+        catch (Exception ex)
+        {
+            _rerunError = $"{ex.GetType().Name}: {ex.Message}";
+        }
+    }
+    private void RerunAsync()
+    {
+        if (_summary is null || Canary.IsRunning) return;
+
+        string? path = Workspace.ResolveModelPath(_summary.ModelPath) ??
+                       Workspace.ResolveModelPath(_summary.Subject);
+        if (path is null)
+        {
+            _rerunError = $"Could not find the model for {_summary.Subject ?? _summary.RunId}.";
+            return;
+        }
+
+        var builders = Workspace.Builders;
+        var generator = builders.Generators.FirstOrDefault(value =>
+            value.Name.Equals(Theme.DefaultGenerator, StringComparison.OrdinalIgnoreCase));
+        var cache = builders.Caches.FirstOrDefault(value =>
+            value.Name.Equals(Theme.DefaultCache, StringComparison.OrdinalIgnoreCase));
+
+        _pendingRerun = true;
+        _rerunError = null;
+        _rerunStatus = "Starting...";
+        _ = Canary.StartAsync(new CanaryRequest
+        {
+            Models = [path],
+            Prompt = _summary.Prompt ?? "The capital of France is",
+            WarmupTokens = Math.Max(1, _summary.WarmupTokens ?? 16),
+            MeasureTokens = Math.Max(1, _summary.MeasureTokens ?? 32),
+            GeneratorType = generator?.BuilderType,
+            CacheType = cache?.Type,
+            IncludeToolProbe = _toolProbe,
+        }, Workspace.Runs);
+    }
+    private static async Task<List<RunEvent>> ReadAllAsync(RunHandle handle)
+    {
+        var events = new List<RunEvent>();
+        await foreach (var runEvent in handle.ReadEventsAsync())
+            events.Add(runEvent);
+        return events;
+    }
+
+    private static string Short(string value) => value.Length <= 18 ? value : value[..18] + "...";
+
+    private static string StatusClass(string status) => status switch
+    {
+        "succeeded" => "ok",
+        "failed" or "cancelled" => "failed",
+        _ => "running",
+    };
+
+    private static string FormatDuration(TimeSpan? duration) =>
+        duration is { } value ? $"{value.TotalSeconds:F1}s" : "-";
+
+    private static string EventType(RunEvent runEvent) => runEvent switch
+    {
+        RunStarted => "start",
+        StepLogged => "step",
+        EvalCompleted => "eval",
+        ExpertStats => "experts",
+        CheckpointSaved => "checkpoint",
+        ProbeAnswered => "probe",
+        ToolProbeCompleted => "tool",
+        RunFinished => "finish",
+        _ => runEvent.GetType().Name,
+    };
+
+    private static string EventBody(RunEvent runEvent) => runEvent switch
+    {
+        RunStarted e => $"{e.Kind} | {e.Subject}",
+        StepLogged e => $"step {e.Step} | {e.TokensPerSecond:F2} tok/s | {e.TokensSeen} tokens",
+        EvalCompleted e => $"step {e.Step} | val loss {e.ValLoss:F4} | ppl {e.Perplexity:F2}",
+        ExpertStats e => $"step {e.Step} | layer {e.Layer} | entropy {e.RoutingEntropy:F3}",
+        CheckpointSaved e => $"step {e.Step} | {e.Path}",
+        ProbeAnswered e => e.Text,
+        ToolProbeCompleted e => $"{e.Status} | {e.Detail}",
+        RunFinished e => $"{e.Status} | {e.DurationMs:F0} ms{(e.Error is null ? "" : $" | {e.Error}")}",
+        _ => "",
+    };
+}
+
+
+
+
+
+
+
+
+
+
+

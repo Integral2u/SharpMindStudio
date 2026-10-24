@@ -1,0 +1,214 @@
+using System.Diagnostics;
+using System.IO;
+using System.Net.Http;
+using System.Text;
+
+namespace SharpMind.Studio.UI;
+
+/// <summary>
+/// Owns the local Studio web host. If a healthy server is already listening we
+/// attach to it instead of starting a second copy.
+/// </summary>
+internal sealed class StudioProcess : IAsyncDisposable
+{
+    public static readonly Uri BaseUri = new("http://127.0.0.1:5117/");
+
+    private readonly StringBuilder _stderr = new();
+    private readonly StringBuilder _stdout = new();
+    private Process? _process;
+    private bool _ownsProcess;
+
+    public bool IsOwned => _ownsProcess;
+
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        if (await IsHealthyAsync(cancellationToken).ConfigureAwait(false))
+            return;
+
+        var startInfo = ResolveStartInfo();
+        _process = new Process
+        {
+            StartInfo = startInfo,
+            EnableRaisingEvents = true,
+        };
+        _process.OutputDataReceived += (_, e) => Append(_stdout, e.Data);
+        _process.ErrorDataReceived += (_, e) => Append(_stderr, e.Data);
+
+        if (!_process.Start())
+            throw new InvalidOperationException("Could not start the Studio web host.");
+        _ownsProcess = true;
+        _process.BeginOutputReadLine();
+        _process.BeginErrorReadLine();
+
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_process.HasExited)
+                throw new InvalidOperationException(
+                    $"Studio exited with code {_process.ExitCode}.{Environment.NewLine}{Tail(_stderr)}");
+
+            if (await IsHealthyAsync(cancellationToken).ConfigureAwait(false))
+                return;
+
+            await Task.Delay(300, cancellationToken).ConfigureAwait(false);
+        }
+
+        await StopAsync().ConfigureAwait(false);
+        throw new TimeoutException(
+            $"Studio did not become ready at {BaseUri}.{Environment.NewLine}{Tail(_stderr)}");
+    }
+
+    public async Task StopAsync()
+    {
+        Process? process = _process;
+        _process = null;
+        _ownsProcess = false;
+        if (process is null) return;
+
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // Shutdown must not fail because the child already vanished.
+        }
+        finally
+        {
+            process.Dispose();
+        }
+    }
+
+    public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
+
+    private static async Task<bool> IsHealthyAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromMilliseconds(1200) };
+            using var response = await client.GetAsync(BaseUri, cancellationToken).ConfigureAwait(false);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static ProcessStartInfo ResolveStartInfo()
+    {
+        string baseDirectory = AppContext.BaseDirectory;
+
+        // Published layout: the web host sits beside the wrapper. Require the
+        // managed DLL too; a ProjectReference can copy the apphost alone, and
+        // launching that apphost without its DLL just produces a silent exit.
+        string publishedExe = Path.Combine(baseDirectory, "SharpMind.Studio.exe");
+        string publishedDll = Path.Combine(baseDirectory, "SharpMind.Studio.dll");
+        if (File.Exists(publishedExe) && File.Exists(publishedDll))
+            return ForExecutable(publishedExe, baseDirectory);
+        if (File.Exists(publishedDll))
+            return ForDll(publishedDll, baseDirectory);
+
+        string? root = FindRepositoryRoot(baseDirectory);
+        if (root is null)
+            throw new FileNotFoundException(
+                "Could not find SharpMind.Studio. Publish the web host beside SharpMind.Studio.UI.exe " +
+                "or run the wrapper from the repository.");
+
+        string projectDirectory = Path.Combine(root, "SharpMind.Studio");
+        string? dll = FindBuiltDll(projectDirectory);
+        if (dll is not null)
+            return ForDll(dll, projectDirectory);
+
+        string project = Path.Combine(projectDirectory, "SharpMind.Studio.csproj");
+        var info = new ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory = projectDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        info.ArgumentList.Add("run");
+        info.ArgumentList.Add("--project");
+        info.ArgumentList.Add(project);
+        return info;
+    }
+
+    private static ProcessStartInfo ForExecutable(string exe, string workingDirectory) =>
+        new(exe)
+        {
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+
+    private static ProcessStartInfo ForDll(string dll, string workingDirectory)
+    {
+        var info = new ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        info.ArgumentList.Add(dll);
+        return info;
+    }
+
+    private static string? FindRepositoryRoot(string start)
+    {
+        var directory = new DirectoryInfo(start);
+        for (int i = 0; i < 8 && directory is not null; i++)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "SharpMind.Studio.slnx")))
+                return directory.FullName;
+            directory = directory.Parent;
+        }
+        return null;
+    }
+
+    private static string? FindBuiltDll(string projectDirectory)
+    {
+        bool release = AppContext.BaseDirectory.Contains(
+            $"{Path.DirectorySeparatorChar}Release{Path.DirectorySeparatorChar}",
+            StringComparison.OrdinalIgnoreCase);
+        string[] configurations = release ? ["Release", "Debug"] : ["Debug", "Release"];
+
+        foreach (string configuration in configurations)
+        {
+            string dll = Path.Combine(
+                projectDirectory, "bin", configuration, "net10.0", "SharpMind.Studio.dll");
+            if (File.Exists(dll)) return dll;
+        }
+        return null;
+    }
+
+    private static void Append(StringBuilder builder, string? line)
+    {
+        if (line is null) return;
+        lock (builder)
+        {
+            if (builder.Length > 16_384) builder.Remove(0, builder.Length - 12_288);
+            builder.AppendLine(line);
+        }
+    }
+
+    private static string Tail(StringBuilder builder)
+    {
+        lock (builder)
+        {
+            string text = builder.ToString().Trim();
+            return text.Length <= 2000 ? text : text[^2000..];
+        }
+    }
+}

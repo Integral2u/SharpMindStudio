@@ -1,0 +1,9 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SharpMind.Studio.Core</RootNamespace>
+  </PropertyGroup>
+
+  <Import Project="..\SharpMind.References.props" />
+
+</Project>

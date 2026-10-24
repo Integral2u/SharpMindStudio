@@ -1,0 +1,561 @@
+﻿@page "/"
+@using Microsoft.Extensions.Options
+@using SharpMind.Studio.Core.Jobs
+@using SharpMind.Studio.Core.Projects
+@using SharpMind.Studio.Core.Runs
+@using SharpMind.Studio.Services
+@inject StudioWorkspaceService Workspace
+@inject ThemeService Theme
+@inject StudioActivityService Activity
+@inject StudioCanaryService Canary
+@inject IOptions<StudioOptions> Options
+@inject IJSRuntime JS
+
+<PageTitle>SharpMind Studio</PageTitle>
+
+<section class="hero">
+    <div class="hero-copy">
+        <div class="eyebrow">Local model workbench</div>
+        <h1>Make the machine show its work.</h1>
+        <p>
+            SharpMind Studio is a quiet, local-first instrument panel for running, measuring
+            and eventually building models. Every action becomes a run you can replay.
+        </p>
+    </div>
+    <div class="hero-mark">
+        project / @Workspace.Project.Document.Id[..8]<br />
+        runs on this machine only
+    </div>
+</section>
+
+<section class="metric-grid">
+    <div class="metric">
+        <div class="metric-label">Runs recorded</div>
+        <div class="metric-value">@_runs.Count</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Best decode</div>
+        <div class="metric-value">@BestTokensPerSecond</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Latest state</div>
+        <div class="metric-value">@(Activity.IsBusy ? "running" : LatestRun?.Status ?? "idle")</div>
+    </div>
+</section>
+
+<div class="grid-2" style="margin-top: 1.2rem;">
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Harness</div>
+                <h2>Canary run</h2>
+            </div>
+            <span class="faint small mono">@Workspace.Runs.RunsRoot</span>
+        </div>
+        <div class="panel-body stack">
+            <div class="row">
+                <div class="field" style="width: 8rem;">
+                    <label class="field-label" for="warmup">Warmup</label>
+                    <input id="warmup" class="input" type="number" min="1" @bind="_warmup" />
+                </div>
+                <div class="field" style="width: 8rem;">
+                    <label class="field-label" for="measure">Measure</label>
+                    <input id="measure" class="input" type="number" min="1" @bind="_measure" />
+                </div>
+                <button type="button" class="button" style="align-self: end;" @onclick="ScanModels" disabled="@IsRunning">
+                    Scan folder
+                </button>
+                <button type="button" class="button primary" style="align-self: end;" @onclick="StartCanary"
+                        disabled="@(IsRunning || !HasModels)" aria-busy="@IsRunning">
+                    @(IsRunning ? "Running..." : "Run canary")
+                </button>
+                @if (IsRunning)
+                {
+                    <span class="spinner-ring run-spinner" style="align-self: end; margin-bottom: .8rem;"
+                          title="Canary running"></span>
+                }
+                <label class="tool-toggle" style="align-self: end; margin-bottom: .55rem;">
+                    <input type="checkbox" @bind="_includeToolProbe" disabled="@IsRunning" />
+                    <span>Tool call probe</span>
+                </label>
+            </div>
+
+            <div class="status-line">@_status</div>
+            @if (_error is not null)
+            {
+                <div class="error-line">@_error</div>
+            }
+
+            <div class="field">
+                <label class="field-label" for="models">Models, one path per line</label>
+                <textarea id="models" class="textarea" @bind="_modelsText"
+                          placeholder="No models detected. Add one model path per line."></textarea>
+                <div class="small faint mono">models folder: @Workspace.ModelsFolder</div>
+
+                <div class="row" style="margin-top: .55rem;">
+                    <select class="input" style="max-width: 15rem;" @bind="_selectedList">
+                        <option value="">Saved lists</option>
+                        @foreach (var list in _modelLists)
+                        {
+                            <option value="@list.Name">@list.Name (@list.Models.Count)</option>
+                        }
+                    </select>
+                    <button type="button" class="button" @onclick="LoadModelList"
+                            disabled="@(_selectedList is null)">
+                        Load list
+                    </button>
+                    <button type="button" class="button primary" @onclick="RunModelList"
+                            disabled="@(IsRunning || _selectedList is null)">
+                        Run list
+                    </button>
+                    <input class="input" style="max-width: 12rem;" @bind="_listName"
+                           placeholder="List name" />
+                    <button type="button" class="button" @onclick="SaveModelList"
+                            disabled="@(!HasModels)">
+                        Save list
+                    </button>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="field-label" for="prompt">Prompt</label>
+                <input id="prompt" class="input" @bind="_prompt" />
+            </div>
+        </div>    </section>
+
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">This run</div>
+                <h2>Results</h2>
+            </div>
+        </div>
+        <div class="panel-body">
+            @if (Results.Count == 0)
+            {
+                <div class="empty">@(HasModels ? "Run a canary to put the machine on the record." : "No models available to run.")</div>
+            }
+            else
+            {
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Model</th>
+                            <th>tok/s</th>
+                            <th>ms/tok</th>
+                            <th>Tool</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var result in Results)
+                        {
+                            <tr>
+                                <td>
+                                    <a class="run-link" href="/runs/@result.RunId">@Path.GetFileName(result.ModelPath)</a>
+                                </td>
+                                <td class="num">@(result.Succeeded ? result.TokensPerSecond.ToString("F2") : "-")</td>
+                                <td class="num">@(result.Succeeded ? (result.MeasureMs / Math.Max(1, _measure)).ToString("F2") : "-")</td>
+                                <td>
+                                    @if (result.ToolRunId is not null)
+                                    {
+                                        <a class="status @ToolClass(result.ToolCallStatus)" href="/runs/@result.ToolRunId"
+                                           title="@result.ToolDetail">@result.ToolCallStatus</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="status n-a">@result.ToolCallStatus</span>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="status @(result.Succeeded ? "ok" : "failed")">
+                                        @(result.Succeeded ? "ok" : "failed")
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </section>
+</div>
+
+<section class="panel" style="margin-top: 1.2rem;">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">History</div>
+            <h2>Recent runs</h2>
+        </div>
+        <span class="faint small mono">@_runs.Count total | inference @InferenceVersion</span>
+    </div>
+    <div class="panel-body" style="padding-top: .35rem;">
+        @if (_runs.Count == 0)
+        {
+            <div class="empty">No runs yet. The canary starts the record.</div>
+        }
+        else
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th><button type="button" class="sort-button" @onclick='() => SortBy("run")'>Run @SortMark("run")</button></th>
+                        <th><button type="button" class="sort-button" @onclick='() => SortBy("subject")'>Subject @SortMark("subject")</button></th>
+                        <th><button type="button" class="sort-button" @onclick='() => SortBy("status")'>Status @SortMark("status")</button></th>
+                        <th><button type="button" class="sort-button" @onclick='() => SortBy("tool")'>Tool @SortMark("tool")</button></th>
+                        <th><button type="button" class="sort-button" @onclick='() => SortBy("tps")'>tok/s @SortMark("tps")</button></th>
+                        <th><button type="button" class="sort-button" @onclick='() => SortBy("steps")'>Steps @SortMark("steps")</button></th>
+                        <th><button type="button" class="sort-button" @onclick='() => SortBy("when")'>When @SortMark("when")</button></th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var run in SortedRuns.Take(12))
+                    {
+                        <tr>
+                            <td><a class="run-link" href="/runs/@run.RunId">@ShortRun(run.RunId)</a></td>
+                            <td>
+                                <div>@(run.Subject ?? "-")</div>
+                                <div class="small faint mono">@run.Kind</div>
+                            </td>
+                            <td><span class="status @StatusClass(run.Status)">@run.Status</span></td>
+                            <td>
+                                @if (run.ToolRunId is not null)
+                                {
+                                    <a class="status @ToolClass(run.ToolStatus)" href="/runs/@run.ToolRunId">@run.ToolStatus</a>
+                                }
+                                else
+                                {
+                                    <span class="status n-a">@run.ToolStatus</span>
+                                }
+                            </td>
+                            <td class="num">@(run.TokensPerSecond > 0 ? run.TokensPerSecond.ToString("F2") : "-")</td>
+                            <td class="num">@run.Steps</td>
+                            <td class="num faint">@FormatWhen(run.StartedUtc)</td>
+                            <td>
+                                <div class="row" style="gap: .35rem; flex-wrap: nowrap;">
+                                    <button type="button" class="button" @onclick="() => RerunAsync(run)"
+                                            disabled="@IsRunning" title="Run this model again">
+                                        Re-run
+                                    </button>
+                                    <button type="button" class="button danger" @onclick="() => DeleteRunAsync(run)"
+                                            disabled="@IsRunning" title="Delete this run">
+                                        Delete
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</section>
+
+<section class="panel" style="margin-top: 1.2rem;">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Defaults</div>
+            <h2>Local folders</h2>
+        </div>
+        <span class="faint small mono">shared with SharpMind</span>
+    </div>
+    <div class="panel-body stack small mono">
+        <div class="spread"><span class="faint">models</span><span>@Workspace.ModelsFolder</span></div>
+        <div class="spread"><span class="faint">corpus</span><span>@Workspace.CorpusFolder</span></div>
+        <div class="spread"><span class="faint">training</span><span>@Workspace.TrainingFolder</span></div>
+        <div class="spread"><span class="faint">inference</span><span>@InferenceVersion</span></div>
+    </div>
+</section>
+
+@code {
+    private IReadOnlyList<RunSummary> _runs = [];
+    private string _modelsText = "";
+    private string _prompt = "The capital of France is";
+    private int _warmup = 16;
+    private int _measure = 32;
+    private string _status = "Ready.";
+    private string? _error;
+    private bool _includeToolProbe = true;
+    private bool _wasRunning;
+
+    private bool IsRunning => Canary.IsRunning;
+    private IReadOnlyList<CanaryResult> Results => Canary.Results;
+    private string _sortColumn = "when";
+    private bool _sortDescending = true;
+    private IReadOnlyList<ModelList> _modelLists = [];
+    private string? _selectedList;
+    private string _listName = "";
+
+    private static string InferenceVersion =>
+        typeof(SharpMind.Inference.Chat.IChatSession).Assembly.GetName().Version?.ToString() ?? "unknown";
+
+    private bool HasModels => _modelsText
+        .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Length > 0;
+
+    private RunSummary? LatestRun => _runs.FirstOrDefault();
+    private string BestTokensPerSecond => _runs
+        .Where(r => r.TokensPerSecond > 0)
+        .Select(r => r.TokensPerSecond)
+        .DefaultIfEmpty(0)
+        .Max() is var best && best > 0 ? $"{best:F2} tok/s" : "-";
+
+    private IEnumerable<RunSummary> SortedRuns => _sortColumn switch
+    {
+        "run" => _sortDescending
+            ? _runs.OrderByDescending(r => r.RunId, StringComparer.OrdinalIgnoreCase)
+            : _runs.OrderBy(r => r.RunId, StringComparer.OrdinalIgnoreCase),
+        "subject" => _sortDescending
+            ? _runs.OrderByDescending(r => r.Subject ?? "", StringComparer.OrdinalIgnoreCase)
+            : _runs.OrderBy(r => r.Subject ?? "", StringComparer.OrdinalIgnoreCase),
+        "status" => _sortDescending
+            ? _runs.OrderByDescending(r => r.Status, StringComparer.OrdinalIgnoreCase)
+            : _runs.OrderBy(r => r.Status, StringComparer.OrdinalIgnoreCase),
+        "tool" => _sortDescending
+            ? _runs.OrderByDescending(r => r.ToolStatus, StringComparer.OrdinalIgnoreCase)
+            : _runs.OrderBy(r => r.ToolStatus, StringComparer.OrdinalIgnoreCase),
+        "tps" => _sortDescending
+            ? _runs.OrderByDescending(r => r.TokensPerSecond)
+            : _runs.OrderBy(r => r.TokensPerSecond),
+        "steps" => _sortDescending
+            ? _runs.OrderByDescending(r => r.Steps)
+            : _runs.OrderBy(r => r.Steps),
+        _ => _sortDescending
+            ? _runs.OrderByDescending(r => r.StartedUtc ?? DateTimeOffset.MinValue)
+            : _runs.OrderBy(r => r.StartedUtc ?? DateTimeOffset.MinValue),
+    };
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortDescending = !_sortDescending;
+            return;
+        }
+
+        _sortColumn = column;
+        _sortDescending = column == "when";
+    }
+
+    private string SortMark(string column) =>
+        _sortColumn == column ? (_sortDescending ? " v" : " ^") : "";
+    protected override async Task OnInitializedAsync()
+    {
+        Canary.Changed += OnCanaryChanged;
+        _wasRunning = Canary.IsRunning;
+        if (Canary.Status != "Ready.") _status = Canary.Status;
+        if (Canary.Error is not null) _error = Canary.Error;
+
+        _modelsText = string.Join(Environment.NewLine, Options.Value.CanaryModels);
+        if (string.IsNullOrWhiteSpace(_modelsText)) ScanModels(updateStatus: false);
+        if (string.IsNullOrWhiteSpace(_modelsText))
+            _status = $"No models found. Add paths or scan {Workspace.ModelsFolder}.";
+        _modelLists = Workspace.ModelLists.List();
+        _selectedList = _modelLists.FirstOrDefault()?.Name;
+        await ReloadRunsAsync();
+    }
+
+    public void Dispose() => Canary.Changed -= OnCanaryChanged;
+
+    private void OnCanaryChanged() => _ = InvokeAsync(async () =>
+    {
+        bool wasRunning = _wasRunning;
+        _wasRunning = Canary.IsRunning;
+        _status = Canary.Status;
+        if (Canary.Error is not null) _error = Canary.Error;
+        if (wasRunning && !Canary.IsRunning) await ReloadRunsAsync();
+        StateHasChanged();
+    });
+
+    private void ScanModels() => ScanModels(updateStatus: true);
+
+    private void ScanModels(bool updateStatus)
+    {
+        string folder = Workspace.ModelsFolder;
+        if (!Directory.Exists(folder))
+        {
+            if (updateStatus) _status = $"Models folder not found: {folder}";
+            return;
+        }
+
+        string[] models = [.. Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
+            .Where(path => path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase) ||
+                           path.EndsWith(".smm", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)];
+
+        if (models.Length == 0)
+        {
+            if (updateStatus) _status = "No .gguf or .smm models found in the models folder.";
+            return;
+        }
+
+        _modelsText = string.Join(Environment.NewLine, models);
+        if (updateStatus) _status = $"Loaded {models.Length} model path(s) from {folder} (including files that may fail to load).";
+    }
+
+    private void StartCanary()
+    {
+        if (IsRunning) return;
+
+        string[] models = _modelsText
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (models.Length == 0)
+        {
+            _error = "Add at least one model path.";
+            return;
+        }
+
+        var builders = Workspace.Builders;
+        var generator = builders.Generators.FirstOrDefault(g =>
+            g.Name.Equals(Theme.DefaultGenerator, StringComparison.OrdinalIgnoreCase));
+        var cache = builders.Caches.FirstOrDefault(c =>
+            c.Name.Equals(Theme.DefaultCache, StringComparison.OrdinalIgnoreCase));
+
+        _error = null;
+        _status = "Starting...";
+        _ = Canary.StartAsync(new CanaryRequest
+        {
+            Models = models,
+            Prompt = _prompt,
+            WarmupTokens = Math.Max(1, _warmup),
+            MeasureTokens = Math.Max(1, _measure),
+            GeneratorType = generator?.BuilderType,
+            CacheType = cache?.Type,
+            IncludeToolProbe = _includeToolProbe,
+        }, Workspace.Runs);
+    }
+    private void LoadModelList()
+    {
+        ModelList? list = _modelLists.FirstOrDefault(value =>
+            value.Name.Equals(_selectedList, StringComparison.OrdinalIgnoreCase));
+        if (list is null)
+        {
+            _error = "Choose a saved model list.";
+            return;
+        }
+
+        _modelsText = string.Join(Environment.NewLine, list.Models);
+        _listName = list.Name;
+        _error = null;
+        _status = $"Loaded list {list.Name} ({list.Models.Count} model path(s)).";
+    }
+
+    private void RunModelList()
+    {
+        ModelList? list = _modelLists.FirstOrDefault(value =>
+            value.Name.Equals(_selectedList, StringComparison.OrdinalIgnoreCase));
+        if (list is null)
+        {
+            _error = "Choose a saved model list.";
+            return;
+        }
+
+        _modelsText = string.Join(Environment.NewLine, list.Models);
+        _listName = list.Name;
+        _error = null;
+        StartCanary();
+    }
+    private void SaveModelList()
+    {
+        try
+        {
+            string[] models = _modelsText
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            ModelList list = Workspace.ModelLists.Save(_listName, models);
+            _modelLists = Workspace.ModelLists.List();
+            _selectedList = list.Name;
+            _error = null;
+            _status = $"Saved list {list.Name} ({list.Models.Count} model path(s)).";
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+    }
+
+    private void RerunAsync(RunSummary run)
+    {
+        if (IsRunning) return;
+
+        string? path = Workspace.ResolveModelPath(run.ModelPath) ??
+                       Workspace.ResolveModelPath(run.Subject);
+        if (path is null)
+        {
+            _error = $"Could not find the model for {run.Subject ?? run.RunId}.";
+            return;
+        }
+
+        _modelsText = path;
+        if (!string.IsNullOrWhiteSpace(run.Prompt)) _prompt = run.Prompt;
+        StartCanary();
+    }
+
+    private async Task ReloadRunsAsync() =>
+        _runs = await Workspace.RecentRunsAsync();
+
+    private async Task DeleteRunAsync(RunSummary run)
+    {
+        if (IsRunning) return;
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", $"Delete run {ShortRun(run.RunId)}? This cannot be undone.");
+        if (!confirmed) return;
+
+        try
+        {
+            Workspace.Runs.Delete(run.RunId);
+            await ReloadRunsAsync();
+            _status = $"Deleted run {ShortRun(run.RunId)}.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+    }
+
+    private static string ShortRun(string runId) =>
+        runId.Length <= 22 ? runId : runId[..22] + "...";
+
+    private static string StatusClass(string status) => status switch
+    {
+        "succeeded" => "ok",
+        "failed" or "cancelled" => "failed",
+        _ => "running",
+    };
+
+    private static string FormatWhen(DateTimeOffset? when) =>
+        when is { } value ? value.ToLocalTime().ToString("dd MMM HH:mm") : "-";
+
+    private static string ToolClass(string status) => status switch
+    {
+        "Yes" => "ok",
+        "No" => "failed",
+        _ => "n-a",
+    };
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

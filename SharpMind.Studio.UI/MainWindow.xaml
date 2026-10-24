@@ -1,0 +1,99 @@
+﻿<Window x:Class="SharpMind.Studio.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="SharpMind Studio"
+        Width="1320"
+        Height="860"
+        MinWidth="760"
+        MinHeight="480"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        WindowStartupLocation="Manual"
+        Background="#0B1016"
+        Closing="OnClosing"
+        StateChanged="OnStateChanged">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0"
+                            ResizeBorderThickness="6"
+                            GlassFrameThickness="0"
+                            CornerRadius="0"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <Style x:Key="CaptionButton" TargetType="Button">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="35" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#8FA3B8" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#18222D" />
+                    <Setter Property="Foreground" Value="#E6EDF3" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="36" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="#0B1016"
+                BorderBrush="#1F2A38"
+                BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="OnTitleBarMouseDown">
+            <Grid>
+                <TextBlock Text="SharpMind Studio"
+                           Foreground="#8FA3B8"
+                           FontFamily="Consolas"
+                           FontSize="11"
+                           VerticalAlignment="Center"
+                           Margin="14,0,0,0" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="—" Style="{StaticResource CaptionButton}" Click="OnMinimize" />
+                    <Button Content="□" Style="{StaticResource CaptionButton}" Click="OnMaximize" />
+                    <Button Content="×" Style="{StaticResource CaptionButton}" Click="OnTitleBarClose" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <wv2:WebView2 x:Name="Browser" />
+
+            <Border x:Name="StartupOverlay" Background="#0B1016">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="SharpMind"
+                               Foreground="#E6EDF3"
+                               FontSize="42"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="STUDIO"
+                               Foreground="#5EEAD4"
+                               FontFamily="Consolas"
+                               FontSize="12"
+                               FontWeight="Bold"
+                               HorizontalAlignment="Center"
+                               Margin="0,4,0,28" />
+                    <TextBlock x:Name="StatusText"
+                               Text="Starting the local engine…"
+                               Foreground="#8FA3B8"
+                               FontFamily="Consolas"
+                               FontSize="12"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
+
+

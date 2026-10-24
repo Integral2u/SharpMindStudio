@@ -1,0 +1,194 @@
+﻿@page "/settings"
+@using Microsoft.AspNetCore.Components
+@using SharpMind.Studio.Core.Jobs
+@using SharpMind.Studio.Services
+@inject ThemeService Theme
+@inject StudioWorkspaceService Workspace
+
+<PageTitle>Settings - SharpMind Studio</PageTitle>
+
+<div class="hero" style="padding-top: 0;">
+    <div class="hero-copy">
+        <div class="eyebrow">Settings</div>
+        <h1>Make it yours.</h1>
+        <p>Theme is stored beside the Studio project and applies to every window on this machine.</p>
+    </div>
+    <div class="hero-mark">local preferences<br />no cloud, no account</div>
+</div>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Inference defaults</div>
+            <h2>Engine and cache</h2>
+        </div>
+        <span class="faint small mono">system defaults</span>
+    </div>
+    <div class="panel-body stack">
+        <form method="get" action="/settings" data-enhance="false" class="stack">
+            <input type="hidden" name="theme" value="@_theme" />
+            @if (_theme == "custom")
+            {
+                <input type="hidden" name="color" value="@_customColor" />
+            }
+
+            <div class="field">
+                <label class="field-label" for="default-generator">Generator</label>
+                <select id="default-generator" class="input" name="generator">
+                    @foreach (var option in Workspace.Builders.Generators)
+                    {
+                        <option value="@option.Name" selected="@(option.Name == _defaultGenerator)">
+                            @option.Name@(option.IsPlugin ? " (plugin)" : "")
+                        </option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label class="field-label" for="default-cache">KV cache</label>
+                <select id="default-cache" class="input" name="cache">
+                    @foreach (var option in Workspace.Builders.Caches)
+                    {
+                        <option value="@option.Name" selected="@(option.Name == _defaultCache)">
+                            @option.Name@(option.IsPlugin ? " (plugin)" : "")
+                        </option>
+                    }
+                </select>
+            </div>
+
+            <div class="row">
+                <button class="button" type="submit">Save inference defaults</button>
+                <span class="small faint mono">reflected from built-ins and the plugins folder</span>
+            </div>
+        </form>
+
+        <p class="small muted">
+            Canary and tool runs use these system defaults. Model overrides and per-session overrides
+            will layer above them when Chat lands.
+        </p>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Appearance</div>
+            <h2>Accent colour</h2>
+        </div>
+        <span class="faint small mono">@ThemeService.Label(_theme)</span>
+    </div>
+    <div class="panel-body stack">
+        <div class="theme-grid">
+            @foreach (string theme in new[] { "green", "blue", "purple", "red" })
+            {
+                <a class="theme-option @(_theme == theme ? "selected" : "")"
+                   href="/settings?theme=@theme"
+                   data-enhance-nav="false">
+                    <span class="theme-swatch @theme"></span>
+                    <span>@ThemeService.Label(theme)</span>
+                </a>
+            }
+
+            <a class="theme-option theme-option-custom @(_theme == "custom" ? "selected" : "")"
+               href="/settings?theme=custom"
+               data-enhance-nav="false">
+                <span class="theme-swatch custom" style="background:@_customColor"></span>
+                <span>Custom</span>
+            </a>
+        </div>
+
+        <form method="get" action="/settings" data-enhance="false">
+            <input type="hidden" name="theme" value="custom" />
+            <div class="custom-color-row">
+                <div class="field">
+                    <label class="field-label" for="custom-color">Custom accent</label>
+                    <input id="custom-color" class="color-input" type="color"
+                           name="color" value="@_customColor" title="Custom accent" />
+                </div>
+                <button class="button" type="submit">Apply custom</button>
+            </div>
+        </form>
+
+        <div class="status-line">@_status</div>
+        <div class="row" style="margin-top: .4rem;">
+            <a class="button" href="/" data-enhance-nav="false">Back to dashboard</a>
+            <span class="small faint mono">changes are saved to settings.json</span>
+        </div>
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery(Name = "theme")]
+    public string? ThemeQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "color")]
+    public string? ColorQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "generator")]
+    public string? GeneratorQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "cache")]
+    public string? CacheQuery { get; set; }
+
+    private string _theme = ThemeService.DefaultTheme;
+    private string _customColor = ThemeService.DefaultCustomColor;
+    private string _status = "Choose an accent colour.";
+    private string _defaultGenerator = ThemeService.DefaultGeneratorName;
+    private string _defaultCache = ThemeService.DefaultCacheName;
+    private string? _lastApplied;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _theme = Theme.Theme;
+        _customColor = Theme.CustomColor;
+        _defaultGenerator = Theme.DefaultGenerator;
+        _defaultCache = Theme.DefaultCache;
+
+        if (!string.IsNullOrWhiteSpace(ThemeQuery))
+        {
+            string? normalized = ThemeService.AvailableThemes.FirstOrDefault(
+                value => value.Equals(ThemeQuery, StringComparison.OrdinalIgnoreCase));
+            if (normalized is null)
+            {
+                _status = $"Unknown theme '{ThemeQuery}'.";
+            }
+            else
+            {
+                string? custom = ThemeService.NormalizeColor(ColorQuery);
+                string key = $"{normalized}|{custom}";
+                if (key != _lastApplied)
+                {
+                    if (normalized == "custom" && custom is not null)
+                        _customColor = custom;
+
+                    await Theme.SetThemeAsync(normalized, _customColor);
+                    _theme = Theme.Theme;
+                    _customColor = Theme.CustomColor;
+                    _lastApplied = key;
+                    _status = $"{ThemeService.Label(_theme)} applied.";
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(GeneratorQuery) && string.IsNullOrWhiteSpace(CacheQuery))
+            return;
+
+        var builders = Workspace.Builders;
+        string generator = builders.Generators.Any(g =>
+            g.Name.Equals(GeneratorQuery, StringComparison.OrdinalIgnoreCase))
+            ? GeneratorQuery!
+            : Theme.DefaultGenerator;
+        string cache = builders.Caches.Any(c =>
+            c.Name.Equals(CacheQuery, StringComparison.OrdinalIgnoreCase))
+            ? CacheQuery!
+            : Theme.DefaultCache;
+
+        await Theme.SetInferenceDefaultsAsync(generator, cache);
+        _defaultGenerator = Theme.DefaultGenerator;
+        _defaultCache = Theme.DefaultCache;
+        _status = $"Inference defaults: {_defaultGenerator} / {_defaultCache}.";
+    }
+}
+
+
+

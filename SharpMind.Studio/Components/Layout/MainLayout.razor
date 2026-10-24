@@ -1,0 +1,99 @@
+﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject SharpMind.Studio.Services.StudioWorkspaceService Workspace
+@inject SharpMind.Studio.Services.ThemeService Theme
+@inject SharpMind.Studio.Services.StudioActivityService Activity
+
+<div class="studio-root" data-theme="@Theme.Theme" style="@Theme.CssVariables">
+    <canvas class="firefly-canvas" aria-hidden="true"></canvas>
+
+    <div class="app-shell">
+    <aside class="sidebar">
+        <div class="sidebar-art" aria-hidden="true">
+            <div class="wave"></div>
+            <div class="wave"></div>
+            <div class="wave"></div>
+        </div>
+
+        <div class="brand">
+            <div class="brand-copy">
+                <strong>SharpMind</strong>
+                <span>Studio</span>
+            </div>
+        </div>
+
+        <nav class="nav">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="nav-index">01</span> Dashboard
+                @if (Activity.IsBusy)
+                {
+                    <span class="spinner-ring" title="A run is active"></span>
+                }
+            </NavLink>
+            <NavLink class="nav-link" href="settings">
+                <span class="nav-index">02</span> Settings
+            </NavLink>
+        </nav>
+
+        <div class="sidebar-foot">
+            <div class="eyebrow">Project</div>
+            <div class="project-name">@Workspace.Project.Document.Name</div>
+            <div class="project-path">@Workspace.Project.Root</div>
+            <div class="local-pill">local only</div>
+        </div>
+    </aside>
+
+    <main class="main">
+        <header class="topbar">
+            <div>
+                <div class="eyebrow">SharpMind Studio</div>
+                <div class="topbar-title">Instrument panel</div>
+            </div>
+            <div class="topbar-meta">
+                @if (Activity.IsBusy)
+                {
+                    <span class="spinner-ring"></span>
+                    <span>@Activity.Status</span>
+                }
+                <span class="dot"></span>
+                <span>127.0.0.1</span>
+            </div>
+        </header>
+
+        <div class="page">
+            @Body
+        </div>
+    </main>
+    </div>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">×</span>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Theme.Changed += OnThemeChanged;
+        Activity.Changed += OnActivityChanged;
+    }
+
+    public void Dispose()
+    {
+        Theme.Changed -= OnThemeChanged;
+        Activity.Changed -= OnActivityChanged;
+    }
+
+    private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnActivityChanged() => _ = InvokeAsync(StateHasChanged);
+}
+
+
+
+
+
+
+
