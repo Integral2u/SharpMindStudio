@@ -110,8 +110,8 @@ else
         <section class="panel" style="margin-top: 1.2rem;">
             <div class="panel-head">
                 <div>
-                    <div class="eyebrow">Probe</div>
-                    <h2>Output</h2>
+                    <div class="eyebrow">@(_summary.Kind == ToolProbeJob.Kind ? "Tool call" : "Standard prompt")</div>
+                    <h2>@(_summary.Kind == ToolProbeJob.Kind ? "Call JSON" : "Output")</h2>
                 </div>
             </div>
             <div class="panel-body">
@@ -319,6 +319,7 @@ else
         _ => "",
     };
 }
+
 
 
 

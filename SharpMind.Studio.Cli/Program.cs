@@ -247,7 +247,7 @@ internal static class StudioCli
         Console.WriteLine($"Tool    {(result.ToolCalled ? "called" : "not called")}");
         Console.WriteLine($"Options {string.Join(", ", result.Options)}");
         Console.WriteLine($"Result  {(result.Passed ? "PASS" : "FAIL")}");
-        Console.WriteLine($"Reply   {result.Response}");
+        Console.WriteLine($"Call    {result.Response}");
         Console.WriteLine($"Events  {run.EventsPath}");
         return result.Passed ? 0 : 1;
     }
@@ -340,3 +340,4 @@ internal static class StudioCli
         return $"{library.GetName().Name} {library.GetName().Version}";
     }
 }
+

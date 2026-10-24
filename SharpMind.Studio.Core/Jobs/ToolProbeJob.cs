@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Text.Json.Nodes;
 using System.Runtime.InteropServices;
 using SharpMind.Core;
 using SharpMind.Core.Quantization;
@@ -106,9 +107,12 @@ public static class ToolProbeJob
             session.TopK = 1;
             session.RepetitionPenalty = 1.0f;
             session.MaxToolCallsPerTurn = 2;
+            session.ProcessToolRequest = (_, _, _) =>
+                Task.FromResult(ToolRequestResult.ReturnToCaller());
             session.InitializeChat();
 
             var response = new System.Text.StringBuilder();
+            JsonObject? toolCall = null;
             string? error = null;
             await foreach (var entry in session.GetResponseStreamAsync(request.Prompt, ct: cancellationToken)
                 .WithCancellation(cancellationToken).ConfigureAwait(false))
@@ -116,16 +120,30 @@ public static class ToolProbeJob
                 if (!string.IsNullOrEmpty(entry.Error)) error = entry.Error;
                 if (entry.Status == ChatStatus.Responding && entry.Token is not null)
                     response.Append(entry.Token);
+                if (entry.Status == ChatStatus.ToolCall && entry.ToolCall is not null)
+                    toolCall = entry.ToolCall;
             }
 
-            bool expected = probe.Called &&
-                probe.Options.Count == 3 &&
-                probe.Options.Any(value => value.Contains("red", StringComparison.OrdinalIgnoreCase)) &&
-                probe.Options.Any(value => value.Contains("green", StringComparison.OrdinalIgnoreCase)) &&
-                probe.Options.Any(value => value.Contains("blue", StringComparison.OrdinalIgnoreCase));
+            string? toolName = toolCall?["tool"]?.GetValue<string>();
+            List<string> options = [];
+            if (toolCall?["arguments"] is JsonObject arguments &&
+                arguments["options"] is JsonArray values)
+            {
+                options = [.. values
+                    .Select(value => value?.GetValue<string>() ?? "")
+                    .Where(value => value.Length > 0)];
+            }
 
-            string summary = $"toolCalled={probe.Called} options=[{string.Join(", ", probe.Options)}] " +
-                             $"response={response}";
+            bool toolCalled = string.Equals(
+                toolName, nameof(OptionSelectionProbe.UIShowOptionSelection), StringComparison.Ordinal);
+            bool expected = toolCalled &&
+                options.Count == 3 &&
+                options.Any(value => value.Contains("red", StringComparison.OrdinalIgnoreCase)) &&
+                options.Any(value => value.Contains("green", StringComparison.OrdinalIgnoreCase)) &&
+                options.Any(value => value.Contains("blue", StringComparison.OrdinalIgnoreCase));
+
+            string callJson = toolCall?.ToJsonString() ?? response.ToString();
+            string summary = $"tool={toolName ?? "none"}; options=[{string.Join(", ", options)}]; call={callJson}";
             await events.WriteAsync(new ProbeAnswered
             {
                 Step = 1,
@@ -138,7 +156,7 @@ public static class ToolProbeJob
             {
                 Status = expected ? "succeeded" : "failed",
                 DurationMs = total.Elapsed.TotalMilliseconds,
-                Error = expected ? null : error ?? "The model did not call UIShowOptionSelection with Red, Green and Blue.",
+                Error = expected ? null : error ?? "The model did not emit a valid UIShowOptionSelection call with Red, Green and Blue.",
                 AtUtc = DateTimeOffset.UtcNow,
             }, cancellationToken).ConfigureAwait(false);
 
@@ -146,9 +164,9 @@ public static class ToolProbeJob
             {
                 RunId = run.RunId,
                 Passed = expected,
-                ToolCalled = probe.Called,
-                Options = probe.Options,
-                Response = response.ToString(),
+                ToolCalled = toolCalled,
+                Options = options,
+                Response = callJson,
             };
         }
         catch (OperationCanceledException)
@@ -195,6 +213,9 @@ public static class ToolProbeJob
         }
     }
 }
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-using SharpMind.Studio.Core.Runs;
+﻿using SharpMind.Studio.Core.Runs;
 
 namespace SharpMind.Studio.Core.Jobs;
 
@@ -136,7 +136,7 @@ public static class CanaryJob
                 FullLoad = request.FullLoad,
             }, run, writer, cancellationToken).ConfigureAwait(false);
 
-            string detail = $"toolCalled={result.ToolCalled}; options=[{string.Join(", ", result.Options)}]";
+            string detail = $"toolCalled={result.ToolCalled}; options=[{string.Join(", ", result.Options)}]; call={result.Response}";
             return (result.Passed ? "Yes" : "No", run.RunId, detail);
         }
         catch (OperationCanceledException)
@@ -149,5 +149,6 @@ public static class CanaryJob
         }
     }
 }
+
 
 
