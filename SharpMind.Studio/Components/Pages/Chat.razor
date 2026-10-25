@@ -39,7 +39,7 @@
             </div>
             <div class="panel-body stack">
                 <div class="welcome-compose">
-                    <textarea id="chat-new-input" class="welcome-prompt" data-enter-send="chat-start"
+                    <textarea id="chat-new-input" class="welcome-prompt chat-new-prompt" data-enter-send="chat-start"
                               onkeydown="studioChat.enterSend(event, 'chat-start')"
                               @bind="_input" @bind:event="oninput"
                               placeholder="Ask something, or leave this empty to start a blank chat."></textarea>
@@ -231,6 +231,7 @@
     private bool _showOptions;
     private bool _wasStreaming;
     private bool _initialized;
+    private bool _focusPending = true;
     private InferenceOverrides _sessionDraft = new();
 
     protected override async Task OnInitializedAsync()
@@ -258,8 +259,7 @@
         _wasStreaming = ChatService.IsStreaming;
         _initialized = true;
 
-        if (ChatService.TakePendingPrompt() is { } pending)
-            _ = InvokeAsync(async () => await ChatService.SendAsync(pending));
+        TrySendPendingPrompt();
     }
 
     private async Task RefreshModelsAsync()
@@ -281,10 +281,22 @@
     protected override async Task OnParametersSetAsync()
     {
         if (!_initialized || string.IsNullOrWhiteSpace(ChatId)) return;
-        if (ChatService.Document?.Id.Equals(ChatId, StringComparison.OrdinalIgnoreCase) == true) return;
 
-        await ChatService.OpenAsync(ChatId);
-        SyncFromChat();
+        if (ChatService.Document?.Id.Equals(ChatId, StringComparison.OrdinalIgnoreCase) != true)
+        {
+            await ChatService.OpenAsync(ChatId);
+            SyncFromChat();
+        }
+
+        TrySendPendingPrompt();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusPending) return;
+        _focusPending = false;
+        string id = ChatService.Document is null || _startingNew ? "chat-new-input" : "chat-input";
+        try { await JS.InvokeVoidAsync("studioChat.focus", id); } catch { }
     }
 
     public void Dispose() => ChatService.Changed -= OnChatChanged;
@@ -316,14 +328,17 @@
         if (model is null) return;
 
         string prompt = _input.Trim();
+        _input = "";
+        StateHasChanged();
         await Theme.SetLastChatModelAsync(model.Path);
         await ChatService.NewChatAsync(model, systemPrompt: null);
         if (ChatService.Document is not null)
         {
             ChatService.PendingPrompt = prompt.Length > 0 ? prompt : null;
-            _input = "";
             _startingNew = false;
+            _focusPending = true;
             Nav.NavigateTo($"/chat/{ChatService.Document.Id}");
+            TrySendPendingPrompt();
         }
         UpdateLatestModelRun();
         SyncFromChat();
@@ -361,6 +376,7 @@
     private void BeginNewChat()
     {
         _startingNew = true;
+        _focusPending = true;
         _showOptions = false;
         _input = "";
         _selectedModelPath = ChatService.Document?.ModelPath ??
@@ -377,8 +393,24 @@
         if (string.IsNullOrWhiteSpace(text)) return;
         _input = "";
         await ChatService.SendAsync(text);
+        await FocusComposerAsync();
     }
 
+    private void TrySendPendingPrompt()
+    {
+        if (ChatService.TakePendingPrompt() is not { } pending) return;
+        _ = InvokeAsync(async () =>
+        {
+            await ChatService.SendAsync(pending);
+            await FocusComposerAsync();
+        });
+    }
+
+    private async Task FocusComposerAsync()
+    {
+        try { await JS.InvokeVoidAsync("studioChat.focus", "chat-input"); }
+        catch { }
+    }
     private void Stop() => ChatService.Stop();
 
     private void ToggleOptions()
@@ -418,6 +450,17 @@
             ? $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
             : $"{bytes / (1024.0 * 1024):F0} MB";
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 

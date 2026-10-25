@@ -229,7 +229,7 @@
     }
 
     .brand-copy span {
-        color: var(--muted);
+        color: var(--accent);
         font-size: .78rem;
         letter-spacing: .16em;
         text-transform: uppercase;
@@ -464,6 +464,8 @@
         padding: 1rem 1.2rem;
     }
 }
+
+
 
 
 

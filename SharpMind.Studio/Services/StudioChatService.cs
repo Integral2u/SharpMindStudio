@@ -144,6 +144,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
             var stopwatch = Stopwatch.StartNew();
             var lastNotify = TimeSpan.Zero;
+            double? lastTps = null;
             try
             {
                 await foreach (ChatStreamEntry entry in _session
@@ -152,6 +153,7 @@ public sealed class StudioChatService : IAsyncDisposable
                 {
                     if (!string.IsNullOrEmpty(entry.Error))
                         _error = entry.Error;
+                    if (entry.TokensPerSecond is { } entryTps) lastTps = entryTps;
 
                     if (entry.Status == ChatStatus.Responding && entry.Token is not null)
                     {
@@ -179,19 +181,19 @@ public sealed class StudioChatService : IAsyncDisposable
                 }
 
                 _document.Messages = [.. _session.History];
-                _document.LastTokensPerSecond = _session.TokensPerSecond;
+                _document.LastTokensPerSecond = lastTps ?? _session.TokensPerSecond;
                 _status = "Ready.";
             }
             catch (OperationCanceledException)
             {
                 _document.Messages = [.. _session.History];
-                _document.LastTokensPerSecond = _session.TokensPerSecond;
+                _document.LastTokensPerSecond = lastTps ?? _session.TokensPerSecond;
                 _status = "Stopped.";
             }
             catch (Exception ex)
             {
                 _document.Messages = [.. _session.History];
-                _document.LastTokensPerSecond = _session.TokensPerSecond;
+                _document.LastTokensPerSecond = lastTps ?? _session.TokensPerSecond;
                 _error = $"{ex.GetType().Name}: {ex.Message}";
                 _status = "Generation failed.";
             }
@@ -548,6 +550,9 @@ public sealed class StudioChatService : IAsyncDisposable
     }
     private void Notify() => Changed?.Invoke();
 }
+
+
+
 
 
 
