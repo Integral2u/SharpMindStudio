@@ -46,4 +46,24 @@ public sealed class CanaryJobTests
         Assert.Equal(2, seen.Count);
         Assert.All(seen, result => Assert.False(result.Succeeded));
     }
+
+    [Fact]
+    public async Task ModelStartedCallback_FiresForEachModel()
+    {
+        using var temp = new TempDirectory();
+        var store = new RunStore(temp.Combine("runs"));
+        var started = new List<string>();
+        string first = temp.Combine("missing-1.gguf");
+        string second = temp.Combine("missing-2.gguf");
+
+        await CanaryJob.RunAsync(new CanaryRequest
+        {
+            Models = [first, second],
+            WarmupTokens = 1,
+            MeasureTokens = 1,
+        }, store, onModelStarted: started.Add);
+
+        Assert.Equal([first, second], started);
+    }
 }
+

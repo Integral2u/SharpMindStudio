@@ -132,9 +132,17 @@
                 <div class="eyebrow">This run</div>
                 <h2>Results</h2>
             </div>
+            @if (Canary.IsRunning)
+            {
+                <button type="button" class="button danger" @onclick="Canary.Interrupt">Interrupt</button>
+            }
+            else if (Canary.CanContinue)
+            {
+                <button type="button" class="button primary" @onclick="Canary.ContinueAsync">Continue</button>
+            }
         </div>
         <div class="panel-body">
-            @if (Results.Count == 0)
+            @if (Items.Count == 0)
             {
                 <div class="empty">@(HasModels ? "Run a canary to put the machine on the record." : "No models available to run.")</div>
             }
@@ -148,32 +156,49 @@
                             <th>ms/tok</th>
                             <th>Tool</th>
                             <th>Status</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var result in Results)
+                        @foreach (var item in Items)
                         {
+                            var result = item.Result;
                             <tr>
                                 <td>
-                                    <a class="run-link" href="/runs/@result.RunId">@Path.GetFileName(result.ModelPath)</a>
+                                    @if (result is not null)
+                                    {
+                                        <a class="run-link" href="/runs/@result.RunId">@Path.GetFileName(item.ModelPath)</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="mono">@Path.GetFileName(item.ModelPath)</span>
+                                    }
                                 </td>
-                                <td class="num">@(result.Succeeded ? result.TokensPerSecond.ToString("F2") : "-")</td>
-                                <td class="num">@(result.Succeeded ? (result.MeasureMs / Math.Max(1, _measure)).ToString("F2") : "-")</td>
+                                <td class="num">@(result?.Succeeded == true ? result.TokensPerSecond.ToString("F2") : "-")</td>
+                                <td class="num">@(result?.Succeeded == true ? (result.MeasureMs / Math.Max(1, _measure)).ToString("F2") : "-")</td>
                                 <td>
-                                    @if (result.ToolRunId is not null)
+                                    @if (result?.ToolRunId is not null)
                                     {
                                         <a class="status @ToolClass(result.ToolCallStatus)" href="/runs/@result.ToolRunId"
                                            title="@result.ToolDetail">@result.ToolCallStatus</a>
                                     }
-                                    else
+                                    else if (result is not null)
                                     {
                                         <span class="status n-a">@result.ToolCallStatus</span>
                                     }
+                                    else
+                                    {
+                                        <span class="faint">-</span>
+                                    }
                                 </td>
                                 <td>
-                                    <span class="status @(result.Succeeded ? "ok" : "failed")">
-                                        @(result.Succeeded ? "ok" : "failed")
-                                    </span>
+                                    <span class="status @ItemStatusClass(item.Status)">@item.Status</span>
+                                </td>
+                                <td class="num">
+                                    @if (item.Status == "running")
+                                    {
+                                        <span class="spinner-ring" title="Running"></span>
+                                    }
                                 </td>
                             </tr>
                         }
@@ -283,7 +308,7 @@
     private bool _wasRunning;
 
     private bool IsRunning => Canary.IsRunning;
-    private IReadOnlyList<CanaryResult> Results => Canary.Results;
+    private IReadOnlyList<CanaryItem> Items => Canary.Items;
     private string _sortColumn = "when";
     private bool _sortDescending = true;
     private IReadOnlyList<ModelList> _modelLists = [];
@@ -350,7 +375,9 @@
         if (Canary.Status != "Ready.") _status = Canary.Status;
         if (Canary.Error is not null) _error = Canary.Error;
 
-        _modelsText = string.Join(Environment.NewLine, Options.Value.CanaryModels);
+        _modelsText = Canary.ModelPaths.Count > 0
+            ? string.Join(Environment.NewLine, Canary.ModelPaths)
+            : string.Join(Environment.NewLine, Options.Value.CanaryModels);
         if (string.IsNullOrWhiteSpace(_modelsText)) ScanModels(updateStatus: false);
         if (string.IsNullOrWhiteSpace(_modelsText))
             _status = $"No models found. Add paths or scan {Workspace.ModelsFolder}.";
@@ -529,6 +556,14 @@
     private static string FormatWhen(DateTimeOffset? when) =>
         when is { } value ? value.ToLocalTime().ToString("dd MMM HH:mm") : "-";
 
+    private static string ItemStatusClass(string status) => status switch
+    {
+        "done" => "ok",
+        "failed" => "failed",
+        "running" => "running",
+        "interrupted" => "failed",
+        _ => "n-a",
+    };
     private static string ToolClass(string status) => status switch
     {
         "Yes" => "ok",
@@ -536,6 +571,10 @@
         _ => "n-a",
     };
 }
+
+
+
+
 
 
 

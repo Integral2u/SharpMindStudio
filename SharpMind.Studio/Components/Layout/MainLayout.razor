@@ -28,11 +28,19 @@
         <nav class="nav">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
                 <span class="nav-index">01</span> Home
+                @if (Activity.IsBusy)
+                {
+                    <span class="spinner-ring" title="Canary running"></span>
+                }
             </NavLink>
 
             <div class="nav-chat-row">
                 <NavLink class="nav-link" href="chat">
                     <span class="nav-index">02</span> Chat
+                    @if (ChatService.IsLoading || ChatService.IsStreaming)
+                    {
+                        <span class="spinner-ring" title="Chat active"></span>
+                    }
                 </NavLink>
                 <button type="button" class="nav-expand" @onclick="ToggleChats"
                         title="@(_chatsExpanded ? "Hide chats" : "Show chats")"
@@ -109,6 +117,7 @@
     {
         Theme.Changed += OnThemeChanged;
         Activity.Changed += OnActivityChanged;
+        ChatService.Changed += OnChatServiceChanged;
         Nav.LocationChanged += OnLocationChanged;
         LoadChats();
     }
@@ -117,6 +126,7 @@
     {
         Theme.Changed -= OnThemeChanged;
         Activity.Changed -= OnActivityChanged;
+        ChatService.Changed -= OnChatServiceChanged;
         Nav.LocationChanged -= OnLocationChanged;
     }
 
@@ -151,7 +161,10 @@
     private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
 
     private void OnActivityChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnChatServiceChanged() => _ = InvokeAsync(StateHasChanged);
 }
+
 
 
 

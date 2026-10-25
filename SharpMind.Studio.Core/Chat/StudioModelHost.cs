@@ -33,6 +33,16 @@ public sealed class StudioModelHost : IDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, LoadedStudioModel> _models = new(StringComparer.OrdinalIgnoreCase);
 
+    public int LoadedModelCount
+    {
+        get
+        {
+            _gate.Wait();
+            try { return _models.Count; }
+            finally { _gate.Release(); }
+        }
+    }
+
     public async Task<LoadedStudioModel> LoadAsync(
         ModelDescriptor descriptor,
         ResolvedInference profile,
@@ -174,6 +184,8 @@ public sealed class StudioModelHost : IDisposable
     private static string KeyFor(string path, ResolvedInference profile) =>
         $"{Path.GetFullPath(path)}|{profile.LoadMode}|{profile.HardwareTier}|{profile.UseParallelKernels}|{profile.MaxParallelLoadDegree}";
 }
+
+
 
 
 

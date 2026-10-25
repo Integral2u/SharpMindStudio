@@ -1,4 +1,4 @@
-using SharpMind.Inference.Chat;
+﻿using SharpMind.Inference.Chat;
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Inference;
 
@@ -95,3 +95,15 @@ public sealed class ChatSessionStoreTests
         Assert.Empty(store.List());
     }
 }
+
+public sealed class StudioModelHostTests
+{
+    [Fact]
+    public void NewHost_DoesNotLoadOrCacheAnyModels()
+    {
+        using var host = new StudioModelHost();
+
+        Assert.Equal(0, host.LoadedModelCount);
+    }
+}
+

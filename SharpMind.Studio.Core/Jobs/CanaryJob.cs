@@ -35,6 +35,7 @@ public static class CanaryJob
         CanaryRequest request,
         RunStore store,
         IProgress<string>? progress = null,
+        Action<string>? onModelStarted = null,
         Action<CanaryResult>? onResult = null,
         CancellationToken cancellationToken = default)
     {
@@ -46,6 +47,7 @@ public static class CanaryJob
         {
             cancellationToken.ThrowIfCancellationRequested();
             string name = Path.GetFileName(model);
+            onModelStarted?.Invoke(model);
             progress?.Report($"Running {name}");
 
             var run = store.Create(ModelBenchJob.Kind, Path.GetFileNameWithoutExtension(model));
@@ -149,6 +151,8 @@ public static class CanaryJob
         }
     }
 }
+
+
 
 
 

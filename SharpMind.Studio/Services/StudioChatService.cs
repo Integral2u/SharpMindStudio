@@ -167,10 +167,12 @@ public sealed class StudioChatService : IAsyncDisposable
                         _status = $"Running {entry.Token ?? "tool"}...";
                     }
 
-                    if (entry.IsComplete || stopwatch.Elapsed - lastNotify > TimeSpan.FromMilliseconds(55))
+                    if (entry.IsComplete || lastNotify == TimeSpan.Zero ||
+                        stopwatch.Elapsed - lastNotify > TimeSpan.FromMilliseconds(40))
                     {
                         lastNotify = stopwatch.Elapsed;
                         Notify();
+                        await Task.Yield();
                     }
                 }
 
@@ -541,6 +543,8 @@ public sealed class StudioChatService : IAsyncDisposable
     }
     private void Notify() => Changed?.Invoke();
 }
+
+
 
 
 
