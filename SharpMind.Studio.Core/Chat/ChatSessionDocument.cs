@@ -1,4 +1,4 @@
-using SharpMind.Inference.Chat;
+﻿using SharpMind.Inference.Chat;
 using SharpMind.Studio.Core.Inference;
 
 namespace SharpMind.Studio.Core.Chat;
@@ -20,6 +20,7 @@ public sealed record ChatSessionDocument
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
     public List<ChatMessage> Messages { get; set; } = [];
     public InferenceOverrides Overrides { get; set; } = new();
+    public double? LastTokensPerSecond { get; set; }
 }
 
 public sealed record ChatSessionSummary
@@ -31,3 +32,4 @@ public sealed record ChatSessionSummary
     public int MessageCount { get; init; }
     public string Preview { get; init; } = "";
 }
+

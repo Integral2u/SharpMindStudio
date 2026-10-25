@@ -85,6 +85,7 @@ else if (_tab == "families")
                 <InferenceProfileEditor Value="_familyDraft" ValueChanged="v => _familyDraft = v"
                                         AllowInherit="true"
                                         Sources="_familySources"
+                                        Effective="_familyResolved"
                                         Generators="Workspace.Builders.Generators"
                                         Caches="Workspace.Builders.Caches" />
                 <div class="row">
@@ -126,6 +127,7 @@ else if (_tab == "models")
                 <InferenceProfileEditor Value="_modelDraft" ValueChanged="v => _modelDraft = v"
                                         AllowInherit="true"
                                         Sources="_modelSources"
+                                        Effective="_modelResolved"
                                         Generators="Workspace.Builders.Generators"
                                         Caches="Workspace.Builders.Caches" />
                 <div class="row">
@@ -210,6 +212,8 @@ else
     private InferenceOverrides _modelDraft = new();
     private IReadOnlyDictionary<string, string>? _familySources;
     private IReadOnlyDictionary<string, string>? _modelSources;
+    private ResolvedInference? _familyResolved;
+    private ResolvedInference? _modelResolved;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -275,7 +279,8 @@ else
     {
         if (_selectedFamilyId is null) return;
         _familyDraft = Inference.FamilyOverrides(_selectedFamilyId) ?? new InferenceOverrides();
-        _familySources = Inference.Resolve(_selectedFamilyId, null, null).Sources;
+        _familyResolved = Inference.Resolve(_selectedFamilyId, null, null);
+        _familySources = _familyResolved.Sources;
     }
 
     private void LoadModelDraft()
@@ -283,7 +288,8 @@ else
         if (_selectedModelPath is null) return;
         ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
         _modelDraft = Inference.ModelOverrides(_selectedModelPath) ?? new InferenceOverrides();
-        _modelSources = Inference.Resolve(model?.Family.Id, _selectedModelPath, null).Sources;
+        _modelResolved = Inference.Resolve(model?.Family.Id, _selectedModelPath, null);
+        _modelSources = _modelResolved.Sources;
     }
 
     private async Task SaveDefaultModel()
@@ -302,6 +308,8 @@ else
     {
         if (_selectedFamilyId is null) return;
         Inference.SetFamily(_selectedFamilyId, _familyDraft);
+        _familyResolved = Inference.Resolve(_selectedFamilyId, null, null);
+        _familySources = _familyResolved.Sources;
         _status = "Family overrides saved.";
     }
 
@@ -310,7 +318,8 @@ else
         if (_selectedFamilyId is null) return;
         Inference.DeleteFamily(_selectedFamilyId);
         _familyDraft = new InferenceOverrides();
-        _familySources = Inference.Resolve(_selectedFamilyId, null, null).Sources;
+        _familyResolved = Inference.Resolve(_selectedFamilyId, null, null);
+        _familySources = _familyResolved.Sources;
         _status = "Family overrides cleared.";
     }
 
@@ -318,6 +327,9 @@ else
     {
         if (_selectedModelPath is null) return;
         Inference.SetModel(_selectedModelPath, _modelDraft);
+        ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
+        _modelResolved = Inference.Resolve(model?.Family.Id, _selectedModelPath, null);
+        _modelSources = _modelResolved.Sources;
         _status = "Model overrides saved.";
     }
 
@@ -329,6 +341,9 @@ else
         _status = "Model overrides cleared.";
     }
 }
+
+
+
 
 
 

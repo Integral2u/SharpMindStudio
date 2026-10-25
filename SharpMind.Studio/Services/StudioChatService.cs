@@ -56,6 +56,7 @@ public sealed class StudioChatService : IAsyncDisposable
     public string Status => _status;
     public string? Error => _error;
     public string? CacheWarning => _cacheWarning;
+    public double? LastTokensPerSecond => _document?.LastTokensPerSecond;
     public string? PendingPrompt { get; set; }
     public IReadOnlyList<ChatSessionSummary> Sessions => _store.List();
 
@@ -139,6 +140,7 @@ public sealed class StudioChatService : IAsyncDisposable
             ChatMessage assistant = ChatMessage.Agent("");
             _document.Messages.Add(assistant);
             Notify();
+            await Task.Yield();
 
             var stopwatch = Stopwatch.StartNew();
             var lastNotify = TimeSpan.Zero;
@@ -177,16 +179,19 @@ public sealed class StudioChatService : IAsyncDisposable
                 }
 
                 _document.Messages = [.. _session.History];
+                _document.LastTokensPerSecond = _session.TokensPerSecond;
                 _status = "Ready.";
             }
             catch (OperationCanceledException)
             {
                 _document.Messages = [.. _session.History];
+                _document.LastTokensPerSecond = _session.TokensPerSecond;
                 _status = "Stopped.";
             }
             catch (Exception ex)
             {
                 _document.Messages = [.. _session.History];
+                _document.LastTokensPerSecond = _session.TokensPerSecond;
                 _error = $"{ex.GetType().Name}: {ex.Message}";
                 _status = "Generation failed.";
             }
@@ -543,6 +548,10 @@ public sealed class StudioChatService : IAsyncDisposable
     }
     private void Notify() => Changed?.Invoke();
 }
+
+
+
+
 
 
 

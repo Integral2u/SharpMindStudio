@@ -2,6 +2,7 @@
 @page "/chat/{ChatId}"
 @implements IDisposable
 @using SharpMind.Inference.Chat
+@using SharpMind.Studio.Core.Runs
 @using SharpMind.Studio.Services
 @inject StudioChatService ChatService
 @inject ModelCatalogService Catalog
@@ -32,11 +33,23 @@
             <div class="panel-head">
                 <div>
                     <div class="eyebrow">New conversation</div>
-                    <h2>Pick a model</h2>
+                    <h2>What do you want to ask?</h2>
                 </div>
                 <span class="faint small mono">local weights only</span>
             </div>
             <div class="panel-body stack">
+                <div class="welcome-compose">
+                    <textarea id="chat-new-input" class="welcome-prompt" data-enter-send="chat-start"
+                              onkeydown="studioChat.enterSend(event, 'chat-start')"
+                              @bind="_input" @bind:event="oninput"
+                              placeholder="Ask something, or leave this empty to start a blank chat."></textarea>
+                    <button id="chat-start" type="button" class="button primary welcome-send"
+                            @onclick="StartNewChatAsync"
+                            disabled="@(ChatService.IsStreaming || ChatService.IsLoading || string.IsNullOrWhiteSpace(_selectedModelPath))">
+                        Send
+                    </button>
+                </div>
+
                 @if (_loadingModels)
                 {
                     <div class="row"><span class="spinner-ring"></span><span class="status-line">Scanning model folder...</span></div>
@@ -47,39 +60,38 @@
                 }
                 else
                 {
-                    <div class="field">
-                        <label class="field-label" for="chat-model">Model</label>
-                        <select id="chat-model" class="input" @bind="_selectedModelPath">
-                            @foreach (var model in _models)
+                    <div class="welcome-controls" style="grid-template-columns: minmax(16rem, 2fr) minmax(16rem, 1fr);">
+                        <div class="field">
+                            <label class="field-label" for="chat-model">Model</label>
+                            <select id="chat-model" class="input" @bind="_selectedModelPath" @bind:after="SaveModelChoiceAsync">
+                                @foreach (var model in _models)
+                                {
+                                    <option value="@model.Path" title="@model.Path">@model.DisplayName (@model.FileName) - @model.Family.DisplayName (@FileSize(model.SizeBytes))</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="welcome-model-status">
+                            @if (_latestModelRun is null)
                             {
-                                <option value="@model.Path" title="@model.Path">@model.DisplayName (@model.FileName) - @model.Family.DisplayName (@FileSize(model.SizeBytes))</option>
+                                <span class="status unknown">unknown</span>
+                                <span class="small faint mono">no canary result</span>
                             }
-                        </select>
+                            else
+                            {
+                                <span class="status @StatusClass(_latestModelRun.Status)">@_latestModelRun.Status</span>
+                                <span class="small faint mono">@(_latestModelRun.TokensPerSecond > 0 ? $"{_latestModelRun.TokensPerSecond:F2} tok/s" : "-")</span>
+                                <span class="status @ToolClass(_latestModelRun.ToolStatus)">tool @_latestModelRun.ToolStatus</span>
+                            }
+                        </div>
                     </div>
-                    <div class="field">
-                        <label class="field-label" for="chat-system">System prompt</label>
-                        <textarea id="chat-system" class="textarea" @bind="_newSystemPrompt"
-                                  placeholder="Optional instructions for this conversation"></textarea>
-                    </div>
-                    <div class="row">
-                        <button type="button" class="button primary" @onclick="StartNewChatAsync"
-                                disabled="@(ChatService.IsStreaming || string.IsNullOrWhiteSpace(_selectedModelPath))">
-                            Load model and start
-                        </button>
-                        @if (ChatService.IsStreaming || ChatService.Status.StartsWith("Loading", StringComparison.Ordinal))
-                        {
-                            <span class="spinner-ring"></span>
-                        }
-                        <span class="status-line">@ChatService.Status</span>
-                    </div>
+                    <div class="status-line">@ChatService.Status</div>
                     @if (ChatService.Error is not null)
                     {
                         <div class="error-line">@ChatService.Error</div>
                     }
                 }
             </div>
-        }
-        else
+        }        else
         {
             <div class="panel-head chat-head">
                 <div>
@@ -109,12 +121,16 @@
                             <div class="chat-message-meta">
                                 <span>@(message.Role == ChatRole.User ? "You" : "Model")</span>
                                 <span>@message.Timestamp.ToLocalTime().ToString("HH:mm")</span>
+                                @if (message.Role == ChatRole.Agent && !streaming && i == _messages.Count - 1 && ChatService.LastTokensPerSecond is { } tps)
+                                {
+                                    <span>@tps.ToString("F1") tok/s</span>
+                                }
                             </div>
                             @if (message.Role == ChatRole.Agent)
                             {
                                 @if (streaming)
                                 {
-                                    <div class="chat-text chat-streaming">@message.Content<span class="chat-caret">&#9611;</span></div>
+                                    <div class="chat-text chat-streaming">@message.Content</div>
                                 }
                                 else
                                 {
@@ -141,21 +157,10 @@
                         <span class="faint small mono">empty fields inherit</span>
                     </div>
                     <div class="panel-body stack">
-                        <div class="field">
-                            <label class="field-label" for="session-system">System prompt</label>
-                            <textarea id="session-system" class="textarea" @bind="_systemPrompt"></textarea>
-                            <button type="button" class="button" @onclick="SaveSystemPromptAsync"
-                                    disabled="@(ChatService.IsStreaming || _messages.Any(m => m.Role != ChatRole.System))">
-                                Apply system prompt
-                            </button>
-                            @if (_systemPromptError is not null)
-                            {
-                                <div class="small faint">@_systemPromptError</div>
-                            }
-                        </div>
                         <InferenceProfileEditor Value="_sessionDraft" ValueChanged="v => _sessionDraft = v"
                                                 AllowInherit="true"
                                                 Sources="ChatService.Resolved?.Sources"
+                                                Effective="ChatService.Resolved"
                                                 Generators="Workspace.Builders.Generators"
                                                 Caches="Workspace.Builders.Caches" />
                         <div class="row">
@@ -212,12 +217,11 @@
     [Parameter] public string? ChatId { get; set; }
 
     private IReadOnlyList<ModelDescriptor> _models = [];
+    private IReadOnlyList<RunSummary> _runs = [];
     private IReadOnlyList<ChatMessage> _messages = [];
+    private RunSummary? _latestModelRun;
     private string? _selectedModelPath;
-    private string _newSystemPrompt = "";
-    private string _systemPrompt = "";
     private string _input = "";
-    private string? _systemPromptError;
 
     private string LoadPercent => ChatService.LoadProgress is { } value
         ? $"{value * 100:F0}%"
@@ -232,6 +236,7 @@
     protected override async Task OnInitializedAsync()
     {
         ChatService.Changed += OnChatChanged;
+        _runs = await Workspace.RecentRunsAsync();
 
         if (!string.IsNullOrWhiteSpace(ChatId))
         {
@@ -242,7 +247,10 @@
         {
             _models = await Catalog.RefreshAsync();
             _loadingModels = false;
-            _selectedModelPath = _models.FirstOrDefault()?.Path;
+            _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
+                ? Theme.LastChatModel
+                : _models.FirstOrDefault()?.Path;
+            UpdateLatestModelRun();
         }
 
         _startingNew = ChatService.Document is null;
@@ -259,7 +267,11 @@
         try
         {
             _models = await Catalog.RefreshAsync();
-            if (_selectedModelPath is null) _selectedModelPath = _models.FirstOrDefault()?.Path;
+            if (_selectedModelPath is null)
+                _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
+                    ? Theme.LastChatModel
+                    : _models.FirstOrDefault()?.Path;
+            UpdateLatestModelRun();
             await InvokeAsync(StateHasChanged);
         }
         catch { }
@@ -279,11 +291,8 @@
 
     private void OnChatChanged() => _ = InvokeAsync(async () =>
     {
-        bool wasStreaming = _wasStreaming;
         _wasStreaming = ChatService.IsStreaming;
         SyncFromChat();
-        if (wasStreaming && !ChatService.IsStreaming)
-    
         try { await JS.InvokeVoidAsync("studioChat.scrollToBottom", "chat-transcript"); }
         catch { }
 
@@ -297,7 +306,6 @@
         {
             _selectedModelPath = ChatService.Document.ModelPath;
             _sessionDraft = ChatService.Document.Overrides;
-            _systemPrompt = ChatService.Document.SystemPrompt ?? "";
             _startingNew = false;
         }
     }
@@ -307,22 +315,59 @@
         ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
         if (model is null) return;
 
+        string prompt = _input.Trim();
         await Theme.SetLastChatModelAsync(model.Path);
-        await ChatService.NewChatAsync(model, _newSystemPrompt);
+        await ChatService.NewChatAsync(model, systemPrompt: null);
         if (ChatService.Document is not null)
         {
+            ChatService.PendingPrompt = prompt.Length > 0 ? prompt : null;
+            _input = "";
             _startingNew = false;
             Nav.NavigateTo($"/chat/{ChatService.Document.Id}");
         }
+        UpdateLatestModelRun();
         SyncFromChat();
     }
 
+    private async Task SaveModelChoiceAsync()
+    {
+        await Theme.SetLastChatModelAsync(_selectedModelPath);
+        UpdateLatestModelRun();
+    }
+
+    private void UpdateLatestModelRun()
+    {
+        string? fileName = _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.FileName;
+        _latestModelRun = fileName is null
+            ? null
+            : _runs.FirstOrDefault(run =>
+                run.Kind == "model-bench" &&
+                string.Equals(run.Subject, fileName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string StatusClass(string status) => status switch
+    {
+        "succeeded" => "ok",
+        "failed" or "cancelled" => "failed",
+        _ => "unknown",
+    };
+
+    private static string ToolClass(string status) => status switch
+    {
+        "Yes" => "ok",
+        "No" => "failed",
+        _ => "unknown",
+    };
     private void BeginNewChat()
     {
         _startingNew = true;
         _showOptions = false;
-        _newSystemPrompt = "";
-        _selectedModelPath = ChatService.Document?.ModelPath ?? _models.FirstOrDefault()?.Path;
+        _input = "";
+        _selectedModelPath = ChatService.Document?.ModelPath ??
+            (_models.Any(model => model.Path == Theme.LastChatModel)
+                ? Theme.LastChatModel
+                : _models.FirstOrDefault()?.Path);
+        UpdateLatestModelRun();
     }
 
 
@@ -353,14 +398,6 @@
         _sessionDraft = new InferenceOverrides();
     }
 
-    private async Task SaveSystemPromptAsync()
-    {
-        bool applied = await ChatService.UpdateSystemPromptAsync(_systemPrompt);
-        _systemPromptError = applied
-            ? null
-            : "System prompt can only be changed before the first message. Start a new chat to change it.";
-        SyncFromChat();
-    }
 
     private async Task DeleteCurrentChatAsync()
     {
@@ -381,6 +418,16 @@
             ? $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
             : $"{bytes / (1024.0 * 1024):F0} MB";
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

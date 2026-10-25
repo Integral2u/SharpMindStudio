@@ -117,6 +117,10 @@
                             disabled="@(!HasModels)">
                         Save list
                     </button>
+                    <button type="button" class="button danger" @onclick="DeleteModelList"
+                            disabled="@(_selectedList is null)">
+                        Delete list
+                    </button>
                 </div>
             </div>
 
@@ -155,7 +159,6 @@
                             <th>tok/s</th>
                             <th>ms/tok</th>
                             <th>Tool</th>
-                            <th>Status</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -190,9 +193,6 @@
                                     {
                                         <span class="faint">-</span>
                                     }
-                                </td>
-                                <td>
-                                    <span class="status @ItemStatusClass(item.Status)">@item.Status</span>
                                 </td>
                                 <td class="num">
                                     @if (item.Status == "running")
@@ -455,6 +455,22 @@
             IncludeToolProbe = _includeToolProbe,
         }, Workspace.Runs);
     }
+    private async Task DeleteModelList()
+    {
+        ModelList? list = _modelLists.FirstOrDefault(value =>
+            value.Name.Equals(_selectedList, StringComparison.OrdinalIgnoreCase));
+        if (list is null) return;
+
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", $"Delete model list \"{list.Name}\"?");
+        if (!confirmed) return;
+
+        Workspace.ModelLists.Delete(list.Name);
+        _modelLists = Workspace.ModelLists.List();
+        _selectedList = _modelLists.FirstOrDefault()?.Name;
+        _listName = "";
+        _status = $"Deleted list {list.Name}.";
+    }
     private void LoadModelList()
     {
         ModelList? list = _modelLists.FirstOrDefault(value =>
@@ -556,14 +572,6 @@
     private static string FormatWhen(DateTimeOffset? when) =>
         when is { } value ? value.ToLocalTime().ToString("dd MMM HH:mm") : "-";
 
-    private static string ItemStatusClass(string status) => status switch
-    {
-        "done" => "ok",
-        "failed" => "failed",
-        "running" => "running",
-        "interrupted" => "failed",
-        _ => "n-a",
-    };
     private static string ToolClass(string status) => status switch
     {
         "Yes" => "ok",
@@ -571,6 +579,9 @@
         _ => "n-a",
     };
 }
+
+
+
 
 
 

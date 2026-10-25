@@ -176,6 +176,7 @@
     [Parameter] public EventCallback<InferenceOverrides> ValueChanged { get; set; }
     [Parameter] public bool AllowInherit { get; set; }
     [Parameter] public IReadOnlyDictionary<string, string>? Sources { get; set; }
+    [Parameter] public ResolvedInference? Effective { get; set; }
     [Parameter] public IReadOnlyList<SharpMind.Studio.Core.Inference.GeneratorOption> Generators { get; set; } = [];
     [Parameter] public IReadOnlyList<SharpMind.Studio.Core.Inference.CacheOption> Caches { get; set; } = [];
 
@@ -208,8 +209,34 @@
 
     private string SourceLabel(string name)
     {
-        if (Sources is null) return "";
-        return Sources.GetValueOrDefault(name) ?? "";
+        string source = Sources?.GetValueOrDefault(name) ?? "";
+        string? value = Effective is null ? null : EffectiveValue(name);
+        if (value is null) return source;
+        return string.IsNullOrEmpty(source) ? $"inherited: {value}" : $"{source} / {value}";
     }
+
+    private string? EffectiveValue(string name) => name switch
+    {
+        "Generator" => Effective?.Generator,
+        "Cache" => Effective?.Cache,
+        "Formatter" => Effective?.Formatter,
+        "LoadMode" => Effective?.LoadMode,
+        "HardwareTier" => Effective?.HardwareTier,
+        "MaxParallelLoadDegree" => Effective?.MaxParallelLoadDegree.ToString(),
+        "UseParallelKernels" => Effective is null ? null : (Effective.UseParallelKernels ? "On" : "Off"),
+        "Temperature" => Effective?.Temperature.ToString("0.###"),
+        "TopK" => Effective?.TopK.ToString(),
+        "TopP" => Effective?.TopP.ToString("0.###"),
+        "MinP" => Effective?.MinP.ToString("0.###"),
+        "Seed" => Effective?.Seed?.ToString() ?? "random",
+        "MaxNewTokens" => Effective?.MaxNewTokens.ToString(),
+        "MaxContextTokens" => Effective?.MaxContextTokens?.ToString() ?? "model context",
+        "RepetitionPenalty" => Effective?.RepetitionPenalty.ToString("0.###"),
+        "RepetitionWindow" => Effective?.RepetitionWindow.ToString(),
+        "ShowThinking" => Effective is null ? null : (Effective.ShowThinking ? "On" : "Off"),
+        "EnableThinking" => Effective is null ? null : (Effective.EnableThinking ? "On" : "Off"),
+        _ => null,
+    };
 }
+
 

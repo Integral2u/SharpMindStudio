@@ -251,6 +251,7 @@
 .editor-source {
     min-height: .9rem;
     letter-spacing: .03em;
+    text-align: right;
 }
 
 @media (max-width: 900px) {
@@ -434,4 +435,7 @@
     background: var(--accent);
     transition: width .18s ease;
 }
+
+
+
 
