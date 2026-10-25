@@ -8,6 +8,7 @@
 @inject ThemeService Theme
 @inject StudioActivityService Activity
 @inject StudioCanaryService Canary
+@inject InferenceSettingsService Inference
 @inject IOptions<StudioOptions> Options
 @inject IJSRuntime JS
 
@@ -408,9 +409,9 @@
 
         var builders = Workspace.Builders;
         var generator = builders.Generators.FirstOrDefault(g =>
-            g.Name.Equals(Theme.DefaultGenerator, StringComparison.OrdinalIgnoreCase));
+            g.Name.Equals(Inference.System.Generator, StringComparison.OrdinalIgnoreCase));
         var cache = builders.Caches.FirstOrDefault(c =>
-            c.Name.Equals(Theme.DefaultCache, StringComparison.OrdinalIgnoreCase));
+            c.Name.Equals(Inference.System.Cache, StringComparison.OrdinalIgnoreCase));
 
         _error = null;
         _status = "Starting...";
@@ -533,6 +534,7 @@
         _ => "n-a",
     };
 }
+
 
 
 

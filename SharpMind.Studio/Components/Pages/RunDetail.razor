@@ -6,6 +6,7 @@
 @inject StudioWorkspaceService Workspace
 @inject ThemeService Theme
 @inject StudioCanaryService Canary
+@inject InferenceSettingsService Inference
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
@@ -255,9 +256,9 @@ else
 
         var builders = Workspace.Builders;
         var generator = builders.Generators.FirstOrDefault(value =>
-            value.Name.Equals(Theme.DefaultGenerator, StringComparison.OrdinalIgnoreCase));
+            value.Name.Equals(Inference.System.Generator, StringComparison.OrdinalIgnoreCase));
         var cache = builders.Caches.FirstOrDefault(value =>
-            value.Name.Equals(Theme.DefaultCache, StringComparison.OrdinalIgnoreCase));
+            value.Name.Equals(Inference.System.Cache, StringComparison.OrdinalIgnoreCase));
 
         _pendingRerun = true;
         _rerunError = null;
@@ -319,6 +320,7 @@ else
         _ => "",
     };
 }
+
 
 
 

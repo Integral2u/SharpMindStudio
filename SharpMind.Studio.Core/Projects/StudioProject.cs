@@ -25,6 +25,7 @@ public sealed class StudioProject
     public string RunsDirectory => Path.Combine(Root, "runs");
     public string ModelsDirectory => Path.Combine(Root, "models");
     public string ModelListsDirectory => Path.Combine(Root, "model-lists");
+    public string ChatsDirectory => Path.Combine(Root, "chats");
     public string EvalsDirectory => Path.Combine(Root, "evals");
 
     public static bool IsProject(string root) =>
@@ -81,7 +82,9 @@ public sealed class StudioProject
         Directory.CreateDirectory(RunsDirectory);
         Directory.CreateDirectory(ModelsDirectory);
         Directory.CreateDirectory(ModelListsDirectory);
+        Directory.CreateDirectory(ChatsDirectory);
         Directory.CreateDirectory(EvalsDirectory);
     }
 }
+
 

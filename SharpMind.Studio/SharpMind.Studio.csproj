@@ -5,9 +5,12 @@
 </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="HtmlSanitizer" />
+    <PackageReference Include="Markdig" />
     <ProjectReference Include="..\SharpMind.Studio.Core\SharpMind.Studio.Core.csproj" />
   </ItemGroup>
 
 </Project>
+
 
 

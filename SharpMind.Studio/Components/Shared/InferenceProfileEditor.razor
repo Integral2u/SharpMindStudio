@@ -1,0 +1,215 @@
+﻿@using SharpMind.Studio.Core.Inference
+
+<div class="inference-editor">
+    <div class="editor-grid">
+        <div class="field">
+            <label class="field-label">Generator</label>
+            <select class="input" value="@Value.Generator" @onchange="e => Update(v => v with { Generator = Text(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                @foreach (var option in Generators)
+                {
+                    <option value="@option.Name">@option.Name</option>
+                }
+            </select>
+            <div class="small faint editor-source">@SourceLabel("Generator")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">KV cache</label>
+            <select class="input" value="@Value.Cache" @onchange="e => Update(v => v with { Cache = Text(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                @foreach (var option in Caches)
+                {
+                    <option value="@option.Name">@option.Name</option>
+                }
+            </select>
+            <div class="small faint editor-source">@SourceLabel("Cache")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Formatter</label>
+            <select class="input" value="@Value.Formatter" @onchange="e => Update(v => v with { Formatter = Text(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                @foreach (string formatter in Formatters)
+                {
+                    <option value="@formatter">@formatter</option>
+                }
+            </select>
+            <div class="small faint editor-source">@SourceLabel("Formatter")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Load mode</label>
+            <select class="input" value="@Value.LoadMode" @onchange="e => Update(v => v with { LoadMode = Text(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                <option value="Full">Full</option>
+                <option value="Streaming">Streaming</option>
+            </select>
+            <div class="small faint editor-source">@SourceLabel("LoadMode")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">CPU tier</label>
+            <select class="input" value="@Value.HardwareTier" @onchange="e => Update(v => v with { HardwareTier = Text(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                @foreach (string tier in HardwareTiers)
+                {
+                    <option value="@tier">@tier</option>
+                }
+            </select>
+            <div class="small faint editor-source">@SourceLabel("HardwareTier")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Parallel load degree</label>
+            <input class="input" type="number" min="0" value="@Value.MaxParallelLoadDegree"
+                   @onchange="e => Update(v => v with { MaxParallelLoadDegree = Integer(e) })" />
+            <div class="small faint editor-source">@SourceLabel("MaxParallelLoadDegree")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Parallel kernels</label>
+            <select class="input" value="@BoolValue(Value.UseParallelKernels)"
+                    @onchange="e => Update(v => v with { UseParallelKernels = Bool(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                <option value="true">On</option>
+                <option value="false">Off</option>
+            </select>
+            <div class="small faint editor-source">@SourceLabel("UseParallelKernels")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Temperature</label>
+            <input class="input" type="number" step="0.05" value="@Value.Temperature"
+                   @onchange="e => Update(v => v with { Temperature = Single(e) })" />
+            <div class="small faint editor-source">@SourceLabel("Temperature")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Top-K</label>
+            <input class="input" type="number" min="0" value="@Value.TopK"
+                   @onchange="e => Update(v => v with { TopK = Integer(e) })" />
+            <div class="small faint editor-source">@SourceLabel("TopK")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Top-P</label>
+            <input class="input" type="number" step="0.01" value="@Value.TopP"
+                   @onchange="e => Update(v => v with { TopP = Single(e) })" />
+            <div class="small faint editor-source">@SourceLabel("TopP")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Min-P</label>
+            <input class="input" type="number" step="0.01" value="@Value.MinP"
+                   @onchange="e => Update(v => v with { MinP = Single(e) })" />
+            <div class="small faint editor-source">@SourceLabel("MinP")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Seed</label>
+            <input class="input" type="number" value="@Value.Seed"
+                   @onchange="e => Update(v => v with { Seed = Integer(e) })" />
+            <div class="small faint editor-source">@SourceLabel("Seed")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Max new tokens</label>
+            <input class="input" type="number" min="1" value="@Value.MaxNewTokens"
+                   @onchange="e => Update(v => v with { MaxNewTokens = Integer(e) })" />
+            <div class="small faint editor-source">@SourceLabel("MaxNewTokens")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Max context</label>
+            <input class="input" type="number" min="64" value="@Value.MaxContextTokens"
+                   placeholder="Model context"
+                   @onchange="e => Update(v => v with { MaxContextTokens = Integer(e) })" />
+            <div class="small faint editor-source">@SourceLabel("MaxContextTokens")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Repetition penalty</label>
+            <input class="input" type="number" step="0.02" value="@Value.RepetitionPenalty"
+                   @onchange="e => Update(v => v with { RepetitionPenalty = Single(e) })" />
+            <div class="small faint editor-source">@SourceLabel("RepetitionPenalty")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Repetition window</label>
+            <input class="input" type="number" min="0" value="@Value.RepetitionWindow"
+                   @onchange="e => Update(v => v with { RepetitionWindow = Integer(e) })" />
+            <div class="small faint editor-source">@SourceLabel("RepetitionWindow")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Show thinking</label>
+            <select class="input" value="@BoolValue(Value.ShowThinking)"
+                    @onchange="e => Update(v => v with { ShowThinking = Bool(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                <option value="true">On</option>
+                <option value="false">Off</option>
+            </select>
+            <div class="small faint editor-source">@SourceLabel("ShowThinking")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Enable thinking</label>
+            <select class="input" value="@BoolValue(Value.EnableThinking)"
+                    @onchange="e => Update(v => v with { EnableThinking = Bool(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                <option value="true">On</option>
+                <option value="false">Off</option>
+            </select>
+            <div class="small faint editor-source">@SourceLabel("EnableThinking")</div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private static readonly string[] Formatters =
+        ["Auto", "Jinja", "ChatML", "Simple", "QuestionAnswer", "Alpaca", "Llama3", "Raw"];
+
+    private static readonly string[] HardwareTiers = ["Auto", "FMA", "AVX2", "SSE", "Scalar"];
+
+    [Parameter] public InferenceOverrides Value { get; set; } = new();
+    [Parameter] public EventCallback<InferenceOverrides> ValueChanged { get; set; }
+    [Parameter] public bool AllowInherit { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, string>? Sources { get; set; }
+    [Parameter] public IReadOnlyList<SharpMind.Studio.Core.Inference.GeneratorOption> Generators { get; set; } = [];
+    [Parameter] public IReadOnlyList<SharpMind.Studio.Core.Inference.CacheOption> Caches { get; set; } = [];
+
+    private Task Update(Func<InferenceOverrides, InferenceOverrides> change) =>
+        ValueChanged.InvokeAsync(change(Value));
+
+    private static string? Text(ChangeEventArgs args) =>
+        string.IsNullOrWhiteSpace(args.Value?.ToString()) ? null : args.Value!.ToString();
+
+    private static int? Integer(ChangeEventArgs args) =>
+        int.TryParse(args.Value?.ToString(), out int value) ? value : null;
+
+    private static float? Single(ChangeEventArgs args) =>
+        float.TryParse(args.Value?.ToString(), out float value) ? value : null;
+
+    private static bool? Bool(ChangeEventArgs args) =>
+        args.Value?.ToString() switch
+        {
+            "true" => true,
+            "false" => false,
+            _ => null,
+        };
+
+    private static string BoolValue(bool? value) => value switch
+    {
+        true => "true",
+        false => "false",
+        _ => "",
+    };
+
+    private string SourceLabel(string name)
+    {
+        if (Sources is null) return "";
+        return Sources.GetValueOrDefault(name) ?? "";
+    }
+}
+

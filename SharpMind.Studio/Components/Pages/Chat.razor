@@ -1,0 +1,414 @@
+﻿@page "/chat"
+@page "/chat/{ChatId}"
+@implements IDisposable
+@using SharpMind.Inference.Chat
+@using SharpMind.Studio.Services
+@inject StudioChatService ChatService
+@inject ModelCatalogService Catalog
+@inject MarkdownService Markdown
+@inject StudioWorkspaceService Workspace
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Chat - SharpMind Studio</PageTitle>
+
+<div class="chat-layout">
+    <aside class="panel chat-sidebar">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Sessions</div>
+                <h2>Chats</h2>
+            </div>
+            <button type="button" class="button" @onclick="BeginNewChat">New</button>
+        </div>
+        <div class="panel-body stack">
+            @if (_sessions.Count == 0)
+            {
+                <div class="empty">No saved chats yet.</div>
+            }
+            else
+            {
+                @foreach (var session in _sessions)
+                {
+                    <button type="button"
+                            class="chat-session @(ChatService.Document?.Id == session.Id ? "selected" : "")"
+                            @onclick="() => OpenSessionAsync(session.Id)">
+                        <span class="chat-session-name">@session.Name</span>
+                        <span class="small faint">@ShortModel(session.ModelPath) | @session.MessageCount messages</span>
+                        <span class="small faint">@session.UpdatedUtc.ToLocalTime().ToString("dd MMM HH:mm")</span>
+                    </button>
+                }
+            }
+        </div>
+    </aside>
+
+    <section class="panel chat-main">
+        @if (_startingNew || ChatService.Document is null)
+        {
+            <div class="panel-head">
+                <div>
+                    <div class="eyebrow">New conversation</div>
+                    <h2>Pick a model</h2>
+                </div>
+                <span class="faint small mono">local weights only</span>
+            </div>
+            <div class="panel-body stack">
+                @if (_loadingModels)
+                {
+                    <div class="row"><span class="spinner-ring"></span><span class="status-line">Scanning model folder...</span></div>
+                }
+                else if (_models.Count == 0)
+                {
+                    <div class="empty">No models found under @Workspace.ModelsFolder.</div>
+                }
+                else
+                {
+                    <div class="field">
+                        <label class="field-label" for="chat-model">Model</label>
+                        <select id="chat-model" class="input" @bind="_selectedModelPath">
+                            @foreach (var model in _models)
+                            {
+                                <option value="@model.Path" title="@model.Path">@model.DisplayName (@model.FileName) - @model.Family.DisplayName (@FileSize(model.SizeBytes))</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="chat-system">System prompt</label>
+                        <textarea id="chat-system" class="textarea" @bind="_newSystemPrompt"
+                                  placeholder="Optional instructions for this conversation"></textarea>
+                    </div>
+                    <div class="row">
+                        <button type="button" class="button primary" @onclick="StartNewChatAsync"
+                                disabled="@(ChatService.IsStreaming || string.IsNullOrWhiteSpace(_selectedModelPath))">
+                            Load model and start
+                        </button>
+                        @if (ChatService.IsStreaming || ChatService.Status.StartsWith("Loading", StringComparison.Ordinal))
+                        {
+                            <span class="spinner-ring"></span>
+                        }
+                        <span class="status-line">@ChatService.Status</span>
+                    </div>
+                    @if (ChatService.Error is not null)
+                    {
+                        <div class="error-line">@ChatService.Error</div>
+                    }
+                }
+            </div>
+        }
+        else
+        {
+            <div class="panel-head chat-head">
+                <div>
+                    <div class="eyebrow">@ChatService.Model?.Family.DisplayName | @ChatService.Model?.FileName</div>
+                    <h2>@ChatService.Document.Name</h2>
+                </div>
+                <div class="row">
+                    <button type="button" class="button" @onclick="ToggleOptions">
+                        @(_showOptions ? "Hide options" : "Options")
+                    </button>
+                    <button type="button" class="button" @onclick="BeginNewChat">New chat</button>
+                </div>
+            </div>
+
+            <div id="chat-transcript" class="chat-transcript">
+                @if (_messages.Count == 0)
+                {
+                    <div class="empty">Send the first message. The model stays on this machine.</div>
+                }
+                else
+                {
+                    @for (int i = 0; i < _messages.Count; i++)
+                    {
+                        ChatMessage message = _messages[i];
+                        bool streaming = ChatService.IsStreaming && i == _messages.Count - 1 && message.Role == ChatRole.Agent;
+                        <div class="chat-message @message.Role.ToString().ToLowerInvariant()">
+                            <div class="chat-message-meta">
+                                <span>@(message.Role == ChatRole.User ? "You" : "Model")</span>
+                                <span>@message.Timestamp.ToLocalTime().ToString("HH:mm")</span>
+                            </div>
+                            @if (message.Role == ChatRole.Agent)
+                            {
+                                @if (streaming)
+                                {
+                                    <div class="chat-text chat-streaming">@message.Content<span class="chat-caret">Ã¢â€“Â</span></div>
+                                }
+                                else
+                                {
+                                    <div class="chat-text markdown">@((MarkupString)Markdown.ToHtml(message.Content))</div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="chat-text">@message.Content</div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            @if (_showOptions)
+            {
+                <div class="chat-options">
+                    <div class="panel-head">
+                        <div>
+                            <div class="eyebrow">Session options</div>
+                            <h2>Overrides</h2>
+                        </div>
+                        <span class="faint small mono">empty fields inherit</span>
+                    </div>
+                    <div class="panel-body stack">
+                        <div class="field">
+                            <label class="field-label" for="session-system">System prompt</label>
+                            <textarea id="session-system" class="textarea" @bind="_systemPrompt"></textarea>
+                            <button type="button" class="button" @onclick="SaveSystemPromptAsync"
+                                    disabled="@(ChatService.IsStreaming || _messages.Any(m => m.Role != ChatRole.System))">
+                                Apply system prompt
+                            </button>
+                            @if (_systemPromptError is not null)
+                            {
+                                <div class="small faint">@_systemPromptError</div>
+                            }
+                        </div>
+                        <InferenceProfileEditor Value="_sessionDraft" ValueChanged="v => _sessionDraft = v"
+                                                AllowInherit="true"
+                                                Sources="ChatService.Resolved?.Sources"
+                                                Generators="Workspace.Builders.Generators"
+                                                Caches="Workspace.Builders.Caches" />
+                        <div class="row">
+                            <button type="button" class="button primary" @onclick="ApplyOptionsAsync"
+                                    disabled="@ChatService.IsStreaming">
+                                Apply options
+                            </button>
+                            <button type="button" class="button" @onclick="ResetOptions"
+                                    disabled="@ChatService.IsStreaming">
+                                Reset to inherited
+                            </button>
+                            <button type="button" class="button danger" @onclick="DeleteCurrentChatAsync"
+                                    disabled="@ChatService.IsStreaming">
+                                Delete chat
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="chat-composer">
+                <textarea id="chat-input" class="textarea" @bind="_input"
+                          placeholder="Message the model. Enter adds a line; use Send when ready."
+                          disabled="@ChatService.IsStreaming"></textarea>
+                <div class="chat-composer-actions">
+                    <span class="status-line">@ChatService.Status</span>
+                    @if (ChatService.IsStreaming)
+                    {
+                        <span class="spinner-ring"></span>
+                        <button type="button" class="button danger" @onclick="Stop">Stop</button>
+                    }
+                    <button type="button" class="button primary" @onclick="SendAsync"
+                            disabled="@(ChatService.IsStreaming || string.IsNullOrWhiteSpace(_input))">
+                        Send
+                    </button>
+                </div>
+                @if (ChatService.CacheWarning is not null)
+                {
+                    <div class="small faint">@ChatService.CacheWarning</div>
+                }
+                @if (ChatService.Error is not null)
+                {
+                    <div class="error-line">@ChatService.Error</div>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    [Parameter] public string? ChatId { get; set; }
+
+    private IReadOnlyList<ModelDescriptor> _models = [];
+    private IReadOnlyList<ChatSessionSummary> _sessions = [];
+    private IReadOnlyList<ChatMessage> _messages = [];
+    private string? _selectedModelPath;
+    private string _newSystemPrompt = "";
+    private string _systemPrompt = "";
+    private string _input = "";
+    private string? _systemPromptError;
+    private bool _startingNew = true;
+    private bool _loadingModels = true;
+    private bool _showOptions;
+    private bool _wasStreaming;
+    private bool _initialized;
+    private InferenceOverrides _sessionDraft = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        ChatService.Changed += OnChatChanged;
+        _sessions = ChatService.Sessions;
+
+        if (!string.IsNullOrWhiteSpace(ChatId))
+        {
+            await ChatService.OpenAsync(ChatId);
+            _ = RefreshModelsAsync();
+        }
+        else
+        {
+            _models = await Catalog.RefreshAsync();
+            _loadingModels = false;
+            _selectedModelPath = _models.FirstOrDefault()?.Path;
+        }
+
+        _startingNew = ChatService.Document is null;
+        SyncFromChat();
+        _wasStreaming = ChatService.IsStreaming;
+        _initialized = true;
+    }
+
+    private async Task RefreshModelsAsync()
+    {
+        try
+        {
+            _models = await Catalog.RefreshAsync();
+            if (_selectedModelPath is null) _selectedModelPath = _models.FirstOrDefault()?.Path;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch { }
+        finally { _loadingModels = false; }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!_initialized || string.IsNullOrWhiteSpace(ChatId)) return;
+        if (ChatService.Document?.Id.Equals(ChatId, StringComparison.OrdinalIgnoreCase) == true) return;
+
+        await ChatService.OpenAsync(ChatId);
+        SyncFromChat();
+    }
+
+    public void Dispose() => ChatService.Changed -= OnChatChanged;
+
+    private void OnChatChanged() => _ = InvokeAsync(async () =>
+    {
+        bool wasStreaming = _wasStreaming;
+        _wasStreaming = ChatService.IsStreaming;
+        SyncFromChat();
+        if (wasStreaming && !ChatService.IsStreaming)
+            _sessions = ChatService.Sessions;
+
+        try { await JS.InvokeVoidAsync("studioChat.scrollToBottom", "chat-transcript"); }
+        catch { }
+
+        StateHasChanged();
+    });
+
+    private void SyncFromChat()
+    {
+        _messages = ChatService.DisplayMessages;
+        if (ChatService.Document is not null)
+        {
+            _selectedModelPath = ChatService.Document.ModelPath;
+            _sessionDraft = ChatService.Document.Overrides;
+            _systemPrompt = ChatService.Document.SystemPrompt ?? "";
+            _startingNew = false;
+        }
+    }
+
+    private async Task StartNewChatAsync()
+    {
+        ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
+        if (model is null) return;
+
+        await ChatService.NewChatAsync(model, _newSystemPrompt);
+        if (ChatService.Document is not null)
+        {
+            _startingNew = false;
+            Nav.NavigateTo($"/chat/{ChatService.Document.Id}");
+        }
+        _sessions = ChatService.Sessions;
+        SyncFromChat();
+    }
+
+    private void BeginNewChat()
+    {
+        _startingNew = true;
+        _showOptions = false;
+        _newSystemPrompt = "";
+        _selectedModelPath = ChatService.Document?.ModelPath ?? _models.FirstOrDefault()?.Path;
+    }
+
+    private async Task OpenSessionAsync(string id)
+    {
+        await ChatService.OpenAsync(id);
+        _startingNew = false;
+        _showOptions = false;
+        SyncFromChat();
+        Nav.NavigateTo($"/chat/{id}");
+    }
+
+    private async Task SendAsync()
+    {
+        string text = _input;
+        if (string.IsNullOrWhiteSpace(text)) return;
+        _input = "";
+        await ChatService.SendAsync(text);
+        _sessions = ChatService.Sessions;
+    }
+
+    private void Stop() => ChatService.Stop();
+
+    private void ToggleOptions()
+    {
+        _showOptions = !_showOptions;
+        if (_showOptions) SyncFromChat();
+    }
+
+    private async Task ApplyOptionsAsync()
+    {
+        await ChatService.ApplyOptionsAsync(_sessionDraft);
+        SyncFromChat();
+    }
+
+    private void ResetOptions()
+    {
+        _sessionDraft = new InferenceOverrides();
+    }
+
+    private async Task SaveSystemPromptAsync()
+    {
+        bool applied = await ChatService.UpdateSystemPromptAsync(_systemPrompt);
+        _systemPromptError = applied
+            ? null
+            : "System prompt can only be changed before the first message. Start a new chat to change it.";
+        SyncFromChat();
+    }
+
+    private async Task DeleteCurrentChatAsync()
+    {
+        if (ChatService.Document is null) return;
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", $"Delete chat \"{ChatService.Document.Name}\"? This cannot be undone.");
+        if (!confirmed) return;
+
+        await ChatService.DeleteAsync(ChatService.Document.Id);
+        _sessions = ChatService.Sessions;
+        _startingNew = true;
+        Nav.NavigateTo("/chat");
+    }
+
+
+    private static string ShortModel(string path) =>
+        Path.GetFileNameWithoutExtension(path);
+
+    private static string FileSize(long bytes) =>
+        bytes >= 1024L * 1024 * 1024
+            ? $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
+            : $"{bytes / (1024.0 * 1024):F0} MB";
+}
+
+
+
+
+
+
+
+
+
+

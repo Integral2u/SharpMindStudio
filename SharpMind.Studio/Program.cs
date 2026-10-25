@@ -11,6 +11,11 @@ builder.Services.AddSingleton<StudioWorkspaceService>();
 builder.Services.AddSingleton<ThemeService>();
 builder.Services.AddSingleton<StudioActivityService>();
 builder.Services.AddSingleton<StudioCanaryService>();
+builder.Services.AddSingleton<ModelCatalogService>();
+builder.Services.AddSingleton<InferenceSettingsService>();
+builder.Services.AddSingleton<SharpMind.Studio.Core.Chat.StudioModelHost>();
+builder.Services.AddSingleton<MarkdownService>();
+builder.Services.AddScoped<StudioChatService>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -31,6 +36,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+
 
 
 

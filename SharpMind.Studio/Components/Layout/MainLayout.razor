@@ -30,8 +30,11 @@
                     <span class="spinner-ring" title="A run is active"></span>
                 }
             </NavLink>
+            <NavLink class="nav-link" href="chat">
+                <span class="nav-index">02</span> Chat
+            </NavLink>
             <NavLink class="nav-link" href="settings">
-                <span class="nav-index">02</span> Settings
+                <span class="nav-index">03</span> Settings
             </NavLink>
         </nav>
 
@@ -90,6 +93,7 @@
 
     private void OnActivityChanged() => _ = InvokeAsync(StateHasChanged);
 }
+
 
 
 

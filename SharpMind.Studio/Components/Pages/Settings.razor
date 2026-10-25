@@ -1,9 +1,11 @@
 ﻿@page "/settings"
 @using Microsoft.AspNetCore.Components
-@using SharpMind.Studio.Core.Jobs
+@using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Services
 @inject ThemeService Theme
 @inject StudioWorkspaceService Workspace
+@inject InferenceSettingsService Inference
+@inject ModelCatalogService Catalog
 
 <PageTitle>Settings - SharpMind Studio</PageTitle>
 
@@ -11,184 +13,298 @@
     <div class="hero-copy">
         <div class="eyebrow">Settings</div>
         <h1>Make it yours.</h1>
-        <p>Theme is stored beside the Studio project and applies to every window on this machine.</p>
+        <p>System defaults flow through model families and models into each chat session. Empty overrides inherit.</p>
     </div>
     <div class="hero-mark">local preferences<br />no cloud, no account</div>
 </div>
 
-<section class="panel">
-    <div class="panel-head">
-        <div>
-            <div class="eyebrow">Inference defaults</div>
-            <h2>Engine and cache</h2>
+<div class="settings-tabs">
+    <a class="settings-tab @(_tab == "system" ? "selected" : "")" href="/settings?tab=system" data-enhance-nav="false">System</a>
+    <a class="settings-tab @(_tab == "families" ? "selected" : "")" href="/settings?tab=families" data-enhance-nav="false">Families</a>
+    <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/settings?tab=models" data-enhance-nav="false">Models</a>
+    <a class="settings-tab @(_tab == "appearance" ? "selected" : "")" href="/settings?tab=appearance" data-enhance-nav="false">Appearance</a>
+</div>
+
+@if (_tab == "system")
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Inference</div>
+                <h2>System defaults</h2>
+            </div>
+            <span class="faint small mono">root of every chat</span>
         </div>
-        <span class="faint small mono">system defaults</span>
-    </div>
-    <div class="panel-body stack">
-        <form method="get" action="/settings" data-enhance="false" class="stack">
-            <input type="hidden" name="theme" value="@_theme" />
-            @if (_theme == "custom")
-            {
-                <input type="hidden" name="color" value="@_customColor" />
-            }
-
-            <div class="field">
-                <label class="field-label" for="default-generator">Generator</label>
-                <select id="default-generator" class="input" name="generator">
-                    @foreach (var option in Workspace.Builders.Generators)
-                    {
-                        <option value="@option.Name" selected="@(option.Name == _defaultGenerator)">
-                            @option.Name@(option.IsPlugin ? " (plugin)" : "")
-                        </option>
-                    }
-                </select>
-            </div>
-
-            <div class="field">
-                <label class="field-label" for="default-cache">KV cache</label>
-                <select id="default-cache" class="input" name="cache">
-                    @foreach (var option in Workspace.Builders.Caches)
-                    {
-                        <option value="@option.Name" selected="@(option.Name == _defaultCache)">
-                            @option.Name@(option.IsPlugin ? " (plugin)" : "")
-                        </option>
-                    }
-                </select>
-            </div>
-
+        <div class="panel-body stack">
+            <InferenceProfileEditor Value="_system" ValueChanged="v => _system = v"
+                                    Generators="Workspace.Builders.Generators"
+                                    Caches="Workspace.Builders.Caches" />
             <div class="row">
-                <button class="button" type="submit">Save inference defaults</button>
-                <span class="small faint mono">reflected from built-ins and the plugins folder</span>
+                <button type="button" class="button primary" @onclick="SaveSystem">Save system defaults</button>
+                <span class="status-line">@_status</span>
             </div>
-        </form>
-
-        <p class="small muted">
-            Canary and tool runs use these system defaults. Model overrides and per-session overrides
-            will layer above them when Chat lands.
-        </p>
-    </div>
-</section>
-
-<section class="panel">
-    <div class="panel-head">
-        <div>
-            <div class="eyebrow">Appearance</div>
-            <h2>Accent colour</h2>
         </div>
-        <span class="faint small mono">@ThemeService.Label(_theme)</span>
-    </div>
-    <div class="panel-body stack">
-        <div class="theme-grid">
-            @foreach (string theme in new[] { "green", "blue", "purple", "red" })
+    </section>
+}
+else if (_tab == "families")
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Inference</div>
+                <h2>Model families</h2>
+            </div>
+            <span class="faint small mono">detected from metadata</span>
+        </div>
+        <div class="panel-body stack">
+            <div class="row">
+                <select class="input" style="max-width: 22rem;" @bind="_selectedFamilyId" @bind:after="LoadFamilyDraft">
+                    @foreach (var family in _families)
+                    {
+                        <option value="@family.Id">@family.DisplayName (@family.Id)</option>
+                    }
+                </select>
+                <button type="button" class="button danger" @onclick="DeleteFamily" disabled="@(_selectedFamilyId is null)">
+                    Clear family overrides
+                </button>
+                <span class="status-line">@_status</span>
+            </div>
+
+            @if (_selectedFamilyId is not null)
             {
-                <a class="theme-option @(_theme == theme ? "selected" : "")"
-                   href="/settings?theme=@theme"
-                   data-enhance-nav="false">
-                    <span class="theme-swatch @theme"></span>
-                    <span>@ThemeService.Label(theme)</span>
-                </a>
-            }
-
-            <a class="theme-option theme-option-custom @(_theme == "custom" ? "selected" : "")"
-               href="/settings?theme=custom"
-               data-enhance-nav="false">
-                <span class="theme-swatch custom" style="background:@_customColor"></span>
-                <span>Custom</span>
-            </a>
-        </div>
-
-        <form method="get" action="/settings" data-enhance="false">
-            <input type="hidden" name="theme" value="custom" />
-            <div class="custom-color-row">
-                <div class="field">
-                    <label class="field-label" for="custom-color">Custom accent</label>
-                    <input id="custom-color" class="color-input" type="color"
-                           name="color" value="@_customColor" title="Custom accent" />
+                <InferenceProfileEditor Value="_familyDraft" ValueChanged="v => _familyDraft = v"
+                                        AllowInherit="true"
+                                        Sources="_familySources"
+                                        Generators="Workspace.Builders.Generators"
+                                        Caches="Workspace.Builders.Caches" />
+                <div class="row">
+                    <button type="button" class="button primary" @onclick="SaveFamily">Save family overrides</button>
+                    <span class="small faint">Unset fields inherit from System.</span>
                 </div>
-                <button class="button" type="submit">Apply custom</button>
-            </div>
-        </form>
-
-        <div class="status-line">@_status</div>
-        <div class="row" style="margin-top: .4rem;">
-            <a class="button" href="/" data-enhance-nav="false">Back to dashboard</a>
-            <span class="small faint mono">changes are saved to settings.json</span>
+            }
         </div>
-    </div>
-</section>
+    </section>
+}
+else if (_tab == "models")
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Inference</div>
+                <h2>Models</h2>
+            </div>
+            <span class="faint small mono">@_models.Count detected</span>
+        </div>
+        <div class="panel-body stack">
+            <div class="row">
+                <select class="input" style="max-width: 30rem;" @bind="_selectedModelPath" @bind:after="LoadModelDraft">
+                    @foreach (var model in _models)
+                    {
+                        <option value="@model.Path" title="@model.Path">@model.FileName — @model.DisplayName (@model.Family.DisplayName)</option>
+                    }
+                </select>
+                <button type="button" class="button" @onclick="RefreshModels">Rescan</button>
+                <button type="button" class="button danger" @onclick="DeleteModel" disabled="@(_selectedModelPath is null)">
+                    Clear model overrides
+                </button>
+                <span class="status-line">@_status</span>
+            </div>
+
+            @if (_selectedModelPath is not null)
+            {
+                <div class="small faint mono">@_selectedModelPath</div>
+                <InferenceProfileEditor Value="_modelDraft" ValueChanged="v => _modelDraft = v"
+                                        AllowInherit="true"
+                                        Sources="_modelSources"
+                                        Generators="Workspace.Builders.Generators"
+                                        Caches="Workspace.Builders.Caches" />
+                <div class="row">
+                    <button type="button" class="button primary" @onclick="SaveModel">Save model overrides</button>
+                    <span class="small faint">Unset fields inherit from the model family, then System.</span>
+                </div>
+            }
+        </div>
+    </section>
+}
+else
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Appearance</div>
+                <h2>Accent colour</h2>
+            </div>
+            <span class="faint small mono">@ThemeService.Label(Theme.Theme)</span>
+        </div>
+        <div class="panel-body stack">
+            <div class="theme-grid">
+                @foreach (string theme in new[] { "green", "blue", "purple", "red" })
+                {
+                    <a class="theme-option @(Theme.Theme == theme ? "selected" : "")"
+                       href="/settings?tab=appearance&theme=@theme"
+                       data-enhance-nav="false">
+                        <span class="theme-swatch @theme"></span>
+                        <span>@ThemeService.Label(theme)</span>
+                    </a>
+                }
+
+                <a class="theme-option theme-option-custom @(Theme.Theme == "custom" ? "selected" : "")"
+                   href="/settings?tab=appearance&theme=custom"
+                   data-enhance-nav="false">
+                    <span class="theme-swatch custom" style="background:@Theme.CustomColor"></span>
+                    <span>Custom</span>
+                </a>
+            </div>
+
+            <form method="get" action="/settings" data-enhance="false">
+                <input type="hidden" name="tab" value="appearance" />
+                <input type="hidden" name="theme" value="custom" />
+                <div class="custom-color-row">
+                    <div class="field">
+                        <label class="field-label" for="custom-color">Custom accent</label>
+                        <input id="custom-color" class="color-input" type="color"
+                               name="color" value="@Theme.CustomColor" title="Custom accent" />
+                    </div>
+                    <button class="button" type="submit">Apply custom</button>
+                </div>
+            </form>
+
+            <div class="row" style="margin-top: .4rem;">
+                <a class="button" href="/" data-enhance-nav="false">Back to dashboard</a>
+                <span class="small faint mono">changes are saved locally</span>
+            </div>
+        </div>
+    </section>
+}
 
 @code {
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? TabQuery { get; set; }
+
     [SupplyParameterFromQuery(Name = "theme")]
     public string? ThemeQuery { get; set; }
 
     [SupplyParameterFromQuery(Name = "color")]
     public string? ColorQuery { get; set; }
 
-    [SupplyParameterFromQuery(Name = "generator")]
-    public string? GeneratorQuery { get; set; }
-
-    [SupplyParameterFromQuery(Name = "cache")]
-    public string? CacheQuery { get; set; }
-
-    private string _theme = ThemeService.DefaultTheme;
-    private string _customColor = ThemeService.DefaultCustomColor;
-    private string _status = "Choose an accent colour.";
-    private string _defaultGenerator = ThemeService.DefaultGeneratorName;
-    private string _defaultCache = ThemeService.DefaultCacheName;
+    private string _tab = "system";
+    private string _status = "";
     private string? _lastApplied;
+    private InferenceOverrides _system = new();
+    private IReadOnlyList<ModelFamily> _families = [];
+    private IReadOnlyList<ModelDescriptor> _models = [];
+    private string? _selectedFamilyId;
+    private string? _selectedModelPath;
+    private InferenceOverrides _familyDraft = new();
+    private InferenceOverrides _modelDraft = new();
+    private IReadOnlyDictionary<string, string>? _familySources;
+    private IReadOnlyDictionary<string, string>? _modelSources;
 
     protected override async Task OnParametersSetAsync()
     {
-        _theme = Theme.Theme;
-        _customColor = Theme.CustomColor;
-        _defaultGenerator = Theme.DefaultGenerator;
-        _defaultCache = Theme.DefaultCache;
+        _tab = TabQuery is "families" or "models" or "appearance" ? TabQuery : "system";
+        _system = Inference.System;
+        await LoadCatalogAsync();
 
         if (!string.IsNullOrWhiteSpace(ThemeQuery))
         {
             string? normalized = ThemeService.AvailableThemes.FirstOrDefault(
                 value => value.Equals(ThemeQuery, StringComparison.OrdinalIgnoreCase));
-            if (normalized is null)
-            {
-                _status = $"Unknown theme '{ThemeQuery}'.";
-            }
-            else
+            if (normalized is not null)
             {
                 string? custom = ThemeService.NormalizeColor(ColorQuery);
                 string key = $"{normalized}|{custom}";
                 if (key != _lastApplied)
                 {
-                    if (normalized == "custom" && custom is not null)
-                        _customColor = custom;
-
-                    await Theme.SetThemeAsync(normalized, _customColor);
-                    _theme = Theme.Theme;
-                    _customColor = Theme.CustomColor;
+                    await Theme.SetThemeAsync(normalized, custom ?? Theme.CustomColor);
                     _lastApplied = key;
-                    _status = $"{ThemeService.Label(_theme)} applied.";
+                    _status = $"{ThemeService.Label(Theme.Theme)} applied.";
                 }
             }
         }
 
-        if (string.IsNullOrWhiteSpace(GeneratorQuery) && string.IsNullOrWhiteSpace(CacheQuery))
-            return;
+        if (_selectedFamilyId is null || _families.All(f => f.Id != _selectedFamilyId))
+        {
+            _selectedFamilyId = _families.FirstOrDefault()?.Id;
+            LoadFamilyDraft();
+        }
 
-        var builders = Workspace.Builders;
-        string generator = builders.Generators.Any(g =>
-            g.Name.Equals(GeneratorQuery, StringComparison.OrdinalIgnoreCase))
-            ? GeneratorQuery!
-            : Theme.DefaultGenerator;
-        string cache = builders.Caches.Any(c =>
-            c.Name.Equals(CacheQuery, StringComparison.OrdinalIgnoreCase))
-            ? CacheQuery!
-            : Theme.DefaultCache;
+        if (_selectedModelPath is null || _models.All(m => m.Path != _selectedModelPath))
+        {
+            _selectedModelPath = _models.FirstOrDefault()?.Path;
+            LoadModelDraft();
+        }
+    }
 
-        await Theme.SetInferenceDefaultsAsync(generator, cache);
-        _defaultGenerator = Theme.DefaultGenerator;
-        _defaultCache = Theme.DefaultCache;
-        _status = $"Inference defaults: {_defaultGenerator} / {_defaultCache}.";
+    private async Task LoadCatalogAsync()
+    {
+        _models = await Catalog.RefreshAsync();
+        var families = Catalog.Families.ToList();
+        foreach (string key in Inference.Families.Keys)
+        {
+            if (families.All(family => family.Id != key))
+                families.Add(new ModelFamily(key, key));
+        }
+        _families = [.. families.OrderBy(family => family.DisplayName, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private async Task RefreshModels()
+    {
+        await Catalog.RefreshAsync(force: true);
+        await LoadCatalogAsync();
+        _status = $"Found {_models.Count} model(s).";
+    }
+
+    private void LoadFamilyDraft()
+    {
+        if (_selectedFamilyId is null) return;
+        _familyDraft = Inference.FamilyOverrides(_selectedFamilyId) ?? new InferenceOverrides();
+        _familySources = Inference.Resolve(_selectedFamilyId, null, null).Sources;
+    }
+
+    private void LoadModelDraft()
+    {
+        if (_selectedModelPath is null) return;
+        ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
+        _modelDraft = Inference.ModelOverrides(_selectedModelPath) ?? new InferenceOverrides();
+        _modelSources = Inference.Resolve(model?.Family.Id, _selectedModelPath, null).Sources;
+    }
+
+    private void SaveSystem()
+    {
+        Inference.SetSystem(_system);
+        _status = "System defaults saved.";
+    }
+
+    private void SaveFamily()
+    {
+        if (_selectedFamilyId is null) return;
+        Inference.SetFamily(_selectedFamilyId, _familyDraft);
+        _status = "Family overrides saved.";
+    }
+
+    private void DeleteFamily()
+    {
+        if (_selectedFamilyId is null) return;
+        Inference.DeleteFamily(_selectedFamilyId);
+        _familyDraft = new InferenceOverrides();
+        _familySources = Inference.Resolve(_selectedFamilyId, null, null).Sources;
+        _status = "Family overrides cleared.";
+    }
+
+    private void SaveModel()
+    {
+        if (_selectedModelPath is null) return;
+        Inference.SetModel(_selectedModelPath, _modelDraft);
+        _status = "Model overrides saved.";
+    }
+
+    private void DeleteModel()
+    {
+        if (_selectedModelPath is null) return;
+        Inference.DeleteModel(_selectedModelPath);
+        _modelDraft = new InferenceOverrides();
+        _status = "Model overrides cleared.";
     }
 }
-
-
 

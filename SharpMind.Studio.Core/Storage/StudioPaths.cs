@@ -1,4 +1,4 @@
-namespace SharpMind.Studio.Core.Storage;
+﻿namespace SharpMind.Studio.Core.Storage;
 
 /// <summary>
 /// The same user-visible tree the CUI uses, so models, corpora and training
@@ -29,6 +29,7 @@ public static class StudioPaths
     public static string ChatSessions => Path.Combine(Root, "Chat Sessions");
     public static string Projects => Path.Combine(Root, "Studio");
     public static string SettingsFile => Path.Combine(Projects, "settings.json");
+    public static string InferenceFile => Path.Combine(Projects, "inference.json");
 
     public static void EnsureCreated()
     {
@@ -48,3 +49,4 @@ public static class StudioPaths
             : profile;
     }
 }
+
