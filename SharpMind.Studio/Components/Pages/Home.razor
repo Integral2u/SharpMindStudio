@@ -1,4 +1,4 @@
-﻿@page "/"
+﻿@page "/test"
 @using Microsoft.Extensions.Options
 @using SharpMind.Studio.Core.Jobs
 @using SharpMind.Studio.Core.Projects
@@ -12,7 +12,9 @@
 @inject IOptions<StudioOptions> Options
 @inject IJSRuntime JS
 
-<PageTitle>SharpMind Studio</PageTitle>
+<PageTitle>Test - SharpMind Studio</PageTitle>
+
+<div style="margin-bottom: 1rem;"><a class="back-link" href="/">&larr; home</a></div>
 
 <section class="hero">
     <div class="hero-copy">
@@ -534,6 +536,7 @@
         _ => "n-a",
     };
 }
+
 
 
 

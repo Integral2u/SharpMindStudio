@@ -127,11 +127,24 @@ public partial class MainWindow : Window
     {
         if (_balloonShown || _tray is null) return;
         _balloonShown = true;
-        _tray.ShowBalloonTip(
-            2500,
-            "SharpMind Studio",
-            "Closing the window keeps Studio running here. Double-click to reopen.",
-            WinForms.ToolTipIcon.Info);
+
+        string ignoreFile = Path.Combine(StudioPaths.Projects, "tray-hint-ignored");
+        if (File.Exists(ignoreFile)) return;
+
+        var hint = new TrayHintWindow();
+        hint.Closed += (_, _) =>
+        {
+            if (!hint.IgnoreRequested) return;
+            try
+            {
+                Directory.CreateDirectory(StudioPaths.Projects);
+                File.WriteAllText(ignoreFile, DateTimeOffset.UtcNow.ToString("O"));
+            }
+            catch
+            {
+            }
+        };
+        hint.Show();
     }
 
     private void BeginExit()
@@ -234,6 +247,7 @@ public partial class MainWindow : Window
         Top = work.Top + (work.Height - Height) / 2;
     }
 }
+
 
 
 

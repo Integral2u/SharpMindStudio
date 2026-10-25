@@ -48,7 +48,15 @@ public sealed class StudioChatService : IAsyncDisposable
     public string Status => _status;
     public string? Error => _error;
     public string? CacheWarning => _cacheWarning;
+    public string? PendingPrompt { get; set; }
     public IReadOnlyList<ChatSessionSummary> Sessions => _store.List();
+
+    public string? TakePendingPrompt()
+    {
+        string? prompt = PendingPrompt;
+        PendingPrompt = null;
+        return prompt;
+    }
     public IReadOnlyList<ChatMessage> DisplayMessages => [.. _document?.Messages
         .Where(message => message.Role != ChatRole.System) ?? []];
 
@@ -474,6 +482,7 @@ public sealed class StudioChatService : IAsyncDisposable
     }
     private void Notify() => Changed?.Invoke();
 }
+
 
 
 

@@ -1,4 +1,4 @@
-.chat-layout {
+﻿.chat-layout {
     display: grid;
     grid-template-columns: 270px minmax(0, 1fr);
     gap: 1rem;
@@ -267,3 +267,135 @@
         max-height: none;
     }
 }
+
+.welcome {
+    width: min(64rem, 100%);
+    margin: 4vh auto 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.35rem;
+}
+
+.welcome-head h1 {
+    margin-top: .45rem;
+    font-size: clamp(2rem, 4vw, 3rem);
+    white-space: normal;
+}
+
+.welcome-head p {
+    max-width: 52ch;
+    margin-top: .55rem;
+    color: var(--muted);
+}
+
+.welcome-compose {
+    display: flex;
+    align-items: stretch;
+    gap: .75rem;
+}
+
+.welcome-prompt {
+    flex: 1;
+    min-height: 7.5rem;
+    padding: 1rem;
+    border: 1px solid var(--line-strong);
+    border-radius: .8rem;
+    background: rgba(18, 26, 36, .88);
+    color: var(--text);
+    font: inherit;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+}
+
+.welcome-prompt:focus {
+    border-color: rgba(var(--accent-rgb), .55);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .08);
+}
+
+.welcome-send {
+    min-width: 7.5rem;
+    align-self: stretch;
+}
+
+.welcome-modes {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .55rem;
+}
+
+.welcome-mode {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    padding: .75rem .8rem;
+    border: 1px solid var(--line);
+    border-radius: .6rem;
+    background: rgba(15, 22, 32, .55);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.welcome-mode:hover:not(:disabled) {
+    border-color: var(--line-strong);
+    background: rgba(var(--accent-rgb), .06);
+}
+
+.welcome-mode.selected {
+    border-color: rgba(var(--accent-rgb), .55);
+    background: rgba(var(--accent-rgb), .1);
+}
+
+.welcome-mode:disabled {
+    opacity: .42;
+    cursor: default;
+}
+
+.welcome-mode-name {
+    font-weight: 650;
+}
+
+.welcome-mode-hint {
+    color: var(--muted);
+    font-size: .7rem;
+    line-height: 1.35;
+}
+
+.welcome-controls {
+    display: grid;
+    grid-template-columns: minmax(14rem, 1.8fr) minmax(9rem, .7fr) minmax(13rem, 1fr);
+    gap: .75rem;
+    align-items: end;
+}
+
+.welcome-model-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem;
+    min-height: 2.45rem;
+    padding: .55rem .7rem;
+    border: 1px solid var(--line);
+    border-radius: .55rem;
+    background: rgba(15, 22, 32, .5);
+}
+
+.status.unknown::before {
+    background: var(--warn);
+}
+
+@media (max-width: 780px) {
+    .welcome-compose {
+        flex-direction: column;
+    }
+
+    .welcome-modes {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .welcome-controls {
+        grid-template-columns: 1fr;
+    }
+}
+

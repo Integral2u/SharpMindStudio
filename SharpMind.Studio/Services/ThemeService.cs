@@ -11,6 +11,7 @@ public sealed class StudioSettings
     public string CustomColor { get; set; } = ThemeService.DefaultCustomColor;
     public string DefaultGenerator { get; set; } = ThemeService.DefaultGeneratorName;
     public string DefaultCache { get; set; } = ThemeService.DefaultCacheName;
+    public string? LastChatModel { get; set; }
 }
 
 /// <summary>
@@ -37,7 +38,7 @@ public sealed class ThemeService
     public ThemeService()
     {
         StudioPaths.EnsureCreated();
-        (Theme, CustomColor, DefaultGenerator, DefaultCache) = LoadSettings();
+        (Theme, CustomColor, DefaultGenerator, DefaultCache, LastChatModel) = LoadSettings();
     }
 
     public event Action? Changed;
@@ -45,6 +46,7 @@ public sealed class ThemeService
     public string CustomColor { get; private set; }
     public string DefaultGenerator { get; private set; }
     public string DefaultCache { get; private set; }
+    public string? LastChatModel { get; private set; }
     // --accent is declared on :root in app.css, so overriding only
     // --accent-rgb on .app-shell would leave the inherited, already-computed
     // --accent at the default green. Set both on the themed element.
@@ -74,6 +76,7 @@ public sealed class ThemeService
                 CustomColor = color,
                 DefaultGenerator = DefaultGenerator,
                 DefaultCache = DefaultCache,
+                LastChatModel = LastChatModel,
             };
             await File.WriteAllTextAsync(
                 StudioPaths.SettingsFile,
@@ -101,6 +104,13 @@ public sealed class ThemeService
         Changed?.Invoke();
     }
 
+    public async Task SetLastChatModelAsync(string? modelPath, CancellationToken cancellationToken = default)
+    {
+        LastChatModel = string.IsNullOrWhiteSpace(modelPath) ? null : modelPath.Trim();
+        await SaveSettingsAsync(cancellationToken);
+        Changed?.Invoke();
+    }
+
     private async Task SaveSettingsAsync(CancellationToken cancellationToken)
     {
         try
@@ -111,6 +121,7 @@ public sealed class ThemeService
                 CustomColor = CustomColor,
                 DefaultGenerator = DefaultGenerator,
                 DefaultCache = DefaultCache,
+                LastChatModel = LastChatModel,
             };
             await File.WriteAllTextAsync(
                 StudioPaths.SettingsFile,
@@ -136,12 +147,12 @@ public sealed class ThemeService
         return text.ToLowerInvariant();
     }
 
-    private static (string Theme, string CustomColor, string Generator, string Cache) LoadSettings()
+    private static (string Theme, string CustomColor, string Generator, string Cache, string? LastChatModel) LoadSettings()
     {
         try
         {
             if (!File.Exists(StudioPaths.SettingsFile))
-                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName);
+                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null);
 
             var settings = JsonSerializer.Deserialize<StudioSettings>(
                 File.ReadAllText(StudioPaths.SettingsFile), StudioJson.File);
@@ -154,11 +165,11 @@ public sealed class ThemeService
             string cache = string.IsNullOrWhiteSpace(settings?.DefaultCache)
                 ? DefaultCacheName
                 : settings!.DefaultCache!;
-            return (theme, color, generator, cache);
+            return (theme, color, generator, cache, string.IsNullOrWhiteSpace(settings?.LastChatModel) ? null : settings!.LastChatModel);
         }
         catch
         {
-            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName);
+            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null);
         }
     }
 
@@ -177,6 +188,11 @@ public sealed class ThemeService
         return $"{r}, {g}, {b}";
     }
 }
+
+
+
+
+
 
 
 

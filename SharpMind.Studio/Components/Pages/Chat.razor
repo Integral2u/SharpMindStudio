@@ -7,40 +7,11 @@
 @inject ModelCatalogService Catalog
 @inject MarkdownService Markdown
 @inject StudioWorkspaceService Workspace
+@inject ThemeService Theme
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
 <PageTitle>Chat - SharpMind Studio</PageTitle>
-
-<div class="chat-layout">
-    <aside class="panel chat-sidebar">
-        <div class="panel-head">
-            <div>
-                <div class="eyebrow">Sessions</div>
-                <h2>Chats</h2>
-            </div>
-            <button type="button" class="button" @onclick="BeginNewChat">New</button>
-        </div>
-        <div class="panel-body stack">
-            @if (_sessions.Count == 0)
-            {
-                <div class="empty">No saved chats yet.</div>
-            }
-            else
-            {
-                @foreach (var session in _sessions)
-                {
-                    <button type="button"
-                            class="chat-session @(ChatService.Document?.Id == session.Id ? "selected" : "")"
-                            @onclick="() => OpenSessionAsync(session.Id)">
-                        <span class="chat-session-name">@session.Name</span>
-                        <span class="small faint">@ShortModel(session.ModelPath) | @session.MessageCount messages</span>
-                        <span class="small faint">@session.UpdatedUtc.ToLocalTime().ToString("dd MMM HH:mm")</span>
-                    </button>
-                }
-            }
-        </div>
-    </aside>
 
     <section class="panel chat-main">
         @if (_startingNew || ChatService.Document is null)
@@ -130,7 +101,7 @@
                             {
                                 @if (streaming)
                                 {
-                                    <div class="chat-text chat-streaming">@message.Content<span class="chat-caret">Ã¢â€“Â</span></div>
+                                    <div class="chat-text chat-streaming">@message.Content<span class="chat-caret">&#9611;</span></div>
                                 }
                                 else
                                 {
@@ -219,13 +190,11 @@
             </div>
         }
     </section>
-</div>
 
 @code {
     [Parameter] public string? ChatId { get; set; }
 
     private IReadOnlyList<ModelDescriptor> _models = [];
-    private IReadOnlyList<ChatSessionSummary> _sessions = [];
     private IReadOnlyList<ChatMessage> _messages = [];
     private string? _selectedModelPath;
     private string _newSystemPrompt = "";
@@ -242,7 +211,6 @@
     protected override async Task OnInitializedAsync()
     {
         ChatService.Changed += OnChatChanged;
-        _sessions = ChatService.Sessions;
 
         if (!string.IsNullOrWhiteSpace(ChatId))
         {
@@ -260,6 +228,9 @@
         SyncFromChat();
         _wasStreaming = ChatService.IsStreaming;
         _initialized = true;
+
+        if (ChatService.TakePendingPrompt() is { } pending)
+            _ = InvokeAsync(async () => await ChatService.SendAsync(pending));
     }
 
     private async Task RefreshModelsAsync()
@@ -291,8 +262,7 @@
         _wasStreaming = ChatService.IsStreaming;
         SyncFromChat();
         if (wasStreaming && !ChatService.IsStreaming)
-            _sessions = ChatService.Sessions;
-
+    
         try { await JS.InvokeVoidAsync("studioChat.scrollToBottom", "chat-transcript"); }
         catch { }
 
@@ -316,13 +286,13 @@
         ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
         if (model is null) return;
 
+        await Theme.SetLastChatModelAsync(model.Path);
         await ChatService.NewChatAsync(model, _newSystemPrompt);
         if (ChatService.Document is not null)
         {
             _startingNew = false;
             Nav.NavigateTo($"/chat/{ChatService.Document.Id}");
         }
-        _sessions = ChatService.Sessions;
         SyncFromChat();
     }
 
@@ -334,14 +304,6 @@
         _selectedModelPath = ChatService.Document?.ModelPath ?? _models.FirstOrDefault()?.Path;
     }
 
-    private async Task OpenSessionAsync(string id)
-    {
-        await ChatService.OpenAsync(id);
-        _startingNew = false;
-        _showOptions = false;
-        SyncFromChat();
-        Nav.NavigateTo($"/chat/{id}");
-    }
 
     private async Task SendAsync()
     {
@@ -349,7 +311,6 @@
         if (string.IsNullOrWhiteSpace(text)) return;
         _input = "";
         await ChatService.SendAsync(text);
-        _sessions = ChatService.Sessions;
     }
 
     private void Stop() => ChatService.Stop();
@@ -388,20 +349,21 @@
         if (!confirmed) return;
 
         await ChatService.DeleteAsync(ChatService.Document.Id);
-        _sessions = ChatService.Sessions;
         _startingNew = true;
         Nav.NavigateTo("/chat");
     }
 
 
-    private static string ShortModel(string path) =>
-        Path.GetFileNameWithoutExtension(path);
 
     private static string FileSize(long bytes) =>
         bytes >= 1024L * 1024 * 1024
             ? $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
             : $"{bytes / (1024.0 * 1024):F0} MB";
 }
+
+
+
+
 
 
 

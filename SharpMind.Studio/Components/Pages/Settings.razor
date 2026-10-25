@@ -19,11 +19,10 @@
 </div>
 
 <div class="settings-tabs">
+    <a class="settings-tab @(_tab == "appearance" ? "selected" : "")" href="/settings?tab=appearance" data-enhance-nav="false">Appearance</a>
     <a class="settings-tab @(_tab == "system" ? "selected" : "")" href="/settings?tab=system" data-enhance-nav="false">System</a>
     <a class="settings-tab @(_tab == "families" ? "selected" : "")" href="/settings?tab=families" data-enhance-nav="false">Families</a>
-    <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/settings?tab=models" data-enhance-nav="false">Models</a>
-    <a class="settings-tab @(_tab == "appearance" ? "selected" : "")" href="/settings?tab=appearance" data-enhance-nav="false">Appearance</a>
-</div>
+    <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/settings?tab=models" data-enhance-nav="false">Models</a></div>
 
 @if (_tab == "system")
 {
@@ -36,6 +35,17 @@
             <span class="faint small mono">root of every chat</span>
         </div>
         <div class="panel-body stack">
+            <div class="field">
+                <label class="field-label" for="default-chat-model">Default chat model</label>
+                <select id="default-chat-model" class="input" @bind="_defaultModelPath" @bind:after="SaveDefaultModel">
+                    @foreach (var model in _models)
+                    {
+                        <option value="@model.Path">@model.FileName - @model.DisplayName (@model.Family.DisplayName)</option>
+                    }
+                </select>
+                <div class="small faint">Used by the welcome screen until you choose another model there.</div>
+            </div>
+
             <InferenceProfileEditor Value="_system" ValueChanged="v => _system = v"
                                     Generators="Workspace.Builders.Generators"
                                     Caches="Workspace.Builders.Caches" />
@@ -170,7 +180,7 @@ else
             </form>
 
             <div class="row" style="margin-top: .4rem;">
-                <a class="button" href="/" data-enhance-nav="false">Back to dashboard</a>
+                <a class="button" href="/test" data-enhance-nav="false">Back to dashboard</a>
                 <span class="small faint mono">changes are saved locally</span>
             </div>
         </div>
@@ -187,8 +197,9 @@ else
     [SupplyParameterFromQuery(Name = "color")]
     public string? ColorQuery { get; set; }
 
-    private string _tab = "system";
+    private string _tab = "appearance";
     private string _status = "";
+    private string? _defaultModelPath;
     private string? _lastApplied;
     private InferenceOverrides _system = new();
     private IReadOnlyList<ModelFamily> _families = [];
@@ -202,9 +213,9 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        _tab = TabQuery is "families" or "models" or "appearance" ? TabQuery : "system";
+        _tab = TabQuery is "system" or "families" or "models" ? TabQuery : "appearance";
         _system = Inference.System;
-        await LoadCatalogAsync();
+        if (_tab != "appearance") await LoadCatalogAsync();
 
         if (!string.IsNullOrWhiteSpace(ThemeQuery))
         {
@@ -222,6 +233,11 @@ else
                 }
             }
         }
+
+        if (_defaultModelPath is null || _models.All(model => model.Path != _defaultModelPath))
+            _defaultModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
+                ? Theme.LastChatModel
+                : _models.FirstOrDefault()?.Path;
 
         if (_selectedFamilyId is null || _families.All(f => f.Id != _selectedFamilyId))
         {
@@ -270,6 +286,12 @@ else
         _modelSources = Inference.Resolve(model?.Family.Id, _selectedModelPath, null).Sources;
     }
 
+    private async Task SaveDefaultModel()
+    {
+        if (string.IsNullOrWhiteSpace(_defaultModelPath)) return;
+        await Theme.SetLastChatModelAsync(_defaultModelPath);
+        _status = "Default chat model saved.";
+    }
     private void SaveSystem()
     {
         Inference.SetSystem(_system);
@@ -307,4 +329,10 @@ else
         _status = "Model overrides cleared.";
     }
 }
+
+
+
+
+
+
 

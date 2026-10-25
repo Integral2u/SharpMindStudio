@@ -1,0 +1,189 @@
+﻿@page "/"
+@implements IDisposable
+@using SharpMind.Studio.Core.Runs
+@using SharpMind.Studio.Services
+@inject ThemeService Theme
+@inject ModelCatalogService Catalog
+@inject StudioChatService ChatService
+@inject StudioWorkspaceService Workspace
+@inject NavigationManager Nav
+
+<PageTitle>SharpMind Studio</PageTitle>
+
+<div class="welcome">
+    <div class="welcome-head">
+        <div class="eyebrow">SharpMind Studio</div>
+        <h1>What do you want to ask?</h1>
+        <p>Start a chat with a local model. Nothing leaves this machine.</p>
+    </div>
+
+    <div class="welcome-compose">
+        <textarea class="welcome-prompt" @bind="_prompt"
+                  placeholder="Ask something, or leave this empty and press Send to start a new chat."></textarea>
+        <button type="button" class="button primary welcome-send" @onclick="SendAsync"
+                disabled="@(_busy || string.IsNullOrWhiteSpace(_selectedModelPath))">
+            @(_busy ? "Starting..." : "Send")
+        </button>
+    </div>
+
+    <div class="welcome-modes">
+        <button type="button" class="welcome-mode selected" @onclick='() => _mode = "chat"'>
+            <span class="welcome-mode-name">Chat</span>
+            <span class="welcome-mode-hint">Talk to the selected model</span>
+        </button>
+        <button type="button" class="welcome-mode" disabled title="Work mode is next">
+            <span class="welcome-mode-name">Work</span>
+            <span class="welcome-mode-hint">Coming after Chat</span>
+        </button>
+        <button type="button" class="welcome-mode" @onclick="OpenTest">
+            <span class="welcome-mode-name">Test</span>
+            <span class="welcome-mode-hint">Open the canary dashboard</span>
+        </button>
+        <button type="button" class="welcome-mode" disabled title="Training lab is later">
+            <span class="welcome-mode-name">Train</span>
+            <span class="welcome-mode-hint">Coming in a later lab</span>
+        </button>
+    </div>
+
+    <div class="welcome-controls">
+        <div class="field welcome-model">
+            <label class="field-label" for="welcome-model">Model</label>
+            <select id="welcome-model" class="input" @bind="_selectedModelPath" @bind:after="SaveDefaultModelAsync">
+                @if (_models.Count == 0)
+                {
+                    <option value="">Scanning models...</option>
+                }
+                @foreach (var model in _models)
+                {
+                    <option value="@model.Path">@model.FileName - @model.Family.DisplayName</option>
+                }
+            </select>
+        </div>
+
+        <div class="field welcome-session">
+            <label class="field-label" for="welcome-session">Session</label>
+            <select id="welcome-session" class="input" @bind="_mode">
+                <option value="chat">Chat</option>
+                <option value="work" disabled>Work (not available)</option>
+            </select>
+        </div>
+
+        <div class="welcome-model-status">
+            @if (_latestRun is null)
+            {
+                <span class="status unknown">unknown</span>
+                <span class="small faint mono">no canary result for this model</span>
+            }
+            else
+            {
+                <span class="status @StatusClass(_latestRun.Status)">@_latestRun.Status</span>
+                <span class="small faint mono">@(_latestRun.TokensPerSecond > 0 ? $"{_latestRun.TokensPerSecond:F2} tok/s" : "-")</span>
+                <span class="status @ToolClass(_latestRun.ToolStatus)">tool @_latestRun.ToolStatus</span>
+            }
+        </div>
+    </div>
+
+    <div class="status-line">@ChatService.Status</div>
+    @if (_error is not null)
+    {
+        <div class="error-line">@_error</div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<ModelDescriptor> _models = [];
+    private IReadOnlyList<RunSummary> _runs = [];
+    private string? _selectedModelPath;
+    private string _prompt = "";
+    private string _mode = "chat";
+    private RunSummary? _latestRun;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ChatService.Changed += OnChatChanged;
+        _models = await Catalog.RefreshAsync();
+        _runs = await Workspace.RecentRunsAsync();
+        _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
+            ? Theme.LastChatModel
+            : _models.FirstOrDefault()?.Path;
+        UpdateLatestRun();
+    }
+
+    public void Dispose() => ChatService.Changed -= OnChatChanged;
+
+    private void OnChatChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task SaveDefaultModelAsync()
+    {
+        await Theme.SetLastChatModelAsync(_selectedModelPath);
+        UpdateLatestRun();
+    }
+
+    private void UpdateLatestRun()
+    {
+        string? fileName = _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.FileName;
+        _latestRun = fileName is null
+            ? null
+            : _runs.FirstOrDefault(run =>
+                run.Kind == "model-bench" &&
+                string.Equals(run.Subject, fileName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task SendAsync()
+    {
+        if (_busy) return;
+        if (_mode != "chat")
+        {
+            _error = "Only Chat is available in this lab.";
+            return;
+        }
+
+        ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
+        if (model is null)
+        {
+            _error = "Choose a model first.";
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Theme.SetLastChatModelAsync(model.Path);
+            await ChatService.NewChatAsync(model, systemPrompt: null);
+            if (ChatService.Document is null)
+            {
+                _error = ChatService.Error ?? "Could not start the chat.";
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_prompt))
+                ChatService.PendingPrompt = _prompt.Trim();
+            Nav.NavigateTo($"/chat/{ChatService.Document.Id}");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OpenTest() => Nav.NavigateTo("/test");
+
+    private static string StatusClass(string status) => status switch
+    {
+        "succeeded" => "ok",
+        "failed" or "cancelled" => "failed",
+        _ => "unknown",
+    };
+
+    private static string ToolClass(string status) => status switch
+    {
+        "Yes" => "ok",
+        "No" => "failed",
+        _ => "unknown",
+    };
+}
+
+
