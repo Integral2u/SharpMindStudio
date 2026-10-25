@@ -18,10 +18,10 @@
     </div>
 
     <div class="welcome-compose">
-        <textarea class="welcome-prompt" @bind="_prompt"
+        <textarea class="welcome-prompt" data-enter-send="welcome-send" onkeydown="studioChat.enterSend(event, 'welcome-send')" @bind="_prompt" @bind:event="oninput"
                   placeholder="Ask something, or leave this empty and press Send to start a new chat."></textarea>
-        <button type="button" class="button primary welcome-send" @onclick="SendAsync"
-                disabled="@(_busy || string.IsNullOrWhiteSpace(_selectedModelPath))">
+        <button id="welcome-send" type="button" class="button primary welcome-send" @onclick="SendAsync"
+                disabled="@(_busy || ChatService.IsLoading || string.IsNullOrWhiteSpace(_selectedModelPath))">
             @(_busy ? "Starting..." : "Send")
         </button>
     </div>
@@ -83,7 +83,22 @@
         </div>
     </div>
 
-    <div class="status-line">@ChatService.Status</div>
+    @if (ChatService.IsLoading)
+    {
+        <div class="load-panel">
+            <div class="load-panel-row">
+                <span class="spinner-ring"></span>
+                <span>@ChatService.LoadDetail</span>
+                <span class="mono">@LoadPercent</span>
+                <button type="button" class="button" @onclick="ChatService.Interrupt">Interrupt</button>
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill" style="width:@LoadPercent"></div>
+            </div>
+        </div>
+    }
+
+    <div class="status-line">@(ChatService.IsLoading || _busy ? ChatService.Status : "Ready.")</div>
     @if (_error is not null)
     {
         <div class="error-line">@_error</div>
@@ -99,6 +114,10 @@
     private RunSummary? _latestRun;
     private bool _busy;
     private string? _error;
+
+    private string LoadPercent => ChatService.LoadProgress is { } value
+        ? $"{value * 100:F0}%"
+        : "0%";
 
     protected override async Task OnInitializedAsync()
     {
@@ -153,9 +172,9 @@
         {
             await Theme.SetLastChatModelAsync(model.Path);
             await ChatService.NewChatAsync(model, systemPrompt: null);
-            if (ChatService.Document is null)
+            if (ChatService.Document is null || ChatService.Status != "Ready.")
             {
-                _error = ChatService.Error ?? "Could not start the chat.";
+                _error = ChatService.Error ?? ChatService.Status;
                 return;
             }
 
@@ -185,5 +204,11 @@
         _ => "unknown",
     };
 }
+
+
+
+
+
+
 
 

@@ -14,6 +14,19 @@
 <PageTitle>Chat - SharpMind Studio</PageTitle>
 
     <section class="panel chat-main">
+        @if (ChatService.IsLoading)
+        {
+            <div class="load-panel" style="margin: 1rem 1.2rem 0;">
+                <div class="load-panel-row">
+                    <span class="spinner-ring"></span>
+                    <span>@ChatService.LoadDetail</span>
+                    <span class="mono">@LoadPercent</span>
+                    <button type="button" class="button" @onclick="ChatService.Interrupt">Interrupt</button>
+                </div>
+                <div class="progress-track"><div class="progress-fill" style="width:@LoadPercent"></div></div>
+            </div>
+        }
+
         @if (_startingNew || ChatService.Document is null)
         {
             <div class="panel-head">
@@ -164,18 +177,22 @@
             }
 
             <div class="chat-composer">
-                <textarea id="chat-input" class="textarea" @bind="_input"
-                          placeholder="Message the model. Enter adds a line; use Send when ready."
-                          disabled="@ChatService.IsStreaming"></textarea>
+                <textarea id="chat-input" class="textarea" data-enter-send="chat-send" onkeydown="studioChat.enterSend(event, 'chat-send')" @bind="_input" @bind:event="oninput"
+                          placeholder="Message the model. Enter sends; Shift+Enter adds a line."
+                          disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"></textarea>
                 <div class="chat-composer-actions">
                     <span class="status-line">@ChatService.Status</span>
-                    @if (ChatService.IsStreaming)
+                    @if (ChatService.IsLoading)
+                    {
+                        <button type="button" class="button danger" @onclick="ChatService.Interrupt">Interrupt</button>
+                    }
+                    else if (ChatService.IsStreaming)
                     {
                         <span class="spinner-ring"></span>
-                        <button type="button" class="button danger" @onclick="Stop">Stop</button>
+                        <button type="button" class="button danger" @onclick="Stop">Interrupt</button>
                     }
-                    <button type="button" class="button primary" @onclick="SendAsync"
-                            disabled="@(ChatService.IsStreaming || string.IsNullOrWhiteSpace(_input))">
+                    <button id="chat-send" type="button" class="button primary" @onclick="SendAsync"
+                            disabled="@(ChatService.IsStreaming || ChatService.IsLoading || string.IsNullOrWhiteSpace(_input))">
                         Send
                     </button>
                 </div>
@@ -201,6 +218,10 @@
     private string _systemPrompt = "";
     private string _input = "";
     private string? _systemPromptError;
+
+    private string LoadPercent => ChatService.LoadProgress is { } value
+        ? $"{value * 100:F0}%"
+        : "0%";
     private bool _startingNew = true;
     private bool _loadingModels = true;
     private bool _showOptions;
@@ -360,6 +381,9 @@
             ? $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
             : $"{bytes / (1024.0 * 1024):F0} MB";
 }
+
+
+
 
 
 

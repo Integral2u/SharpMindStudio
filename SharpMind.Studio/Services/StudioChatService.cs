@@ -24,6 +24,10 @@ public sealed class StudioChatService : IAsyncDisposable
     private string? _error;
     private string? _cacheWarning;
     private bool _streaming;
+    private bool _loading;
+    private double? _loadProgress;
+    private string? _loadDetail;
+    private CancellationTokenSource? _loadCts;
 
     public StudioChatService(
         StudioWorkspaceService workspace,
@@ -44,6 +48,9 @@ public sealed class StudioChatService : IAsyncDisposable
     public ModelDescriptor? Model => _model;
     public ResolvedInference? Resolved => _resolved;
     public bool IsStreaming => _streaming;
+    public bool IsLoading => _loading;
+    public double? LoadProgress => _loadProgress;
+    public string? LoadDetail => _loadDetail;
     public bool IsOpen => _document is not null;
     public string Status => _status;
     public string? Error => _error;
@@ -201,6 +208,14 @@ public sealed class StudioChatService : IAsyncDisposable
         _session?.Interrupt();
     }
 
+    public void Interrupt()
+    {
+        if (_loading)
+            _loadCts?.Cancel();
+        else
+            Stop();
+    }
+
     public async Task ApplyOptionsAsync(InferenceOverrides overrides)
     {
         if (_document is null || _session is null || _streaming) return;
@@ -314,21 +329,41 @@ public sealed class StudioChatService : IAsyncDisposable
     {
         if (_document is null || _model is null || _resolved is null) return;
 
+        _loading = true;
+        _loadProgress = 0;
+        _loadDetail = "Reading model";
+        _loadCts = new CancellationTokenSource();
         _status = $"Loading {_model.FileName}...";
         Notify();
         try
         {
-            LoadedStudioModel loaded = await _host.LoadAsync(
-                _model, _resolved, new Progress<string>(message =>
-                {
-                    _status = message;
-                    Notify();
-                })).ConfigureAwait(false);
+            var progress = new Progress<ModelLoadProgress>(report =>
+            {
+                _status = report.Message;
+                _loadDetail = report.Message;
+                _loadProgress = report.Fraction;
+                Notify();
+            });
 
+            LoadedStudioModel loaded = await _host.LoadAsync(
+                _model, _resolved, progress, _loadCts.Token).ConfigureAwait(false);
+
+            _loadDetail = "Initializing chat";
+            _loadProgress = 0.95;
+            _status = "Initializing chat...";
+            Notify();
             _session = await BuildSessionAsync(loaded, _resolved, snapshot).ConfigureAwait(false);
             _status = "Ready.";
+            _loadDetail = "Ready";
+            _loadProgress = 1;
             _error = null;
             await SaveSnapshotAsync().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _error = null;
+            _status = "Load interrupted.";
+            _session = null;
         }
         catch (Exception ex)
         {
@@ -336,8 +371,15 @@ public sealed class StudioChatService : IAsyncDisposable
             _status = "Could not load the model.";
             _session = null;
         }
+        finally
+        {
+            _loading = false;
+            _loadCts?.Dispose();
+            _loadCts = null;
+            _loadProgress = null;
+            Notify();
+        }
     }
-
     private async Task RebuildAsync(ChatSessionSnapshot? snapshot)
     {
         if (_document is null || _model is null || _resolved is null) return;
@@ -482,6 +524,10 @@ public sealed class StudioChatService : IAsyncDisposable
     }
     private void Notify() => Changed?.Invoke();
 }
+
+
+
+
 
 
 
