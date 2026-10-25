@@ -19,6 +19,7 @@ public sealed class LoadedStudioModel : IDisposable
     public required Tokenizer Tokenizer { get; init; }
     public required ModelMetaData Meta { get; init; }
     public required ModelConfig Config { get; init; }
+    internal int RefCount { get; set; }
 
     public void Dispose()
     {
@@ -30,9 +31,7 @@ public sealed class LoadedStudioModel : IDisposable
 public sealed class StudioModelHost : IDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private LoadedStudioModel? _current;
-
-    public LoadedStudioModel? Current => _current;
+    private readonly Dictionary<string, LoadedStudioModel> _models = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task<LoadedStudioModel> LoadAsync(
         ModelDescriptor descriptor,
@@ -44,21 +43,42 @@ public sealed class StudioModelHost : IDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_current is not null && _current.Key == key)
-                return _current;
-
-            if (_current is not null)
+            if (_models.TryGetValue(key, out LoadedStudioModel? cached) && cached is not null)
             {
-                _current.Dispose();
-                _current = null;
+                cached.RefCount++;
+                progress?.Report(new ModelLoadProgress($"Using loaded {descriptor.FileName}", 0.9));
+                return cached;
             }
 
             progress?.Report(new ModelLoadProgress($"Reading {descriptor.FileName}", 0));
             LoadedStudioModel loaded = await Task.Run(
                 () => Load(descriptor, profile, key, progress, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
-            _current = loaded;
+            loaded.RefCount = 1;
+            _models[key] = loaded;
             return loaded;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public void Release(LoadedStudioModel loaded)
+    {
+        ArgumentNullException.ThrowIfNull(loaded);
+        _gate.Wait();
+        try
+        {
+            if (!_models.TryGetValue(loaded.Key, out LoadedStudioModel? cached) ||
+                !ReferenceEquals(cached, loaded))
+                return;
+
+            loaded.RefCount--;
+            if (loaded.RefCount > 0) return;
+
+            _models.Remove(loaded.Key);
+            loaded.Dispose();
         }
         finally
         {
@@ -68,8 +88,17 @@ public sealed class StudioModelHost : IDisposable
 
     public void Unload()
     {
-        _current?.Dispose();
-        _current = null;
+        _gate.Wait();
+        try
+        {
+            foreach (LoadedStudioModel model in _models.Values)
+                model.Dispose();
+            _models.Clear();
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public void Dispose()
@@ -145,6 +174,11 @@ public sealed class StudioModelHost : IDisposable
     private static string KeyFor(string path, ResolvedInference profile) =>
         $"{Path.GetFullPath(path)}|{profile.LoadMode}|{profile.HardwareTier}|{profile.UseParallelKernels}|{profile.MaxParallelLoadDegree}";
 }
+
+
+
+
+
 
 
 

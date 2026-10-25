@@ -16,6 +16,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly ChatSessionStore _store;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChatSession? _session;
+    private LoadedStudioModel? _loaded;
     private CancellationTokenSource? _streamCts;
     private ChatSessionDocument? _document;
     private ResolvedInference? _resolved;
@@ -347,6 +348,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
             LoadedStudioModel loaded = await _host.LoadAsync(
                 _model, _resolved, progress, _loadCts.Token).ConfigureAwait(false);
+            _loaded = loaded;
 
             _loadDetail = "Initializing chat";
             _loadProgress = 0.95;
@@ -363,13 +365,13 @@ public sealed class StudioChatService : IAsyncDisposable
         {
             _error = null;
             _status = "Load interrupted.";
-            _session = null;
+            EndSession();
         }
         catch (Exception ex)
         {
             _error = $"{ex.GetType().Name}: {ex.Message}";
             _status = "Could not load the model.";
-            _session = null;
+            EndSession();
         }
         finally
         {
@@ -384,7 +386,17 @@ public sealed class StudioChatService : IAsyncDisposable
     {
         if (_document is null || _model is null || _resolved is null) return;
         LoadedStudioModel loaded = await _host.LoadAsync(_model, _resolved).ConfigureAwait(false);
-        _session = await BuildSessionAsync(loaded, _resolved, snapshot).ConfigureAwait(false);
+        _loaded = loaded;
+        try
+        {
+            _session = await BuildSessionAsync(loaded, _resolved, snapshot).ConfigureAwait(false);
+        }
+        catch
+        {
+            _host.Release(loaded);
+            _loaded = null;
+            throw;
+        }
     }
 
     private async Task<IChatSession> BuildSessionAsync(
@@ -514,6 +526,11 @@ public sealed class StudioChatService : IAsyncDisposable
         _streaming = false;
         DisposeSession(_session);
         _session = null;
+        if (_loaded is not null)
+        {
+            _host.Release(_loaded);
+            _loaded = null;
+        }
     }
 
     private static void DisposeSession(IChatSession? session)
@@ -524,6 +541,10 @@ public sealed class StudioChatService : IAsyncDisposable
     }
     private void Notify() => Changed?.Invoke();
 }
+
+
+
+
 
 
 
