@@ -1,6 +1,8 @@
 ﻿using System.ComponentModel;
+using System.Text.Json;
 using System.IO;
 using System.Windows;
+using Media = System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using SharpMind.Studio.Core.Storage;
@@ -28,8 +30,48 @@ public partial class MainWindow : Window
         Browser.NavigationCompleted += OnNavigationCompleted;
         SetupTray();
         Loaded += OnLoaded;
+        Activated += (_, _) => ApplyTheme();
+        ApplyTheme();
     }
 
+    private void ApplyTheme()
+    {
+        string color = "#5EEAD4";
+        try
+        {
+            if (File.Exists(StudioPaths.SettingsFile))
+            {
+                using JsonDocument document = JsonDocument.Parse(File.ReadAllText(StudioPaths.SettingsFile));
+                JsonElement root = document.RootElement;
+                string theme = root.TryGetProperty("theme", out JsonElement themeElement)
+                    ? themeElement.GetString() ?? "green"
+                    : "green";
+                string custom = root.TryGetProperty("customColor", out JsonElement colorElement)
+                    ? colorElement.GetString() ?? "#5EEAD4"
+                    : "#5EEAD4";
+                color = theme.ToLowerInvariant() switch
+                {
+                    "blue" => "#60A5FA",
+                    "purple" => "#C084FC",
+                    "red" => "#FB7185",
+                    "custom" => custom,
+                    _ => "#5EEAD4",
+                };
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            StudioText.Foreground = new Media.SolidColorBrush((Media.Color)Media.ColorConverter.ConvertFromString(color));
+        }
+        catch
+        {
+            StudioText.Foreground = new Media.SolidColorBrush(Media.Color.FromRgb(0x5E, 0xEA, 0xD4));
+        }
+    }
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         try
@@ -247,6 +289,10 @@ public partial class MainWindow : Window
         Top = work.Top + (work.Height - Height) / 2;
     }
 }
+
+
+
+
 
 
 

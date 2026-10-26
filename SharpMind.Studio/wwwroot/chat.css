@@ -51,6 +51,21 @@
     overflow: hidden;
 }
 
+.chat-title-button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.chat-title-button:hover {
+    color: var(--accent);
+}
+
 .chat-head {
     position: sticky;
     top: 0;
@@ -450,6 +465,8 @@
     background: var(--accent);
     transition: width .18s ease;
 }
+
+
 
 
 

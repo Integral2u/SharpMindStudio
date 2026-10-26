@@ -96,7 +96,8 @@
             <div class="panel-head chat-head">
                 <div>
                     <div class="eyebrow">@ChatService.Model?.Family.DisplayName | @ChatService.Model?.FileName</div>
-                    <h2>@ChatService.Document.Name</h2>
+                    <h2><button type="button" class="chat-title-button" @onclick="RenameCurrentChatAsync"
+                            title="Rename chat">@ChatService.Document.Name <span class="faint">&#9998;</span></button></h2>
                 </div>
                 <div class="row">
                     <button type="button" class="button" @onclick="ToggleOptions">
@@ -431,6 +432,15 @@
     }
 
 
+    private async Task RenameCurrentChatAsync()
+    {
+        if (ChatService.Document is null) return;
+        string? name = await JS.InvokeAsync<string?>("prompt", "Rename chat", ChatService.Document.Name);
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        await ChatService.RenameAsync(ChatService.Document.Id, name);
+        SyncFromChat();
+    }
     private async Task DeleteCurrentChatAsync()
     {
         if (ChatService.Document is null) return;
@@ -450,6 +460,7 @@
             ? $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
             : $"{bytes / (1024.0 * 1024):F0} MB";
 }
+
 
 
 
