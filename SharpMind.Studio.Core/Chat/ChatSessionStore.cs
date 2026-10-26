@@ -1,4 +1,4 @@
-using SharpMind.Inference.Chat;
+﻿using SharpMind.Inference.Chat;
 using SharpMind.Studio.Core.Serialization;
 
 namespace SharpMind.Studio.Core.Chat;
@@ -96,6 +96,24 @@ public sealed class ChatSessionStore
         JsonFile.Write(Path.Combine(DirectoryFor(document.Id), ChatFileName), document);
     }
 
+    public void Rename(string id, string name)
+    {
+        ChatSessionDocument document = Open(id);
+        string clean = name.Trim();
+        if (clean.Length == 0) return;
+        document.Name = clean.Length <= 120 ? clean : clean[..120];
+        Save(document);
+    }
+
+    public void Clear()
+    {
+        foreach (string directory in Directory.EnumerateDirectories(Root))
+        {
+            try { Directory.Delete(directory, recursive: true); }
+            catch { }
+        }
+    }
+
     public void SaveSnapshot(ChatSessionDocument document, ChatSessionSnapshot? snapshot)
     {
         Save(document);
@@ -160,3 +178,4 @@ public sealed class ChatSessionStore
         return directory;
     }
 }
+

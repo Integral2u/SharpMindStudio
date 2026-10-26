@@ -91,7 +91,8 @@ public static class ToolProbeJob
                 request.FullLoad ? LoadMode.Full : LoadMode.Streaming,
                 quantizedResident: request.FullLoad,
                 maxParallelLoadDegree: 1);
-            weights.InitializeWeights();
+            weights.InitializeWeights(null, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             using var model = ModelFactory.CreateTransformer(weights, sharpConfig, mapping);
 
             var probe = new OptionSelectionProbe();
@@ -213,6 +214,8 @@ public static class ToolProbeJob
         }
     }
 }
+
+
 
 
 

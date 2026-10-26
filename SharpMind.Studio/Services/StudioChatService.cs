@@ -308,6 +308,41 @@ public sealed class StudioChatService : IAsyncDisposable
         }
     }
 
+    public async Task RenameAsync(string id, string name)
+    {
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _store.Rename(id, name);
+            if (_document?.Id.Equals(id, StringComparison.OrdinalIgnoreCase) == true)
+                _document.Name = name.Trim();
+        }
+        finally
+        {
+            _gate.Release();
+            Notify();
+        }
+    }
+
+    public async Task ClearAllAsync()
+    {
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            EndSession();
+            _document = null;
+            _resolved = null;
+            _model = null;
+            _store.Clear();
+            _error = null;
+            _status = "All chats cleared.";
+        }
+        finally
+        {
+            _gate.Release();
+            Notify();
+        }
+    }
     public async Task CloseAsync()
     {
         await _gate.WaitAsync().ConfigureAwait(false);
@@ -550,6 +585,7 @@ public sealed class StudioChatService : IAsyncDisposable
     }
     private void Notify() => Changed?.Invoke();
 }
+
 
 
 

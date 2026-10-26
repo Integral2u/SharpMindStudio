@@ -60,6 +60,14 @@ public sealed class StudioModelHost : IDisposable
                 return cached;
             }
 
+            foreach ((string idleKey, LoadedStudioModel idle) in _models
+                .Where(pair => pair.Value.RefCount == 0)
+                .ToArray())
+            {
+                _models.Remove(idleKey);
+                idle.Dispose();
+            }
+
             progress?.Report(new ModelLoadProgress($"Reading {descriptor.FileName}", 0));
             LoadedStudioModel loaded = await Task.Run(
                 () => Load(descriptor, profile, key, progress, cancellationToken),
@@ -87,8 +95,13 @@ public sealed class StudioModelHost : IDisposable
             loaded.RefCount--;
             if (loaded.RefCount > 0) return;
 
-            _models.Remove(loaded.Key);
-            loaded.Dispose();
+            foreach ((string idleKey, LoadedStudioModel idle) in _models
+                .Where(pair => pair.Key != loaded.Key && pair.Value.RefCount == 0)
+                .ToArray())
+            {
+                _models.Remove(idleKey);
+                idle.Dispose();
+            }
         }
         finally
         {
@@ -184,6 +197,8 @@ public sealed class StudioModelHost : IDisposable
     private static string KeyFor(string path, ResolvedInference profile) =>
         $"{Path.GetFullPath(path)}|{profile.LoadMode}|{profile.HardwareTier}|{profile.UseParallelKernels}|{profile.MaxParallelLoadDegree}";
 }
+
+
 
 
 

@@ -62,11 +62,16 @@
                         {
                             <div class="nav-chat-item">
                                 <a href="/chat/@chat.Id" class="nav-chat-link" title="@chat.Name">@chat.Name</a>
+                                <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
+                                        title="Rename chat" aria-label="Rename chat">&#9998;</button>
                                 <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"
                                         title="Delete chat" aria-label="Delete chat">&times;</button>
                             </div>
                         }
                     }
+                    <button type="button" class="nav-chat-clear" @onclick="ClearChatsAsync">
+                        Clear all chats
+                    </button>
                 </div>
             }
 
@@ -84,10 +89,6 @@
 
     <main class="main">
         <header class="topbar">
-            <div>
-                <div class="eyebrow">SharpMind Studio</div>
-                <div class="topbar-title">Instrument panel</div>
-            </div>
             <div class="topbar-meta">
                 @if (Activity.IsBusy)
                 {
@@ -148,6 +149,26 @@
             StateHasChanged();
         });
 
+    private async Task RenameChatAsync(SharpMind.Studio.Core.Chat.ChatSessionSummary chat)
+    {
+        string? name = await JS.InvokeAsync<string?>("prompt", "Rename chat", chat.Name);
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        await ChatService.RenameAsync(chat.Id, name);
+        LoadChats();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ClearChatsAsync()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", "Delete all saved chats? This cannot be undone.");
+        if (!confirmed) return;
+
+        await ChatService.ClearAllAsync();
+        LoadChats();
+        await InvokeAsync(StateHasChanged);
+    }
     private async Task DeleteChatAsync(SharpMind.Studio.Core.Chat.ChatSessionSummary chat)
     {
         bool confirmed = await JS.InvokeAsync<bool>(
@@ -164,6 +185,8 @@
 
     private void OnChatServiceChanged() => _ = InvokeAsync(StateHasChanged);
 }
+
+
 
 
 

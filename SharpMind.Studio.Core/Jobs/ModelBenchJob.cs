@@ -100,7 +100,8 @@ public static class ModelBenchJob
                 request.FullLoad ? LoadMode.Full : LoadMode.Streaming,
                 quantizedResident: request.FullLoad,
                 maxParallelLoadDegree: 1);
-            weights.InitializeWeights();
+            weights.InitializeWeights(null, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
 
             using var model = ModelFactory.CreateTransformer(weights, sharpConfig, mapping);
             using IDisposable generator = GeneratorFactory.Create(
@@ -127,6 +128,7 @@ public static class ModelBenchJob
                 .WithCancellation(cancellationToken)
                 .ConfigureAwait(false))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 consumed++;
                 if (consumed == request.WarmupTokens)
                 {
@@ -235,6 +237,10 @@ public static class ModelBenchJob
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 }
+
+
+
+
 
 
 

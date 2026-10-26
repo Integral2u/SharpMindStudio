@@ -324,7 +324,7 @@
     background: rgba(255, 255, 255, .035);
 }
 
-.nav-chat-delete {
+.nav-chat-delete, .nav-chat-rename {
     width: 1.35rem;
     height: 1.35rem;
     border: 0;
@@ -332,6 +332,29 @@
     background: transparent;
     color: var(--faint);
     cursor: pointer;
+}
+
+.nav-chat-rename:hover {
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), .08);
+}
+
+.nav-chat-clear {
+    margin-top: .25rem;
+    padding: .35rem .4rem;
+    border: 0;
+    border-radius: .35rem;
+    background: transparent;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: .65rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.nav-chat-clear:hover {
+    color: var(--bad);
+    background: rgba(251, 113, 133, .08);
 }
 
 .nav-chat-delete:hover {
@@ -396,9 +419,9 @@
 .topbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 1rem;
-    padding: 1.15rem 2rem;
+    padding: .55rem 2rem;
     border-bottom: 1px solid var(--line);
     background: rgba(11, 16, 22, .72);
     backdrop-filter: blur(12px);
@@ -464,6 +487,9 @@
         padding: 1rem 1.2rem;
     }
 }
+
+
+
 
 
 
