@@ -72,7 +72,10 @@ public partial class MainWindow : Window
             StudioText.Foreground = new Media.SolidColorBrush(Media.Color.FromRgb(0x5E, 0xEA, 0xD4));
         }
     }
-    private async void OnLoaded(object sender, RoutedEventArgs e)
+    private async void OnLoaded(object sender, RoutedEventArgs e) =>
+        await StartStudioAsync();
+
+    private async Task StartStudioAsync()
     {
         try
         {
@@ -81,7 +84,24 @@ public partial class MainWindow : Window
 
             StatusText.Text = "Opening the instrument panel…";
             await Browser.EnsureCoreWebView2Async();
-            Browser.Source = StudioProcess.BaseUri;
+            Browser.Source = _studio.BaseUri;
+        }
+        catch (RemoteStudioUnavailableException ex)
+        {
+            var choice = WinForms.MessageBox.Show(
+                $"{ex.Message}\n\nRun a local Studio instance instead?",
+                "SharpMind Studio",
+                WinForms.MessageBoxButtons.YesNo,
+                WinForms.MessageBoxIcon.Question);
+            if (choice == WinForms.DialogResult.Yes)
+            {
+                _studio.UseLocalDefaults();
+                await StartStudioAsync();
+            }
+            else
+            {
+                StatusText.Text = ex.Message;
+            }
         }
         catch (Exception ex)
         {
@@ -289,6 +309,10 @@ public partial class MainWindow : Window
         Top = work.Top + (work.Height - Height) / 2;
     }
 }
+
+
+
+
 
 
 

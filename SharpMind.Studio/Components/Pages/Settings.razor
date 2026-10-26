@@ -181,6 +181,27 @@ else
                 </div>
             </form>
 
+            <div class="panel-head" style="padding: .8rem 0 0; border-top: 1px solid var(--line);">
+                <div>
+                    <div class="eyebrow">Connection</div>
+                    <h2>Studio server</h2>
+                </div>
+            </div>
+            <div class="row">
+                <div class="field" style="flex: 1; min-width: 12rem;">
+                    <label class="field-label" for="studio-host">Host</label>
+                    <input id="studio-host" class="input" @bind="_studioHost" />
+                </div>
+                <div class="field" style="width: 8rem;">
+                    <label class="field-label" for="studio-port">Port</label>
+                    <input id="studio-port" class="input" type="number" min="1" max="65535" @bind="_studioPort" />
+                </div>
+                <button type="button" class="button primary" @onclick="SaveServerAsync">Save connection</button>
+                <button type="button" class="button" @onclick="ResetServerAsync">Reset local defaults</button>
+            </div>
+            <div class="status-line">@_serverStatus</div>
+            <div class="small faint">Used when Studio starts. If the configured server is unreachable, the desktop app asks whether to run locally.</div>
+
             <div class="row" style="margin-top: .4rem;">
                 <a class="button" href="/test" data-enhance-nav="false">Back to dashboard</a>
                 <span class="small faint mono">changes are saved locally</span>
@@ -203,6 +224,9 @@ else
     private string _status = "";
     private string? _defaultModelPath;
     private string? _lastApplied;
+    private string _studioHost = ThemeService.DefaultHost;
+    private int _studioPort = ThemeService.DefaultPort;
+    private string _serverStatus = "";
     private InferenceOverrides _system = new();
     private IReadOnlyList<ModelFamily> _families = [];
     private IReadOnlyList<ModelDescriptor> _models = [];
@@ -219,6 +243,8 @@ else
     {
         _tab = TabQuery is "system" or "families" or "models" ? TabQuery : "appearance";
         _system = Inference.System;
+        _studioHost = Theme.StudioHost;
+        _studioPort = Theme.StudioPort;
         if (_tab != "appearance") await LoadCatalogAsync();
 
         if (!string.IsNullOrWhiteSpace(ThemeQuery))
@@ -298,6 +324,27 @@ else
         await Theme.SetLastChatModelAsync(_defaultModelPath);
         _status = "Default chat model saved.";
     }
+    private async Task SaveServerAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_studioHost) || _studioPort is < 1 or > 65535)
+        {
+            _serverStatus = "Enter a valid host and port.";
+            return;
+        }
+
+        await Theme.SetServerAsync(_studioHost, _studioPort);
+        _studioHost = Theme.StudioHost;
+        _studioPort = Theme.StudioPort;
+        _serverStatus = $"Connection saved: {_studioHost}:{_studioPort}";
+    }
+
+    private async Task ResetServerAsync()
+    {
+        await Theme.ResetServerAsync();
+        _studioHost = Theme.StudioHost;
+        _studioPort = Theme.StudioPort;
+        _serverStatus = "Local defaults restored: 127.0.0.1:5117";
+    }
     private void SaveSystem()
     {
         Inference.SetSystem(_system);
@@ -341,6 +388,7 @@ else
         _status = "Model overrides cleared.";
     }
 }
+
 
 
 

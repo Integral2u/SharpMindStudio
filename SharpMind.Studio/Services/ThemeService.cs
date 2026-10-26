@@ -12,6 +12,8 @@ public sealed class StudioSettings
     public string DefaultGenerator { get; set; } = ThemeService.DefaultGeneratorName;
     public string DefaultCache { get; set; } = ThemeService.DefaultCacheName;
     public string? LastChatModel { get; set; }
+    public string StudioHost { get; set; } = ThemeService.DefaultHost;
+    public int StudioPort { get; set; } = ThemeService.DefaultPort;
 }
 
 /// <summary>
@@ -25,6 +27,8 @@ public sealed class ThemeService
     public const string DefaultCustomColor = "#5eead4";
     public const string DefaultGeneratorName = "StandardGeneratorBuilder";
     public const string DefaultCacheName = "KVCacherBuilder";
+    public const string DefaultHost = "127.0.0.1";
+    public const int DefaultPort = 5117;
     public static readonly string[] AvailableThemes = ["green", "blue", "purple", "red", "custom"];
 
     private static readonly Dictionary<string, string> PresetRgb = new(StringComparer.OrdinalIgnoreCase)
@@ -38,7 +42,7 @@ public sealed class ThemeService
     public ThemeService()
     {
         StudioPaths.EnsureCreated();
-        (Theme, CustomColor, DefaultGenerator, DefaultCache, LastChatModel) = LoadSettings();
+        (Theme, CustomColor, DefaultGenerator, DefaultCache, LastChatModel, StudioHost, StudioPort) = LoadSettings();
     }
 
     public event Action? Changed;
@@ -47,6 +51,8 @@ public sealed class ThemeService
     public string DefaultGenerator { get; private set; }
     public string DefaultCache { get; private set; }
     public string? LastChatModel { get; private set; }
+    public string StudioHost { get; private set; }
+    public int StudioPort { get; private set; }
     // --accent is declared on :root in app.css, so overriding only
     // --accent-rgb on .app-shell would leave the inherited, already-computed
     // --accent at the default green. Set both on the themed element.
@@ -77,6 +83,8 @@ public sealed class ThemeService
                 DefaultGenerator = DefaultGenerator,
                 DefaultCache = DefaultCache,
                 LastChatModel = LastChatModel,
+                StudioHost = StudioHost,
+                StudioPort = StudioPort,
             };
             await File.WriteAllTextAsync(
                 StudioPaths.SettingsFile,
@@ -111,6 +119,16 @@ public sealed class ThemeService
         Changed?.Invoke();
     }
 
+    public async Task SetServerAsync(string? host, int port, CancellationToken cancellationToken = default)
+    {
+        if (!string.IsNullOrWhiteSpace(host)) StudioHost = host.Trim();
+        if (port is > 0 and <= 65535) StudioPort = port;
+        await SaveSettingsAsync(cancellationToken);
+        Changed?.Invoke();
+    }
+
+    public Task ResetServerAsync(CancellationToken cancellationToken = default) =>
+        SetServerAsync(DefaultHost, DefaultPort, cancellationToken);
     private async Task SaveSettingsAsync(CancellationToken cancellationToken)
     {
         try
@@ -122,6 +140,8 @@ public sealed class ThemeService
                 DefaultGenerator = DefaultGenerator,
                 DefaultCache = DefaultCache,
                 LastChatModel = LastChatModel,
+                StudioHost = StudioHost,
+                StudioPort = StudioPort,
             };
             await File.WriteAllTextAsync(
                 StudioPaths.SettingsFile,
@@ -147,12 +167,12 @@ public sealed class ThemeService
         return text.ToLowerInvariant();
     }
 
-    private static (string Theme, string CustomColor, string Generator, string Cache, string? LastChatModel) LoadSettings()
+    private static (string Theme, string CustomColor, string Generator, string Cache, string? LastChatModel, string StudioHost, int StudioPort) LoadSettings()
     {
         try
         {
             if (!File.Exists(StudioPaths.SettingsFile))
-                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null);
+                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, DefaultHost, DefaultPort);
 
             var settings = JsonSerializer.Deserialize<StudioSettings>(
                 File.ReadAllText(StudioPaths.SettingsFile), StudioJson.File);
@@ -165,11 +185,13 @@ public sealed class ThemeService
             string cache = string.IsNullOrWhiteSpace(settings?.DefaultCache)
                 ? DefaultCacheName
                 : settings!.DefaultCache!;
-            return (theme, color, generator, cache, string.IsNullOrWhiteSpace(settings?.LastChatModel) ? null : settings!.LastChatModel);
+            string host = string.IsNullOrWhiteSpace(settings?.StudioHost) ? DefaultHost : settings!.StudioHost!;
+            int port = settings is { StudioPort: > 0 and <= 65535 } ? settings.StudioPort : DefaultPort;
+            return (theme, color, generator, cache, string.IsNullOrWhiteSpace(settings?.LastChatModel) ? null : settings!.LastChatModel, host, port);
         }
         catch
         {
-            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null);
+            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, DefaultHost, DefaultPort);
         }
     }
 
@@ -188,6 +210,9 @@ public sealed class ThemeService
         return $"{r}, {g}, {b}";
     }
 }
+
+
+
 
 
 

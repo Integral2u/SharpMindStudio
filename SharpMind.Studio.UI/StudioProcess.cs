@@ -1,7 +1,9 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
+using System.Text.Json;
 using System.IO;
 using System.Net.Http;
 using System.Text;
+using SharpMind.Studio.Core.Storage;
 
 namespace SharpMind.Studio.UI;
 
@@ -11,7 +13,29 @@ namespace SharpMind.Studio.UI;
 /// </summary>
 internal sealed class StudioProcess : IAsyncDisposable
 {
-    public static readonly Uri BaseUri = new("http://127.0.0.1:5117/");
+    public StudioProcess()
+    {
+        (string host, int port) = ReadConnection();
+        try
+        {
+            BaseUri = new Uri($"http://{host}:{port}/");
+            IsRemote = !IsLocalHost(host);
+        }
+        catch
+        {
+            BaseUri = new Uri("http://127.0.0.1:5117/");
+            IsRemote = false;
+        }
+    }
+
+    public Uri BaseUri { get; private set; }
+    public bool IsRemote { get; private set; }
+
+    public void UseLocalDefaults()
+    {
+        BaseUri = new Uri("http://127.0.0.1:5117/");
+        IsRemote = false;
+    }
 
     private readonly StringBuilder _stderr = new();
     private readonly StringBuilder _stdout = new();
@@ -25,7 +49,11 @@ internal sealed class StudioProcess : IAsyncDisposable
         if (await IsHealthyAsync(cancellationToken).ConfigureAwait(false))
             return;
 
+        if (IsRemote)
+            throw new RemoteStudioUnavailableException(BaseUri);
+
         var startInfo = ResolveStartInfo();
+        startInfo.Environment["Studio__Url"] = BaseUri.ToString().TrimEnd('/');
         _process = new Process
         {
             StartInfo = startInfo,
@@ -87,7 +115,7 @@ internal sealed class StudioProcess : IAsyncDisposable
 
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 
-    private static async Task<bool> IsHealthyAsync(CancellationToken cancellationToken)
+    private async Task<bool> IsHealthyAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -101,6 +129,35 @@ internal sealed class StudioProcess : IAsyncDisposable
         }
     }
 
+    private static (string Host, int Port) ReadConnection()
+    {
+        string host = "127.0.0.1";
+        int port = 5117;
+        try
+        {
+            if (File.Exists(StudioPaths.SettingsFile))
+            {
+                using JsonDocument document = JsonDocument.Parse(File.ReadAllText(StudioPaths.SettingsFile));
+                JsonElement root = document.RootElement;
+                if (root.TryGetProperty("studioHost", out JsonElement hostElement) &&
+                    hostElement.GetString() is { Length: > 0 } configuredHost)
+                    host = configuredHost.Trim();
+                if (root.TryGetProperty("studioPort", out JsonElement portElement) &&
+                    portElement.TryGetInt32(out int configuredPort) &&
+                    configuredPort is > 0 and <= 65535)
+                    port = configuredPort;
+            }
+        }
+        catch
+        {
+        }
+        return (host, port);
+    }
+
+    private static bool IsLocalHost(string host) =>
+        host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+        host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+        host.Equals("::1", StringComparison.OrdinalIgnoreCase);
     private static ProcessStartInfo ResolveStartInfo()
     {
         string baseDirectory = AppContext.BaseDirectory;
@@ -212,3 +269,12 @@ internal sealed class StudioProcess : IAsyncDisposable
         }
     }
 }
+
+internal sealed class RemoteStudioUnavailableException(Uri uri)
+    : Exception($"SharpMind Studio is not reachable at {uri}.")
+{
+}
+
+
+
+

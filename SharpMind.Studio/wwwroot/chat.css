@@ -466,11 +466,88 @@
     transition: width .18s ease;
 }
 
+.studio-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(3, 7, 11, .72);
+    backdrop-filter: blur(6px);
+}
 
+.studio-dialog {
+    width: min(28rem, 100%);
+    padding: 1.15rem;
+    border: 1px solid var(--line-strong);
+    border-radius: .8rem;
+    background: rgba(16, 24, 33, .98);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, .45);
+}
 
+.studio-dialog-title {
+    color: var(--accent);
+    white-space: nowrap;
+    font-family: var(--mono);
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
 
+.studio-dialog-message {
+    margin-top: .7rem;
+    color: var(--text);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
 
+.studio-dialog-input {
+    display: block;
+    width: 100%;
+    margin-top: .75rem;
+    padding: .55rem .65rem;
+    border: 1px solid var(--line-strong);
+    border-radius: .45rem;
+    background: rgba(8, 13, 18, .9);
+    color: var(--text);
+    outline: none;
+}
 
+.studio-dialog-input:focus {
+    border-color: rgba(var(--accent-rgb), .55);
+}
+
+.studio-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem;
+    margin-top: 1rem;
+}
+
+.studio-dialog-button {
+    min-height: 2.2rem;
+    padding: .45rem .85rem;
+    border: 1px solid var(--line-strong);
+    border-radius: .45rem;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.studio-dialog-button:hover {
+    color: var(--text);
+    border-color: var(--accent);
+}
+
+.studio-dialog-button.primary {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #06201c;
+    font-weight: 700;
+}
 
 
 
