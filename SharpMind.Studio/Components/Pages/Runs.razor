@@ -1,0 +1,393 @@
+@page "/runs"
+@implements IDisposable
+@using SharpMind.Studio.Core.Jobs
+@using SharpMind.Studio.Core.Runs
+@using SharpMind.Studio.Services
+@inject StudioWorkspaceService Workspace
+@inject StudioCanaryService Canary
+@inject InferenceSettingsService Inference
+@inject IJSRuntime JS
+
+<PageTitle>Tests - SharpMind Studio</PageTitle>
+
+<div class="spread" style="margin-bottom: 1rem; align-items: flex-start;">
+    <div class="hero-copy">
+        <div class="eyebrow">History</div>
+        <h1>TESTS</h1>
+        <p>Every run this project has recorded, grouped by family, model, or run type. Fastest first inside each group.</p>
+    </div>
+    <div class="row">
+        <a class="button" href="/test">&larr; Dashboard</a>
+    </div>
+</div>
+
+<section class="metric-grid">
+    <div class="metric">
+        <div class="metric-label">Runs</div>
+        <div class="metric-value">@_runs.Count</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Fastest with tools</div>
+        <div class="metric-value">
+            @if (FastestWithTools is { } gold)
+            {
+                <a class="run-link" href="/runs/@gold.RunId" title="Open the fastest run with tools">
+                    @gold.TokensPerSecond.ToString("F2")
+                </a>
+            }
+            else
+            {
+                <span>-</span>
+            }
+        </div>
+        <div class="small faint">tok/s <span class="run-star gold">&#9733;</span></div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Fastest without tools</div>
+        <div class="metric-value">
+            @if (FastestWithoutTools is { } silver)
+            {
+                <a class="run-link" href="/runs/@silver.RunId" title="Open the fastest run without tools">
+                    @silver.TokensPerSecond.ToString("F2")
+                </a>
+            }
+            else
+            {
+                <span>-</span>
+            }
+        </div>
+        <div class="small faint">tok/s <span class="run-star silver">&#9733;</span></div>
+    </div>
+</section>
+
+<section class="panel" style="margin-top: 1.2rem;">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Filters</div>
+            <h2>@FilteredRuns.Count of @_runs.Count runs</h2>
+        </div>
+        <div class="row">
+            <button type="button" class="button" @onclick="ReloadAsync" disabled="@Canary.IsRunning">
+                Refresh
+            </button>
+        </div>
+    </div>
+    <div class="panel-body stack">
+        <div class="row runs-filters">
+            <div class="field" style="flex: 2 1 16rem;">
+                <label class="field-label" for="runs-search">Search</label>
+                <input id="runs-search" class="input" placeholder="Model, family, run id..."
+                       @bind="_search" @bind:event="oninput" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="runs-group">Group by</label>
+                <select id="runs-group" class="input" @bind="_groupMode">
+                    <option value="Family">Family</option>
+                    <option value="Model">Model</option>
+                    <option value="RunType">Run type</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="runs-kind">Run type</label>
+                <select id="runs-kind" class="input" @bind="_kind">
+                    <option value="">All</option>
+                    <option value="model-bench">model-bench</option>
+                    <option value="tool-probe">tool-probe</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="runs-status">Status</label>
+                <select id="runs-status" class="input" @bind="_status">
+                    <option value="">All</option>
+                    <option value="succeeded">succeeded</option>
+                    <option value="failed">failed</option>
+                    <option value="cancelled">cancelled</option>
+                    <option value="running">running</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="runs-tool">Tools</label>
+                <select id="runs-tool" class="input" @bind="_tool">
+                    <option value="">All</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                    <option value="N/A">N/A</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="status-line">@_status</div>
+        @if (_error is not null)
+        {
+            <div class="error-line">@_error</div>
+        }
+    </div>
+</section>
+
+@if (_runs.Count == 0)
+{
+    <section class="panel" style="margin-top: 1.2rem;">
+        <div class="panel-body">
+            <div class="empty">No runs yet. Start a canary from the dashboard.</div>
+        </div>
+    </section>
+}
+else if (FilteredRuns.Count == 0)
+{
+    <section class="panel" style="margin-top: 1.2rem;">
+        <div class="panel-body">
+            <div class="empty">No runs match these filters.</div>
+        </div>
+    </section>
+}
+else
+{
+    @foreach (RunGroup group in Groups)
+    {
+        <section class="panel runs-group" style="margin-top: 1.2rem;">
+            <div class="panel-head">
+                <div>
+                    <div class="eyebrow">@GroupEyebrow</div>
+                    <h2>@group.Title</h2>
+                </div>
+                <span class="faint small mono">
+                    @group.Runs.Count run@(group.Runs.Count == 1 ? "" : "s")
+                    @if (group.Fastest is { } best)
+                    {
+                        <text> | best @best.TokensPerSecond.ToString("F2") tok/s</text>
+                    }
+                </span>
+            </div>
+            <div class="panel-body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Run</th>
+                            <th>Subject</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Tool</th>
+                            <th>tok/s</th>
+                            <th>Steps</th>
+                            <th>When</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (RunSummary run in group.Runs)
+                        {
+                            <tr>
+                                <td>
+                                    <a class="run-link" href="/runs/@run.RunId">@ShortRun(run.RunId)</a>
+                                    @if (run.RunId == _highlights.FastestWithToolsRunId)
+                                    {
+                                        <span class="run-star gold" title="Fastest run with tools">&#9733;</span>
+                                    }
+                                    else if (run.RunId == _highlights.FastestWithoutToolsRunId)
+                                    {
+                                        <span class="run-star silver" title="Fastest run without tools">&#9733;</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div>@(run.Subject ?? "-")</div>
+                                    <div class="small faint mono">@run.FamilyName</div>
+                                </td>
+                                <td class="mono small">@(run.Kind ?? "-")</td>
+                                <td><span class="status @StatusClass(run.Status)">@run.Status</span></td>
+                                <td>
+                                    @if (run.ToolRunId is not null)
+                                    {
+                                        <a class="status @ToolClass(run.ToolStatus)" href="/runs/@run.ToolRunId">@run.ToolStatus</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="status @ToolClass(run.ToolStatus)">@run.ToolStatus</span>
+                                    }
+                                </td>
+                                <td class="num">@(run.TokensPerSecond > 0 ? run.TokensPerSecond.ToString("F2") : "-")</td>
+                                <td class="num">@run.Steps</td>
+                                <td class="num faint">@FormatWhen(run.StartedUtc)</td>
+                                <td>
+                                    <div class="row" style="gap: .35rem; flex-wrap: nowrap;">
+                                        @if (string.Equals(run.Kind, "model-bench", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <button type="button" class="button" @onclick="() => RerunAsync(run)"
+                                                    disabled="@Canary.IsRunning" title="Run this model again">
+                                                Re-run
+                                            </button>
+                                        }
+                                        <button type="button" class="button danger" @onclick="() => DeleteRunAsync(run)"
+                                                disabled="@Canary.IsRunning" title="Delete this run">
+                                            Delete
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    private IReadOnlyList<RunSummary> _runs = [];
+    private RunHighlights _highlights = new(null, null);
+    private RunGroupMode _groupMode = RunGroupMode.Family;
+    private string _search = "";
+    private string _kind = "";
+    private string _status = "";
+    private string _tool = "";
+    private string _statusMessage = "Ready.";
+    private string? _error;
+    private bool _wasRunning;
+
+    private RunSummary? FastestWithTools => RunGrouping.FastestWithTools(_runs);
+    private RunSummary? FastestWithoutTools => RunGrouping.FastestWithoutTools(_runs);
+
+    private string GroupEyebrow => _groupMode switch
+    {
+        RunGroupMode.Family => "Family",
+        RunGroupMode.Model => "Model",
+        _ => "Run type",
+    };
+
+    private IReadOnlyList<RunSummary> FilteredRuns
+    {
+        get
+        {
+            string search = _search.Trim();
+            return
+            [
+                .. _runs.Where(run =>
+                    (string.IsNullOrWhiteSpace(search) || MatchesSearch(run, search)) &&
+                    (_kind.Length == 0 || string.Equals(run.Kind, _kind, StringComparison.OrdinalIgnoreCase)) &&
+                    (_status.Length == 0 || string.Equals(run.Status, _status, StringComparison.OrdinalIgnoreCase)) &&
+                    (_tool.Length == 0 || string.Equals(run.ToolStatus, _tool, StringComparison.OrdinalIgnoreCase)))
+            ];
+        }
+    }
+
+    private IReadOnlyList<RunGroup> Groups => RunGrouping.Group(FilteredRuns, _groupMode);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Canary.Changed += OnCanaryChanged;
+        _wasRunning = Canary.IsRunning;
+        await ReloadAsync();
+    }
+
+    public void Dispose() => Canary.Changed -= OnCanaryChanged;
+
+    private void OnCanaryChanged() => _ = InvokeAsync(async () =>
+    {
+        bool wasRunning = _wasRunning;
+        _wasRunning = Canary.IsRunning;
+        if (Canary.IsRunning)
+        {
+            _statusMessage = Canary.Status;
+        }
+        else if (wasRunning)
+        {
+            await ReloadAsync();
+            _statusMessage = Canary.Error is null
+                ? "Run finished."
+                : $"Run failed: {Canary.Error}";
+            _error = Canary.Error;
+        }
+
+        StateHasChanged();
+    });
+
+    private async Task ReloadAsync()
+    {
+        if (Canary.IsRunning) return;
+        Workspace.InvalidateRuns();
+        _runs = await Workspace.RecentRunsAsync();
+        _highlights = RunInsights.FindHighlights(_runs);
+        _error = null;
+        _statusMessage = $"Loaded {_runs.Count} runs.";
+    }
+
+    private static bool MatchesSearch(RunSummary run, string search) =>
+        Contains(run.Subject, search) ||
+        Contains(run.ModelPath, search) ||
+        Contains(run.FamilyName, search) ||
+        Contains(run.Kind, search) ||
+        Contains(run.RunId, search);
+
+    private static bool Contains(string? value, string search) =>
+        value is not null && value.Contains(search, StringComparison.OrdinalIgnoreCase);
+
+    private async Task DeleteRunAsync(RunSummary run)
+    {
+        if (Canary.IsRunning) return;
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", $"Delete run {ShortRun(run.RunId)}? This cannot be undone.");
+        if (!confirmed) return;
+
+        try
+        {
+            Workspace.Runs.Delete(run.RunId);
+            await ReloadAsync();
+            _statusMessage = $"Deleted run {ShortRun(run.RunId)}.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+    }
+
+    private void RerunAsync(RunSummary run)
+    {
+        if (Canary.IsRunning) return;
+
+        string? path = Workspace.ResolveModelPath(run.ModelPath) ??
+                       Workspace.ResolveModelPath(run.Subject);
+        if (path is null)
+        {
+            _error = $"Could not find the model for {run.Subject ?? run.RunId}.";
+            return;
+        }
+
+        var builders = Workspace.Builders;
+        var generator = builders.Generators.FirstOrDefault(value =>
+            value.Name.Equals(Inference.System.Generator, StringComparison.OrdinalIgnoreCase));
+        var cache = builders.Caches.FirstOrDefault(value =>
+            value.Name.Equals(Inference.System.Cache, StringComparison.OrdinalIgnoreCase));
+
+        _error = null;
+        _statusMessage = "Starting re-run...";
+        _ = Canary.StartAsync(new CanaryRequest
+        {
+            Models = [path],
+            Prompt = run.Prompt ?? "The capital of France is",
+            WarmupTokens = Math.Max(1, run.WarmupTokens ?? 16),
+            MeasureTokens = Math.Max(1, run.MeasureTokens ?? 32),
+            GeneratorType = generator?.BuilderType,
+            CacheType = cache?.Type,
+            IncludeToolProbe = true,
+        }, Workspace.Runs);
+    }
+
+    private static string ShortRun(string runId) =>
+        runId.Length <= 22 ? runId : runId[..22] + "...";
+
+    private static string StatusClass(string status) => status switch
+    {
+        "succeeded" => "ok",
+        "failed" or "cancelled" => "failed",
+        _ => "running",
+    };
+
+    private static string ToolClass(string status) => status switch
+    {
+        "Yes" => "ok",
+        "No" => "failed",
+        _ => "n-a",
+    };
+
+    private static string FormatWhen(DateTimeOffset? when) =>
+        when is { } value ? value.ToLocalTime().ToString("dd MMM HH:mm") : "-";
+}

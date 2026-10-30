@@ -25,7 +25,7 @@
         </p>
     </div>
     <div class="hero-mark">
-        project / @Workspace.Project.Document.Id[..8]<br />
+        project / @ProjectId<br />
         runs on this machine only
     </div>
 </section>
@@ -37,7 +37,16 @@
     </div>
     <div class="metric">
         <div class="metric-label">Best decode</div>
-        <div class="metric-value">@BestTokensPerSecond</div>
+        <div class="metric-value">
+            @if (BestRun is not null)
+            {
+                <a class="run-link" href="/runs/@BestRun.RunId" title="Open the fastest run">@BestTokensPerSecond</a>
+            }
+            else
+            {
+                @BestTokensPerSecond
+            }
+        </div>
     </div>
     <div class="metric">
         <div class="metric-label">Latest state</div>
@@ -89,9 +98,33 @@
             }
 
             <div class="field">
-                <label class="field-label" for="models">Models, one path per line</label>
-                <textarea id="models" class="textarea" @bind="_modelsText"
-                          placeholder="No models detected. Add one model path per line."></textarea>
+                <div class="spread">
+                    <label class="field-label">Models</label>
+                    <div class="row">
+                        <button type="button" class="button" @onclick="SelectAllModels" disabled="@(IsRunning || _availableModels.Count == 0)">Select all</button>
+                        <button type="button" class="button" @onclick="ClearModels" disabled="@(IsRunning || _selectedModels.Count == 0)">Clear</button>
+                    </div>
+                </div>
+                @if (_availableModels.Count == 0)
+                {
+                    <div class="empty">No .gguf or .smm models found. Scan the folder or load a saved list.</div>
+                }
+                else
+                {
+                    <div class="canary-models">
+                        @foreach (string model in _availableModels)
+                        {
+                            <label class="canary-model" title="@model">
+                                <input type="checkbox" checked="@_selectedModels.Contains(model)"
+                                       disabled="@IsRunning"
+                                       @onchange="e => ToggleModel(model, e.Value)" />
+                                <span class="canary-dot @ModelStateClass(model)"></span>
+                                <span class="canary-model-name">@Path.GetFileName(model)</span>
+                                <span class="canary-model-state">@ModelStateLabel(model)</span>
+                            </label>
+                        }
+                    </div>
+                }
                 <div class="small faint mono">models folder: @Workspace.ModelsFolder</div>
 
                 <div class="row" style="margin-top: .55rem;">
@@ -122,7 +155,6 @@
                     </button>
                 </div>
             </div>
-
             <div class="field">
                 <label class="field-label" for="prompt">Prompt</label>
                 <input id="prompt" class="input" @bind="_prompt" />
@@ -147,7 +179,7 @@
         <div class="panel-body">
             @if (Items.Count == 0)
             {
-                <div class="empty">@(HasModels ? "Run a canary to put the machine on the record." : "No models available to run.")</div>
+                <div class="empty">@(HasModels ? "Run a canary to put the machine on the record." : _availableModels.Count > 0 ? "Select at least one model." : "No models available to run.")</div>
             }
             else
             {
@@ -212,9 +244,12 @@
     <div class="panel-head">
         <div>
             <div class="eyebrow">History</div>
-            <h2>Recent runs</h2>
+            <h2>TESTS</h2>
         </div>
-        <span class="faint small mono">@_runs.Count total | inference @InferenceVersion</span>
+        <div class="row">
+            <span class="faint small mono">@_runs.Count total | inference @InferenceVersion</span>
+            <a class="button" href="/runs">View all runs</a>
+        </div>
     </div>
     <div class="panel-body" style="padding-top: .35rem;">
         @if (_runs.Count == 0)
@@ -240,7 +275,17 @@
                     @foreach (var run in SortedRuns.Take(12))
                     {
                         <tr>
-                            <td><a class="run-link" href="/runs/@run.RunId">@ShortRun(run.RunId)</a></td>
+                            <td>
+                                <a class="run-link" href="/runs/@run.RunId">@ShortRun(run.RunId)</a>
+                                @if (run.RunId == _highlights.FastestWithToolsRunId)
+                                {
+                                    <span class="run-star gold" title="Fastest run with tools">&#9733;</span>
+                                }
+                                else if (run.RunId == _highlights.FastestWithoutToolsRunId)
+                                {
+                                    <span class="run-star silver" title="Fastest run without tools">&#9733;</span>
+                                }
+                            </td>
                             <td>
                                 <div>@(run.Subject ?? "-")</div>
                                 <div class="small faint mono">@run.Kind</div>
@@ -297,7 +342,9 @@
 
 @code {
     private IReadOnlyList<RunSummary> _runs = [];
-    private string _modelsText = "";
+    private RunHighlights _highlights = new(null, null);
+    private List<string> _availableModels = [];
+    private HashSet<string> _selectedModels = new(StringComparer.OrdinalIgnoreCase);
     private string _prompt = "The capital of France is";
     private int _warmup = 16;
     private int _measure = 32;
@@ -317,16 +364,16 @@
     private static string InferenceVersion =>
         typeof(SharpMind.Inference.Chat.IChatSession).Assembly.GetName().Version?.ToString() ?? "unknown";
 
-    private bool HasModels => _modelsText
-        .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-        .Length > 0;
+    private bool HasModels => _selectedModels.Count > 0;
+    private string ProjectId => Workspace.Project.Document.Id is { Length: > 8 } id
+        ? id[..8]
+        : Workspace.Project.Document.Id;
 
     private RunSummary? LatestRun => _runs.FirstOrDefault();
-    private string BestTokensPerSecond => _runs
-        .Where(r => r.TokensPerSecond > 0)
-        .Select(r => r.TokensPerSecond)
-        .DefaultIfEmpty(0)
-        .Max() is var best && best > 0 ? $"{best:F2} tok/s" : "-";
+    private RunSummary? BestRun => _runs
+        .Where(run => run.TokensPerSecond > 0)
+        .MaxBy(run => run.TokensPerSecond);
+    private string BestTokensPerSecond => BestRun is { } best ? $"{best.TokensPerSecond:F2} tok/s" : "-";
 
     private IEnumerable<RunSummary> SortedRuns => _sortColumn switch
     {
@@ -374,12 +421,16 @@
         if (Canary.Status != "Ready.") _status = Canary.Status;
         if (Canary.Error is not null) _error = Canary.Error;
 
-        _modelsText = Canary.ModelPaths.Count > 0
-            ? string.Join(Environment.NewLine, Canary.ModelPaths)
-            : string.Join(Environment.NewLine, Options.Value.CanaryModels);
-        if (string.IsNullOrWhiteSpace(_modelsText)) ScanModels(updateStatus: false);
-        if (string.IsNullOrWhiteSpace(_modelsText))
-            _status = $"No models found. Add paths or scan {Workspace.ModelsFolder}.";
+        string[] scanned = FindModels();
+        string[] configured = Canary.ModelPaths.Count > 0
+            ? [.. Canary.ModelPaths]
+            : Options.Value.CanaryModels ?? [];
+        if (configured.Length > 0)
+            SetModels([.. scanned, .. configured], configured);
+        else
+            SetModels(scanned, scanned);
+        if (_availableModels.Count == 0)
+            _status = $"No models found. Scan {Workspace.ModelsFolder} or load a saved list.";
         _modelLists = Workspace.ModelLists.List();
         _selectedList = _modelLists.FirstOrDefault()?.Name;
         await ReloadRunsAsync();
@@ -401,37 +452,95 @@
 
     private void ScanModels(bool updateStatus)
     {
-        string folder = Workspace.ModelsFolder;
-        if (!Directory.Exists(folder))
-        {
-            if (updateStatus) _status = $"Models folder not found: {folder}";
-            return;
-        }
-
-        string[] models = [.. Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
-            .Where(path => path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase) ||
-                           path.EndsWith(".smm", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)];
-
+        string[] models = FindModels();
         if (models.Length == 0)
         {
             if (updateStatus) _status = "No .gguf or .smm models found in the models folder.";
             return;
         }
 
-        _modelsText = string.Join(Environment.NewLine, models);
-        if (updateStatus) _status = $"Loaded {models.Length} model path(s) from {folder} (including files that may fail to load).";
+        SetModels([.. models, .. _selectedModels], models);
+        if (updateStatus) _status = $"Loaded {models.Length} model path(s) from {Workspace.ModelsFolder} (including files that may fail to load).";
     }
 
+    private string[] FindModels()
+    {
+        string folder = Workspace.ModelsFolder;
+        if (!Directory.Exists(folder)) return [];
+
+        return [.. Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
+            .Where(path => path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase) ||
+                           path.EndsWith(".smm", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private void SetModels(IEnumerable<string> available, IEnumerable<string> selected)
+    {
+        _availableModels = [.. available
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)];
+        _selectedModels = new HashSet<string>(
+            selected.Where(path => !string.IsNullOrWhiteSpace(path)),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void ToggleModel(string model, object? selected)
+    {
+        if (selected is true) _selectedModels.Add(model);
+        else _selectedModels.Remove(model);
+    }
+
+    private void SelectAllModels() => _selectedModels = new(_availableModels, StringComparer.OrdinalIgnoreCase);
+
+    private void ClearModels() => _selectedModels.Clear();
+
+    private string ModelStateClass(string model)
+    {
+        CanaryItem? item = Canary.Items.FirstOrDefault(value =>
+            value.ModelPath.Equals(model, StringComparison.OrdinalIgnoreCase));
+        if (item?.Result is { } result)
+            return result.Succeeded ? "ok" : "failed";
+        if (item?.Status == "running") return "running";
+
+        RunSummary? run = _runs.FirstOrDefault(value =>
+            string.Equals(value.Kind, "model-bench", StringComparison.OrdinalIgnoreCase) &&
+            RunMatchesModel(value, model));
+        return run?.Status switch
+        {
+            "succeeded" => "ok",
+            "failed" or "cancelled" => "failed",
+            "running" => "running",
+            _ => "idle",
+        };
+    }
+
+    private string ModelStateLabel(string model) => ModelStateClass(model) switch
+    {
+        "ok" => "success",
+        "failed" => "failed",
+        "running" => "running",
+        _ => "not run",
+    };
+
+    private static bool RunMatchesModel(RunSummary run, string model)
+    {
+        if (!string.IsNullOrWhiteSpace(run.ModelPath) &&
+            run.ModelPath.Equals(model, StringComparison.OrdinalIgnoreCase))
+            return true;
+        string name = Path.GetFileName(model);
+        string stem = Path.GetFileNameWithoutExtension(model);
+        return string.Equals(run.Subject, name, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(run.Subject, stem, StringComparison.OrdinalIgnoreCase);
+    }
     private void StartCanary()
     {
         if (IsRunning) return;
 
-        string[] models = _modelsText
-            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] models = [.. _selectedModels];
         if (models.Length == 0)
         {
-            _error = "Add at least one model path.";
+            _error = "Select at least one model.";
             return;
         }
 
@@ -480,7 +589,7 @@
             return;
         }
 
-        _modelsText = string.Join(Environment.NewLine, list.Models);
+        SetModels([.. _availableModels, .. list.Models], list.Models);
         _listName = list.Name;
         _error = null;
         _status = $"Loaded list {list.Name} ({list.Models.Count} model path(s)).";
@@ -496,7 +605,7 @@
             return;
         }
 
-        _modelsText = string.Join(Environment.NewLine, list.Models);
+        SetModels([.. _availableModels, .. list.Models], list.Models);
         _listName = list.Name;
         _error = null;
         StartCanary();
@@ -505,8 +614,7 @@
     {
         try
         {
-            string[] models = _modelsText
-                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            string[] models = [.. _selectedModels];
             ModelList list = Workspace.ModelLists.Save(_listName, models);
             _modelLists = Workspace.ModelLists.List();
             _selectedList = list.Name;
@@ -531,13 +639,17 @@
             return;
         }
 
-        _modelsText = path;
+        SetModels([.. _availableModels, path], [path]);
         if (!string.IsNullOrWhiteSpace(run.Prompt)) _prompt = run.Prompt;
         StartCanary();
     }
 
-    private async Task ReloadRunsAsync() =>
+    private async Task ReloadRunsAsync()
+    {
+        Workspace.InvalidateRuns();
         _runs = await Workspace.RecentRunsAsync();
+        _highlights = RunInsights.FindHighlights(_runs);
+    }
 
     private async Task DeleteRunAsync(RunSummary run)
     {
@@ -549,6 +661,7 @@
         try
         {
             Workspace.Runs.Delete(run.RunId);
+            Workspace.InvalidateRuns();
             await ReloadRunsAsync();
             _status = $"Deleted run {ShortRun(run.RunId)}.";
         }
@@ -578,6 +691,15 @@
         _ => "n-a",
     };
 }
+
+
+
+
+
+
+
+
+
 
 
 

@@ -1,0 +1,55 @@
+﻿@using SharpMind.Studio.Core.Inference
+@using SharpMind.Studio.Services
+@inject InferenceSettingsService Inference
+
+<div class="tune-picker">
+    <div class="tune-picker-head">
+        <div>
+            <div class="field-label">Tune</div>
+            <div class="small faint">@(_tuned ? "Choose a tuned profile for this session." : "Tune this model before choosing a profile.")</div>
+        </div>
+        <button type="button" class="button" @onclick="() => OnTune.InvokeAsync()">
+            @(_tuned ? "Re-tune" : "Tune")
+        </button>
+    </div>
+    <div class="tune-picker-options">
+        @foreach (TunePreset preset in new[] { TunePreset.Performance, TunePreset.Balanced, TunePreset.Accuracy })
+        {
+            TuneProfile? profile = _tuned ? Inference.TuneProfile(ModelPath, Target, preset) : null;
+            <button type="button" class="tune-option @(SelectedPreset == preset ? "selected" : "")"
+                    disabled="@(!_tuned)"
+                    @onclick="() => Select(preset)">
+                <span>@preset</span>
+                @if (profile?.Measurement is { Succeeded: true } measurement)
+                {
+                    <small>@measurement.TokensPerSecond.ToString("F1") tok/s</small>
+                }
+                else if (_tuned)
+                {
+                    <small>estimated</small>
+                }
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string? ModelPath { get; set; }
+    [Parameter] public TuneTarget Target { get; set; }
+    [Parameter] public TunePreset? SelectedPreset { get; set; }
+    [Parameter] public EventCallback<TunePreset?> SelectedPresetChanged { get; set; }
+    [Parameter] public EventCallback OnTune { get; set; }
+
+    private bool _tuned;
+
+    protected override void OnParametersSet() => Refresh();
+
+    private void Refresh()
+    {
+        _tuned = Inference.HasTune(ModelPath, Target);
+        if (_tuned && SelectedPreset is null)
+            _ = SelectedPresetChanged.InvokeAsync(TunePreset.Balanced);
+    }
+
+    private Task Select(TunePreset preset) => SelectedPresetChanged.InvokeAsync(preset);
+}

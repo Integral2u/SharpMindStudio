@@ -15,6 +15,9 @@ public sealed record ChatSessionDocument
     public string? FamilyId { get; init; }
     public string? FamilyName { get; init; }
     public string? InferenceVersion { get; init; }
+    public string? TunePreset { get; init; }
+    public string? TuneTarget { get; init; }
+    public string Mode { get; init; } = "chat";
     public string? SystemPrompt { get; set; }
     public DateTimeOffset CreatedUtc { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
@@ -28,8 +31,14 @@ public sealed record ChatSessionSummary
     public required string Id { get; init; }
     public required string Name { get; init; }
     public required string ModelPath { get; init; }
+    public string Mode { get; init; } = "chat";
+    public string? TunePreset { get; init; }
     public DateTimeOffset UpdatedUtc { get; init; }
     public int MessageCount { get; init; }
     public string Preview { get; init; } = "";
 }
+
+
+
+
 

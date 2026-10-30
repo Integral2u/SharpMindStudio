@@ -1,0 +1,46 @@
+@using SharpMind.Studio.Core.Inference
+@using SharpMind.Studio.Core.Runs
+@using SharpMind.Studio.Services
+@inject InferenceSettingsService Inference
+@inject StudioWorkspaceService Workspace
+
+<span class="model-tool-status" title="@_state.Label">
+    <span class="status @_state.CssClass">@_state.Label</span>
+    @if (_state.LatestRun is { TokensPerSecond: > 0 } bench)
+    {
+        <span class="small faint mono">@bench.TokensPerSecond.ToString("F2") tok/s</span>
+    }
+    @if (ShowRunLink && _state.LatestRun is { } run)
+    {
+        <a class="run-link small" href="/runs/@run.RunId">latest run</a>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string? ModelPath { get; set; }
+    [Parameter] public string? FileName { get; set; }
+    [Parameter] public IReadOnlyList<RunSummary>? Runs { get; set; }
+    [Parameter] public bool ShowRunLink { get; set; } = true;
+
+    private ToolCapabilityState _state = new(ToolCapability.Untested, null, null);
+    private string? _resolvedPath;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ModelPath))
+        {
+            _state = new ToolCapabilityState(ToolCapability.Untested, null, null);
+            return;
+        }
+
+        if (string.Equals(_resolvedPath, ModelPath, StringComparison.OrdinalIgnoreCase) && Runs is not null)
+            return;
+
+        _resolvedPath = ModelPath;
+        string? fileName = FileName;
+        IReadOnlyList<RunSummary> runs = Runs ?? await Workspace.RecentRunsAsync();
+        TuneMeasurement? work = Inference
+            .TuneProfile(ModelPath, TuneTarget.Work, TunePreset.Balanced)?.Measurement;
+        _state = RunInsights.ResolveToolCapability(ModelPath, fileName, runs, work);
+    }
+}

@@ -1,0 +1,84 @@
+﻿<Window x:Class="SharpMind.Studio.UI.StartupFailureWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SharpMind Studio"
+        Width="470"
+        SizeToContent="Height"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="False"
+        Topmost="True">
+    <Border Background="#101821"
+            BorderBrush="#2A3948"
+            BorderThickness="1"
+            CornerRadius="10"
+            Padding="20">
+        <StackPanel>
+            <TextBlock x:Name="TitleText"
+                       Text="SharpMind Studio"
+                       Foreground="#5EEAD4"
+                       FontFamily="Consolas"
+                       FontSize="12"
+                       FontWeight="Bold" />
+            <TextBlock Text="Studio could not start"
+                       Foreground="#E6EDF3"
+                       FontFamily="Segoe UI"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Margin="0,10,0,0" />
+            <TextBlock x:Name="MessageText"
+                       Foreground="#8FA3B8"
+                       FontFamily="Segoe UI"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       Margin="0,8,0,0" />
+            <TextBlock Text="Retry reconnects to the configured server. Restart stops the local server first. Reset local defaults returns to 127.0.0.1:5117."
+                       Foreground="#5E7185"
+                       FontFamily="Segoe UI"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Margin="0,12,0,0" />
+            <WrapPanel Orientation="Horizontal"
+                       HorizontalAlignment="Right"
+                       Margin="0,18,0,0">
+                <Button Content="Exit"
+                        Click="OnExit"
+                        Padding="12,6"
+                        Margin="0,0,8,0"
+                        Background="Transparent"
+                        BorderBrush="#2A3948"
+                        Foreground="#8FA3B8"
+                        Cursor="Hand" />
+                <Button Content="Reset local"
+                        Click="OnResetLocal"
+                        Padding="12,6"
+                        Margin="0,0,8,0"
+                        Background="Transparent"
+                        BorderBrush="#2A3948"
+                        Foreground="#8FA3B8"
+                        Cursor="Hand" />
+                <Button Content="Restart"
+                        Click="OnRestart"
+                        Padding="12,6"
+                        Margin="0,0,8,0"
+                        Background="Transparent"
+                        BorderBrush="#2A3948"
+                        Foreground="#E6EDF3"
+                        Cursor="Hand" />
+                <Button x:Name="RetryButton" Content="Retry"
+                        Click="OnRetry"
+                        Padding="18,6"
+                        Background="#5EEAD4"
+                        BorderBrush="#5EEAD4"
+                        Foreground="#06201C"
+                        FontWeight="SemiBold"
+                        Cursor="Hand" />
+            </WrapPanel>
+        </StackPanel>
+    </Border>
+</Window>
+
+

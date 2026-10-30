@@ -1,9 +1,11 @@
 ﻿@page "/"
 @implements IDisposable
 @using SharpMind.Studio.Core.Runs
+@using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Services
 @inject ThemeService Theme
 @inject ModelCatalogService Catalog
+@inject InferenceSettingsService Inference
 @inject StudioChatService ChatService
 @inject StudioWorkspaceService Workspace
 @inject NavigationManager Nav
@@ -12,27 +14,28 @@
 
 <div class="welcome">
     <div class="welcome-head">
-        <h1>What do you want to ask?</h1>
-        <p>Start a chat with a local model. Nothing leaves this machine.</p>
+        <h1>@(_mode == "work" ? "What do you want to work on?" : "What do you want to ask?")</h1>
+        <p>@(_mode == "work" ? "Start a project-backed session with tools. Nothing leaves this machine." : "Start a chat with a local model. Nothing leaves this machine.")</p>
     </div>
 
     <div class="welcome-compose">
         <textarea class="welcome-prompt" data-enter-send="welcome-send" onkeydown="studioChat.enterSend(event, 'welcome-send')" @bind="_prompt" @bind:event="oninput"
-                  placeholder="Ask something, or leave this empty and press Send to start a new chat."></textarea>
+                  placeholder="@(_mode == "work" ? "Describe the task, or leave this empty and press Send to start a new Work session." : "Ask something, or leave this empty and press Send to start a new chat.")"></textarea>
         <button id="welcome-send" type="button" class="button primary welcome-send" @onclick="SendAsync"
-                disabled="@(_busy || ChatService.IsLoading || string.IsNullOrWhiteSpace(_selectedModelPath))">
+                disabled="@(_busy || ChatService.IsLoading || string.IsNullOrWhiteSpace(_selectedModelPath) ||
+                            (_mode == "work" && _toolState.Capability != ToolCapability.Passed && !_allowUnverifiedTools))">
             @(_busy ? "Starting..." : "Send")
         </button>
     </div>
 
     <div class="welcome-modes">
-        <button type="button" class="welcome-mode selected" @onclick='() => _mode = "chat"'>
+        <button type="button" class="welcome-mode @(_mode == "chat" ? "selected" : "")" @onclick='() => SetMode("chat")'>
             <span class="welcome-mode-name">Chat</span>
             <span class="welcome-mode-hint">Talk to the selected model</span>
         </button>
-        <button type="button" class="welcome-mode" disabled title="Work mode is next">
+        <button type="button" class="welcome-mode @(_mode == "work" ? "selected" : "")" @onclick='() => SetMode("work")'>
             <span class="welcome-mode-name">Work</span>
-            <span class="welcome-mode-hint">Coming after Chat</span>
+            <span class="welcome-mode-hint">Start a project-backed session with tools</span>
         </button>
         <button type="button" class="welcome-mode" @onclick="OpenTest">
             <span class="welcome-mode-name">Test</span>
@@ -61,24 +64,21 @@
 
         <div class="field welcome-session">
             <label class="field-label" for="welcome-session">Session</label>
-            <select id="welcome-session" class="input" @bind="_mode">
-                <option value="chat">Chat</option>
-                <option value="work" disabled>Work (not available)</option>
+            <select id="welcome-session" class="input" @bind="_selectedSessionId" @bind:after="OpenSessionAsync">
+                <option value="">New</option>
+                @foreach (var session in _sessions)
+                {
+                    <option value="@session.Id">@session.Name@(session.Mode == "work" ? " / work" : "")</option>
+                }
             </select>
         </div>
 
         <div class="welcome-model-status">
-            @if (_latestRun is null)
-            {
-                <span class="status unknown">unknown</span>
-                <span class="small faint mono">no canary result for this model</span>
-            }
-            else
+            @if (_latestRun is not null)
             {
                 <span class="status @StatusClass(_latestRun.Status)">@_latestRun.Status</span>
-                <span class="small faint mono">@(_latestRun.TokensPerSecond > 0 ? $"{_latestRun.TokensPerSecond:F2} tok/s" : "-")</span>
-                <span class="status @ToolClass(_latestRun.ToolStatus)">tool @_latestRun.ToolStatus</span>
             }
+            <ModelToolStatus ModelPath="_selectedModelPath" FileName="@SelectedFileName" Runs="_runs" />
         </div>
     </div>
 
@@ -97,6 +97,32 @@
         </div>
     }
 
+    @if (!string.IsNullOrWhiteSpace(_selectedModelPath))
+    {
+        <TunePresetPicker ModelPath="_selectedModelPath"
+                          Target="@(_mode == "work" ? TuneTarget.Work : TuneTarget.Chat)"
+                          SelectedPreset="_selectedTunePreset"
+                          SelectedPresetChanged="p => _selectedTunePreset = p"
+                          OnTune="OpenTune" />
+    }
+
+    @if (_mode == "work" && _toolState.Capability != ToolCapability.Passed)
+    {
+        <div class="tool-warning">
+            <div>
+                <strong>Tools are not verified for this model.</strong>
+                <span class="small faint">Work mode depends on tool calling. Test it before relying on Work.</span>
+            </div>
+            <div class="row">
+                <button type="button" class="button" @onclick="OpenTune">Test tools</button>
+                <label class="tool-toggle">
+                    <input type="checkbox" @bind="_allowUnverifiedTools" />
+                    <span>Start anyway</span>
+                </label>
+            </div>
+        </div>
+    }
+
     <div class="status-line">@(ChatService.IsLoading || _busy ? ChatService.Status : "Ready.")</div>
     @if (_error is not null)
     {
@@ -104,15 +130,42 @@
     }
 </div>
 
+@if (_showTuneModal && _tuneModel is not null)
+{
+    <div class="tune-modal-backdrop">
+        <div class="tune-modal">
+            <div class="tune-modal-head">
+                <span>@_tuneModel.FileName</span>
+                <button type="button" class="button" @onclick="CloseTune">Close</button>
+            </div>
+            <ModelTunePanel Model="_tuneModel" InitialTarget="_tuneTarget"
+                            Generators="Workspace.Builders.Generators"
+                            Caches="Workspace.Builders.Caches"
+                            OnSaved="OnTuneSaved" />
+        </div>
+    </div>
+}
+
 @code {
     private IReadOnlyList<ModelDescriptor> _models = [];
     private IReadOnlyList<RunSummary> _runs = [];
+    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> _sessions = [];
+    private string _selectedSessionId = "";
+    private TunePreset? _selectedTunePreset;
+    private bool _showTuneModal;
+    private ModelDescriptor? _tuneModel;
+    private TuneTarget _tuneTarget = TuneTarget.Chat;
     private string? _selectedModelPath;
     private string _prompt = "";
     private string _mode = "chat";
     private RunSummary? _latestRun;
+    private ToolCapabilityState _toolState = new(ToolCapability.Untested, null, null);
+    private bool _allowUnverifiedTools;
     private bool _busy;
     private string? _error;
+
+    private string? SelectedFileName =>
+        _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.FileName;
 
     private string LoadPercent => ChatService.LoadProgress is { } value
         ? $"{value * 100:F0}%"
@@ -123,41 +176,63 @@
         ChatService.Changed += OnChatChanged;
         _models = await Catalog.RefreshAsync();
         _runs = await Workspace.RecentRunsAsync();
+        _sessions = ChatService.Sessions;
         _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
             ? Theme.LastChatModel
             : _models.FirstOrDefault()?.Path;
         UpdateLatestRun();
+        RefreshTuneSelection();
     }
 
     public void Dispose() => ChatService.Changed -= OnChatChanged;
 
-    private void OnChatChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnChatChanged() => _ = InvokeAsync(() =>
+    {
+        _sessions = ChatService.Sessions;
+        StateHasChanged();
+    });
+
+    private void SetMode(string mode)
+    {
+        _mode = mode;
+        _error = null;
+        _allowUnverifiedTools = false;
+        RefreshTuneSelection();
+        UpdateLatestRun();
+    }
+
+    private void OpenSessionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedSessionId)) return;
+        var session = _sessions.FirstOrDefault(value => value.Id == _selectedSessionId);
+        _selectedSessionId = "";
+        if (session is null) return;
+        Nav.NavigateTo(session.Mode == "work" ? $"/work/{session.Id}" : $"/chat/{session.Id}");
+    }
 
     private async Task SaveDefaultModelAsync()
     {
         await Theme.SetLastChatModelAsync(_selectedModelPath);
         UpdateLatestRun();
+        RefreshTuneSelection();
     }
 
     private void UpdateLatestRun()
     {
-        string? fileName = _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.FileName;
+        string? fileName = SelectedFileName;
         _latestRun = fileName is null
             ? null
-            : _runs.FirstOrDefault(run =>
-                run.Kind == "model-bench" &&
-                string.Equals(run.Subject, fileName, StringComparison.OrdinalIgnoreCase));
+            : RunInsights.LatestBench(_runs, _selectedModelPath, fileName);
+
+        TuneMeasurement? work = string.IsNullOrWhiteSpace(_selectedModelPath)
+            ? null
+            : Inference.TuneProfile(_selectedModelPath, TuneTarget.Work, TunePreset.Balanced)?.Measurement;
+        _toolState = RunInsights.ResolveToolCapability(_selectedModelPath, fileName, _runs, work);
     }
 
     private async Task SendAsync()
     {
         if (_busy) return;
-        if (_mode != "chat")
-        {
-            _error = "Only Chat is available in this lab.";
-            return;
-        }
-
         ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
         if (model is null)
         {
@@ -170,7 +245,16 @@
         try
         {
             await Theme.SetLastChatModelAsync(model.Path);
-            await ChatService.NewChatAsync(model, systemPrompt: null);
+            TuneTarget target = _mode == "work" ? TuneTarget.Work : TuneTarget.Chat;
+            if (Inference.HasTune(model.Path, target) && _selectedTunePreset is null)
+                _selectedTunePreset = TunePreset.Balanced;
+            TuneProfile? tune = _selectedTunePreset is { } selected
+                ? Inference.TuneProfile(model.Path, target, selected)
+                : null;
+            await ChatService.NewChatAsync(model, systemPrompt: null, overrides: tune?.Overrides,
+                mode: _mode,
+                tunePreset: tune is null ? null : _selectedTunePreset?.ToString(),
+                tuneTarget: target.ToString());
             if (ChatService.Document is null || ChatService.Status != "Ready.")
             {
                 _error = ChatService.Error ?? ChatService.Status;
@@ -179,7 +263,7 @@
 
             if (!string.IsNullOrWhiteSpace(_prompt))
                 ChatService.PendingPrompt = _prompt.Trim();
-            Nav.NavigateTo($"/chat/{ChatService.Document.Id}");
+            Nav.NavigateTo(_mode == "work" ? $"/work/{ChatService.Document.Id}" : $"/chat/{ChatService.Document.Id}");
         }
         finally
         {
@@ -187,6 +271,36 @@
         }
     }
 
+    private void RefreshTuneSelection()
+    {
+        TuneTarget target = _mode == "work" ? TuneTarget.Work : TuneTarget.Chat;
+        if (string.IsNullOrWhiteSpace(_selectedModelPath) || !Inference.HasTune(_selectedModelPath, target))
+        {
+            _selectedTunePreset = null;
+            return;
+        }
+
+        if (_selectedTunePreset is null ||
+            Inference.TuneProfile(_selectedModelPath, target, _selectedTunePreset.Value) is null)
+            _selectedTunePreset = TunePreset.Balanced;
+    }
+
+    private void OpenTune()
+    {
+        _tuneModel = _models.FirstOrDefault(model => model.Path == _selectedModelPath);
+        if (_tuneModel is null) return;
+        _tuneTarget = _mode == "work" ? TuneTarget.Work : TuneTarget.Chat;
+        _showTuneModal = true;
+    }
+
+    private void CloseTune() => _showTuneModal = false;
+
+    private void OnTuneSaved()
+    {
+        _showTuneModal = false;
+        RefreshTuneSelection();
+        UpdateLatestRun();
+    }
     private void OpenTest() => Nav.NavigateTo("/test");
 
     private static string StatusClass(string status) => status switch
@@ -203,6 +317,11 @@
         _ => "unknown",
     };
 }
+
+
+
+
+
 
 
 

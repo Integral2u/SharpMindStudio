@@ -1,0 +1,297 @@
+@using SharpMind.Studio.Core.Gateway
+@using SharpMind.Studio.Services
+@implements IDisposable
+@inject GatewayService Gateway
+@inject StudioDeviceAccess DeviceAccess
+@inject IJSRuntime JS
+
+@if (!DeviceAccess.IsDevice)
+{
+    <div class="gateway-admin">
+        @if (!LanEnabled)
+        {
+            <div class="small faint">
+                LAN device pairing is off. Turn it on above and restart Studio before scanning this code.
+            </div>
+        }
+        @if (_addresses.Count == 0)
+        {
+            <div class="empty">
+                No LAN address found. Connect this PC to a network and enable LAN device pairing.
+            </div>
+        }
+        else
+        {
+            <div class="gateway-admin-head">
+                <div class="field gateway-address">
+                    <label class="field-label" for="gateway-address">LAN address</label>
+                    <select id="gateway-address" class="input" @bind="_selectedAddress">
+                        @foreach (LanAddress address in _addresses)
+                        {
+                            <option value="@address.Url">@address.Address - @address.Url</option>
+                        }
+                    </select>
+                </div>
+                <button type="button" class="button primary" @onclick="CreatePairingAsync" disabled="@_busy">
+                    @(_busy ? "Preparing..." : _offer is null ? "Create pairing" : "New pairing")
+                </button>
+            </div>
+
+            @if (_error is not null)
+            {
+                <div class="error-line">@_error</div>
+            }
+
+            @if (_offer is null)
+            {
+                <div class="gateway-qr-placeholder">
+                    <span class="spinner-ring"></span>
+                    <span class="small faint">Preparing a pairing code...</span>
+                </div>
+            }
+            else
+            {
+                <div class="gateway-pair-box">
+                    <img class="gateway-qr" src="@_qrDataUrl" alt="Pairing QR" />
+                    <div class="gateway-pair-copy">
+                        <div class="small faint">Scan on the phone, or open:</div>
+                        <div class="gateway-url">
+                            <span class="mono">@_pairingUrl</span>
+                            <button type="button" class="button" @onclick="CopyUrlAsync">Copy</button>
+                        </div>
+                        <div class="small faint">PIN</div>
+                        <div class="gateway-pin">@_offer.Pin</div>
+                        <div class="small faint">Expires @_offer.Session.ExpiresUtc.ToLocalTime().ToString("HH:mm:ss")</div>
+                    </div>
+                </div>
+            }
+
+            <div class="gateway-status small">@_status</div>
+        }
+
+        @if (_pending.Count > 0)
+        {
+            <div class="gateway-section">
+                <div class="eyebrow">Waiting for approval</div>
+                @foreach (PairingSession pending in _pending)
+                {
+                    <div class="gateway-pending">
+                        <div>
+                            <strong>@pending.DeviceName</strong>
+                            <div class="small faint">@pending.UserAgent</div>
+                            <div class="small faint mono">@pending.Ip</div>
+                        </div>
+                        <div class="row">
+                            <button type="button" class="button primary" @onclick="() => ApproveAsync(pending.Id, GatewayModes.Mobile)">
+                                Approve mobile
+                            </button>
+                            <button type="button" class="button" @onclick="() => ApproveAsync(pending.Id, GatewayModes.Full)">
+                                Approve full
+                            </button>
+                            <button type="button" class="button danger" @onclick="() => DenyAsync(pending.Id)">
+                                Deny
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="gateway-section">
+            <div class="eyebrow">Trusted devices</div>
+            @if (_devices.Count == 0)
+            {
+                <div class="small faint">No paired devices.</div>
+            }
+            else
+            {
+                @foreach (GatewayDevice device in _devices)
+                {
+                    <div class="gateway-device">
+                        <div>
+                            <strong>@device.Name</strong>
+                            <div class="small faint">
+                                @(device.Revoked ? "revoked" : device.Mode) · @(string.IsNullOrWhiteSpace(device.LastIp) ? "no address" : device.LastIp)
+                                · seen @(device.LastSeenUtc is { } seen ? seen.ToLocalTime().ToString("dd MMM HH:mm") : "never")
+                            </div>
+                        </div>
+                        <div class="row">
+                            <button type="button" class="button" @onclick="() => SetModeAsync(device.Id, GatewayModes.Mobile)"
+                                    disabled="@(device.Mode == GatewayModes.Mobile && !device.Revoked)">
+                                Mobile
+                            </button>
+                            <button type="button" class="button" @onclick="() => SetModeAsync(device.Id, GatewayModes.Full)"
+                                    disabled="@(device.Mode == GatewayModes.Full && !device.Revoked)">
+                                Full
+                            </button>
+                            <button type="button" class="button danger" @onclick="() => RevokeAsync(device.Id)"
+                                    disabled="@device.Revoked">
+                                Revoke
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool LanEnabled { get; set; } = true;
+
+    private IReadOnlyList<LanAddress> _addresses = [];
+    private IReadOnlyList<PairingSession> _pending = [];
+    private IReadOnlyList<GatewayDevice> _devices = [];
+    private string? _selectedAddress;
+    private PairingOffer? _offer;
+    private string _pairingUrl = "";
+    private string _qrDataUrl = "";
+    private string _status = "";
+    private string? _error;
+    private bool _busy;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || DeviceAccess.IsDevice) return;
+
+        _cts = new CancellationTokenSource();
+        LoadAddresses();
+        RefreshLists();
+        if (_addresses.Count > 0) await CreatePairingAsync();
+        _ = PollAsync(_cts.Token);
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+
+    private void LoadAddresses()
+    {
+        _addresses = Gateway.LanAddresses();
+        _selectedAddress ??= _addresses.FirstOrDefault()?.Url;
+    }
+
+    private async Task CreatePairingAsync()
+    {
+        if (_busy) return;
+        LoadAddresses();
+        if (_addresses.Count == 0)
+        {
+            _error = "No LAN address is available.";
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            string address = string.IsNullOrWhiteSpace(_selectedAddress) ? _addresses[0].Url : _selectedAddress;
+            _offer = Gateway.CreatePairing();
+            _pairingUrl = $"{address}/pair?t={Uri.EscapeDataString(_offer.Token)}";
+            _qrDataUrl = GatewayService.QrDataUrl(_pairingUrl);
+            _status = "Waiting for the phone to enter the PIN.";
+            RefreshLists();
+        }
+        catch (Exception ex)
+        {
+            _offer = null;
+            _qrDataUrl = "";
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CopyUrlAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_pairingUrl)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _pairingUrl);
+            _status = "Pairing URL copied.";
+        }
+        catch
+        {
+            _status = "Could not copy automatically. Select the URL and copy it.";
+        }
+    }
+
+    private async Task ApproveAsync(string id, string mode)
+    {
+        Gateway.Approve(id, mode);
+        RefreshLists();
+        _status = mode == GatewayModes.Mobile ? "Approved for mobile." : "Approved for full access.";
+        await Task.CompletedTask;
+    }
+
+    private async Task DenyAsync(string id)
+    {
+        Gateway.Deny(id);
+        RefreshLists();
+        _status = "Pairing denied.";
+        await Task.CompletedTask;
+    }
+
+    private async Task SetModeAsync(string id, string mode)
+    {
+        Gateway.SetMode(id, mode);
+        RefreshLists();
+        _status = $"Device mode changed to {mode}.";
+        await Task.CompletedTask;
+    }
+
+    private async Task RevokeAsync(string id)
+    {
+        Gateway.Revoke(id);
+        RefreshLists();
+        _status = "Device revoked.";
+        await Task.CompletedTask;
+    }
+
+    private void RefreshLists()
+    {
+        _pending = Gateway.PendingPairings();
+        _devices = Gateway.Devices();
+
+        if (_offer is not null)
+        {
+            PairingSession? current = Gateway.Pairings().FirstOrDefault(value => value.Id == _offer.Session.Id);
+            if (current is not null)
+            {
+                _status = current.Status switch
+                {
+                    PairingStatuses.AwaitingApproval => "Phone entered the PIN. Approve it below.",
+                    PairingStatuses.Approved => "Paired. The phone can open Studio now.",
+                    PairingStatuses.Denied => "Pairing denied.",
+                    PairingStatuses.Expired => "Pairing expired. Create a new pairing.",
+                    _ => _status,
+                };
+            }
+        }
+    }
+
+    private async Task PollAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(() =>
+                {
+                    RefreshLists();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+}

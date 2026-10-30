@@ -1,0 +1,11 @@
+﻿@page "/work"
+@page "/work/{ChatId}"
+@using SharpMind.Studio.Components.Pages
+
+<Chat ChatId="@ChatId" WorkMode="true" />
+
+@code {
+    [Parameter] public string? ChatId { get; set; }
+}
+
+

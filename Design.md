@@ -1,8 +1,8 @@
 ﻿# SharpMind Studio - Design
 
 > **Status:** implementation in progress, October 2026. Studio **1.1.0.0**.
-> Built: shell, projects/runs/recipes, canary and tool probes, Chat lab, layered inference settings.
-> Remaining: Work mode and the Training lab.
+> Built: shell, projects/runs/recipes, canary and tool probes, TESTS run history, Chat lab, layered inference settings, Work mode MVP, model Tune presets, shared skills/tools, and the phone pairing gateway.
+> Remaining: the Training lab, Work hardening (richer skills and tool management), and gateway proxy mode.
 SharpMind Studio is a local-first application for chatting with models, doing project work with them, and building them: from scratch, from a base model, or by upgrading a model you already have. It is the successor to the terminal UI (CUI) as the primary front end, and it is meant to be something people want to use: attractive, calm and fast.
 
 ---
@@ -31,7 +31,7 @@ SharpMind Studio is a local-first application for chatting with models, doing pr
 ### Work mode sandboxing
 
 - Tools are jailed to the project root, with per-project `Never / Ask / Always` permission profiles.
-- Path jailing is **not** isolation for untrusted code. Running code safely needs an OS container, offered as an opt-in Docker/Podman tool plugin and labelled as the only true isolation.
+- Path jailing is not isolation for untrusted code. A container sandbox is deliberately out of scope for 1.1; the boundary is the configured project folders, not the operating system.
 
 ---
 
@@ -182,6 +182,75 @@ Chat stores one document per conversation under the project's `chats/` folder. E
 Chat output is plain text while streaming and sanitized Markdown when the turn completes. Raw HTML is disabled and links are restricted to http, https and mailto.
 
 ---
+
+### 4.9 Work mode
+
+The Work MVP is project-scoped:
+
+- Projects live under `%USERPROFILE%\SharpMind\Workspaces`; the default is `Workspaces\Studio`.
+- `work.json` holds project instructions, skill selections, web permission, disabled tools, and context locations with per-folder read, write and delete permissions.
+- `memory.md` is plain Markdown. Skills are Markdown files in the shared repository; projects select which ones to use and can override the system default.
+- Skills live in `%USERPROFILE%\SharpMind\Skills`; defaults are stored in `Studio\work-skills.json` and maintained under Settings > System. Projects pick from that repository, including skills copied in by hand.
+- File tools list, read, search, write, append, create and delete across the configured contexts; a separate Web permission governs URL fetches. Tools run in Work only, never Chat.
+- Tool defaults live in Settings > System; the catalog includes built-ins plus [ToolDesc] plugin tools discovered from the plugins folder. Projects override individual tools, and Chat never receives them.
+- `Ask` posts a permission card in the Work chat with Deny, Allow once and Always allow. Always persists to `work.json`.
+- Work chats are ordinary chat documents with `mode: "work"`, so history, KV snapshots and inference settings reuse the Chat spine.
+- Work projects can be created and switched without restarting Studio; the current project is remembered.
+
+### 4.10 Tune presets
+
+Model Tune keeps separate Chat and Work tuning:
+
+- Presets: **Performance**, **Balanced**, **Accuracy**.
+- Tune builds all three presets in one measured run; each preset records generator/cache/load mode and benchmark results.
+- New Chat and Work sessions show the three presets; they are disabled until the selected model and target have been tuned. A Tune/Re-tune button opens the modal panel.
+- The chosen preset is snapshotted into the chat session; re-tuning affects new sessions.
+- Work presets default to `StandardGeneratorBuilder`, but other and plugin generators can be selected; the measured Work run also checks tool calling.
+- Work tuning first establishes or reuses the measured Chat baseline, derives Work presets from it, then tests tool calling and retries with Standard + low temperature if the probe fails.
+- Temperature, Top-K, Top-P, Min-P, repetition, generator, KV cache, context, max-new-tokens and load mode are editable.
+
+### 4.11 TESTS and run history
+
+The canary dashboard lives at `/test`; the full history lives at `/runs`.
+
+- `/test` keeps the canary controls, this run's results, and the 12 most recent runs. **Best decode** links straight to the fastest run, and **View all runs** opens `/runs`.
+- `/runs` shows every run in the current project. It filters by search text, run type, status and tool status, and groups by **family**, **model** or **run type**.
+- Runs are sorted fastest to slowest inside each group; runs without a measurement follow, newest first. Measured decode is the comparison, so tool-probe runs never win a speed award.
+- Gold star: fastest successful `model-bench` run whose tool probe passed. Silver star: fastest successful `model-bench` run without a passing tool probe. Users can delete a run or re-run its model from either view.
+- Run summaries are cached for three seconds and invalidated on delete, re-run completion, and project switch, so opening a page does not rescan 200 event streams per render.
+
+### 4.12 Phone gateway
+
+Studio hosts the phone experience itself; there is no separate gateway project.
+
+- Two listeners in one process: loopback admin on `127.0.0.1:5117` and an optional LAN listener on `0.0.0.0:5118`. LAN pairing is off by default. mDNS discovery is not used in 1.1.
+- Pairing data is JSON under `Studio\Gateway`. Device tokens and pairing tokens are stored as hashes; PINs are salted and slow-hashed; upstream secrets are encrypted. A pairing expires after five minutes, is single-use, and locks after five bad PIN attempts.
+- A phone scans the QR code, enters the PIN, and waits for approval. The PC approves **mobile** or **full** access, can change a device's mode, and can revoke it.
+- Pairing admin lives in **Settings > System**. The QR code is generated as a PNG data URL by QRCoder and appears as soon as the panel opens. `/gateway` redirects to that panel; the standalone `/gateway/admin.html` page is kept for diagnostics.
+- A paired phone receives an HttpOnly `sharpmind_device` cookie with signed claims. Mobile scope is Chat plus a bare-bones Work: prompt, interrupt, and view sessions and artifacts. Settings, tools, skills, context rules and project switching stay on the PC.
+- Restrictions are enforced in Studio from the signed claims, including inside Blazor circuit actions, not only by hiding navigation.
+
+### 4.13 Where data lives
+
+Studio keeps settings separate from project data so a project can be moved or copied without carrying machine preferences.
+
+```
+%USERPROFILE%\SharpMind
+  Models\ Corpus\ Training\ Chat Sessions\     shared with the CUI
+  Skills\                                      shared Work skills repository
+  Studio\                                      machine settings, not a project
+    settings.json  inference.json  workspace.json
+    work-skills.json  work-tools.json
+    Gateway\                                   device/pairing state
+  Workspaces\
+    Studio\                                    default project
+      project.json  work.json  memory.md
+      runs\  chats\  model-lists\  data\  models\  evals\
+```
+
+- Every project gets its own `runs\` and `chats\`. The default project is `Workspaces\Studio`; Work projects are siblings under `Workspaces\`.
+- Settings > System shows these paths and opens the project, runs and settings folders directly.
+- Empty legacy folders such as `Studio\runs` or `Studio\chats` are pruned at startup when they contain no files. Anything holding data is left alone.
 
 ## 5. The Training lab
 
@@ -451,4 +520,6 @@ Draft slices, not yet confirmed:
 - **Replay mix:** general data blended into domain data to reduce forgetting.
 - **QAT:** quantization-aware training.
 - **Working-set curve:** cache hit rate versus resident-expert count for streaming MoE.
+
+
 

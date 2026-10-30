@@ -28,8 +28,14 @@ public static class StudioPaths
     public static string Training => Path.Combine(Root, "Training");
     public static string ChatSessions => Path.Combine(Root, "Chat Sessions");
     public static string Projects => Path.Combine(Root, "Studio");
+    public static string Workspaces => Path.Combine(Root, "Workspaces");
+    public static string Skills => Path.Combine(Root, "Skills");
+    public static string WorkspaceFile => Path.Combine(Projects, "workspace.json");
     public static string SettingsFile => Path.Combine(Projects, "settings.json");
     public static string InferenceFile => Path.Combine(Projects, "inference.json");
+    public static string WorkSkillsFile => Path.Combine(Projects, "work-skills.json");
+    public static string WorkToolsFile => Path.Combine(Projects, "work-tools.json");
+    public static string Gateway => Path.Combine(Projects, "Gateway");
 
     public static void EnsureCreated()
     {
@@ -39,6 +45,9 @@ public static class StudioPaths
         Directory.CreateDirectory(Training);
         Directory.CreateDirectory(ChatSessions);
         Directory.CreateDirectory(Projects);
+        Directory.CreateDirectory(Gateway);
+        Directory.CreateDirectory(Workspaces);
+        Directory.CreateDirectory(Skills);
     }
 
     private static string GetBase()
@@ -49,4 +58,9 @@ public static class StudioPaths
             : profile;
     }
 }
+
+
+
+
+
 

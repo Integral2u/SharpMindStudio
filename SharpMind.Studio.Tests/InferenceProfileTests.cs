@@ -57,15 +57,25 @@ public sealed class InferenceSettingsStoreTests
 
         store.SetFamily("qwen2", new InferenceOverrides { Temperature = 0.3f });
         store.SetModel(temp.Combine("models", "tiny.gguf"), new InferenceOverrides { TopK = 12 });
+        store.SetWorkModel(temp.Combine("models", "tiny.gguf"), new InferenceOverrides { TopK = 7 });
+        store.SetTuneSet(temp.Combine("models", "tiny.gguf"), new TuneProfileSet
+        {
+            ModelFingerprint = "1:2",
+            Profiles = [new TuneProfile { Target = TuneTarget.Chat, Preset = TunePreset.Balanced }],
+        });
 
         var reopened = new InferenceSettingsStore(path);
         Assert.Equal(0.3f, reopened.FamilyOverrides("qwen2")!.Temperature);
         Assert.Equal(12, reopened.ModelOverrides(temp.Combine("models", "tiny.gguf"))!.TopK);
+        Assert.Equal(7, reopened.WorkModelOverrides(temp.Combine("models", "tiny.gguf"))!.TopK);
+        Assert.Single(reopened.TuneSet(temp.Combine("models", "tiny.gguf"))!.Profiles);
 
         reopened.DeleteFamily("qwen2");
         reopened.DeleteModel(temp.Combine("models", "tiny.gguf"));
+        reopened.DeleteWorkModel(temp.Combine("models", "tiny.gguf"));
         Assert.Null(reopened.FamilyOverrides("qwen2"));
         Assert.Null(reopened.ModelOverrides(temp.Combine("models", "tiny.gguf")));
+        Assert.Null(reopened.WorkModelOverrides(temp.Combine("models", "tiny.gguf")));
     }
 }
 
@@ -106,4 +116,6 @@ public sealed class StudioModelHostTests
         Assert.Equal(0, host.LoadedModelCount);
     }
 }
+
+
 

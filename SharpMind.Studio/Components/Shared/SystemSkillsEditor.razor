@@ -1,0 +1,115 @@
+﻿@using SharpMind.Studio.Services
+@using SharpMind.Studio.Core.Work
+@inject SystemWorkSkillsService Skills
+@inject StudioChatService ChatService
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Work inheritance</div>
+            <h2>System skills</h2>
+        </div>
+        <span class="faint small mono">@Skills.Folder</span>
+    </div>
+    <div class="panel-body stack">
+        <p class="small faint">
+            These skills live in the shared Skills folder. Each project chooses which ones to use; a project can override the defaults. You can add skills here or copy .md files into the folder.
+        </p>
+
+        @if (_drafts.Count == 0)
+        {
+            <div class="empty">No system skills yet.</div>
+        }
+
+        @foreach (SkillDraft skill in _drafts)
+        {
+            <div class="work-skill-card">
+                <div class="row">
+                    <label class="tool-toggle">
+                        <input type="checkbox" @bind="skill.DefaultEnabled" />
+                        <span>On by default</span>
+                    </label>
+                    <input class="input" @bind="skill.Name" placeholder="Skill name" />
+                    <button type="button" class="button danger" @onclick="() => Remove(skill)">Delete</button>
+                </div>
+                <textarea class="textarea work-textarea" @bind="skill.Content"
+                          placeholder="Instructions the agent should follow."></textarea>
+            </div>
+        }
+
+        <div class="row">
+            <button type="button" class="button" @onclick="Add">Add skill</button>
+            <button type="button" class="button" @onclick="Refresh">Refresh folder</button>
+            <button type="button" class="button primary" @onclick="SaveAsync">Save system skills</button>
+            <span class="status-line">@_status</span>
+        </div>
+    </div>
+</section>
+
+@code {
+    private sealed class SkillDraft
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Content { get; set; } = "";
+        public bool DefaultEnabled { get; set; } = true;
+    }
+
+    private List<SkillDraft> _drafts = [];
+    private string _status = "";
+
+    protected override void OnInitialized() => Load();
+
+    private void Load()
+    {
+        _drafts = [.. Skills.Skills.Select(skill => new SkillDraft
+        {
+            Id = skill.Id,
+            Name = skill.Name,
+            Content = skill.Content,
+            DefaultEnabled = skill.DefaultEnabled,
+        })];
+    }
+
+    private void Refresh()
+    {
+        Skills.Reload();
+        Load();
+        _status = $"Loaded {_drafts.Count} skill(s) from {Skills.Folder}.";
+    }
+
+    private void Add()
+    {
+        _drafts.Add(new SkillDraft { Id = Guid.NewGuid().ToString("n"), DefaultEnabled = true });
+        _status = "";
+    }
+
+    private void Remove(SkillDraft skill)
+    {
+        _drafts.Remove(skill);
+        _status = "";
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            Skills.Save(_drafts.Select(skill => new WorkSkill
+            {
+                Id = skill.Id,
+                Name = skill.Name,
+                Content = skill.Content,
+                DefaultEnabled = skill.DefaultEnabled,
+            }));
+            Load();
+            await ChatService.ReloadWorkContextAsync();
+            _status = $"Saved {_drafts.Count} system skill(s).";
+        }
+        catch (Exception ex)
+        {
+            _status = $"{ex.GetType().Name}: {ex.Message}";
+        }
+    }
+}
+
+

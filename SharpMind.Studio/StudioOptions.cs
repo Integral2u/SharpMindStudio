@@ -4,8 +4,10 @@ namespace SharpMind.Studio;
 
 public sealed class StudioOptions
 {
-    public string ProjectRoot { get; set; } = "Studio";
+    public string ProjectRoot { get; set; } = "Workspaces/Studio";
     public string Url { get; set; } = "http://127.0.0.1:5117";
+    public bool LanEnabled { get; set; }
+    public string LanUrl { get; set; } = "http://0.0.0.0:5118";
     public string[] CanaryModels { get; set; } = [];
     public string? ModelsFolder { get; set; }
     public string? CorpusFolder { get; set; }
@@ -26,4 +28,6 @@ public sealed class StudioOptions
             ? Path.Combine(AppContext.BaseDirectory, "plugins")
             : PluginsFolder;
 }
+
+
 

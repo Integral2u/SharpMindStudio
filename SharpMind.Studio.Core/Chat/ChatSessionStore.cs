@@ -39,6 +39,8 @@ public sealed class ChatSessionStore
                     Id = document.Id,
                     Name = document.Name,
                     ModelPath = document.ModelPath,
+                    Mode = document.Mode,
+                    TunePreset = document.TunePreset,
                     UpdatedUtc = document.UpdatedUtc,
                     MessageCount = document.Messages.Count,
                     Preview = preview.ReplaceLineEndings(" "),
@@ -52,7 +54,7 @@ public sealed class ChatSessionStore
         return [.. sessions.OrderByDescending(session => session.UpdatedUtc)];
     }
 
-    public ChatSessionDocument Create(string modelPath, string? familyId, string? familyName, string? inferenceVersion, string? systemPrompt)
+    public ChatSessionDocument Create(string modelPath, string? familyId, string? familyName, string? inferenceVersion, string? systemPrompt, string mode = "chat", string? tunePreset = null, string? tuneTarget = null)
     {
         string id = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("n")[..8]}";
         string name = $"{Path.GetFileNameWithoutExtension(modelPath)} chat";
@@ -65,6 +67,9 @@ public sealed class ChatSessionStore
             FamilyId = familyId,
             FamilyName = familyName,
             InferenceVersion = inferenceVersion,
+            Mode = mode,
+            TunePreset = tunePreset,
+            TuneTarget = tuneTarget,
             SystemPrompt = systemPrompt,
             Messages = [],
         };
@@ -178,4 +183,6 @@ public sealed class ChatSessionStore
         return directory;
     }
 }
+
+
 

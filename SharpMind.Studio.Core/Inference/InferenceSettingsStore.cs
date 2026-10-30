@@ -1,4 +1,4 @@
-using SharpMind.Studio.Core.Serialization;
+﻿using SharpMind.Studio.Core.Serialization;
 
 namespace SharpMind.Studio.Core.Inference;
 
@@ -10,6 +10,8 @@ public sealed record InferenceSettingsDocument
     public InferenceOverrides System { get; set; } = InferenceOverrides.SystemDefaults();
     public Dictionary<string, InferenceOverrides> Families { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, InferenceOverrides> Models { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, InferenceOverrides> WorkModels { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, TuneProfileSet> TuneProfiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class InferenceSettingsStore
@@ -41,6 +43,20 @@ public sealed class InferenceSettingsStore
         string key = NormalizeModel(modelPath);
         lock (_gate)
             return _document.Models.GetValueOrDefault(key);
+    }
+
+    public TuneProfileSet? TuneSet(string modelPath)
+    {
+        string key = NormalizeModel(modelPath);
+        lock (_gate)
+            return _document.TuneProfiles.GetValueOrDefault(key);
+    }
+
+    public InferenceOverrides? WorkModelOverrides(string modelPath)
+    {
+        string key = NormalizeModel(modelPath);
+        lock (_gate)
+            return _document.WorkModels.GetValueOrDefault(key);
     }
 
     public void SetSystem(InferenceOverrides profile)
@@ -89,6 +105,42 @@ public sealed class InferenceSettingsStore
         }
     }
 
+    public void SetTuneSet(string modelPath, TuneProfileSet profiles)
+    {
+        lock (_gate)
+        {
+            _document.TuneProfiles[NormalizeModel(modelPath)] = profiles;
+            SaveLocked();
+        }
+    }
+
+    public void DeleteTuneSet(string modelPath)
+    {
+        lock (_gate)
+        {
+            _document.TuneProfiles.Remove(NormalizeModel(modelPath));
+            SaveLocked();
+        }
+    }
+
+    public void SetWorkModel(string modelPath, InferenceOverrides profile)
+    {
+        lock (_gate)
+        {
+            _document.WorkModels[NormalizeModel(modelPath)] = profile;
+            SaveLocked();
+        }
+    }
+
+    public void DeleteWorkModel(string modelPath)
+    {
+        lock (_gate)
+        {
+            _document.WorkModels.Remove(NormalizeModel(modelPath));
+            SaveLocked();
+        }
+    }
+
     private InferenceSettingsDocument Load()
     {
         try
@@ -105,6 +157,14 @@ public sealed class InferenceSettingsStore
                 document.Families, StringComparer.OrdinalIgnoreCase);
             document.Models = new Dictionary<string, InferenceOverrides>(
                 document.Models, StringComparer.OrdinalIgnoreCase);
+            document.WorkModels = document.WorkModels is null
+                ? new Dictionary<string, InferenceOverrides>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, InferenceOverrides>(
+                    document.WorkModels, StringComparer.OrdinalIgnoreCase);
+            document.TuneProfiles = document.TuneProfiles is null
+                ? new Dictionary<string, TuneProfileSet>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, TuneProfileSet>(
+                    document.TuneProfiles, StringComparer.OrdinalIgnoreCase);
             return document;
         }
         catch
@@ -127,3 +187,7 @@ public sealed class InferenceSettingsStore
     private static string NormalizeModel(string modelPath) =>
         System.IO.Path.GetFullPath(modelPath.Trim());
 }
+
+
+
+

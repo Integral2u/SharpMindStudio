@@ -17,6 +17,12 @@ public sealed record ModelDescriptor
     public required ModelFamily Family { get; init; }
     public string? Architecture { get; init; }
     public int ContextLength { get; init; }
+    public int NumLayers { get; init; }
+    public int NumKvHeads { get; init; }
+    public int HiddenDim { get; init; }
+    public int NumHeads { get; init; }
+    public int KeyLength { get; init; }
+    public int ValueLength { get; init; }
 }
 
 public sealed class ModelCatalog
@@ -97,6 +103,12 @@ public sealed class ModelCatalog
             Family = family,
             Architecture = string.IsNullOrWhiteSpace(architecture) ? null : architecture,
             ContextLength = config.MaxSeqLen,
+            NumLayers = config.NumLayers,
+            NumKvHeads = config.NumKvHeads,
+            HiddenDim = config.HiddenDim,
+            NumHeads = config.NumHeads,
+            KeyLength = config.KeyLength ?? config.HeadDimOverride ?? (config.NumHeads > 0 ? config.HiddenDim / config.NumHeads : 0),
+            ValueLength = config.ValueLength ?? config.KeyLength ?? config.HeadDimOverride ?? (config.NumHeads > 0 ? config.HiddenDim / config.NumHeads : 0),
         };
     }
 
@@ -152,6 +164,8 @@ public static class FamilyDetector
         _ => id.Replace('-', ' '),
     };
 }
+
+
 
 
 

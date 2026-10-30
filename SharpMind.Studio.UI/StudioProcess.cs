@@ -113,6 +113,39 @@ internal sealed class StudioProcess : IAsyncDisposable
         }
     }
 
+    public async Task StopLocalServerAsync()
+    {
+        await StopAsync().ConfigureAwait(false);
+        if (IsRemote) return;
+
+        int port = BaseUri.Port;
+        try
+        {
+            var startInfo = new ProcessStartInfo("netstat", "-ano -p tcp")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true,
+            };
+            using Process process = Process.Start(startInfo)!;
+            string output = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+            await process.WaitForExitAsync().ConfigureAwait(false);
+
+            foreach (string line in output.Split('\n'))
+            {
+                string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 5 || !parts[1].EndsWith($":{port}", StringComparison.Ordinal)) continue;
+                if (!parts[3].Equals("LISTENING", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!int.TryParse(parts[4], out int pid) || pid == Environment.ProcessId) continue;
+
+                try { Process.GetProcessById(pid).Kill(entireProcessTree: true); }
+                catch { }
+            }
+        }
+        catch
+        {
+        }
+    }
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 
     private async Task<bool> IsHealthyAsync(CancellationToken cancellationToken)
@@ -274,6 +307,7 @@ internal sealed class RemoteStudioUnavailableException(Uri uri)
     : Exception($"SharpMind Studio is not reachable at {uri}.")
 {
 }
+
 
 
 

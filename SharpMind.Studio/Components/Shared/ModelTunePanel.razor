@@ -1,0 +1,461 @@
+﻿@using SharpMind.Studio.Core.Inference
+@using SharpMind.Studio.Services
+@inject InferenceSettingsService Inference
+@inject TuneRunnerService TuneRunner
+@inject StudioChatService ChatService
+
+<section class="panel tune-panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Tune</div>
+            <h2>Model tuning</h2>
+        </div>
+        <span class="faint small mono">@Model.FileName</span>
+    </div>
+    <div class="panel-body stack">
+        <p class="small faint">Tune is measured: it loads the model, runs each preset briefly, and records generator/cache speed. Work also runs a tool probe.</p>
+
+        <div class="row">
+            <button type="button" class="button @(_target == TuneTarget.Chat ? "primary" : "")"
+                    @onclick="() => SetTargetAsync(TuneTarget.Chat)">Chat</button>
+            <button type="button" class="button @(_target == TuneTarget.Work ? "primary" : "")"
+                    @onclick="() => SetTargetAsync(TuneTarget.Work)">Work</button>
+            <span class="small faint">Chat and Work keep separate tuned profiles.</span>
+        </div>
+
+        <div class="row">
+            @foreach (TunePreset preset in new[] { TunePreset.Performance, TunePreset.Balanced, TunePreset.Accuracy })
+            {
+                <button type="button" class="button @(_preset == preset ? "primary" : "")"
+                        @onclick="() => UsePreset(preset)">
+                    @preset
+                </button>
+            }
+        </div>
+
+        <div class="tune-estimate">
+            <div><span>Memory</span><strong>@Mb(_estimate.BudgetBytes) available</strong></div>
+            <div><span>Weights</span><strong>@Mb(_estimate.ModelBytes)</strong></div>
+            <div><span>KV cache</span><strong>@Mb(_estimate.KvBytes) at @_estimate.ContextTokens.ToString("N0")</strong></div>
+            <div><span>Load mode</span><strong class="status @(_estimate.FitsFull ? "ok" : "running")">@_estimate.LoadMode</strong></div>
+        </div>
+
+        @foreach (string note in _notes)
+        {
+            <div class="small faint">@note</div>
+        }
+        @if (_measurement is { } measurement)
+        {
+            <div class="small @(measurement.Succeeded ? "status ok" : "status failed")">
+                @if (measurement.Succeeded)
+                {
+                    <span>Measured @measurement.TokensPerSecond.ToString("F1") tok/s</span>
+                    @if (_target == TuneTarget.Work)
+                    {
+                        <span> · tool probe @(measurement.ToolProbePassed ? "passed" : "failed")</span>
+                    }
+                }
+                else
+                {
+                    <span>Test failed: @measurement.Error</span>
+                }
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_progress))
+        {
+            <div class="status-line">@_progress</div>
+        }
+
+        <div class="editor-grid">
+            <div class="field">
+                <label class="field-label">Temperature</label>
+                <input class="input" type="number" step="0.05" value="@_draft.Temperature"
+                       @onchange="e => Update(v => v with { Temperature = Float(e) })" />
+            </div>
+            <div class="field">
+                <label class="field-label">Top-K</label>
+                <input class="input" type="number" min="0" value="@_draft.TopK"
+                       @onchange="e => Update(v => v with { TopK = Int(e) })" />
+            </div>
+            <div class="field">
+                <label class="field-label">Top-P</label>
+                <input class="input" type="number" step="0.01" value="@_draft.TopP"
+                       @onchange="e => Update(v => v with { TopP = Float(e) })" />
+            </div>
+            <div class="field">
+                <label class="field-label">Min-P</label>
+                <input class="input" type="number" step="0.01" value="@_draft.MinP"
+                       @onchange="e => Update(v => v with { MinP = Float(e) })" />
+            </div>
+            <div class="field">
+                <label class="field-label">Max context</label>
+                <input class="input" type="number" min="512" value="@_draft.MaxContextTokens"
+                       @onchange="UpdateContext" />
+            </div>
+            <div class="field">
+                <label class="field-label">Max new tokens</label>
+                <input class="input" type="number" min="1" value="@_draft.MaxNewTokens"
+                       @onchange="e => Update(v => v with { MaxNewTokens = Int(e) })" />
+            </div>
+            <div class="field">
+                <label class="field-label">Generator</label>
+                <select class="input" value="@_draft.Generator" @onchange="e => Update(v => v with { Generator = Text(e) })">
+                    @foreach (GeneratorOption option in Generators)
+                    {
+                        <option value="@option.Name">@option.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label">KV cache</label>
+                <select class="input" value="@_draft.Cache" @onchange="e => Update(v => v with { Cache = Text(e) })">
+                    @foreach (CacheOption option in Caches)
+                    {
+                        <option value="@option.Name">@option.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label">Repetition penalty</label>
+                <input class="input" type="number" step="0.02" value="@_draft.RepetitionPenalty"
+                       @onchange="e => Update(v => v with { RepetitionPenalty = Float(e) })" />
+            </div>
+            <div class="field">
+                <label class="field-label">Repetition window</label>
+                <input class="input" type="number" min="0" value="@_draft.RepetitionWindow"
+                       @onchange="e => Update(v => v with { RepetitionWindow = Int(e) })" />
+            </div>
+            <div class="field">
+                <label class="field-label">Load mode</label>
+                <div class="input tune-readonly">@_estimate.LoadMode</div>
+            </div>
+        </div>
+
+        <div class="row">
+            <button type="button" class="button primary" @onclick="TuneAllAsync" disabled="@_running">
+                @(_running ? "Tuning..." : "Tune")
+            </button>
+            @if (_running)
+            {
+                <button type="button" class="button danger" @onclick="CancelTune">Cancel</button>
+            }
+            @if (_profiles.Count > 0)
+            {
+                <span class="small faint">Profiles ready for @_target.</span>
+            }
+            <span class="status-line">@_status</span>
+        </div>
+        @if (_target == TuneTarget.Work)
+        {
+            <div class="small faint">Work defaults to StandardGeneratorBuilder, but any generator or plugin generator can be selected. Verify tool calls after changing it.</div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ModelDescriptor Model { get; set; } = null!;
+    [Parameter] public IReadOnlyList<GeneratorOption> Generators { get; set; } = [];
+    [Parameter] public IReadOnlyList<CacheOption> Caches { get; set; } = [];
+    [Parameter] public TuneTarget InitialTarget { get; set; } = TuneTarget.Chat;
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private TuneTarget _target;
+    private TunePreset _preset = TunePreset.Balanced;
+    private InferenceOverrides _draft = new();
+    private TuneEstimate _estimate = new(0, 0, 0, 0, 0, false, "Full");
+    private TuneMeasurement? _measurement;
+    private IReadOnlyList<string> _notes = [];
+    private readonly Dictionary<TunePreset, TuneProfile> _profiles = [];
+    private string? _loadedPath;
+    private string _status = "";
+    private string _progress = "";
+    private bool _running;
+    private CancellationTokenSource? _cts;
+
+    protected override void OnParametersSet()
+    {
+        if (_loadedPath == Model.Path) return;
+        _loadedPath = Model.Path;
+        _target = InitialTarget;
+        LoadTarget();
+    }
+
+    private void LoadTarget()
+    {
+        TuneProfileSet? set = Inference.TuneSet(Model.Path);
+        bool valid = set is not null && set.ModelFingerprint == TuneFingerprint.ForModel(Model.Path);
+        _profiles.Clear();
+        if (valid)
+        {
+            foreach (TuneProfile profile in set!.For(_target))
+                _profiles[profile.Preset] = profile;
+        }
+
+        if (_profiles.TryGetValue(_preset, out TuneProfile? existing))
+        {
+            _draft = existing.Overrides;
+            _estimate = existing.Estimate;
+            _measurement = existing.Measurement;
+            _notes = existing.Notes;
+            return;
+        }
+
+        UsePreset(_preset);
+    }
+
+    private Task SetTargetAsync(TuneTarget target)
+    {
+        if (_target == target) return Task.CompletedTask;
+        StoreDraft();
+        _target = target;
+        _profiles.Clear();
+        _draft = new();
+        _measurement = null;
+        _status = "";
+        LoadTarget();
+        return Task.CompletedTask;
+    }
+
+    private void UsePreset(TunePreset preset)
+    {
+        if (_profiles.Count > 0 || _draft.Generator is not null) StoreDraft();
+        _preset = preset;
+        if (_profiles.TryGetValue(preset, out TuneProfile? existing))
+        {
+            _draft = existing.Overrides;
+            _estimate = existing.Estimate;
+            _measurement = existing.Measurement;
+            _notes = existing.Notes;
+            return;
+        }
+
+        TuneRecommendation recommendation = TunePlanner.Recommend(
+            Model, _target, preset, [.. Caches.Select(cache => cache.Name)]);
+        _draft = recommendation.Overrides;
+        _estimate = recommendation.Estimate;
+        _measurement = null;
+        _notes = recommendation.Notes;
+    }
+
+    private void StoreDraft()
+    {
+        if (_draft.Generator is null) return;
+        _profiles[_preset] = new TuneProfile
+        {
+            Target = _target,
+            Preset = _preset,
+            Overrides = _draft,
+            Estimate = _estimate,
+            Measurement = _measurement,
+            Notes = _notes,
+        };
+    }
+
+    private void Update(Func<InferenceOverrides, InferenceOverrides> change)
+    {
+        _draft = change(_draft);
+        Recalculate();
+    }
+
+    private void UpdateContext(ChangeEventArgs args)
+    {
+        int value = Int(args) ?? Model.ContextLength;
+        _draft = _draft with { MaxContextTokens = Math.Max(512, value) };
+        Recalculate();
+    }
+
+    private void Recalculate()
+    {
+        _estimate = TunePlanner.Estimate(Model, _draft.Cache ?? "KVCacherBuilder", _draft.MaxContextTokens ?? Model.ContextLength);
+        _draft = _draft with { LoadMode = _estimate.LoadMode };
+        _notes =
+        [
+            $"Memory budget {Mb(_estimate.BudgetBytes)}; weights {Mb(_estimate.ModelBytes)}; KV {Mb(_estimate.KvBytes)}.",
+            _estimate.FitsFull
+                ? "Full load fits with the 10% system reserve."
+                : "Streaming selected to leave the 10% system reserve.",
+        ];
+        _measurement = null;
+    }
+
+    private async Task TuneAllAsync()
+    {
+        if (_running) return;
+        StoreDraft();
+        _running = true;
+        _status = "";
+        _cts = new CancellationTokenSource();
+        try
+        {
+            await ChatService.SuspendAsync();
+            string fingerprint = TuneFingerprint.ForModel(Model.Path);
+            TuneProfileSet? previous = Inference.TuneSet(Model.Path);
+            bool sameModel = previous is not null && previous.ModelFingerprint == fingerprint;
+            List<TuneProfile> chatProfiles = sameModel ? [.. previous!.For(TuneTarget.Chat)] : [];
+
+            if (_target == TuneTarget.Work && chatProfiles.Count == 0)
+            {
+                _progress = "Tuning Chat baseline first...";
+                StateHasChanged();
+                foreach (TunePreset preset in Enum.GetValues<TunePreset>())
+                {
+                    TuneProfile chat = Recommend(TuneTarget.Chat, preset);
+                    _progress = $"Chat baseline: {preset}...";
+                    StateHasChanged();
+                    TuneMeasurement measurement = await TuneRunner.MeasureAsync(Model, chat, _cts.Token);
+                    chatProfiles.Add(chat with { Measurement = measurement });
+                }
+
+                SaveProfiles(fingerprint, previous, TuneTarget.Chat, chatProfiles);
+                previous = Inference.TuneSet(Model.Path);
+                sameModel = previous?.ModelFingerprint == fingerprint;
+            }
+
+            if (_target == TuneTarget.Work)
+            {
+                chatProfiles = sameModel
+                    ? [.. previous!.For(TuneTarget.Chat)]
+                    : chatProfiles;
+
+                foreach (TunePreset preset in Enum.GetValues<TunePreset>())
+                {
+                    TuneProfile profile = WorkBaselineFromChat(preset, chatProfiles);
+                    _progress = $"Work tool test: {preset}...";
+                    StateHasChanged();
+                    TuneMeasurement measurement = await TuneRunner.MeasureAsync(Model, profile, _cts.Token);
+                    if (measurement.Succeeded && !measurement.ToolProbePassed)
+                    {
+                        _progress = $"Tool call failed for {preset}; retrying with Standard + low temperature...";
+                        StateHasChanged();
+                        TuneProfile tweak = profile with
+                        {
+                            Overrides = profile.Overrides with
+                            {
+                                Generator = "StandardGeneratorBuilder",
+                                Temperature = 0.1f,
+                                TopK = 1,
+                                TopP = 1f,
+                                MaxNewTokens = Math.Max(256, profile.Overrides.MaxNewTokens ?? 256),
+                            },
+                            Notes = [.. profile.Notes, "Tool probe failed; retried StandardGeneratorBuilder at low temperature."],
+                        };
+                        TuneMeasurement tweakMeasurement = await TuneRunner.MeasureAsync(Model, tweak, _cts.Token);
+                        if (tweakMeasurement.ToolProbePassed)
+                        {
+                            profile = tweak;
+                            measurement = tweakMeasurement;
+                        }
+                    }
+
+                    _profiles[preset] = profile with { Measurement = measurement };
+                    if (preset == _preset) _measurement = measurement;
+                }
+            }
+            else
+            {
+                foreach (TunePreset preset in Enum.GetValues<TunePreset>())
+                {
+                    if (!_profiles.TryGetValue(preset, out TuneProfile? profile))
+                        profile = Recommend(_target, preset);
+
+                    _progress = $"Testing {preset}...";
+                    StateHasChanged();
+                    TuneMeasurement measurement = await TuneRunner.MeasureAsync(Model, profile, _cts.Token);
+                    _profiles[preset] = profile with { Measurement = measurement };
+                    if (preset == _preset) _measurement = measurement;
+                }
+            }
+
+            SaveProfiles(fingerprint, previous, _target, [.. _profiles.Values]);
+            _status = $"Tuned {_target}: Performance, Balanced, Accuracy.";
+            _progress = "";
+            await OnSaved.InvokeAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            _status = "Tuning cancelled.";
+            _progress = "";
+        }
+        catch (Exception ex)
+        {
+            _status = $"{ex.GetType().Name}: {ex.Message}";
+            _progress = "";
+        }
+        finally
+        {
+            _running = false;
+            _cts?.Dispose();
+            _cts = null;
+        }
+    }
+
+    private TuneProfile Recommend(TuneTarget target, TunePreset preset)
+    {
+        TuneRecommendation recommendation = TunePlanner.Recommend(
+            Model, target, preset, [.. Caches.Select(cache => cache.Name)]);
+        return new TuneProfile
+        {
+            Target = target,
+            Preset = preset,
+            Overrides = recommendation.Overrides,
+            Estimate = recommendation.Estimate,
+            Notes = recommendation.Notes,
+        };
+    }
+
+    private TuneProfile WorkBaselineFromChat(TunePreset preset, IReadOnlyList<TuneProfile> chatProfiles)
+    {
+        TuneProfile baseline = chatProfiles.FirstOrDefault(profile => profile.Preset == preset)
+            ?? Recommend(TuneTarget.Chat, preset);
+        TuneProfile work = Recommend(TuneTarget.Work, preset);
+        InferenceOverrides overrides = baseline.Overrides with
+        {
+            Temperature = work.Overrides.Temperature,
+            MaxNewTokens = work.Overrides.MaxNewTokens,
+            RepetitionPenalty = work.Overrides.RepetitionPenalty,
+        };
+        return work with
+        {
+            Overrides = overrides,
+            Estimate = TunePlanner.Estimate(
+                Model,
+                overrides.Cache ?? "KVCacherBuilder",
+                overrides.MaxContextTokens ?? Model.ContextLength),
+            Notes = [.. work.Notes, "Work baseline copied generator, cache and context from Chat; then applied Work sampling."],
+        };
+    }
+
+    private void SaveProfiles(
+        string fingerprint,
+        TuneProfileSet? previous,
+        TuneTarget target,
+        IEnumerable<TuneProfile> profiles)
+    {
+        List<TuneProfile> merged = previous is not null && previous.ModelFingerprint == fingerprint
+            ? [.. previous.Profiles.Where(profile => profile.Target != target), .. profiles]
+            : [.. profiles];
+        Inference.SetTuneSet(Model.Path, new TuneProfileSet
+        {
+            ModelFingerprint = fingerprint,
+            Profiles = merged,
+        });
+    }
+    private void CancelTune() => _cts?.Cancel();
+
+    private static string? Text(ChangeEventArgs args) =>
+        string.IsNullOrWhiteSpace(args.Value?.ToString()) ? null : args.Value!.ToString();
+
+    private static int? Int(ChangeEventArgs args) =>
+        int.TryParse(args.Value?.ToString(), out int value) ? value : null;
+
+    private static float? Float(ChangeEventArgs args) =>
+        float.TryParse(args.Value?.ToString(), out float value) ? value : null;
+
+    private static string Mb(long bytes) => $"{bytes / (1024.0 * 1024.0):N0} MB";
+}
+
+
+
+
+
+

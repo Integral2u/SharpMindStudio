@@ -13,7 +13,9 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly ModelCatalogService _catalog;
     private readonly InferenceSettingsService _inference;
     private readonly StudioModelHost _host;
-    private readonly ChatSessionStore _store;
+    private readonly StudioWorkService _work;
+    private readonly StudioDeviceAccess _device;
+    private ChatSessionStore _store;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChatSession? _session;
     private LoadedStudioModel? _loaded;
@@ -34,12 +36,16 @@ public sealed class StudioChatService : IAsyncDisposable
         StudioWorkspaceService workspace,
         ModelCatalogService catalog,
         InferenceSettingsService inference,
-        StudioModelHost host)
+        StudioModelHost host,
+        StudioWorkService work,
+        StudioDeviceAccess device)
     {
         _workspace = workspace;
         _catalog = catalog;
         _inference = inference;
         _host = host;
+        _work = work;
+        _device = device;
         _store = new ChatSessionStore(workspace.Project.ChatsDirectory);
     }
 
@@ -69,7 +75,7 @@ public sealed class StudioChatService : IAsyncDisposable
     public IReadOnlyList<ChatMessage> DisplayMessages => [.. _document?.Messages
         .Where(message => message.Role != ChatRole.System) ?? []];
 
-    public async Task NewChatAsync(ModelDescriptor model, string? systemPrompt, InferenceOverrides? overrides = null)
+    public async Task NewChatAsync(ModelDescriptor model, string? systemPrompt, InferenceOverrides? overrides = null, string mode = "chat", string? tunePreset = null, string? tuneTarget = null)
     {
         await _gate.WaitAsync().ConfigureAwait(false);
         try
@@ -77,16 +83,17 @@ public sealed class StudioChatService : IAsyncDisposable
             EndSession();
             _document = _store.Create(
                 model.Path, model.Family.Id, model.Family.DisplayName,
-                typeof(IChatSession).Assembly.GetName().Version?.ToString(), systemPrompt);
+                typeof(IChatSession).Assembly.GetName().Version?.ToString(), systemPrompt, mode, tunePreset, tuneTarget);
             _document.Overrides = overrides ?? new InferenceOverrides();
             _document.Messages = [];
             if (!string.IsNullOrWhiteSpace(systemPrompt))
                 _document.Messages.Add(ChatMessage.System(systemPrompt.Trim()));
             _model = model;
-            _resolved = _inference.Resolve(model.Family.Id, model.Path, _document.Overrides);
+            _resolved = ResolveInference(model.Family.Id, model.Path, _document.Overrides);
             _error = null;
+            _status = "Ready.";
+            _cacheWarning = null;
             Notify();
-            await OpenCoreAsync(snapshot: null).ConfigureAwait(false);
         }
         finally
         {
@@ -96,7 +103,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
     public async Task OpenAsync(string id)
     {
-        if (_document?.Id.Equals(id, StringComparison.OrdinalIgnoreCase) == true && _session is not null)
+        if (_document?.Id.Equals(id, StringComparison.OrdinalIgnoreCase) == true)
             return;
 
         await _gate.WaitAsync().ConfigureAwait(false);
@@ -107,10 +114,11 @@ public sealed class StudioChatService : IAsyncDisposable
             _document = document;
             _model = _catalog.Find(document.ModelPath)
                 ?? throw new FileNotFoundException("The model for this chat was not found.", document.ModelPath);
-            _resolved = _inference.Resolve(document.FamilyId, document.ModelPath, document.Overrides);
+            _resolved = ResolveInference(document.FamilyId, document.ModelPath, document.Overrides);
             _error = null;
+            _status = "Ready.";
+            _cacheWarning = null;
             Notify();
-            await OpenCoreAsync(_store.BuildSnapshot(document)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -127,11 +135,21 @@ public sealed class StudioChatService : IAsyncDisposable
 
     public async Task SendAsync(string text)
     {
-        if (string.IsNullOrWhiteSpace(text) || _session is null || _document is null || _streaming) return;
+        if (string.IsNullOrWhiteSpace(text) || _document is null || _streaming) return;
 
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (_session is null)
+            {
+                ChatSessionSnapshot? snapshot = string.Equals(
+                    _document.Mode, "work", StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : _store.BuildSnapshot(_document);
+                await OpenCoreAsync(snapshot).ConfigureAwait(false);
+                if (_session is null) return;
+            }
+
             _streaming = true;
             _error = null;
             _status = "Thinking...";
@@ -215,6 +233,8 @@ public sealed class StudioChatService : IAsyncDisposable
     public void Stop()
     {
         _streamCts?.Cancel();
+        _work.CancelPermission();
+        _work.CancelChoice();
         _session?.Interrupt();
     }
 
@@ -228,16 +248,23 @@ public sealed class StudioChatService : IAsyncDisposable
 
     public async Task ApplyOptionsAsync(InferenceOverrides overrides)
     {
-        if (_document is null || _session is null || _streaming) return;
+        if (_device.IsMobile || _document is null || _streaming) return;
 
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
             _document.Overrides = overrides;
-            ResolvedInference next = _inference.Resolve(_document.FamilyId, _document.ModelPath, overrides);
+            ResolvedInference next = ResolveInference(_document.FamilyId, _document.ModelPath, overrides);
             ResolvedInference previous = _resolved ?? next;
             _resolved = next;
             _store.Save(_document);
+
+            if (_session is null)
+            {
+                _error = null;
+                _status = "Options applied.";
+                return;
+            }
 
             if (LoadAffectingChanged(previous, next))
             {
@@ -268,7 +295,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
     public async Task<bool> UpdateSystemPromptAsync(string? prompt)
     {
-        if (_document is null || _session is null || _streaming) return false;
+        if (_device.IsMobile || _document is null || _session is null || _streaming) return false;
         if (_document.Messages.Any(message => message.Role != ChatRole.System))
             return false;
 
@@ -278,7 +305,7 @@ public sealed class StudioChatService : IAsyncDisposable
             _document.Messages.Add(ChatMessage.System(_document.SystemPrompt));
         _store.Save(_document);
         EndSession();
-        _resolved = _inference.Resolve(_document.FamilyId, _document.ModelPath, _document.Overrides);
+        _resolved = ResolveInference(_document.FamilyId, _document.ModelPath, _document.Overrides);
         await RebuildAsync(snapshot: null).ConfigureAwait(false);
         await SaveSnapshotAsync().ConfigureAwait(false);
         Notify();
@@ -287,6 +314,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
     public async Task DeleteAsync(string id)
     {
+        if (_device.IsMobile) return;
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -310,6 +338,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
     public async Task RenameAsync(string id, string name)
     {
+        if (_device.IsMobile) return;
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -326,6 +355,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
     public async Task ClearAllAsync()
     {
+        if (_device.IsMobile) return;
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -354,6 +384,75 @@ public sealed class StudioChatService : IAsyncDisposable
             _model = null;
             _error = null;
             _status = "Choose a model to start chatting.";
+        }
+        finally
+        {
+            _gate.Release();
+            Notify();
+        }
+    }
+
+    public async Task SuspendAsync()
+    {
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_session is not null)
+                await SaveSnapshotAsync().ConfigureAwait(false);
+            EndSession();
+            _document = null;
+            _resolved = null;
+            _model = null;
+            _error = null;
+            _status = "Ready.";
+        }
+        finally
+        {
+            _gate.Release();
+            Notify();
+        }
+    }
+    public async Task UseProjectAsync()
+    {
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            EndSession();
+            _document = null;
+            _resolved = null;
+            _model = null;
+            _error = null;
+            _status = "Choose a model to start chatting.";
+            _store = new ChatSessionStore(_workspace.Project.ChatsDirectory);
+        }
+        finally
+        {
+            _gate.Release();
+            Notify();
+        }
+    }
+
+    public async Task ReloadWorkContextAsync()
+    {
+        if (_session is null || _document is null ||
+            !string.Equals(_document.Mode, "work", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            List<ChatMessage> history = [.. _session.History
+                .Where(message => message.Role != ChatRole.System)];
+            EndSession();
+            _resolved = ResolveInference(_document.FamilyId, _document.ModelPath, _document.Overrides);
+            await RebuildWorkSessionAsync(history).ConfigureAwait(false);
+            await SaveSnapshotAsync().ConfigureAwait(false);
+            _status = "Project settings applied.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+            _status = "Could not apply project settings.";
         }
         finally
         {
@@ -398,7 +497,10 @@ public sealed class StudioChatService : IAsyncDisposable
             _loadProgress = 0.95;
             _status = "Initializing chat...";
             Notify();
-            _session = await BuildSessionAsync(loaded, _resolved, snapshot).ConfigureAwait(false);
+            _session = string.Equals(_document.Mode, "work", StringComparison.OrdinalIgnoreCase)
+                ? await BuildWorkSessionAsync(loaded, _resolved,
+                    [.. _document.Messages.Where(message => message.Role != ChatRole.System)]).ConfigureAwait(false)
+                : await BuildSessionAsync(loaded, _resolved, snapshot).ConfigureAwait(false);
             _status = "Ready.";
             _loadDetail = "Ready";
             _loadProgress = 1;
@@ -426,6 +528,45 @@ public sealed class StudioChatService : IAsyncDisposable
             Notify();
         }
     }
+    private async Task RebuildWorkSessionAsync(IReadOnlyList<ChatMessage> history)
+    {
+        if (_document is null || _model is null || _resolved is null) return;
+        LoadedStudioModel loaded = await _host.LoadAsync(_model, _resolved).ConfigureAwait(false);
+        _loaded = loaded;
+        try
+        {
+            _session = await BuildWorkSessionAsync(loaded, _resolved, history).ConfigureAwait(false);
+        }
+        catch
+        {
+            _host.Release(loaded);
+            _loaded = null;
+            throw;
+        }
+    }
+
+    private async Task<IChatSession> BuildWorkSessionAsync(
+        LoadedStudioModel loaded,
+        ResolvedInference profile,
+        IReadOnlyList<ChatMessage> history)
+    {
+        IChatSession session = await Task.Run(
+            () => CreateSession(loaded, profile)).ConfigureAwait(false);
+        try
+        {
+            Configure(session, loaded, profile);
+            await Task.Run(() => session.InitializeChat()).ConfigureAwait(false);
+            foreach (ChatMessage message in history)
+                session.AddMessage(message);
+            await Task.Run(session.WarmupPrefillAsync).ConfigureAwait(false);
+            return session;
+        }
+        catch
+        {
+            DisposeSession(session);
+            throw;
+        }
+    }
     private async Task RebuildAsync(ChatSessionSnapshot? snapshot)
     {
         if (_document is null || _model is null || _resolved is null) return;
@@ -433,7 +574,10 @@ public sealed class StudioChatService : IAsyncDisposable
         _loaded = loaded;
         try
         {
-            _session = await BuildSessionAsync(loaded, _resolved, snapshot).ConfigureAwait(false);
+            _session = string.Equals(_document.Mode, "work", StringComparison.OrdinalIgnoreCase)
+                ? await BuildWorkSessionAsync(loaded, _resolved,
+                    [.. _document.Messages.Where(message => message.Role != ChatRole.System)]).ConfigureAwait(false)
+                : await BuildSessionAsync(loaded, _resolved, snapshot).ConfigureAwait(false);
         }
         catch
         {
@@ -500,16 +644,27 @@ public sealed class StudioChatService : IAsyncDisposable
                 option.Name.Equals("KVCacherBuilder", StringComparison.OrdinalIgnoreCase));
 
         Type cacheType = generator.CacheType ?? cache.Type;
+        var agent = _work.CreateAgent(_document?.Mode ?? "chat");
         return ChatSessionFactory.CreateChatSession(
             generator.BuilderType,
             cacheType,
             loaded.Model,
             loaded.Tokenizer,
             loaded.Meta,
+            agentBuilder: agent,
             formatter: ChatFormatterFactory.Create(profile.Formatter, loaded.Meta),
             seed: profile.Seed);
     }
 
+    private ResolvedInference ResolveInference(
+        string? familyId,
+        string modelPath,
+        InferenceOverrides? overrides) =>
+        _inference.Resolve(
+            familyId,
+            modelPath,
+            overrides,
+            workMode: string.Equals(_document?.Mode, "work", StringComparison.OrdinalIgnoreCase));
     private static void Configure(IChatSession session, LoadedStudioModel loaded, ResolvedInference profile)
     {
         int maxContext = profile.MaxContextTokens is > 0
@@ -564,6 +719,8 @@ public sealed class StudioChatService : IAsyncDisposable
 
     private void EndSession()
     {
+        _work.CancelPermission();
+        _work.CancelChoice();
         _streamCts?.Cancel();
         _streamCts?.Dispose();
         _streamCts = null;
@@ -585,6 +742,23 @@ public sealed class StudioChatService : IAsyncDisposable
     }
     private void Notify() => Changed?.Invoke();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -18,5 +18,6 @@ public sealed class StudioPathsTests
         Assert.True(Directory.Exists(StudioPaths.Training));
         Assert.True(Directory.Exists(StudioPaths.ChatSessions));
         Assert.True(Directory.Exists(StudioPaths.Projects));
+        Assert.True(Directory.Exists(StudioPaths.Workspaces));
     }
 }

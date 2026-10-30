@@ -77,43 +77,45 @@ public partial class MainWindow : Window
 
     private async Task StartStudioAsync()
     {
-        try
+        while (true)
         {
-            StatusText.Text = "Starting the local engine…";
-            await _studio.StartAsync();
-
-            StatusText.Text = "Opening the instrument panel…";
-            await Browser.EnsureCoreWebView2Async();
-            Browser.Source = _studio.BaseUri;
-        }
-        catch (RemoteStudioUnavailableException ex)
-        {
-            var choice = WinForms.MessageBox.Show(
-                $"{ex.Message}\n\nRun a local Studio instance instead?",
-                "SharpMind Studio",
-                WinForms.MessageBoxButtons.YesNo,
-                WinForms.MessageBoxIcon.Question);
-            if (choice == WinForms.DialogResult.Yes)
+            try
             {
-                _studio.UseLocalDefaults();
-                await StartStudioAsync();
+                StatusText.Text = _studio.IsRemote
+                    ? $"Connecting to Studio at {_studio.BaseUri.Host}:{_studio.BaseUri.Port}."
+                    : "Starting the local engine.";
+                await _studio.StartAsync();
+
+                StatusText.Text = "Opening the SharpMind Studio panel.";
+                await Browser.EnsureCoreWebView2Async();
+                if (Browser.CoreWebView2 is not null)
+                    Browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                Browser.Source = _studio.BaseUri;
+                return;
             }
-            else
+            catch (Exception ex)
             {
                 StatusText.Text = ex.Message;
+                var dialog = new StartupFailureWindow(ex.Message, StudioText.Foreground);
+                dialog.ShowDialog();
+
+                if (dialog.Choice == StartupFailureChoice.Exit)
+                {
+                    BeginExit();
+                    return;
+                }
+
+                if (dialog.Choice == StartupFailureChoice.Restart)
+                    await _studio.StopLocalServerAsync();
+
+                if (dialog.Choice == StartupFailureChoice.ResetLocal)
+                {
+                    _studio.UseLocalDefaults();
+                    await _studio.StopLocalServerAsync();
+                }
             }
         }
-        catch (Exception ex)
-        {
-            StatusText.Text = $"Studio could not start: {ex.Message}";
-            WinForms.MessageBox.Show(
-                ex.Message,
-                "SharpMind Studio",
-                WinForms.MessageBoxButtons.OK,
-                WinForms.MessageBoxIcon.Error);
-        }
     }
-
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
         if (e.IsSuccess)
@@ -309,6 +311,12 @@ public partial class MainWindow : Window
         Top = work.Top + (work.Height - Height) / 2;
     }
 }
+
+
+
+
+
+
 
 
 

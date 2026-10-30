@@ -1,0 +1,230 @@
+﻿.work-project {
+    margin-bottom: .85rem;
+}
+
+.work-project-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .8rem 1rem;
+    flex-wrap: wrap;
+}
+
+.work-project-identity {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    min-width: 0;
+}
+
+.work-project-identity strong {
+    color: var(--text);
+    font-size: .98rem;
+}
+
+.work-project-identity .mono {
+    color: var(--faint);
+    font-size: .65rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 48ch;
+}
+
+.work-project-actions {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    flex-wrap: wrap;
+}
+
+.work-project-select {
+    width: 14rem;
+}
+
+.work-project-body {
+    border-top: 1px solid var(--line);
+    padding: 1rem;
+}
+
+.work-project-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .9rem;
+}
+
+.work-textarea {
+    min-height: 7.2rem;
+    resize: vertical;
+    line-height: 1.45;
+}
+
+.work-permissions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .5rem;
+}
+
+.work-permissions label {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    color: var(--muted);
+    font-size: .7rem;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+}
+
+.work-project-save {
+    margin-top: .9rem;
+    align-items: center;
+}
+
+.work-permission-prompt {
+    margin: 0 1.2rem;
+    border-color: rgba(var(--accent-rgb), .4);
+    background: rgba(var(--accent-rgb), .06);
+}
+
+.work-permission-prompt .panel-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.work-permission-path {
+    display: block;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: .72rem;
+    margin-top: .2rem;
+    overflow-wrap: anywhere;
+}
+
+.work-mode-note {
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: .62rem;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+}
+
+@media (max-width: 860px) {
+    .work-project-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .work-project-select {
+        width: 100%;
+    }
+}
+.work-skill-card {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+    padding: .7rem;
+    border: 1px solid var(--line);
+    border-radius: .6rem;
+    background: rgba(10, 15, 21, .35);
+}
+
+.work-system-skills {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    margin-top: .35rem;
+    padding: .45rem;
+    border: 1px solid var(--line);
+    border-radius: .55rem;
+    background: rgba(10, 15, 21, .28);
+}
+
+.work-system-skill {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: .5rem;
+    align-items: center;
+    padding: .25rem .3rem;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.work-system-skill input {
+    accent-color: var(--accent);
+}
+
+.work-system-skill strong {
+    color: var(--text);
+    font-weight: 550;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.work-system-skill .small {
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-size: .58rem;
+}
+.work-settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+}
+
+.work-settings-section h3 {
+    margin: 0;
+}
+
+.work-contexts {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+}
+
+.work-context {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1fr) repeat(3, minmax(7.5rem, auto)) auto;
+    gap: .4rem;
+    align-items: center;
+}
+
+.work-web-select {
+    width: 8rem;
+}
+
+.work-system-skill .small {
+    white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+    .work-context {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+.work-tools {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: .25rem .8rem;
+}
+
+.work-tool {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: .7rem;
+}
+
+.work-tool input {
+    accent-color: var(--accent);
+}
+

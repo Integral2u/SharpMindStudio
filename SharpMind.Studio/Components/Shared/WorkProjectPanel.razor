@@ -1,0 +1,477 @@
+﻿@using SharpMind.Studio.Services
+@using SharpMind.Studio.Core.Work
+@implements IDisposable
+@inject StudioWorkspaceService Workspace
+@inject StudioWorkService Work
+@inject StudioChatService ChatService
+@inject SystemWorkSkillsService Repo
+@inject WorkToolService ToolCatalog
+@inject StudioDeviceAccess DeviceAccess
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="work-project panel">
+    <div class="work-project-head">
+        <div class="work-project-identity">
+            <div class="eyebrow">Work project</div>
+            <strong>@Workspace.Project.Document.Name</strong>
+            <span class="mono">@Workspace.Project.Root</span>
+        </div>
+        @if (!DeviceAccess.IsMobile)
+        {
+            <div class="work-project-actions">
+                <select class="input work-project-select" value="@_projectPath" @onchange="SwitchProjectAsync"
+                        title="Switch project">
+                    @foreach (var project in _projects)
+                    {
+                        <option value="@project.Path">@project.Name@(project.IsDefault ? " (default)" : "")</option>
+                    }
+                </select>
+                <button type="button" class="button" @onclick="CreateProjectAsync">New project</button>
+                <button type="button" class="button @(_showSettings ? "primary" : "")" @onclick="ToggleSettings">
+                    @(_showSettings ? "Hide settings" : "Project settings")
+                </button>
+            </div>
+        }
+    </div>
+
+    @if (_showSettings && !DeviceAccess.IsMobile)
+    {
+        <div class="work-project-body">
+            <div class="work-project-grid">
+                <div class="field">
+                    <label class="field-label" for="work-system-prompt">Project instructions</label>
+                    <textarea id="work-system-prompt" class="textarea work-textarea"
+                              @bind="_systemPrompt" @bind:event="oninput"
+                              placeholder="How should the agent work in this project?"></textarea>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="work-memory">Memory</label>
+                    <textarea id="work-memory" class="textarea work-textarea"
+                              @bind="_memory" @bind:event="oninput"
+                              placeholder="Facts and decisions the agent should remember."></textarea>
+                    <div class="small faint mono">@Work.MemoryFile</div>
+                </div>
+            </div>
+
+            <div class="work-settings-section">
+                <div class="spread">
+                    <div>
+                        <div class="eyebrow">Skills</div>
+                        <h3>Repository skills</h3>
+                    </div>
+                    <div class="row">
+                        <button type="button" class="button" @onclick="RefreshSkills">Refresh</button>
+                        <button type="button" class="button" @onclick="ToggleAddSkill">Add skill</button>
+                    </div>
+                </div>
+                <p class="small faint">
+                    One shared Skills folder. Check the skills this project uses. New projects start from the system defaults. Manage or delete skills in <a href="/settings?tab=system" data-enhance-nav="false">Settings &gt; System</a>.
+                </p>
+                @if (Repo.Skills.Count == 0)
+                {
+                    <div class="small faint">No skills in the repository yet. Add one here or copy .md files into @Repo.Folder.</div>
+                }
+                else
+                {
+                    <div class="work-system-skills">
+                        @foreach (var skill in Repo.Skills)
+                        {
+                            bool enabled = !_disabledSystemSkills.Contains(skill.Id) &&
+                                           (skill.DefaultEnabled || _enabledSystemSkills.Contains(skill.Id));
+                            <label class="work-system-skill">
+                                <input type="checkbox" checked="@enabled"
+                                       @onchange="e => ToggleSystemSkill(skill, e.Value)" />
+                                <strong>@skill.Name</strong>
+                                <span class="small faint">@(skill.DefaultEnabled ? "default on" : "default off")</span>
+                            </label>
+                        }
+                    </div>
+                }
+                @if (_showAddSkill)
+                {
+                    <div class="work-skill-card">
+                        <input class="input" @bind="_newSkillName" placeholder="Skill name" />
+                        <textarea class="textarea work-textarea" @bind="_newSkillContent"
+                                  placeholder="Instructions the agent should follow."></textarea>
+                        <div class="row">
+                            <button type="button" class="button primary" @onclick="AddSkillAsync"
+                                    disabled="@string.IsNullOrWhiteSpace(_newSkillName)">Add to repository</button>
+                            <button type="button" class="button" @onclick="ToggleAddSkill">Cancel</button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+
+            <div class="work-settings-section">
+                <div>
+                    <div class="eyebrow">Access</div>
+                    <h3>Context locations</h3>
+                </div>
+                <p class="small faint">
+                    Each folder has its own read, write and delete permission. Paths may be relative to the project or absolute. Tools are available in Work only.
+                </p>
+                <div class="work-contexts">
+                    @foreach (ContextDraft context in _contexts)
+                    {
+                        <div class="work-context">
+                            <input class="input" @bind="context.Path" placeholder="." title="Context path" />
+                            <select class="input" @bind="context.Read" title="Read permission">
+                                <option value="Ask">Read: Ask</option>
+                                <option value="Always">Read: Always</option>
+                                <option value="Never">Read: Never</option>
+                            </select>
+                            <select class="input" @bind="context.Write" title="Write permission">
+                                <option value="Ask">Write: Ask</option>
+                                <option value="Always">Write: Always</option>
+                                <option value="Never">Write: Never</option>
+                            </select>
+                            <select class="input" @bind="context.Delete" title="Delete permission">
+                                <option value="Never">Delete: Never</option>
+                                <option value="Ask">Delete: Ask</option>
+                                <option value="Always">Delete: Always</option>
+                            </select>
+                            <button type="button" class="button danger" @onclick="() => RemoveContext(context)"
+                                    disabled="@(_contexts.Count <= 1)">Remove</button>
+                        </div>
+                    }
+                </div>
+                <div class="row" style="margin-top: .5rem;">
+                    <button type="button" class="button" @onclick="AddContextAsync">Add context</button>
+                </div>
+            </div>
+
+            <div class="work-settings-section">
+                <div class="spread">
+                    <div>
+                        <div class="eyebrow">Access</div>
+                        <h3>Web</h3>
+                    </div>
+                    <select class="input work-web-select" @bind="_web">
+                        <option value="Never">Never</option>
+                        <option value="Ask">Ask</option>
+                        <option value="Always">Always</option>
+                    </select>
+                </div>
+                <div class="small faint">Web access applies to the whole project and is separate from file contexts.</div>
+            </div>
+
+            <div class="work-settings-section">
+                <div class="spread">
+                    <div>
+                        <div class="eyebrow">Tools</div>
+                        <h3>Enabled tools</h3>
+                    </div>
+                    <button type="button" class="button" @onclick="RefreshTools">Refresh plugins</button>
+                </div>
+                <p class="small faint">
+                    Tools are registered in Work only; Chat sessions never receive them. Disable any tool this project should not expose.
+                </p>
+                <div class="work-tools">
+                    @foreach (WorkToolInfo tool in ToolCatalog.Tools)
+                    {
+                        bool enabled = !_disabledTools.Contains(tool.Name) &&
+                                       (ToolCatalog.IsDefaultEnabled(tool.Name) || _enabledTools.Contains(tool.Name));
+                        <label class="work-tool" title="@tool.Source">
+                            <input type="checkbox" checked="@enabled"
+                                   @onchange="e => ToggleTool(tool, e.Value)" />
+                            <span>@tool.Name</span>
+                        </label>
+                    }
+                </div>
+            </div>
+            <div class="row work-project-save">
+                <button type="button" class="button primary" @onclick="SaveAsync" disabled="@(_saving || ChatService.IsStreaming || ChatService.IsLoading)">
+                    @(_saving ? "Applying..." : "Save project settings")
+                </button>
+                <span class="status-line">@_status</span>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed class ContextDraft
+    {
+        public string Id { get; set; } = "";
+        public string Path { get; set; } = ".";
+        public WorkPermission Read { get; set; } = WorkPermission.Ask;
+        public WorkPermission Write { get; set; } = WorkPermission.Ask;
+        public WorkPermission Delete { get; set; } = WorkPermission.Never;
+    }
+
+    private IReadOnlyList<StudioProjectInfo> _projects = [];
+    private string _projectPath = "";
+    private bool _showSettings;
+    private bool _saving;
+    private string _status = "";
+    private string _systemPrompt = "";
+    private string _memory = "";
+    private List<ContextDraft> _contexts = [];
+    private bool _showAddSkill;
+    private string _newSkillName = "";
+    private string _newSkillContent = "";
+    private HashSet<string> _disabledSystemSkills = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _enabledSystemSkills = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _disabledTools = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _enabledTools = new(StringComparer.OrdinalIgnoreCase);
+    private WorkPermission _web = WorkPermission.Never;
+
+    protected override void OnInitialized()
+    {
+        Workspace.ProjectChanged += OnProjectChanged;
+        LoadFields();
+    }
+
+    public void Dispose() => Workspace.ProjectChanged -= OnProjectChanged;
+
+    private void OnProjectChanged() => _ = InvokeAsync(() =>
+    {
+        LoadFields();
+        StateHasChanged();
+    });
+
+    private void LoadFields()
+    {
+        _projects = Workspace.Projects;
+        _projectPath = Workspace.Project.Root;
+        _systemPrompt = Work.Settings.SystemPrompt ?? "";
+        _memory = Work.Memory;
+        _web = Work.Settings.Permissions.Web;
+        _disabledSystemSkills = new HashSet<string>(
+            Work.Settings.DisabledSystemSkills, StringComparer.OrdinalIgnoreCase);
+        _enabledSystemSkills = new HashSet<string>(
+            Work.Settings.EnabledSystemSkills, StringComparer.OrdinalIgnoreCase);
+        _disabledTools = new HashSet<string>(
+            Work.Settings.DisabledTools, StringComparer.OrdinalIgnoreCase);
+        _enabledTools = new HashSet<string>(
+            Work.Settings.EnabledTools, StringComparer.OrdinalIgnoreCase);
+        _contexts = [.. Work.Settings.Contexts.Select(context => new ContextDraft
+        {
+            Id = context.Id,
+            Path = context.Path,
+            Read = context.Permissions.Read,
+            Write = context.Permissions.Write,
+            Delete = context.Permissions.Delete,
+        })];
+        if (_contexts.Count == 0)
+            _contexts.Add(new ContextDraft { Id = Guid.NewGuid().ToString("n") });
+    }
+
+    private void ToggleSettings()
+    {
+        _showSettings = !_showSettings;
+        if (_showSettings) LoadFields();
+    }
+
+    private async Task SwitchProjectAsync(ChangeEventArgs args)
+    {
+        string path = args.Value?.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(path) || path == Workspace.Project.Root) return;
+
+        if (ChatService.IsStreaming || ChatService.IsLoading)
+        {
+            bool proceed = await JS.InvokeAsync<bool>(
+                "confirm", "Switching projects will stop the current Work chat. Continue?");
+            if (!proceed)
+            {
+                LoadFields();
+                return;
+            }
+            ChatService.Stop();
+        }
+
+        try
+        {
+            await ChatService.CloseAsync();
+            Workspace.SwitchProject(path);
+            await ChatService.UseProjectAsync();
+            Work.Reload();
+            LoadFields();
+            _status = "Project opened.";
+            Nav.NavigateTo("/work");
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+            LoadFields();
+        }
+    }
+
+    private async Task CreateProjectAsync()
+    {
+        string? name = await JS.InvokeAsync<string?>("prompt", "New Work project name", "New project");
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        try
+        {
+            await ChatService.CloseAsync();
+            var project = Workspace.CreateProject(name);
+            Workspace.SwitchProject(project.Root);
+            await ChatService.UseProjectAsync();
+            Work.Reload();
+            LoadFields();
+            _showSettings = true;
+            _status = $"Created {project.Document.Name}.";
+            Nav.NavigateTo("/work");
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private void ToggleTool(WorkToolInfo tool, object? enabled)
+    {
+        if (enabled is true)
+        {
+            _disabledTools.Remove(tool.Name);
+            if (!ToolCatalog.IsDefaultEnabled(tool.Name)) _enabledTools.Add(tool.Name);
+        }
+        else
+        {
+            _disabledTools.Add(tool.Name);
+            _enabledTools.Remove(tool.Name);
+        }
+    }
+
+    private void RefreshTools()
+    {
+        ToolCatalog.Reload();
+        LoadFields();
+    }
+
+    private void ToggleSystemSkill(WorkSkill skill, object? enabled)
+    {
+        if (enabled is true)
+        {
+            _disabledSystemSkills.Remove(skill.Id);
+            if (!skill.DefaultEnabled) _enabledSystemSkills.Add(skill.Id);
+        }
+        else
+        {
+            _disabledSystemSkills.Add(skill.Id);
+            _enabledSystemSkills.Remove(skill.Id);
+        }
+    }
+
+    private void RefreshSkills()
+    {
+        Repo.Reload();
+        LoadFields();
+    }
+
+    private void ToggleAddSkill()
+    {
+        _showAddSkill = !_showAddSkill;
+        if (!_showAddSkill)
+        {
+            _newSkillName = "";
+            _newSkillContent = "";
+        }
+    }
+
+    private async Task AddSkillAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newSkillName)) return;
+        var next = Repo.Skills.Append(new WorkSkill
+        {
+            Id = "",
+            Name = _newSkillName.Trim(),
+            Content = _newSkillContent.Trim(),
+            DefaultEnabled = true,
+        }).ToList();
+        Repo.Save(next);
+        var created = Repo.Skills.LastOrDefault(skill =>
+            skill.Name.Equals(_newSkillName.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (created is not null)
+        {
+            _disabledSystemSkills.Remove(created.Id);
+            _enabledSystemSkills.Remove(created.Id);
+        }
+        _newSkillName = "";
+        _newSkillContent = "";
+        _showAddSkill = false;
+        Work.Reload();
+        LoadFields();
+        await ChatService.ReloadWorkContextAsync();
+    }
+    private async Task AddContextAsync()
+    {
+        string? path = await JS.InvokeAsync<string?>("prompt", "Context folder", ".");
+        if (string.IsNullOrWhiteSpace(path)) return;
+        _contexts.Add(new ContextDraft
+        {
+            Id = Guid.NewGuid().ToString("n"),
+            Path = path.Trim(),
+        });
+    }
+
+    private void RemoveContext(ContextDraft context)
+    {
+        if (_contexts.Count > 1) _contexts.Remove(context);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _status = "Saving...";
+        try
+        {
+            var skillIds = Repo.Skills.Select(skill => skill.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            WorkContext[] contexts = [.. _contexts.Select(context => new WorkContext
+            {
+                Id = context.Id,
+                Path = string.IsNullOrWhiteSpace(context.Path) ? "." : context.Path.Trim(),
+                Permissions = new WorkPermissions
+                {
+                    Read = context.Read,
+                    Write = context.Write,
+                    Delete = context.Delete,
+                    Web = WorkPermission.Never,
+                },
+            })];
+            if (contexts.Length == 0)
+                contexts = [new WorkContext { Id = "project-root", Path = "." }];
+
+            Work.Save(
+                Work.Settings with
+                {
+                    SystemPrompt = string.IsNullOrWhiteSpace(_systemPrompt) ? null : _systemPrompt.Trim(),
+                    Permissions = Work.Settings.Permissions with { Web = _web },
+                    DisabledSystemSkills = [.. _disabledSystemSkills.Where(id => skillIds.Contains(id))],
+                    EnabledSystemSkills = [.. _enabledSystemSkills.Where(id => skillIds.Contains(id))],
+                    Contexts = [.. contexts],
+                    DisabledTools = [.. _disabledTools],
+                    EnabledTools = [.. _enabledTools],
+                },
+                _memory);
+
+            await ChatService.ReloadWorkContextAsync();
+            LoadFields();
+            _status = "Project settings applied.";
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
