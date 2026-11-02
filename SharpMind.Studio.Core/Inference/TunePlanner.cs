@@ -87,8 +87,9 @@ public static class TunePlanner
         if (context < wantedContext)
             notes.Add($"Context reduced from {wantedContext:N0} to {context:N0} to respect memory.");
 
+        // Tool calls need the model to commit to exact names and JSON, so Work runs cold.
         float temperature = target == TuneTarget.Work
-            ? preset switch { TunePreset.Performance => 0.4f, TunePreset.Balanced => 0.3f, _ => 0.1f }
+            ? preset switch { TunePreset.Performance => 0.2f, TunePreset.Balanced => 0.1f, _ => 0.05f }
             : preset switch { TunePreset.Performance => 0.7f, TunePreset.Balanced => 0.6f, _ => 0.2f };
         int maxNew = target == TuneTarget.Work
             ? preset switch { TunePreset.Performance => 256, TunePreset.Balanced => 512, _ => 768 }

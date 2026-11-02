@@ -47,6 +47,23 @@ public sealed class TunePlannerTests
     }
 
     [Fact]
+    public void WorkPresets_RunColderThanChatForReliableToolCalls()
+    {
+        foreach (TunePreset preset in Enum.GetValues<TunePreset>())
+        {
+            TuneRecommendation work = TunePlanner.Recommend(
+                Model(), TuneTarget.Work, preset, ["KVCacherBuilder"],
+                totalMemoryOverride: 16L * 1024 * 1024 * 1024);
+            TuneRecommendation chat = TunePlanner.Recommend(
+                Model(), TuneTarget.Chat, preset, ["KVCacherBuilder"],
+                totalMemoryOverride: 16L * 1024 * 1024 * 1024);
+
+            Assert.True(work.Overrides.Temperature <= 0.2f, $"{preset} Work temperature");
+            Assert.True(work.Overrides.Temperature < chat.Overrides.Temperature, $"{preset} Work vs Chat");
+        }
+    }
+
+    [Fact]
     public void AccuracyPreset_UsesLowerTemperatureAndF32Cache()
     {
         TuneRecommendation tune = TunePlanner.Recommend(

@@ -631,17 +631,16 @@
     {
         if (IsRunning) return;
 
-        string? path = Workspace.ResolveModelPath(run.ModelPath) ??
-                       Workspace.ResolveModelPath(run.Subject);
-        if (path is null)
+        CanaryRerunPlanner.Plan plan = CanaryRerunPlanner.Build([run], Workspace, Inference);
+        if (plan.Request is null)
         {
             _error = $"Could not find the model for {run.Subject ?? run.RunId}.";
             return;
         }
 
-        SetModels([.. _availableModels, path], [path]);
-        if (!string.IsNullOrWhiteSpace(run.Prompt)) _prompt = run.Prompt;
-        StartCanary();
+        _error = null;
+        _status = "Starting re-run...";
+        _ = Canary.StartAsync(plan.Request, Workspace.Runs);
     }
 
     private async Task ReloadRunsAsync()

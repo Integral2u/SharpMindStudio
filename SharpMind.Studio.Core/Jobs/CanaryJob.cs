@@ -12,7 +12,12 @@ public sealed record CanaryRequest
     public Type? GeneratorType { get; init; }
     public Type? CacheType { get; init; }
     public bool IncludeToolProbe { get; init; }
+
+    /// <summary>Per-model generator and cache, keyed by model path. Falls back to the request-wide types.</summary>
+    public IReadOnlyDictionary<string, CanaryModelSettings>? ModelSettings { get; init; }
 }
+
+public sealed record CanaryModelSettings(Type? GeneratorType, Type? CacheType);
 
 public sealed record CanaryResult
 {
@@ -52,6 +57,9 @@ public static class CanaryJob
 
             var run = store.Create(ModelBenchJob.Kind, Path.GetFileNameWithoutExtension(model));
             await using var writer = run.OpenWriter();
+            CanaryModelSettings? own = request.ModelSettings?.GetValueOrDefault(model);
+            Type? generator = own?.GeneratorType ?? request.GeneratorType;
+            Type? cache = own?.CacheType ?? request.CacheType;
             try
             {
                 var result = await ModelBenchJob.RunAsync(new ModelBenchRequest
@@ -61,8 +69,8 @@ public static class CanaryJob
                     WarmupTokens = request.WarmupTokens,
                     MeasureTokens = request.MeasureTokens,
                     FullLoad = request.FullLoad,
-                    GeneratorType = request.GeneratorType,
-                    CacheType = request.CacheType,
+                    GeneratorType = generator,
+                    CacheType = cache,
                 }, run, writer, cancellationToken).ConfigureAwait(false);
 
                 string toolStatus = "N/A";
@@ -72,7 +80,7 @@ public static class CanaryJob
                 {
                     progress?.Report($"{name}: probing tool call");
                     (toolStatus, toolRunId, toolDetail) = await RunToolProbeAsync(
-                        model, request, store, cancellationToken).ConfigureAwait(false);
+                        model, request, generator, cache, store, cancellationToken).ConfigureAwait(false);
                     await writer.WriteAsync(new ToolProbeCompleted
                     {
                         Status = toolStatus,
@@ -123,6 +131,8 @@ public static class CanaryJob
     private static async Task<(string Status, string RunId, string? Detail)> RunToolProbeAsync(
         string model,
         CanaryRequest request,
+        Type? generator,
+        Type? cache,
         RunStore store,
         CancellationToken cancellationToken)
     {
@@ -133,8 +143,8 @@ public static class CanaryJob
             ToolProbeResult result = await ToolProbeJob.RunAsync(new ToolProbeRequest
             {
                 ModelPath = model,
-                GeneratorType = request.GeneratorType,
-                CacheType = request.CacheType,
+                GeneratorType = generator,
+                CacheType = cache,
                 FullLoad = request.FullLoad,
             }, run, writer, cancellationToken).ConfigureAwait(false);
 

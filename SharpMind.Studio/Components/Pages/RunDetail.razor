@@ -246,33 +246,18 @@ else
     {
         if (_summary is null || Canary.IsRunning) return;
 
-        string? path = Workspace.ResolveModelPath(_summary.ModelPath) ??
-                       Workspace.ResolveModelPath(_summary.Subject);
-        if (path is null)
+        CanaryRerunPlanner.Plan plan = CanaryRerunPlanner.Build(
+            [_summary], Workspace, Inference, includeToolProbe: _toolProbe);
+        if (plan.Request is null)
         {
             _rerunError = $"Could not find the model for {_summary.Subject ?? _summary.RunId}.";
             return;
         }
 
-        var builders = Workspace.Builders;
-        var generator = builders.Generators.FirstOrDefault(value =>
-            value.Name.Equals(Inference.System.Generator, StringComparison.OrdinalIgnoreCase));
-        var cache = builders.Caches.FirstOrDefault(value =>
-            value.Name.Equals(Inference.System.Cache, StringComparison.OrdinalIgnoreCase));
-
         _pendingRerun = true;
         _rerunError = null;
         _rerunStatus = "Starting...";
-        _ = Canary.StartAsync(new CanaryRequest
-        {
-            Models = [path],
-            Prompt = _summary.Prompt ?? "The capital of France is",
-            WarmupTokens = Math.Max(1, _summary.WarmupTokens ?? 16),
-            MeasureTokens = Math.Max(1, _summary.MeasureTokens ?? 32),
-            GeneratorType = generator?.BuilderType,
-            CacheType = cache?.Type,
-            IncludeToolProbe = _toolProbe,
-        }, Workspace.Runs);
+        _ = Canary.StartAsync(plan.Request, Workspace.Runs);
     }
     private static async Task<List<RunEvent>> ReadAllAsync(RunHandle handle)
     {
