@@ -211,11 +211,13 @@ public sealed class StudioTrainingService : IDisposable
             _bestValLoss = result.BestValLoss ?? _bestValLoss;
             _bestValStep = result.BestValStep ?? _bestValStep;
             _status = result.Success
-                ? result.NothingToTrain
-                    ? "Nothing new to train."
-                    : result.ExportPath is null && result.AdapterPath is not null
-                        ? $"Finished at step {result.FinalStep}. Adapter saved."
-                        : $"Finished at step {result.FinalStep}. Model saved."
+                ? result.Cached
+                    ? $"Recipe cache hit. Reused {Path.GetFileName(result.ExportPath)}."
+                    : result.NothingToTrain
+                        ? "Nothing new to train."
+                        : result.ExportPath is null && result.AdapterPath is not null
+                            ? $"Finished at step {result.FinalStep}. Adapter saved."
+                            : $"Finished at step {result.FinalStep}. Model saved."
                 : string.Equals(result.Error, "cancelled", StringComparison.OrdinalIgnoreCase)
                     ? "Training interrupted. The latest checkpoint was kept."
                     : "Training failed.";

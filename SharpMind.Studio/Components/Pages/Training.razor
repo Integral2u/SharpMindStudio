@@ -570,6 +570,18 @@ else if (_tab == "runs")
                                 <span class="training-chip @(run.Record.Success ? "live" : "")">
                                     @(run.Record.Success ? "ok" : "failed")
                                 </span>
+                                @if (run.Record.Cached)
+                                {
+                                    <span class="training-chip live">cached</span>
+                                }
+                                @if (run.Record.RecipeHash is { } recipeHash)
+                                {
+                                    <span class="small faint mono">recipe @ShortHash(recipeHash)</span>
+                                }
+                                @if (run.Record.PlanId is { } planId)
+                                {
+                                    <span class="small faint mono">plan @planId @run.Record.RuleSetVersion</span>
+                                }
                                 <span class="small faint mono">loss @Fmt(run.Record.FinalLoss)</span>
                                 @if (run.Record.BestValLoss is { } bestVal)
                                 {
@@ -906,6 +918,8 @@ else if (_tab == "models")
     private string? _promotionSummary;
     private string? _promotionPath;
     private string? _runNotice;
+    private string? _planId;
+    private string? _ruleSetVersion;
     private IReadOnlyList<string>? _resumeOptions;
     private readonly HashSet<string> _tuneTargets =
         ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"];
@@ -1182,6 +1196,8 @@ else if (_tab == "models")
         {
             Name = name,
             BaseModelPath = basePath,
+            PlanId = _planId,
+            RuleSetVersion = _ruleSetVersion,
             Sources =
             [
                 new JobSource
@@ -1290,6 +1306,12 @@ else if (_tab == "models")
         if (string.IsNullOrWhiteSpace(_job.ExportPath))
             _job.ExportPath = Path.Combine(StudioPaths.Training, Sanitize(_job.Name) + ".smm");
 
+        if (_planId is not null)
+        {
+            _job.PlanId = _planId;
+            _job.RuleSetVersion = _ruleSetVersion;
+        }
+
         Lab.Draft = _job;
 
         _starting = true;
@@ -1335,6 +1357,8 @@ else if (_tab == "models")
         _tuneStartFresh = job.StartFresh;
         _tuneTargets.Clear();
         foreach (string target in job.LoRATargetModules) _tuneTargets.Add(target);
+        _planId = job.PlanId;
+        _ruleSetVersion = job.RuleSetVersion;
         _tuneError = null;
     }
 
@@ -1358,6 +1382,8 @@ else if (_tab == "models")
         _job = job;
         Lab.Draft = _job;
         _selectedJobPath = path;
+        _planId = job.PlanId;
+        _ruleSetVersion = job.RuleSetVersion;
         _error = null;
         _tab = "new";
         if (navigate) Nav.NavigateTo("/training?tab=new");
@@ -1406,6 +1432,8 @@ else if (_tab == "models")
     }
 
     private static string Fmt(double? value) => value?.ToString("0.####") ?? "—";
+
+    private static string ShortHash(string hash) => hash.Length <= 8 ? hash : hash[..8];
 
     private static string StepAt(int? step) => step is { } value ? $" @ {value}" : "";
 
@@ -1539,6 +1567,8 @@ else if (_tab == "models")
         _job = fork;
         Lab.Draft = fork;
         _selectedJobPath = "";
+        _planId = fork.PlanId;
+        _ruleSetVersion = fork.RuleSetVersion;
         _error = null;
         _tab = "new";
         Nav.NavigateTo("/training?tab=new");
@@ -1585,6 +1615,9 @@ else if (_tab == "models")
     private void ApplyPlan(TrainingPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
+
+        _planId = plan.Id;
+        _ruleSetVersion = plan.RuleSetVersion;
 
         if (plan.PlaybookId is { } id
             && TrainingPlaybooks.All.FirstOrDefault(playbook => playbook.Id == id) is { } playbook)
@@ -1660,6 +1693,8 @@ else if (_tab == "models")
         _job = CreateDefaultJob();
         Lab.Draft = _job;
         _selectedJobPath = "";
+        _planId = null;
+        _ruleSetVersion = null;
         _error = null;
     }
 

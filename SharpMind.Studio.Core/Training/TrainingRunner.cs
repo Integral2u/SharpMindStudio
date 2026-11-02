@@ -29,6 +29,12 @@ public sealed class TrainingRunResult
 
     /// <summary>Saved adapter file, when the run asked for one (merged or adapter-only).</summary>
     public string? AdapterPath { get; init; }
+
+    /// <summary>True when the content-addressed recipe cache supplied the export.</summary>
+    public bool Cached { get; init; }
+
+    /// <summary>Training recipe hash, when caching was active for this run.</summary>
+    public string? RecipeHash { get; init; }
     public int FinalStep { get; init; }
 
     /// <summary>Lowest validation loss seen during the run, when validation was enabled.</summary>
@@ -79,7 +85,8 @@ public static class TrainingRunner
         IProgress<float> progress,
         Action<TrainStepResult>? onStep = null,
         Action<int>? onResume = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? recipeFolder = null)
     {
         void Log(string line) => status.Report(line);
 
@@ -209,11 +216,45 @@ public static class TrainingRunner
                     Error = "The adapter and merged model resolve to the same file. Pick different destinations.",
                 };
 
-            Tokenizer tokenizer;
+            Tokenizer tokenizer = null!;
             ModelConfig modelConfig;
             bool grewTokenizer = false;
             Transformer? fineTuneModel = null;
             string? baseChatTemplate = null;
+
+            // Content-addressed recipe check before loading a base or tokenizer:
+            // identical data + settings return the existing packaged model.
+            string recipeDataHash = TrainingRecipeHash.Data(job);
+            string recipeTokenizerHash = TrainingRecipeHash.Tokenizer(job, recipeDataHash);
+            string? recipeTrainHash = null;
+            if (!job.IncrementalMode && !job.Rehearsal && job.MergeOnExport && !job.SaveAdapterFile)
+            {
+                recipeTrainHash = TrainingRecipeHash.Train(job, recipeDataHash, recipeTokenizerHash);
+                if (TrainingRecipeStore.TryGet("train", recipeTrainHash, out TrainingRecipeArtifact cached, recipeFolder))
+                {
+                    Log($"Recipe: cache hit {TrainingRecipeHash.Short(recipeTrainHash)} - "
+                        + $"reusing {Path.GetFileName(cached.ArtifactPath)}.");
+                    progress.Report(1f);
+                    return new TrainingRunResult
+                    {
+                        Success = true,
+                        ExportPath = cached.ArtifactPath,
+                        FinalStep = job.TotalSteps,
+                        Cached = true,
+                        RecipeHash = recipeTrainHash,
+                    };
+                }
+                Log($"Recipe: {TrainingRecipeHash.Short(recipeTrainHash)} - no cached model.");
+            }
+
+            bool tokenizerFromCache = false;
+            if (!job.IsFineTune && !job.UsesCharacterTokenizer && !job.IncrementalMode && !job.Rehearsal
+                && TrainingRecipeStore.TryGet("tokenizer", recipeTokenizerHash, out TrainingRecipeArtifact tokenizerArtifact, recipeFolder))
+            {
+                tokenizer = TokenizationPipeline.Load(tokenizerArtifact.ArtifactPath);
+                tokenizerFromCache = true;
+                Log($"Recipe: reused tokenizer {TrainingRecipeHash.Short(recipeTokenizerHash)}.");
+            }
 
             if (job.IsFineTune)
             {
@@ -254,6 +295,8 @@ public static class TrainingRunner
             }
             else
             {
+                if (!tokenizerFromCache)
+                {
                 if (job.UsesCharacterTokenizer)
                 {
                     tokenizer = await TokenizationPipeline.TrainCharacterAsync(
@@ -291,6 +334,18 @@ public static class TrainingRunner
                         }
                     }
                 }
+                }
+
+                if (!tokenizerFromCache && !job.UsesCharacterTokenizer)
+                {
+                    string tokenizerPath = job.TokenizerFilePath;
+                    if (File.Exists(tokenizerPath))
+                    {
+                        TrainingRecipeStore.Save(new TrainingRecipeArtifact(
+                            "tokenizer", recipeTokenizerHash, tokenizerPath, job.Name, DateTime.UtcNow), recipeFolder);
+                    }
+                }
+
                 Log($"Tokenizer: vocab={tokenizer.VocabSize} ({(job.UsesCharacterTokenizer ? "char" : "bpe")})");
                 job.TrainedTokenizerVocab = tokenizer.VocabSize;
 
@@ -859,6 +914,11 @@ public static class TrainingRunner
                 // field when this live job is shown again), matching how the tokenizer
                 // path is anchored to the job rather than a shared folder.
                 job.ExportPath = exportPath;
+                if (recipeTrainHash is not null)
+                {
+                    TrainingRecipeStore.Save(new TrainingRecipeArtifact(
+                        "train", recipeTrainHash, exportPath, job.Name, DateTime.UtcNow), recipeFolder);
+                }
                 Log($"Saved: {exportPath} ({new FileInfo(exportPath).Length:N0} bytes)");
             }
 
@@ -884,6 +944,7 @@ public static class TrainingRunner
                 FinalStep = lastStep,
                 BestValLoss = bestValLoss,
                 BestValStep = bestValStep > 0 ? bestValStep : null,
+                RecipeHash = recipeTrainHash,
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

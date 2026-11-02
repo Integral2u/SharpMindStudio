@@ -144,6 +144,14 @@ public sealed record TrainingPlan
     public string? Estimate { get; init; }
     public string? PlaybookId { get; init; }
     public PlannerDestination Destination { get; init; } = PlannerDestination.NewModel;
+
+    /// <summary>Rule set that generated/annotated this plan.</summary>
+    public string? RuleSetId { get; init; }
+
+    public string? RuleSetVersion { get; init; }
+
+    /// <summary>Rules that fired for this plan, in evaluation order.</summary>
+    public IReadOnlyList<string> AppliedRuleIds { get; init; } = [];
 }
 
 /// <summary>
@@ -156,7 +164,7 @@ public sealed record TrainingPlan
 /// </summary>
 public static class TrainingPlanner
 {
-    public static IReadOnlyList<TrainingPlan> Plan(PlannerInput input)
+    public static IReadOnlyList<TrainingPlan> Plan(PlannerInput input, TrainingRuleSet? rules = null)
     {
         ArgumentNullException.ThrowIfNull(input);
 
@@ -172,7 +180,13 @@ public static class TrainingPlanner
         var balanced = BuildBalanced(input, fromBase, wantsKnowledge, wantsBehaviour, wantsCompare, wantsSmaller, architectureChange);
         var ambitious = BuildAmbitious(input, fromBase, wantsKnowledge, wantsBehaviour, wantsCompare, wantsSmaller, architectureChange);
 
-        return [fast, balanced, ambitious];
+        TrainingRuleSet set = rules ?? TrainingRuleSet.Load(TrainingRuleSetStore.ReadEmbedded());
+        return
+        [
+            ApplyRules(fast, input, set, fromBase, architectureChange),
+            ApplyRules(balanced, input, set, fromBase, architectureChange),
+            ApplyRules(ambitious, input, set, fromBase, architectureChange),
+        ];
     }
 
     private static TrainingPlan BuildFast(
@@ -218,10 +232,6 @@ public static class TrainingPlanner
             risks.Add("LoRA adds targeted behaviour or knowledge; it cannot add a new language or large capability cheaply.");
         else
             risks.Add("From-scratch training is data-bound: a small corpus gives a narrow model, not a general chat model.");
-        AddIntakeRisks(input, fromBase, risks);
-
-        bool chat = input.Intake.Task is PlannerTask.ChatAssistant or PlannerTask.ToolUser;
-        bool minutes = input.Intake.Effort is PlannerEffort.Minutes;
 
         return new TrainingPlan
         {
@@ -234,8 +244,8 @@ public static class TrainingPlanner
             Risks = risks,
             Estimate = Estimate(input, fromBase),
             PlaybookId = fromBase
-                ? (chat || wantsKnowledge ? "lora-domain" : "lora-light")
-                : (minutes ? "smoke" : "domain-small"),
+                ? (wantsKnowledge ? "lora-domain" : "lora-light")
+                : "domain-small",
             Destination = fromBase ? PlannerDestination.Improve : PlannerDestination.NewModel,
         };
     }
@@ -297,10 +307,6 @@ public static class TrainingPlanner
                 : "From-scratch training is data-bound; measure the corpus before committing hours.",
             "QAT approximates the packaged precision; verify the held-out exam after export.",
         };
-        AddIntakeRisks(input, fromBase, risks);
-
-        bool chat = input.Intake.Task is PlannerTask.ChatAssistant or PlannerTask.ToolUser;
-        bool longRun = input.Intake.Effort is PlannerEffort.Overnight;
 
         return new TrainingPlan
         {
@@ -312,7 +318,7 @@ public static class TrainingPlanner
             Moves = moves,
             Risks = risks,
             Estimate = Estimate(input, fromBase),
-            PlaybookId = fromBase ? "lora-domain" : (chat || longRun ? "chat-base" : "domain-small"),
+            PlaybookId = fromBase ? "lora-domain" : "domain-small",
             Destination = fromBase ? PlannerDestination.Improve : PlannerDestination.NewModel,
         };
     }
@@ -378,7 +384,6 @@ public static class TrainingPlanner
                 ? "Long continued runs can drift; compare against the base before promoting."
                 : "From-scratch runs at this size cost hours; rehearse before committing.",
         };
-        AddIntakeRisks(input, fromBase, risks);
 
         return new TrainingPlan
         {
@@ -546,29 +551,108 @@ public static class TrainingPlanner
             Alternative = status == PlannerMoveStatus.Blocked ? alternative : null,
         };
 
-    private static void AddIntakeRisks(PlannerInput input, bool fromBase, List<string> risks)
+    private static TrainingPlan ApplyRules(
+        TrainingPlan plan,
+        PlannerInput input,
+        TrainingRuleSet set,
+        bool fromBase,
+        bool architectureChange)
     {
-        PlannerIntake intake = input.Intake;
+        var moves = plan.Moves.ToList();
+        var risks = plan.Risks.ToList();
+        string? playbook = plan.PlaybookId;
+        var applied = new List<string>();
 
-        if (intake.Constraint is PlannerConstraint.Internal or PlannerConstraint.Regulated)
-            risks.Add("Keep data and inference on this machine; avoid external synthetic-data services.");
+        foreach (TrainingRule rule in set.Rules)
+        {
+            if (!Matches(rule.When, input, plan.Id, fromBase, architectureChange))
+                continue;
 
-        if (intake.Data is PlannerDataShape.InstructionData)
-            risks.Add("Instruction data needs SFT, which is not connected; LoRA on curated chat text is the "
-                      + "supported route until it lands.");
+            applied.Add(rule.Id);
 
-        if (intake.Runtime is PlannerRuntime.PhoneEdge)
-            risks.Add("Phone/edge targets need a smaller context and QAT; post-training quantisation is not connected yet.");
+            if (!string.IsNullOrWhiteSpace(rule.Then.Playbook))
+                playbook = rule.Then.Playbook.Trim();
 
-        if (intake.Effort is PlannerEffort.Minutes && !fromBase)
-            risks.Add("Minutes is enough for the smoke test, not for a useful from-scratch model.");
+            if (!string.IsNullOrWhiteSpace(rule.Then.AddRisk))
+            {
+                string risk = Expand(rule.Then.AddRisk, input);
+                if (!risks.Any(existing => string.Equals(existing, risk, StringComparison.Ordinal)))
+                    risks.Add(risk);
+            }
 
-        if (intake.Task is PlannerTask.ToolUser)
-            risks.Add("Tool use depends on a verified tool probe; tune for Work and re-run the probe before relying on it.");
+            if (rule.Then.Block is not { Count: > 0 } blocks) continue;
+            for (int i = 0; i < moves.Count; i++)
+            {
+                if (!blocks.Contains(moves[i].Action.ToString(), StringComparer.OrdinalIgnoreCase))
+                    continue;
 
-        if (!string.IsNullOrWhiteSpace(intake.GoodLooksLike))
-            risks.Add($"Turn '{intake.GoodLooksLike.Trim()}' into 5-10 eval prompts before training.");
+                moves[i] = moves[i] with
+                {
+                    Status = PlannerMoveStatus.Blocked,
+                    BlockedReason = rule.Then.BlockedReason ?? moves[i].BlockedReason ?? $"Blocked by rule '{rule.Id}'.",
+                    Alternative = rule.Then.Alternative ?? moves[i].Alternative,
+                };
+            }
+        }
+
+        return plan with
+        {
+            Moves = moves,
+            Risks = risks,
+            PlaybookId = playbook,
+            RuleSetId = set.Id,
+            RuleSetVersion = set.Version,
+            AppliedRuleIds = applied,
+        };
     }
+
+    private static bool Matches(
+        TrainingRuleCondition when,
+        PlannerInput input,
+        string planId,
+        bool fromBase,
+        bool architectureChange)
+    {
+        if (!MatchesList(when.Plan, planId)) return false;
+        if (!MatchesList(when.Start, input.Start.ToString())) return false;
+        if (!MatchesList(when.Task, input.Intake.Task.ToString())) return false;
+        if (!MatchesList(when.Runtime, input.Intake.Runtime.ToString())) return false;
+        if (!MatchesList(when.Data, input.Intake.Data.ToString())) return false;
+        if (!MatchesList(when.Constraint, input.Intake.Constraint.ToString())) return false;
+        if (!MatchesList(when.Effort, input.Intake.Effort.ToString())) return false;
+
+        if (when.FromBase is { } fromBaseWanted && fromBaseWanted != fromBase) return false;
+        if (when.ArchitectureChange is { } architectureWanted && architectureWanted != architectureChange) return false;
+        if (when.HasData is { } dataWanted && dataWanted != input.EffectiveHasData) return false;
+        if (when.HasGoodLooksLike is { } goodWanted
+            && goodWanted != !string.IsNullOrWhiteSpace(input.Intake.GoodLooksLike))
+            return false;
+
+        if (when.GoalsAll is { Count: > 0 } all
+            && !all.All(goal => input.Goals.Contains(ParseGoal(goal))))
+            return false;
+
+        if (when.GoalsAny is { Count: > 0 } any
+            && !any.Any(goal => input.Goals.Contains(ParseGoal(goal))))
+            return false;
+
+        return true;
+    }
+
+    private static bool MatchesList(IReadOnlyList<string>? allowed, string value)
+        => allowed is null || allowed.Count == 0
+           || allowed.Contains(value, StringComparer.OrdinalIgnoreCase);
+
+    private static PlannerGoal ParseGoal(string value)
+        => Enum.TryParse(value, ignoreCase: true, out PlannerGoal goal)
+            ? goal
+            : throw new InvalidDataException($"Unknown planner goal '{value}' in a rule condition.");
+
+    private static string Expand(string template, PlannerInput input)
+        => template.Replace(
+            "{goodLooksLike}",
+            input.Intake.GoodLooksLike?.Trim() ?? "",
+            StringComparison.Ordinal);
 
     private static string? Estimate(PlannerInput input, bool fromBase)
     {

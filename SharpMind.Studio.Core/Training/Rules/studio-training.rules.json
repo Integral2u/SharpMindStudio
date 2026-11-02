@@ -1,0 +1,105 @@
+{
+  "id": "studio-training",
+  "version": "2026.11.1",
+  "rules": [
+    {
+      "id": "minutes-smoke",
+      "when": {
+        "plan": [ "fast" ],
+        "fromBase": false,
+        "effort": [ "Minutes" ]
+      },
+      "then": {
+        "playbook": "smoke"
+      }
+    },
+    {
+      "id": "chat-fast-lora",
+      "when": {
+        "plan": [ "fast" ],
+        "fromBase": true,
+        "task": [ "ChatAssistant", "ToolUser" ]
+      },
+      "then": {
+        "playbook": "lora-domain"
+      }
+    },
+    {
+      "id": "chat-balanced",
+      "when": {
+        "plan": [ "balanced" ],
+        "fromBase": false,
+        "task": [ "ChatAssistant", "ToolUser" ]
+      },
+      "then": {
+        "playbook": "chat-base"
+      }
+    },
+    {
+      "id": "overnight-balanced",
+      "when": {
+        "plan": [ "balanced" ],
+        "fromBase": false,
+        "effort": [ "Overnight" ]
+      },
+      "then": {
+        "playbook": "chat-base"
+      }
+    },
+    {
+      "id": "regulated-privacy",
+      "when": {
+        "constraint": [ "Internal", "Regulated" ]
+      },
+      "then": {
+        "addRisk": "Keep data and inference on this machine; avoid external synthetic-data services."
+      }
+    },
+    {
+      "id": "instruction-needs-sft",
+      "when": {
+        "data": [ "InstructionData" ]
+      },
+      "then": {
+        "addRisk": "Instruction data needs SFT, which is not connected; LoRA on curated chat text is the supported route until it lands."
+      }
+    },
+    {
+      "id": "phone-edge-qat",
+      "when": {
+        "runtime": [ "PhoneEdge" ]
+      },
+      "then": {
+        "addRisk": "Phone/edge targets need a smaller context and QAT; post-training quantisation is not connected yet."
+      }
+    },
+    {
+      "id": "minutes-scratch",
+      "when": {
+        "fromBase": false,
+        "effort": [ "Minutes" ]
+      },
+      "then": {
+        "addRisk": "Minutes is enough for the smoke test, not for a useful from-scratch model."
+      }
+    },
+    {
+      "id": "tool-user-probe",
+      "when": {
+        "task": [ "ToolUser" ]
+      },
+      "then": {
+        "addRisk": "Tool use depends on a verified tool probe; tune for Work and re-run the probe before relying on it."
+      }
+    },
+    {
+      "id": "good-looks-eval",
+      "when": {
+        "hasGoodLooksLike": true
+      },
+      "then": {
+        "addRisk": "Turn '{goodLooksLike}' into 5-10 eval prompts before training."
+      }
+    }
+  ]
+}

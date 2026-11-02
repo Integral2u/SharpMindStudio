@@ -37,6 +37,10 @@ public sealed class TrainingRunRecord
     /// <summary>Variant label for the branch.</summary>
     public string? Variant { get; set; }
 
+    /// <summary>Planner plan id and rule-set version used to configure the job.</summary>
+    public string? PlanId { get; set; }
+    public string? RuleSetVersion { get; set; }
+
     /// <summary>Configured number of steps.</summary>
     public int TotalSteps { get; set; }
 
@@ -64,6 +68,12 @@ public sealed class TrainingRunRecord
 
     public double ElapsedSeconds { get; set; }
     public DateTime FinishedUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>True when the content-addressed recipe cache supplied the export.</summary>
+    public bool Cached { get; set; }
+
+    /// <summary>Training recipe hash when caching participated in the run.</summary>
+    public string? RecipeHash { get; set; }
 
     /// <summary>Size of the exported model, when one was written.</summary>
     public long ExportBytes { get; set; }
@@ -105,6 +115,8 @@ public sealed class TrainingRunRecord
             ForkRootId = job.ForkRootId,
             ForkPoint = job.ForkPoint,
             Variant = job.Variant,
+            PlanId = job.PlanId,
+            RuleSetVersion = job.RuleSetVersion,
             TotalSteps = job.TotalSteps,
             FinalStep = result.FinalStep,
             ValidationPercent = job.ValidationPercent,
@@ -116,6 +128,8 @@ public sealed class TrainingRunRecord
             BatchSize = job.BatchSize,
             SeqLen = job.SeqLen,
             ElapsedSeconds = elapsed.TotalSeconds,
+            Cached = result.Cached,
+            RecipeHash = result.RecipeHash,
             ExportBytes = bytes,
             Curve = [.. curve],
         };

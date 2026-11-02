@@ -2,7 +2,7 @@
 
 > **Status:** implementation in progress, October 2026. Studio **1.1.0.0**.
 > Built: shell, projects/runs/recipes, canary and tool probes, TESTS run history, Chat lab, layered inference settings, Work mode MVP, model Tune presets, shared skills/tools, the phone pairing gateway, the corpus-to-export Training engine with its lab shell, LoRA fine-tuning, and SMM↔GGUF conversion.
-> Remaining: planner rule files and content-addressed fork reuse. Gateway proxy mode is intentionally left as built.
+> Remaining: finer-grained per-phase Recipe nodes. Gateway proxy mode is intentionally left as built.
 SharpMind Studio is a local-first application for chatting with models, doing project work with them, and building them: from scratch, from a base model, or by upgrading a model you already have. It is the successor to the terminal UI (CUI) as the primary front end, and it is meant to be something people want to use: attractive, calm and fast.
 
 ---
@@ -221,7 +221,8 @@ The canary dashboard lives at `/test`; the full history lives at `/runs`.
 - `/runs` shows every run in the current project. It filters by search text, run type, status and tool status, and groups by **family**, **model** or **run type**.
 - Runs are sorted fastest to slowest inside each group; runs without a measurement follow, newest first. Measured decode is the comparison, so tool-probe runs never win a speed award.
 - Gold star: fastest successful `model-bench` run whose tool probe passed. Silver star: fastest successful `model-bench` run without a passing tool probe. Users can delete a run or re-run its model from either view.
-- **Fork** creates a child job from a finished run: the job records the parent run, the root of the fork tree, the fork point and a variant label, and continues from the parent's latest checkpoint where one exists. The Runs list shows the parent link, and the normal Compare/Exam view works across siblings. Content-addressed step reuse is the later Recipe-graph layer.
+- **Fork** creates a child job from a finished run: the job records the parent run, the root of the fork tree, the fork point and a variant label, and continues from the parent's latest checkpoint where one exists. The Runs list shows the parent link, and the normal Compare/Exam view works across siblings. The recipe cache reuses the tokenizer and an identical full run; finer-grained per-phase nodes remain the later Recipe-graph layer.
+- Runs also record the planner plan/rule-set version and, when the recipe cache supplied the model, `cached` plus the recipe hash. A cached run reuses the identical export instead of training again.
 - Run summaries are cached for three seconds and invalidated on delete, re-run completion, and project switch, so opening a page does not rescan 200 event streams per render.
 
 ### 4.12 Phone gateway
@@ -334,7 +335,7 @@ flowchart LR
 6. **A rehearsal run** of about 30 steps measures real throughput, refines the ETA and catches pipeline errors before hours are committed.
 7. **"Why can't I?"** on disabled options. For example, GPU training is currently LoRA-only, so a from-scratch run falls back to CPU, and the card says so with alternatives.
 
-The 1.1 planner implements the six-question intake, the three-plan proposal, reasons/alternatives, parameter/memory/size/corpus estimates, and a ~30-step rehearsal that measures step time, throughput and peak working set. The estimator is explicitly heuristic until that rehearsal. Versioned rule files and graph forking remain future work.
+The 1.1 planner implements the six-question intake, the three-plan proposal, reasons/alternatives, parameter/memory/size/corpus estimates, and a ~30-step rehearsal that measures step time, throughput and peak working set. The estimator is explicitly heuristic until that rehearsal. Rules are versioned JSON under `Training/rules` (the embedded set is copied there on first use); each plan records the rule-set version and the rules that fired. Finer-grained Recipe nodes remain future work.
 
 ### 5.5 Improve: the diagnosis loop
 
@@ -416,6 +417,13 @@ The exam is what makes the **Promote** step honest: the held-out slice was exclu
 **Training → Models** converts between the packaged model (`.smm`) and GGUF in both directions. The direction follows the source extension, the destination is suggested beside the source with the extension swapped, and overwriting an existing file needs an explicit tick. `.smmt` is not a model format: it is the saved training-job JSON, so it is never offered as a conversion source.
 
 `ModelConverter` (in `Studio.Core/Training`) is a thin wrapper over the library's `SmmToGufConverter` and `GgufToSmmConverter`. Both stream each tensor's raw bytes and cannot normalise or re-quantise them. The wrapper adds a progress relay, cancellation (leaving the destination untouched), and a read-back check that reopens the new file with the loader that will consume it, so a truncated or config-less output fails at conversion time rather than at model load. `StudioConversionService` holds the single active conversion and its progress across tab switches; `ModelConverterTests` covers the round trip and the overwrite/unknown-source guards.
+
+### 5.12 Versioned rules and cached recipes
+
+Planner rules are versioned JSON, not compiled branches. The embedded default is written to `Training/rules/studio-training.rules.json` on first use; a user file overrides it, and an invalid file falls back to the embedded set with a warning. Each rule has an id, conditions (plan, start, intake fields, goals, from-base/data flags) and actions (block a move, add a risk, choose a playbook). Plans carry `RuleSetId`, `RuleSetVersion` and the ids of the rules that fired, and a job keeps the plan/version so a run can be traced back to the rules that proposed it.
+
+The recipe cache is content-addressed in `Training/recipes`: the **data** hash covers sources/stages/splits, the **tokenizer** hash covers data + tokenizer kind/vocab, and the **train** hash covers data + tokenizer + model/optimizer/QAT/LoRA settings + base/checkpoint content fingerprints. A rerun with an identical train hash returns the cached `.smm` without training; a changed tokenizer or training setting re-runs only from that node. Incremental and rehearsal runs bypass the cache, and adapter-only output is not cached because the merged file is not the whole artifact. Runs show `cached`, a short recipe hash, and the plan/rule version. `TrainingRecipeTests` covers hash stability/sensitivity, the store round trip and a real runner cache hit.
+
 
 ---
 
@@ -565,7 +573,7 @@ Draft slices, not yet confirmed:
 
 | Version | Contents |
 |---|---|
-| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a rules-based build-map planner with intake, estimates and a measured rehearsal, a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume (smoke-tested on SmolLM2-135M), run history with curves, comparison and run forking, and a held-out exam backing a written promotion report |
+| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a versioned-rule build-map planner with intake, estimates and a measured rehearsal, a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume (smoke-tested on SmolLM2-135M), run history with curves, comparison and run forking, a content-addressed recipe cache, and a held-out exam backing a written promotion report |
 | 1.1.1.0 | Data Lab, Formatter Designer, probe-prompt snapshot timeline, A/B arena, hub client |
 | 1.1.2.0 | Quant Lab (sensitivity-aware plans, Pareto chart) and distillation (sequence-level first, logit-level second) |
 | 1.1.3.0 | Architect canvas, MoE load-balancing and utilisation heatmap, upcycling and Branch-Train-Mix, then HMoE |

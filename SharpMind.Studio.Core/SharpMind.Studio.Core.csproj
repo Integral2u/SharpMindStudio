@@ -6,4 +6,8 @@
 
   <Import Project="..\SharpMind.References.props" />
 
+  <ItemGroup>
+    <EmbeddedResource Include="Training\Rules\studio-training.rules.json" />
+  </ItemGroup>
+
 </Project>

@@ -350,6 +350,14 @@ public sealed class TrainingJobSettings
     /// <summary>Optional variant label for the branch.</summary>
     public string? Variant { get; set; }
 
+    // --- Planner provenance ------------------------------------------------
+
+    /// <summary>Plan id that filled this job (fast/balanced/ambitious), when one was used.</summary>
+    public string? PlanId { get; set; }
+
+    /// <summary>Planner rule-set version that produced the plan.</summary>
+    public string? RuleSetVersion { get; set; }
+
     /// <summary>
     /// True to train from random weights even when checkpoints exist, ignoring
     /// <see cref="ResumeFrom"/>. False (default) resumes the latest checkpoint

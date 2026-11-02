@@ -18,6 +18,15 @@
             of hiding them. Using a plan fills the editor or the fine-tune form.
         </p>
 
+        @if (_ruleWarning is not null)
+        {
+            <div class="error-line">@_ruleWarning</div>
+        }
+        @if (_ruleSet is not null)
+        {
+            <div class="small faint mono">Rules @_ruleSet.Version - @_ruleSource</div>
+        }
+
         <div class="training-form">
             <div class="field">
                 <label class="field-label" for="planner-start">Start from</label>
@@ -101,6 +110,7 @@
                         <div>
                             <div class="eyebrow">@plan.Name</div>
                             <h3>@plan.Summary</h3>
+                            <span class="small faint mono">rules @plan.RuleSetVersion</span>
                         </div>
                         <button type="button" class="button primary"
                                 @onclick="() => UsePlan.InvokeAsync(plan)">
@@ -150,6 +160,23 @@
     [Parameter, EditorRequired] public TrainingJobSettings Job { get; set; } = new();
     [Parameter] public EventCallback<TrainingPlan> UsePlan { get; set; }
 
+    private TrainingRuleSet? _ruleSet;
+    private string _ruleSource = "";
+    private string? _ruleWarning;
+
+    protected override void OnInitialized()
+    {
+        try
+        {
+            TrainingRuleSetStore.EnsureDefaultFile();
+            _ruleSet = TrainingRuleSetStore.Load(out _ruleSource, out _ruleWarning);
+        }
+        catch (Exception ex)
+        {
+            _ruleWarning = $"Rule set unavailable: {ex.Message}";
+        }
+    }
+
     private string StartValue
     {
         get => Lab.PlannerStart.ToString();
@@ -174,7 +201,7 @@
         ParameterCount = Lab.PlannerStart == PlannerStart.Nothing
             ? TrainingJobValidation.ParameterCount(Job)
             : null,
-    });
+    }, _ruleSet);
 
     private void ToggleGoal(PlannerGoal goal)
     {
