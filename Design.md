@@ -346,6 +346,8 @@ Experiments run as short, comparable trials with the same seed and validation se
 
 `/training` is a first-class section next to Chat and Work, with deep-linkable tabs: **New model** (`?tab=new`), **Improve**, **Playbooks**, **Data**, **Runs** and **Models**. Empty states stay honest: no fabricated runs, estimates or playbooks. Tabs whose engine work is not connected keep their start buttons disabled.
 
+**New model** is a full `.smmt` editor rather than a preset picker. It covers the architecture preset and manual dimensions/kernel options, tokenizer kind and vocabulary, batching, optimizer and LR schedule, accelerator plugin, QAT target (validated against the dimensions before a run), checkpoint interval/retention, resume and warm restart, validation/exam splits, export path, and the optional embedded system prompt and skills folder. A live review shows the resolved architecture, parameter estimate, precision, device and any blocking warning; the same `TrainingJobValidation` rules gate the start action, so the form cannot look valid and fail on a dimension it did not flag. **Save job** writes the `.smmt`, **Load selected** restores it, and the unsaved draft survives tab switches via `StudioTrainingService.Draft`. Multi-source chains and per-source stages are the next editor slice.
+
 ### 5.7 Engine reused from the CUI
 
 The CUI already trains a model from a corpus to an exported `.smm`, and that pipeline is not UI-bound. Studio ports the UI-free pieces into `Studio.Core/Training` rather than writing a second engine:
@@ -550,7 +552,7 @@ Draft slices, not yet confirmed:
 
 | Version | Contents |
 |---|---|
-| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. Fine-tuning a base with LoRA is wired into **Improve**, with merged `.smm` or adapter-only `.smlora` output and adapter resume. Runs keep curves and history, and a held-out exam backs a written promotion report |
+| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a full `.smmt` editor (architecture, accelerator, QAT, schedule, checkpoints, splits), fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume, run history with curves and comparison, and a held-out exam backing a written promotion report |
 | 1.1.1.0 | Data Lab, Formatter Designer, probe-prompt snapshot timeline, A/B arena, hub client |
 | 1.1.2.0 | Quant Lab (sensitivity-aware plans, Pareto chart) and distillation (sequence-level first, logit-level second) |
 | 1.1.3.0 | Architect canvas, MoE load-balancing and utilisation heatmap, upcycling and Branch-Train-Mix, then HMoE |

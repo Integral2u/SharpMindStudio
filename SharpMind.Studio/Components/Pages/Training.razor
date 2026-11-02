@@ -5,6 +5,7 @@
 @using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Services
+@using SharpMind.Training
 @inject StudioTrainingService Lab
 @inject StudioConversionService Convert
 @inject StudioExamService Exam
@@ -54,62 +55,62 @@
         </div>
         <div class="panel-body stack">
             <p class="small faint">
-                Point at a text file, a glob, or a folder of text and Markdown files. The run
-                trains a tokenizer on the corpus, starts from random weights, and exports a
-                packaged model. It resumes from its latest checkpoint unless you start fresh.
-                Hold back a validation split to see a held-out loss curve beside the training one.
+                Point at a text file, a glob, or a folder of text and Markdown files. The editor
+                below covers the tokenizer, architecture, device, precision, optimizer, checkpoints
+                and splits. A run exports a packaged model and resumes from its latest checkpoint
+                unless you start fresh. This slice manages one text corpus; multi-source stage
+                chains come next.
             </p>
 
             <div class="training-form">
-                <div class="field">
-                    <label class="field-label" for="training-name">Model name</label>
-                    <input id="training-name" class="input" @bind="_name"
-                           placeholder="my-corpus-model" />
-                </div>
-                <div class="field">
+                <div class="field training-form-wide">
                     <label class="field-label" for="training-corpus">Corpus path</label>
                     <input id="training-corpus" class="input" @bind="_corpusPath"
+                           @bind:after="SaveCorpusDraft"
                            placeholder="C:\path\to\corpus or C:\path\**\*.txt" />
                 </div>
-                <div class="field">
-                    <label class="field-label" for="training-size">Model size</label>
-                    <select id="training-size" class="input" @bind="_size">
-                        <option value="tiny">Tiny - fast test (64 hidden, 2 layers)</option>
-                        <option value="small">Small - 128 hidden, 4 layers</option>
-                        <option value="medium">Medium - 384 hidden, 6 layers</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label class="field-label" for="training-steps">Steps</label>
-                    <input id="training-steps" class="input" type="number" min="1" @bind="_steps" />
-                </div>
-                <div class="field">
-                    <label class="field-label" for="training-val">Validation split (%)</label>
-                    <input id="training-val" class="input" type="number" min="0" max="90" step="5"
-                           @bind="_validationPercent" />
-                </div>
-                <div class="field">
-                    <label class="field-label" for="training-exam">Held-out exam (%)</label>
-                    <input id="training-exam" class="input" type="number" min="0" max="45" step="5"
-                           @bind="_testPercent" />
-                </div>
-                <div class="field training-form-wide">
-                    <label class="field-label" for="training-export">Export file (optional)</label>
-                    <input id="training-export" class="input" @bind="_exportPath"
-                           placeholder="Leave blank to save in the Training folder" />
-                </div>
             </div>
+
+            <TrainingJobEditor Job="_job" />
 
             <div class="training-actions">
                 <button type="button" class="button primary" @onclick="StartTraining"
                         disabled="@(Lab.IsRunning || _starting)">
                     @(Lab.IsRunning ? "Training..." : "Start training")
                 </button>
+                <button type="button" class="button" @onclick="StartNewJob"
+                        disabled="@Lab.IsRunning">
+                    New job
+                </button>
+                <button type="button" class="button" @onclick="SaveJob"
+                        disabled="@Lab.IsRunning">
+                    Save job
+                </button>
                 <button type="button" class="button" @onclick="LoadLatestJob"
                         disabled="@(Lab.IsRunning || Lab.SavedJobs.Count == 0)">
-                    Load latest job
+                    Load latest
                 </button>
-                <span class="small faint">Runs are saved under <span class="mono">@Lab.Folder</span>.</span>
+            </div>
+
+            <div class="training-form">
+                <div class="field training-form-wide">
+                    <label class="field-label" for="training-saved">Saved jobs</label>
+                    <select id="training-saved" class="input" @bind="_selectedJobPath">
+                        <option value="">Choose a saved job...</option>
+                        @foreach (string path in Lab.SavedJobs)
+                        {
+                            <option value="@path">@Path.GetFileNameWithoutExtension(path)</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="training-actions">
+                <button type="button" class="button" @onclick="LoadSelectedJob"
+                        disabled="@(Lab.IsRunning || string.IsNullOrWhiteSpace(_selectedJobPath))">
+                    Load selected job
+                </button>
+                <span class="small faint">Jobs are saved under <span class="mono">@Lab.Folder</span>.</span>
             </div>
 
             @if (_error is not null)
@@ -812,13 +813,9 @@ else if (_tab == "models")
     public string? TabQuery { get; set; }
 
     private string _tab = "new";
-    private string _name = "";
     private string _corpusPath = "";
-    private string _size = "small";
-    private int _steps = 200;
-    private double _validationPercent = 10;
-    private double _testPercent = 10;
-    private string _exportPath = "";
+    private TrainingJobSettings _job = null!;
+    private string _selectedJobPath = "";
     private string? _error;
     private bool _starting;
 
@@ -930,6 +927,13 @@ else if (_tab == "models")
 
     protected override void OnInitialized()
     {
+        _job = Lab.Draft ?? CreateDefaultJob();
+        Lab.Draft = _job;
+        _corpusPath = Lab.DraftCorpusPath
+            ?? (_job.Sources.FirstOrDefault()?.Component.Args.TryGetValue("path", out string? path) == true
+                ? path
+                : "");
+
         Lab.Changed += OnTrainingChanged;
         Convert.Changed += OnTrainingChanged;
         Exam.Changed += OnExamChanged;
@@ -1194,103 +1198,34 @@ else if (_tab == "models")
         _error = null;
         if (Lab.IsRunning) return;
 
-        string name = string.IsNullOrWhiteSpace(_name)
-            ? $"corpus-{DateTime.Now:yyyyMMdd-HHmm}"
-            : _name.Trim();
-
-        string corpus = _corpusPath.Trim();
-        if (corpus.Length == 0)
+        if (!ApplyCorpusToJob(out string? corpusError))
         {
-            _error = "Point at a corpus file, glob or folder first.";
+            _error = corpusError;
             return;
         }
 
-        if (Directory.Exists(corpus))
-            corpus = Path.Combine(corpus, "**", "*.txt");
-        else if (!corpus.Contains('*') && !corpus.Contains('?') && !File.Exists(corpus))
+        if (string.IsNullOrWhiteSpace(_job.Name))
+            _job.Name = $"corpus-{DateTime.Now:yyyyMMdd-HHmm}";
+
+        if (TrainingJobValidation.Warnings(_job).FirstOrDefault() is { } warning)
         {
-            _error = $"Corpus not found: {corpus}";
+            _error = warning;
             return;
         }
 
-        if (_validationPercent + _testPercent >= 100)
-        {
-            _error = "Validation and held-out exam splits together must stay below 100%.";
-            return;
-        }
+        _job.TotalSteps = Math.Max(1, _job.TotalSteps);
+        _job.LogInterval = Math.Max(1, _job.LogInterval);
+        _job.ValidationPercent = Math.Clamp(_job.ValidationPercent, 0, 90);
+        _job.TestPercent = Math.Clamp(_job.TestPercent, 0, 45);
+        if (string.IsNullOrWhiteSpace(_job.ExportPath))
+            _job.ExportPath = Path.Combine(StudioPaths.Training, Sanitize(_job.Name) + ".smm");
 
-        (int hidden, int layers, int heads, int kvHeads, int ffn, int seqLen) = _size switch
-        {
-            "tiny" => (64, 2, 4, 4, 256, 128),
-            "medium" => (384, 6, 6, 6, 1536, 256),
-            _ => (128, 4, 8, 8, 512, 256),
-        };
-
-        int steps = Math.Max(1, _steps);
-        string export = string.IsNullOrWhiteSpace(_exportPath)
-            ? Path.Combine(StudioPaths.Training, Sanitize(name) + ".smm")
-            : _exportPath.Trim();
-
-        var job = new TrainingJobSettings
-        {
-            Name = name,
-            Sources =
-            [
-                new JobSource
-                {
-                    Component = new JobComponent
-                    {
-                        DisplayName = "Text File",
-                        TypeName = typeof(TextFileSource).FullName!,
-                        Args = new Dictionary<string, string>
-                        {
-                            ["path"] = corpus,
-                            ["mode"] = "FilePerDoc",
-                        },
-                    },
-                },
-            ],
-            TokenizerKind = "Bpe",
-            TokenizerVocabSize = 2048,
-            HiddenDim = hidden,
-            NumLayers = layers,
-            NumHeads = heads,
-            NumKvHeads = kvHeads,
-            FfnDim = ffn,
-            MaxSeqLen = seqLen,
-            NormEps = 1e-5f,
-            ArchitecturePreset = "gpt2",
-            Activation = "GELU",
-            Gate = "None",
-            Ffn = "Dense",
-            Attention = "MHA",
-            Norm = "LayerNorm",
-            Arch = "Decoder",
-            PositionalEncoding = "RoPE",
-            Optimizer = "AdamW",
-            TotalSteps = steps,
-            ValidationPercent = Math.Clamp(_validationPercent, 0, 90),
-            TestPercent = Math.Clamp(_testPercent, 0, 45),
-            LogInterval = Math.Max(1, steps / 20),
-            BatchSize = 4,
-            SeqLen = Math.Min(seqLen, 64),
-            BatchingKind = "RandomWindow",
-            LearningRate = 3e-4f,
-            MinLr = 3e-5f,
-            WarmupSteps = Math.Max(1, steps / 20),
-            WeightDecay = 0.01f,
-            GradClipNorm = 1f,
-            LabelSmoothing = 0f,
-            CheckpointInterval = Math.Max(1, steps / 4),
-            KeepRecent = 2,
-            ExportPath = export,
-            StartFresh = true,
-        };
+        Lab.Draft = _job;
 
         _starting = true;
         try
         {
-            if (!Lab.Start(job, Workspace.PluginsFolder))
+            if (!Lab.Start(_job, Workspace.PluginsFolder))
                 _error = "A training run is already active.";
         }
         catch (Exception ex)
@@ -1345,20 +1280,13 @@ else if (_tab == "models")
             return;
         }
 
-        _name = job.Name;
+        _job = job;
+        Lab.Draft = _job;
         _corpusPath = job.Sources.FirstOrDefault()?.Component.Args.TryGetValue("path", out string? corpus) == true
             ? corpus
             : "";
-        _steps = Math.Max(1, job.TotalSteps);
-        _validationPercent = job.ValidationPercent;
-        _testPercent = job.TestPercent;
-        _size = job.HiddenDim switch
-        {
-            <= 64 => "tiny",
-            >= 384 => "medium",
-            _ => "small",
-        };
-        _exportPath = job.ExportPath ?? "";
+        Lab.DraftCorpusPath = _corpusPath;
+        _selectedJobPath = path;
         _error = null;
         _tab = "new";
         Nav.NavigateTo("/training?tab=new");
@@ -1500,6 +1428,124 @@ else if (_tab == "models")
         if (_compareA == run.Path) _compareA = "";
         if (_compareB == run.Path) _compareB = "";
         EnsureCompareSelection();
+    }
+
+    private static TrainingJobSettings CreateDefaultJob()
+    {
+        var job = new TrainingJobSettings
+        {
+            Name = "",
+            TokenizerKind = "Bpe",
+            TokenizerVocabSize = 2048,
+            TotalSteps = 200,
+            LogInterval = 10,
+            BatchSize = 4,
+            SeqLen = 64,
+            BatchingKind = "RandomWindow",
+            Optimizer = "AdamW",
+            LearningRate = 3e-4f,
+            MinLr = 3e-5f,
+            WarmupSteps = 10,
+            WeightDecay = 0.01f,
+            GradClipNorm = 1f,
+            LabelSmoothing = 0f,
+            CheckpointInterval = 50,
+            KeepRecent = 2,
+            ValidationPercent = 10,
+            TestPercent = 10,
+            StartFresh = true,
+            NormEps = 1e-5f,
+        };
+        TrainingModelOptions.Apply(job, TrainingModelOptions.Presets[0]);
+        return job;
+    }
+
+    /// <summary>
+    /// Puts the single corpus path into the job's source. Multi-source chains and
+    /// per-source stages are the next editor slice; this one replaces the source
+    /// so the design/schedule fields stay unambiguous.
+    /// </summary>
+    private bool ApplyCorpusToJob(out string? error)
+    {
+        error = null;
+        string corpus = _corpusPath.Trim();
+        if (corpus.Length == 0)
+        {
+            error = "Point at a corpus file, glob or folder first.";
+            return false;
+        }
+
+        if (Directory.Exists(corpus))
+            corpus = Path.Combine(corpus, "**", "*.txt");
+        else if (!corpus.Contains('*') && !corpus.Contains('?') && !File.Exists(corpus))
+        {
+            error = $"Corpus not found: {corpus}";
+            return false;
+        }
+
+        _job.Sources =
+        [
+            new JobSource
+            {
+                Component = new JobComponent
+                {
+                    DisplayName = "Text File",
+                    TypeName = typeof(TextFileSource).FullName!,
+                    Args = new Dictionary<string, string>
+                    {
+                        ["path"] = corpus,
+                        ["mode"] = "FilePerDoc",
+                    },
+                },
+            },
+        ];
+        Lab.DraftCorpusPath = _corpusPath;
+        return true;
+    }
+
+    private void SaveJob()
+    {
+        _error = null;
+        if (!ApplyCorpusToJob(out string? corpusError))
+        {
+            _error = corpusError;
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_job.Name))
+        {
+            _error = "Give the model a name before saving the job.";
+            return;
+        }
+        if (!Lab.SaveJob(_job, out string? saveError))
+        {
+            _error = saveError ?? "Could not save the job.";
+            return;
+        }
+
+        _selectedJobPath = _job.SourcePath ?? "";
+        Lab.Draft = _job;
+    }
+
+    private void StartNewJob()
+    {
+        _job = CreateDefaultJob();
+        Lab.Draft = _job;
+        Lab.DraftCorpusPath = null;
+        _corpusPath = "";
+        _selectedJobPath = "";
+        _error = null;
+    }
+
+    private void SaveCorpusDraft() => Lab.DraftCorpusPath = _corpusPath;
+
+    private void LoadSelectedJob()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedJobPath))
+        {
+            _error = "Pick a saved job first.";
+            return;
+        }
+        LoadJob(_selectedJobPath);
     }
 
     private static string Sanitize(string name)

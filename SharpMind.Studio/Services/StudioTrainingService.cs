@@ -21,9 +21,9 @@ public sealed class StudioTrainingService : IDisposable
     private CancellationTokenSource? _cts;
 
     private TrainingJobSettings? _job;
+    private TrainingJobSettings? _draft;
     private TrainingRunResult? _result;
-    private Task? _run;
-    private string _status = "No training run yet.";
+    private Task? _run;    private string _status = "No training run yet.";
     private string? _error;
     private string? _exportPath;
     private string? _adapterPath;
@@ -48,6 +48,20 @@ public sealed class StudioTrainingService : IDisposable
     public string? AdapterPath { get { lock (_gate) return _adapterPath; } }
     public TrainingJobSettings? Job { get { lock (_gate) return _job; } }
     public TrainingRunResult? Result { get { lock (_gate) return _result; } }
+
+    /// <summary>
+    /// Unsaved New-model editor state, kept on the singleton so switching tabs
+    /// does not throw away a half-configured job. In-memory only; Start/Save
+    /// still write the `.smmt`.
+    /// </summary>
+    public TrainingJobSettings? Draft
+    {
+        get { lock (_gate) return _draft; }
+        set { lock (_gate) _draft = value; }
+    }
+
+    /// <summary>Corpus path as typed in the New-model editor, kept with the draft.</summary>
+    public string? DraftCorpusPath { get; set; }
     public float Progress { get { lock (_gate) return _progress; } }
     public int CurrentStep { get { lock (_gate) return _currentStep; } }
     public int TotalSteps { get { lock (_gate) return _totalSteps; } }

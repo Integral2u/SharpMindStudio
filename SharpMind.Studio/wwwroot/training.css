@@ -56,6 +56,53 @@
     font-weight: 500;
 }
 
+.training-subsection {
+    display: grid;
+    gap: .6rem;
+    padding-top: .9rem;
+    border-top: 1px solid var(--line);
+}
+
+.training-subsection:first-of-type {
+    padding-top: 0;
+    border-top: 0;
+}
+
+.training-subsection-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.training-subsection-head .button {
+    min-height: 1.7rem;
+    padding: .2rem .55rem;
+    font-size: .62rem;
+}
+
+.training-review {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: .7rem;
+}
+
+.training-review > div {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    padding: .55rem .7rem;
+    border: 1px solid var(--line);
+    border-radius: .5rem;
+    background: rgba(10, 17, 24, .45);
+}
+
+.training-review strong {
+    font-family: var(--mono);
+    font-size: .8rem;
+    font-weight: 500;
+}
+
 .training-log {
     max-height: 12rem;
     margin: 0;
