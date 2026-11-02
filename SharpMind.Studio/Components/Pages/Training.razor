@@ -255,11 +255,40 @@ else if (_tab == "improve")
                         disabled="@(Lab.IsRunning || Rehearsal.IsRunning || _tuning)">
                     @(Lab.IsRunning ? "Training..." : "Start fine-tune")
                 </button>
+                <button type="button" class="button" @onclick="RehearseFineTune"
+                        disabled="@(Lab.IsRunning || Rehearsal.IsRunning || _tuning)">
+                    Rehearse 30 steps
+                </button>
+                @if (Rehearsal.IsRunning)
+                {
+                    <button type="button" class="button danger" @onclick="Rehearsal.Cancel">Cancel</button>
+                }
                 <span class="small faint">
                     Checkpoints save adapters alongside the optimizer state; resume reuses the
                     weights and restarts the schedule.
                 </span>
             </div>
+
+            @if (Rehearsal.IsRunning || Rehearsal.Result is not null || Rehearsal.Error is not null)
+            {
+                <div class="small faint">@Rehearsal.Status</div>
+                @if (Rehearsal.Result is { } rehearsal)
+                {
+                    <div class="small">
+                        Rehearsed @rehearsal.StepsRun step(s): @rehearsal.MedianStepSeconds.ToString("0.00")s/step,
+                        @rehearsal.TokensPerSecond.ToString("0.0") tok/s, peak
+                        @((rehearsal.PeakWorkingSetBytes / (1024d * 1024 * 1024)).ToString("0.00")) GiB.
+                        Full @rehearsal.TotalSteps steps would take about
+                        @(rehearsal.EstimatedTotalHours >= 1
+                            ? $"{rehearsal.EstimatedTotalHours:0.0} h"
+                            : $"{(int)rehearsal.EstimatedTotalTime.TotalMinutes} min").
+                    </div>
+                }
+                @if (Rehearsal.Error is { } rehearsalError)
+                {
+                    <div class="error-line">@rehearsalError</div>
+                }
+            }
 
             @if (_tuneError is not null)
             {
@@ -1070,47 +1099,46 @@ else if (_tab == "models")
         return label.StartsWith("..", StringComparison.Ordinal) ? path : label;
     }
 
-    private void StartFineTune()
+    private TrainingJobSettings? BuildFineTuneJob(out string? error)
     {
-        _tuneError = null;
-        if (Lab.IsRunning || Rehearsal.IsRunning) return;
+        error = null;
 
         string basePath = _tuneBase.Trim();
         if (!File.Exists(basePath))
         {
-            _tuneError = $"Base model not found: {basePath}";
-            return;
+            error = $"Base model not found: {basePath}";
+            return null;
         }
         if (!Path.GetExtension(basePath).Equals(".smm", StringComparison.OrdinalIgnoreCase))
         {
-            _tuneError = "A fine-tune base must be a packaged .smm. Convert a .gguf on the Models tab first.";
-            return;
+            error = "A fine-tune base must be a packaged .smm. Convert a .gguf on the Models tab first.";
+            return null;
         }
 
         string corpus = _tuneCorpusPath.Trim();
         if (corpus.Length == 0)
         {
-            _tuneError = "Point at the corpus of new or corrective text first.";
-            return;
+            error = "Point at the corpus of new or corrective text first.";
+            return null;
         }
         if (Directory.Exists(corpus))
             corpus = Path.Combine(corpus, "**", "*.txt");
         else if (!corpus.Contains('*') && !corpus.Contains('?') && !File.Exists(corpus))
         {
-            _tuneError = $"Corpus not found: {corpus}";
-            return;
+            error = $"Corpus not found: {corpus}";
+            return null;
         }
 
         if (_tuneTargets.Count == 0)
         {
-            _tuneError = "Pick at least one projection to adapt.";
-            return;
+            error = "Pick at least one projection to adapt.";
+            return null;
         }
 
         if (_tuneValidationPercent + _tuneTestPercent >= 100)
         {
-            _tuneError = "Validation and held-out exam splits together must stay below 100%.";
-            return;
+            error = "Validation and held-out exam splits together must stay below 100%.";
+            return null;
         }
 
         int rank = Math.Max(1, _tuneRank);
@@ -1137,7 +1165,7 @@ else if (_tab == "models")
             ? Path.Combine(StudioPaths.Training, Sanitize(name) + ".smm")
             : _tuneExport.Trim();
 
-        var job = new TrainingJobSettings
+        return new TrainingJobSettings
         {
             Name = name,
             BaseModelPath = basePath,
@@ -1182,6 +1210,19 @@ else if (_tab == "models")
             ExportPath = export,
             StartFresh = _tuneStartFresh,
         };
+    }
+
+    private void StartFineTune()
+    {
+        _tuneError = null;
+        if (Lab.IsRunning || Rehearsal.IsRunning) return;
+
+        TrainingJobSettings? job = BuildFineTuneJob(out string? error);
+        if (job is null)
+        {
+            _tuneError = error;
+            return;
+        }
 
         _tuning = true;
         try
@@ -1197,6 +1238,22 @@ else if (_tab == "models")
         {
             _tuning = false;
         }
+    }
+
+    private void RehearseFineTune()
+    {
+        _tuneError = null;
+        if (Lab.IsRunning || Rehearsal.IsRunning) return;
+
+        TrainingJobSettings? job = BuildFineTuneJob(out string? error);
+        if (job is null)
+        {
+            _tuneError = error;
+            return;
+        }
+
+        if (!Rehearsal.Start(job, Workspace.PluginsFolder))
+            _tuneError = "A training run, exam or rehearsal is already active.";
     }
 
     private async Task StartTraining()
