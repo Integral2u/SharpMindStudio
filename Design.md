@@ -2,7 +2,7 @@
 
 > **Status:** implementation in progress, October 2026. Studio **1.1.0.0**.
 > Built: shell, projects/runs/recipes, canary and tool probes, TESTS run history, Chat lab, layered inference settings, Work mode MVP, model Tune presets, shared skills/tools, the phone pairing gateway, the corpus-to-export Training engine with its lab shell, LoRA fine-tuning, and SMM↔GGUF conversion.
-> Remaining: the planner's intake/estimator/rehearsal depth and project-specific skill content. Gateway proxy mode is intentionally left as built.
+> Remaining: the planner's intake/estimator/rehearsal depth. Gateway proxy mode is intentionally left as built.
 SharpMind Studio is a local-first application for chatting with models, doing project work with them, and building them: from scratch, from a base model, or by upgrading a model you already have. It is the successor to the terminal UI (CUI) as the primary front end, and it is meant to be something people want to use: attractive, calm and fast.
 
 ---
@@ -189,8 +189,8 @@ The Work MVP is project-scoped:
 
 - Projects live under `%USERPROFILE%\SharpMind\Workspaces`; the default is `Workspaces\Studio`.
 - `work.json` holds project instructions, skill selections, web permission, disabled tools, and context locations with per-folder read, write and delete permissions.
-- `memory.md` is plain Markdown. Skills are Markdown files in the shared repository; projects select which ones to use and can override the system default.
-- Skills live in `%USERPROFILE%\SharpMind\Skills`; defaults are stored in `Studio\work-skills.json` and maintained under Settings > System. Projects pick from that repository, including skills copied in by hand.
+- `memory.md` is plain Markdown. Skills normally live in the shared repository; a project can also keep its own skills in `work.json`. A project skill with the same name as a repository skill overrides it for that project, and the legacy `skills.md` blob is imported as a project skill rather than copied into the shared repository.
+- Skills live in `%USERPROFILE%\SharpMind\Skills`; defaults are stored in `Studio\work-skills.json` and maintained under Settings > System. Projects pick from that repository, add project-only skills, or copy `.md` files in by hand.
 - File tools list, read, search, write, append, create and delete across the configured contexts; a separate Web permission governs URL fetches. Tools run in Work only, never Chat.
 - Tool defaults live in Settings > System; the catalog includes built-ins plus [ToolDesc] plugin tools discovered from the plugins folder. Projects override individual tools, and Chat never receives them.
 - `Ask` posts a permission card in the Work chat with Deny, Allow once and Always allow. Always persists to `work.json`.

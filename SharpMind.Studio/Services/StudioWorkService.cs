@@ -94,6 +94,11 @@ public sealed class StudioWorkService : IDisposable
         (skill.DefaultEnabled ||
          _settings.EnabledSystemSkills.Contains(skill.Id, StringComparer.OrdinalIgnoreCase));
 
+    /// <summary>Project skills are enabled unless this project explicitly disabled them.</summary>
+    public bool IsProjectSkillEnabled(WorkSkill skill) =>
+        !_settings.DisabledProjectSkills.Contains(skill.Id, StringComparer.OrdinalIgnoreCase) &&
+        !_settings.DisabledProjectSkills.Contains(skill.Name, StringComparer.OrdinalIgnoreCase);
+
 
     public void Reload()
     {
@@ -138,9 +143,12 @@ public sealed class StudioWorkService : IDisposable
             "You are working inside one local project. File tools are limited to the configured context locations. " +
             "Use relative paths from the project root, or an absolute path inside a context. " +
             "Never claim a file was read, created, changed or deleted unless the tool result says it succeeded.");
-        foreach (WorkSkill skill in _systemSkills.Skills)
+        foreach (WorkSkill skill in WorkSkillResolver.Resolve(
+                     _systemSkills.Skills,
+                     IsSystemSkillEnabled,
+                     _settings.Skills,
+                     IsProjectSkillEnabled))
         {
-            if (!IsSystemSkillEnabled(skill)) continue;
             builder.WithSkillContent($"## {skill.Name}\n{skill.Content}");
         }
 
@@ -338,41 +346,40 @@ public sealed class StudioWorkService : IDisposable
 
     private void MigrateLegacySkills()
     {
-        var existing = _systemSkills.Skills.ToList();
         bool changed = false;
+        var skills = _settings.Skills.ToList();
 
-        foreach (WorkSkill skill in _settings.Skills)
+        // Project skills now stay with the project. Older builds migrated them
+        // into the shared repository; those projects already have an empty list,
+        // so this only gives a stable identity to anything still here.
+        for (int i = 0; i < skills.Count; i++)
         {
-            if (existing.Any(value => value.Name.Equals(skill.Name, StringComparison.OrdinalIgnoreCase)))
-                continue;
-            existing.Add(new WorkSkill
-            {
-                Id = "",
-                Name = skill.Name,
-                Content = skill.Content,
-                DefaultEnabled = true,
-            });
+            if (!string.IsNullOrWhiteSpace(skills[i].Id)) continue;
+            skills[i] = skills[i] with { Id = Guid.NewGuid().ToString("n") };
             changed = true;
         }
 
         string legacy = _store.ReadSkills();
         if (!string.IsNullOrWhiteSpace(legacy))
         {
-            existing.Add(new WorkSkill
+            string name = "Project skill";
+            if (skills.Any(skill => skill.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                name = "Project skill (legacy)";
+
+            skills.Add(new WorkSkill
             {
-                Id = "",
-                Name = "Project skill",
+                Id = Guid.NewGuid().ToString("n"),
+                Name = name,
                 Content = legacy.Trim(),
                 DefaultEnabled = true,
             });
             changed = true;
         }
 
-        if (changed) _systemSkills.Save(existing);
-        if (_settings.Skills.Count > 0)
+        if (changed)
         {
-            _settings = _settings with { Skills = [] };
-            _store.Save(_settings);
+            _settings = _settings with { Skills = skills };
+            try { _store.Save(_settings); } catch { }
         }
         if (!string.IsNullOrWhiteSpace(legacy)) _store.RetireLegacySkillsFile();
     }
@@ -385,14 +392,23 @@ public sealed class StudioWorkService : IDisposable
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         List<string> disabled = [.. _settings.DisabledSystemSkills.Where(ids.Contains)];
         List<string> enabled = [.. _settings.EnabledSystemSkills.Where(ids.Contains)];
+
+        var projectIds = _settings.Skills
+            .Select(skill => skill.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        List<string> disabledProject = [.. _settings.DisabledProjectSkills.Where(id => projectIds.Contains(id))];
+
         if (disabled.Count == _settings.DisabledSystemSkills.Count &&
-            enabled.Count == _settings.EnabledSystemSkills.Count)
+            enabled.Count == _settings.EnabledSystemSkills.Count &&
+            disabledProject.Count == _settings.DisabledProjectSkills.Count)
             return;
 
         _settings = _settings with
         {
             DisabledSystemSkills = disabled,
             EnabledSystemSkills = enabled,
+            DisabledProjectSkills = disabledProject,
         };
         try { _store.Save(_settings); } catch { }
     }

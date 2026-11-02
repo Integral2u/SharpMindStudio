@@ -58,6 +58,49 @@
                 <div class="spread">
                     <div>
                         <div class="eyebrow">Skills</div>
+                        <h3>Project skills</h3>
+                    </div>
+                    <button type="button" class="button" @onclick="AddProjectSkill">Add project skill</button>
+                </div>
+                <p class="small faint">
+                    These live in this project's <span class="mono">work.json</span>, not the shared repository.
+                    A project skill with the same name as a repository skill overrides it here.
+                </p>
+                @if (_projectSkills.Count == 0)
+                {
+                    <div class="small faint">No project skills yet.</div>
+                }
+                else
+                {
+                    @foreach (ProjectSkillDraft skill in _projectSkills)
+                    {
+                        <div class="work-skill-card">
+                            <div class="row">
+                                <input class="input" @bind="skill.Name" placeholder="Skill name" />
+                                <label class="tool-toggle">
+                                    <input type="checkbox" @bind="skill.Enabled" />
+                                    <span>Enabled</span>
+                                </label>
+                                <button type="button" class="button danger"
+                                        @onclick="() => RemoveProjectSkill(skill)">
+                                    Delete
+                                </button>
+                            </div>
+                            <textarea class="textarea work-textarea" @bind="skill.Content"
+                                      placeholder="Instructions the agent should follow."></textarea>
+                            @if (OverridesRepositorySkill(skill))
+                            {
+                                <span class="small faint">Overrides the repository skill with the same name.</span>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="work-settings-section">
+                <div class="spread">
+                    <div>
+                        <div class="eyebrow">Skills</div>
                         <h3>Repository skills</h3>
                     </div>
                     <div class="row">
@@ -238,6 +281,14 @@
         public WorkPermission Delete { get; set; } = WorkPermission.Never;
     }
 
+    private sealed class ProjectSkillDraft
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Content { get; set; } = "";
+        public bool Enabled { get; set; } = true;
+    }
+
     private IReadOnlyList<StudioProjectInfo> _projects = [];
     private string _projectPath = "";
     private bool _showSettings;
@@ -246,6 +297,7 @@
     private string _systemPrompt = "";
     private string _memory = "";
     private List<ContextDraft> _contexts = [];
+    private List<ProjectSkillDraft> _projectSkills = [];
     private bool _showAddSkill;
     private string _newSkillName = "";
     private string _newSkillContent = "";
@@ -285,6 +337,13 @@
             Work.Settings.DisabledTools, StringComparer.OrdinalIgnoreCase);
         _enabledTools = new HashSet<string>(
             Work.Settings.EnabledTools, StringComparer.OrdinalIgnoreCase);
+        _projectSkills = [.. Work.Settings.Skills.Select(skill => new ProjectSkillDraft
+        {
+            Id = string.IsNullOrWhiteSpace(skill.Id) ? Guid.NewGuid().ToString("n") : skill.Id,
+            Name = skill.Name,
+            Content = skill.Content,
+            Enabled = Work.IsProjectSkillEnabled(skill),
+        })];
         _contexts = [.. Work.Settings.Contexts.Select(context => new ContextDraft
         {
             Id = context.Id,
@@ -415,6 +474,17 @@
             SetSkill(skill, enabled);
     }
 
+    private void AddProjectSkill()
+        => _projectSkills.Add(new ProjectSkillDraft { Id = Guid.NewGuid().ToString("n") });
+
+    private void RemoveProjectSkill(ProjectSkillDraft skill)
+        => _projectSkills.Remove(skill);
+
+    private bool OverridesRepositorySkill(ProjectSkillDraft skill)
+        => !string.IsNullOrWhiteSpace(skill.Name)
+           && Repo.Skills.Any(repository =>
+               repository.Name.Equals(skill.Name.Trim(), StringComparison.OrdinalIgnoreCase));
+
     private void RefreshTools()
     {
         ToolCatalog.Reload();
@@ -485,6 +555,33 @@
         try
         {
             var skillIds = Repo.Skills.Select(skill => skill.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var projectSkillNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ProjectSkillDraft skill in _projectSkills)
+            {
+                if (string.IsNullOrWhiteSpace(skill.Name))
+                {
+                    _status = "Project skills need a name before you save.";
+                    return;
+                }
+                if (!projectSkillNames.Add(skill.Name.Trim()))
+                {
+                    _status = $"Project skill '{skill.Name.Trim()}' appears more than once.";
+                    return;
+                }
+            }
+
+            WorkSkill[] projectSkills = [.. _projectSkills.Select(skill => new WorkSkill
+            {
+                Id = skill.Id,
+                Name = skill.Name.Trim(),
+                Content = skill.Content.Trim(),
+                DefaultEnabled = true,
+            })];
+            List<string> disabledProjectSkills = [.. _projectSkills
+                .Where(skill => !skill.Enabled)
+                .Select(skill => skill.Id)];
+
             WorkContext[] contexts = [.. _contexts.Select(context => new WorkContext
             {
                 Id = context.Id,
@@ -515,6 +612,8 @@
                     Permissions = Work.Settings.Permissions with { Web = _web },
                     DisabledSystemSkills = [.. _disabledSystemSkills.Where(id => skillIds.Contains(id))],
                     EnabledSystemSkills = [.. _enabledSystemSkills.Where(id => skillIds.Contains(id))],
+                    Skills = [.. projectSkills],
+                    DisabledProjectSkills = disabledProjectSkills,
                     Contexts = [.. contexts],
                     DisabledTools = [.. _disabledTools],
                     EnabledTools = [.. _enabledTools],
@@ -537,6 +636,8 @@
         }
     }
 }
+
+
 
 
 
