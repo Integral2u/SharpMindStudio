@@ -72,8 +72,8 @@ public sealed class StudioChatService : IAsyncDisposable
         PendingPrompt = null;
         return prompt;
     }
-    public IReadOnlyList<ChatMessage> DisplayMessages => [.. _document?.Messages
-        .Where(message => message.Role != ChatRole.System) ?? []];
+    public IReadOnlyList<ChatMessage> DisplayMessages =>
+        ChatTranscriptFilter.Visible(_document?.Messages ?? [], _streaming);
 
     public async Task NewChatAsync(ModelDescriptor model, string? systemPrompt, InferenceOverrides? overrides = null, string mode = "chat", string? tunePreset = null, string? tuneTarget = null)
     {
