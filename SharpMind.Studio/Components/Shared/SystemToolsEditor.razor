@@ -15,20 +15,34 @@
             These defaults apply to new Work projects. A project can enable or disable individual tools afterwards. Chat has no tools.
             Plugin tools are loaded from <span class="mono">@Tools.Folder</span>.
         </p>
-        <div class="work-tools">
-            @foreach (WorkToolInfo tool in Tools.Tools)
-            {
-                <label class="work-tool" title="@tool.Source">
-                    <input type="checkbox" checked="@Tools.IsDefaultEnabled(tool.Name)"
-                           @onchange="e => SetDefaultAsync(tool, e.Value)" />
-                    <span>@tool.Name</span>
-                    @if (tool.IsPlugin)
+        @foreach (IGrouping<string, WorkToolInfo> group in Tools.Tools.GroupBy(tool => tool.Group))
+        {
+            <div class="work-tool-group">
+                <div class="spread work-tool-group-head">
+                    <div class="eyebrow">@group.Key</div>
+                    <div class="row">
+                        <button type="button" class="button"
+                                @onclick="() => SetGroupAsync(group, true)">All</button>
+                        <button type="button" class="button"
+                                @onclick="() => SetGroupAsync(group, false)">None</button>
+                    </div>
+                </div>
+                <div class="work-tools">
+                    @foreach (WorkToolInfo tool in group)
                     {
-                        <span class="small faint">plugin</span>
+                        <label class="work-tool" title="@tool.Source">
+                            <input type="checkbox" checked="@Tools.IsDefaultEnabled(tool.Name)"
+                                   @onchange="e => SetDefaultAsync(tool, e.Value)" />
+                            <span>@tool.Name</span>
+                            @if (tool.IsPlugin)
+                            {
+                                <span class="small faint">plugin</span>
+                            }
+                        </label>
                     }
-                </label>
-            }
-        </div>
+                </div>
+            </div>
+        }
         @if (Tools.Warnings.Count > 0)
         {
             <div class="small faint">
@@ -45,6 +59,12 @@
     private async Task SetDefaultAsync(WorkToolInfo tool, object? enabled)
     {
         Tools.SetDefault(tool.Name, enabled is true);
+        await ChatService.ReloadWorkContextAsync();
+    }
+
+    private async Task SetGroupAsync(IEnumerable<WorkToolInfo> group, bool enabled)
+    {
+        Tools.SetDefaults([.. group.Select(tool => tool.Name)], enabled);
         await ChatService.ReloadWorkContextAsync();
     }
 

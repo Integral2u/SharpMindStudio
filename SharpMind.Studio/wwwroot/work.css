@@ -209,6 +209,28 @@
         grid-template-columns: 1fr 1fr;
     }
 }
+.work-tool-group {
+    display: grid;
+    gap: .35rem;
+    padding-top: .6rem;
+    border-top: 1px solid var(--line);
+}
+
+.work-tool-group:first-of-type {
+    padding-top: 0;
+    border-top: 0;
+}
+
+.work-tool-group-head {
+    align-items: center;
+}
+
+.work-tool-group-head .button {
+    min-height: 1.7rem;
+    padding: .2rem .55rem;
+    font-size: .62rem;
+}
+
 .work-tools {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));

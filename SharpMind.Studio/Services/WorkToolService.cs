@@ -5,7 +5,7 @@ using SharpMind.Studio.Core.Storage;
 
 namespace SharpMind.Studio.Services;
 
-public sealed record WorkToolInfo(string Name, string Source, bool IsPlugin);
+public sealed record WorkToolInfo(string Name, string Source, bool IsPlugin, string Group);
 
 public sealed record WorkToolDefaultsDocument
 {
@@ -22,12 +22,21 @@ public sealed record WorkToolDefaultsDocument
 /// </summary>
 public sealed class WorkToolService
 {
-    private static readonly string[] BuiltInNames =
+    private static readonly (string Name, string Group)[] BuiltInTools =
     [
-        "ListFiles", "ReadFile", "SearchFiles", "WriteFile", "AppendToFile", "CreateFile", "DeleteFile",
-        "FetchUrl",
-        "UIShowOptionSelection", "UIGetFreeMemory", "UIGetSystemSpecs",
-        "GetCurrentDateTime", "Echo",
+        ("ListFiles", "Files · read"),
+        ("ReadFile", "Files · read"),
+        ("SearchFiles", "Files · read"),
+        ("WriteFile", "Files · write"),
+        ("AppendToFile", "Files · write"),
+        ("CreateFile", "Files · write"),
+        ("DeleteFile", "Files · delete"),
+        ("FetchUrl", "Web"),
+        ("UIShowOptionSelection", "Interface"),
+        ("UIGetFreeMemory", "System"),
+        ("UIGetSystemSpecs", "System"),
+        ("GetCurrentDateTime", "System"),
+        ("Echo", "Diagnostics"),
     ];
 
     private readonly StudioWorkspaceService _workspace;
@@ -53,12 +62,12 @@ public sealed class WorkToolService
 
     public void Reload()
     {
-        var tools = BuiltInNames
-            .Select(name => new WorkToolInfo(name, "built-in", false))
+        var tools = BuiltInTools
+            .Select(entry => new WorkToolInfo(entry.Name, "built-in", false, entry.Group))
             .ToList();
         var pluginTools = new List<object>();
         var warnings = new List<string>();
-        var names = new HashSet<string>(BuiltInNames, StringComparer.OrdinalIgnoreCase);
+        var names = new HashSet<string>(BuiltInTools.Select(entry => entry.Name), StringComparer.OrdinalIgnoreCase);
 
         string folder = _workspace.PluginsFolder;
         if (Directory.Exists(folder))
@@ -109,8 +118,9 @@ public sealed class WorkToolService
                         object? instance = Activator.CreateInstance(type);
                         if (instance is null) continue;
                         pluginTools.Add(instance);
-                        foreach (string name in toolNames)
-                            tools.Add(new WorkToolInfo(name, assembly.GetName().Name ?? Path.GetFileName(dll), true));
+                        string source = assembly.GetName().Name ?? Path.GetFileName(dll);
+                        foreach (string name in toolNames.Order(StringComparer.OrdinalIgnoreCase))
+                            tools.Add(new WorkToolInfo(name, source, true, $"Plugins · {source}"));
                     }
                     catch (Exception ex)
                     {
@@ -122,7 +132,7 @@ public sealed class WorkToolService
 
         lock (_gate)
         {
-            _tools = [.. tools.OrderBy(tool => tool.Source).ThenBy(tool => tool.Name)];
+            _tools = tools;
             _pluginTools = pluginTools;
             _warnings = warnings;
         }
@@ -133,12 +143,17 @@ public sealed class WorkToolService
         lock (_gate) return !_disabledByDefault.Contains(name);
     }
 
-    public void SetDefault(string name, bool enabled)
+    public void SetDefault(string name, bool enabled) => SetDefaults([name], enabled);
+
+    public void SetDefaults(IEnumerable<string> names, bool enabled)
     {
         lock (_gate)
         {
-            if (enabled) _disabledByDefault.Remove(name);
-            else _disabledByDefault.Add(name);
+            foreach (string name in names)
+            {
+                if (enabled) _disabledByDefault.Remove(name);
+                else _disabledByDefault.Add(name);
+            }
         }
         SaveDefaults();
         Changed?.Invoke();
