@@ -54,16 +54,71 @@ public enum PlannerDestination
     Improve,
 }
 
+public enum PlannerTask
+{
+    NarrowEdge,
+    ChatAssistant,
+    DomainExpert,
+    ToolUser,
+    Classifier,
+}
+
+public enum PlannerRuntime
+{
+    ThisPc,
+    PhoneEdge,
+    ServerGpu,
+    Unknown,
+}
+
+public enum PlannerDataShape
+{
+    None,
+    SmallCorpus,
+    LargeCorpus,
+    InstructionData,
+}
+
+public enum PlannerConstraint
+{
+    Public,
+    Internal,
+    Regulated,
+    Unknown,
+}
+
+public enum PlannerEffort
+{
+    Minutes,
+    Hours,
+    Overnight,
+}
+
+/// <summary>The plain-language intake behind the three plans.</summary>
+public sealed record PlannerIntake
+{
+    public PlannerTask Task { get; init; } = PlannerTask.DomainExpert;
+    public PlannerRuntime Runtime { get; init; } = PlannerRuntime.ThisPc;
+    public PlannerDataShape Data { get; init; } = PlannerDataShape.SmallCorpus;
+    public string? GoodLooksLike { get; init; }
+    public PlannerConstraint Constraint { get; init; } = PlannerConstraint.Unknown;
+    public PlannerEffort Effort { get; init; } = PlannerEffort.Hours;
+}
+
 /// <summary>Everything the build-map rules need to propose a path.</summary>
 public sealed record PlannerInput
 {
     public PlannerStart Start { get; init; } = PlannerStart.Nothing;
     public IReadOnlySet<PlannerGoal> Goals { get; init; } = new HashSet<PlannerGoal>();
+    public PlannerIntake Intake { get; init; } = new();
     public bool HasData { get; init; }
     public bool HasFormatter { get; init; }
     public bool IsQuantizedOnly { get; init; }
     public long? CorpusTokens { get; init; }
     public long? ParameterCount { get; init; }
+
+    /// <summary>Data counts only when the intake has not said there is none.</summary>
+    public bool EffectiveHasData => HasData && Intake.Data != PlannerDataShape.None;
 }
 
 /// <summary>One step in a proposed path, with the reason it is there.</summary>
@@ -139,18 +194,18 @@ public static class TrainingPlanner
                 wantsKnowledge
                     ? "New knowledge is best carried by the larger adapter set; the base stays frozen."
                     : "A light adapter shifts style or tone without touching the base.",
-                input.HasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
-                input.HasData ? null : "Add the fine-tune corpus first.",
-                input.HasData ? null : "Open Improve and choose a corpus."));
+                input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
+                input.EffectiveHasData ? null : "Add the fine-tune corpus first.",
+                input.EffectiveHasData ? null : "Open Improve and choose a corpus."));
         }
         else
         {
             moves.Add(Move(PlannerAction.Pretrain, "Pretrain",
                 "A small, narrow model on this corpus.",
                 "From-scratch training suits a narrow-domain edge model; it is not a shortcut to general chat.",
-                input.HasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
-                input.HasData ? null : "Add a corpus first.",
-                input.HasData ? null : "Use the smoke playbook to validate the pipeline first."));
+                input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
+                input.EffectiveHasData ? null : "Add a corpus first.",
+                input.EffectiveHasData ? null : "Use the smoke playbook to validate the pipeline first."));
         }
 
         moves.Add(EvaluateMove());
@@ -163,6 +218,10 @@ public static class TrainingPlanner
             risks.Add("LoRA adds targeted behaviour or knowledge; it cannot add a new language or large capability cheaply.");
         else
             risks.Add("From-scratch training is data-bound: a small corpus gives a narrow model, not a general chat model.");
+        AddIntakeRisks(input, fromBase, risks);
+
+        bool chat = input.Intake.Task is PlannerTask.ChatAssistant or PlannerTask.ToolUser;
+        bool minutes = input.Intake.Effort is PlannerEffort.Minutes;
 
         return new TrainingPlan
         {
@@ -175,8 +234,8 @@ public static class TrainingPlanner
             Risks = risks,
             Estimate = Estimate(input, fromBase),
             PlaybookId = fromBase
-                ? (wantsKnowledge ? "lora-domain" : "lora-light")
-                : (input.HasData ? "domain-small" : "smoke"),
+                ? (chat || wantsKnowledge ? "lora-domain" : "lora-light")
+                : (minutes ? "smoke" : "domain-small"),
             Destination = fromBase ? PlannerDestination.Improve : PlannerDestination.NewModel,
         };
     }
@@ -208,18 +267,18 @@ public static class TrainingPlanner
             moves.Add(Move(PlannerAction.LoRA, "LoRA",
                 "Rank 8 adapters over q/k/v/o and the FFN projections.",
                 "LoRA is the supported way to adapt a packaged base without a full retrain.",
-                input.HasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
-                input.HasData ? null : "Add the fine-tune corpus first.",
-                input.HasData ? null : "Open Improve and choose a corpus."));
+                input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
+                input.EffectiveHasData ? null : "Add the fine-tune corpus first.",
+                input.EffectiveHasData ? null : "Open Improve and choose a corpus."));
         }
         else
         {
             moves.Add(Move(PlannerAction.Pretrain, "Pretrain",
                 "A wider, BPE-tokenized model on this corpus.",
                 "A larger from-scratch run suits a domain base; it needs enough tokens to be worth the time.",
-                input.HasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
-                input.HasData ? null : "Add a corpus first.",
-                input.HasData ? null : "Start with the smoke playbook."));
+                input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
+                input.EffectiveHasData ? null : "Add a corpus first.",
+                input.EffectiveHasData ? null : "Start with the smoke playbook."));
         }
 
         if (wantsBehaviour) moves.Add(SftMove(input));
@@ -238,6 +297,10 @@ public static class TrainingPlanner
                 : "From-scratch training is data-bound; measure the corpus before committing hours.",
             "QAT approximates the packaged precision; verify the held-out exam after export.",
         };
+        AddIntakeRisks(input, fromBase, risks);
+
+        bool chat = input.Intake.Task is PlannerTask.ChatAssistant or PlannerTask.ToolUser;
+        bool longRun = input.Intake.Effort is PlannerEffort.Overnight;
 
         return new TrainingPlan
         {
@@ -249,7 +312,7 @@ public static class TrainingPlanner
             Moves = moves,
             Risks = risks,
             Estimate = Estimate(input, fromBase),
-            PlaybookId = fromBase ? "lora-domain" : "chat-base",
+            PlaybookId = fromBase ? "lora-domain" : (chat || longRun ? "chat-base" : "domain-small"),
             Destination = fromBase ? PlannerDestination.Improve : PlannerDestination.NewModel,
         };
     }
@@ -281,18 +344,18 @@ public static class TrainingPlanner
             moves.Add(Move(PlannerAction.LoRA, "LoRA",
                 "Rank 8 adapters over q/k/v/o and the FFN projections.",
                 "LoRA is the supported first move; it is cheap enough to compare against the base.",
-                input.HasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
-                input.HasData ? null : "Add the fine-tune corpus first.",
-                input.HasData ? null : "Open Improve and choose a corpus."));
+                input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
+                input.EffectiveHasData ? null : "Add the fine-tune corpus first.",
+                input.EffectiveHasData ? null : "Open Improve and choose a corpus."));
         }
         else
         {
             moves.Add(Move(PlannerAction.Pretrain, "Pretrain",
                 "A LLaMA-style base with a wider vocabulary and context.",
                 "An ambitious path needs a stronger base before behaviour tuning.",
-                input.HasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
-                input.HasData ? null : "Add a corpus first.",
-                input.HasData ? null : "Use the chat-base playbook once the corpus is ready."));
+                input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
+                input.EffectiveHasData ? null : "Add a corpus first.",
+                input.EffectiveHasData ? null : "Use the chat-base playbook once the corpus is ready."));
         }
 
         moves.Add(SftMove(input));
@@ -315,6 +378,7 @@ public static class TrainingPlanner
                 ? "Long continued runs can drift; compare against the base before promoting."
                 : "From-scratch runs at this size cost hours; rehearse before committing.",
         };
+        AddIntakeRisks(input, fromBase, risks);
 
         return new TrainingPlan
         {
@@ -357,12 +421,21 @@ public static class TrainingPlanner
     }
 
     private static PlannerMove DataMove(PlannerInput input, string reason)
-        => Move(PlannerAction.Data, "Data",
+    {
+        bool hasData = input.EffectiveHasData;
+        string? blocked = hasData
+            ? null
+            : input.Intake.Data == PlannerDataShape.None
+                ? "The intake says there is no training data yet."
+                : "No corpus source has a path yet.";
+
+        return Move(PlannerAction.Data, "Data",
             "Add or review sources, cleaning stages, validation and exam splits.",
             reason,
-            input.HasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
-            input.HasData ? null : "No corpus source has a path yet.",
-            input.HasData ? null : "Add a text corpus in the editor below.");
+            hasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
+            blocked,
+            hasData ? null : "Add a text corpus in the editor below.");
+    }
 
     private static PlannerMove DesignMove(bool ready)
         => Move(PlannerAction.Design, "Design",
@@ -472,6 +545,30 @@ public static class TrainingPlanner
             BlockedReason = status == PlannerMoveStatus.Blocked ? blockedReason : null,
             Alternative = status == PlannerMoveStatus.Blocked ? alternative : null,
         };
+
+    private static void AddIntakeRisks(PlannerInput input, bool fromBase, List<string> risks)
+    {
+        PlannerIntake intake = input.Intake;
+
+        if (intake.Constraint is PlannerConstraint.Internal or PlannerConstraint.Regulated)
+            risks.Add("Keep data and inference on this machine; avoid external synthetic-data services.");
+
+        if (intake.Data is PlannerDataShape.InstructionData)
+            risks.Add("Instruction data needs SFT, which is not connected; LoRA on curated chat text is the "
+                      + "supported route until it lands.");
+
+        if (intake.Runtime is PlannerRuntime.PhoneEdge)
+            risks.Add("Phone/edge targets need a smaller context and QAT; post-training quantisation is not connected yet.");
+
+        if (intake.Effort is PlannerEffort.Minutes && !fromBase)
+            risks.Add("Minutes is enough for the smoke test, not for a useful from-scratch model.");
+
+        if (intake.Task is PlannerTask.ToolUser)
+            risks.Add("Tool use depends on a verified tool probe; tune for Work and re-run the probe before relying on it.");
+
+        if (!string.IsNullOrWhiteSpace(intake.GoodLooksLike))
+            risks.Add($"Turn '{intake.GoodLooksLike.Trim()}' into 5-10 eval prompts before training.");
+    }
 
     private static string? Estimate(PlannerInput input, bool fromBase)
     {

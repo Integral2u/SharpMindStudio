@@ -190,15 +190,15 @@ public static class TrainingRunner
                 };
 
             // A fine-tune needs somewhere for the trained adapters to go: a merged
-            // model, an adapter file, or both.
-            if (job.IsFineTune && !job.MergeOnExport && !job.SaveAdapterFile)
+            // model, an adapter file, or both. A rehearsal produces neither.
+            if (!job.Rehearsal && job.IsFineTune && !job.MergeOnExport && !job.SaveAdapterFile)
                 return new TrainingRunResult
                 {
                     Success = false,
                     Error = "A fine-tune must export a merged .smm, an adapter .smlora, or both.",
                 };
 
-            if (job.IsFineTune && job.MergeOnExport && job.SaveAdapterFile
+            if (!job.Rehearsal && job.IsFineTune && job.MergeOnExport && job.SaveAdapterFile
                 && string.Equals(
                     Path.GetFullPath(job.AdapterFilePath),
                     Path.GetFullPath(job.ExportFilePath),
@@ -408,7 +408,9 @@ public static class TrainingRunner
             // "force resume latest" â€” ignoring StartFresh/ResumeFrom, because
             // the delta pipeline only delivers unseen data: building on top of
             // the latest weights is the entire point.
-            string checkpointDir = job.CheckpointDir;
+            string checkpointDir = job.Rehearsal
+                ? Path.Combine(Path.GetTempPath(), "sharpmind-rehearsal-" + Guid.NewGuid().ToString("N"))
+                : job.CheckpointDir;
             string? resumeDir;
             string? warmRestartDir = null;
             int? warmRestartPriorVocab = null;
@@ -773,6 +775,7 @@ public static class TrainingRunner
                     cancellationToken: cancellationToken,
                     onCheckpoint: dir =>
                     {
+                        if (job.Rehearsal) return;
                         if (job.IsFineTune)
                         {
                             // The generic checkpoint holds the adapter parameters and
@@ -801,6 +804,20 @@ public static class TrainingRunner
                 // Held-out batches hold native tensors and are reused for every
                 // evaluation, so they outlive the loop and must be freed here.
                 foreach (TrainingBatch held in validationBatches) held.Dispose();
+                if (job.Rehearsal) DeleteDirectoryQuietly(checkpointDir);
+            }
+
+            if (job.Rehearsal)
+            {
+                progress.Report(1f);
+                Log($"Rehearsal finished at step {lastStep}.");
+                return new TrainingRunResult
+                {
+                    Success = true,
+                    FinalStep = lastStep,
+                    BestValLoss = bestValLoss,
+                    BestValStep = bestValStep > 0 ? bestValStep : null,
+                };
             }
 
             // 6. A fine-tune can keep the adapters as a portable file and/or fold
@@ -951,6 +968,18 @@ public static class TrainingRunner
         }
 
         return null;
+    }
+
+    private static void DeleteDirectoryQuietly(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        }
+        catch
+        {
+            // A rehearsal's temp checkpoints are disposable; a locked file is not a run failure.
+        }
     }
 
     private static IDataSource BuildSource(JobComponent component, IReadOnlyList<ComponentDescriptor> registry)

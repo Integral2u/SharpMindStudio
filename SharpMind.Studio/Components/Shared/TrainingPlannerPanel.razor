@@ -28,6 +28,56 @@
                     }
                 </select>
             </div>
+            <div class="field">
+                <label class="field-label" for="planner-task">What should it do?</label>
+                <select id="planner-task" class="input" @bind="TaskValue">
+                    @foreach (PlannerTask task in Enum.GetValues<PlannerTask>())
+                    {
+                        <option value="@task">@TaskLabel(task)</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="planner-runtime">Where will it run?</label>
+                <select id="planner-runtime" class="input" @bind="RuntimeValue">
+                    @foreach (PlannerRuntime runtime in Enum.GetValues<PlannerRuntime>())
+                    {
+                        <option value="@runtime">@RuntimeLabel(runtime)</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="planner-data">What data exists?</label>
+                <select id="planner-data" class="input" @bind="DataValue">
+                    @foreach (PlannerDataShape data in Enum.GetValues<PlannerDataShape>())
+                    {
+                        <option value="@data">@DataLabel(data)</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="planner-effort">How much time?</label>
+                <select id="planner-effort" class="input" @bind="EffortValue">
+                    @foreach (PlannerEffort effort in Enum.GetValues<PlannerEffort>())
+                    {
+                        <option value="@effort">@EffortLabel(effort)</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="planner-constraint">Constraints</label>
+                <select id="planner-constraint" class="input" @bind="ConstraintValue">
+                    @foreach (PlannerConstraint constraint in Enum.GetValues<PlannerConstraint>())
+                    {
+                        <option value="@constraint">@ConstraintLabel(constraint)</option>
+                    }
+                </select>
+            </div>
+            <div class="field training-form-wide">
+                <label class="field-label" for="planner-good">What does "good" look like?</label>
+                <input id="planner-good" class="input" @bind="GoodLooksLike"
+                       placeholder="e.g. answers customer questions from these documents" />
+            </div>
             <div class="field training-form-wide">
                 <label class="field-label">Goals</label>
                 <div class="training-goals">
@@ -113,6 +163,7 @@
     {
         Start = Lab.PlannerStart,
         Goals = Lab.PlannerGoals,
+        Intake = Lab.Intake,
         HasData = Job.Sources.Any(source =>
             source.Component.Args.TryGetValue("path", out string? path)
             && !string.IsNullOrWhiteSpace(path)),
@@ -139,6 +190,108 @@
         PlannerStart.Playbook => "A playbook",
         PlannerStart.PreviousRun => "A previous run",
         _ => start.ToString(),
+    };
+
+    private string TaskValue
+    {
+        get => Lab.Intake.Task.ToString();
+        set
+        {
+            if (Enum.TryParse(value, out PlannerTask task))
+                Lab.Intake = Lab.Intake with { Task = task };
+        }
+    }
+
+    private string RuntimeValue
+    {
+        get => Lab.Intake.Runtime.ToString();
+        set
+        {
+            if (Enum.TryParse(value, out PlannerRuntime runtime))
+                Lab.Intake = Lab.Intake with { Runtime = runtime };
+        }
+    }
+
+    private string DataValue
+    {
+        get => Lab.Intake.Data.ToString();
+        set
+        {
+            if (Enum.TryParse(value, out PlannerDataShape data))
+                Lab.Intake = Lab.Intake with { Data = data };
+        }
+    }
+
+    private string EffortValue
+    {
+        get => Lab.Intake.Effort.ToString();
+        set
+        {
+            if (Enum.TryParse(value, out PlannerEffort effort))
+                Lab.Intake = Lab.Intake with { Effort = effort };
+        }
+    }
+
+    private string ConstraintValue
+    {
+        get => Lab.Intake.Constraint.ToString();
+        set
+        {
+            if (Enum.TryParse(value, out PlannerConstraint constraint))
+                Lab.Intake = Lab.Intake with { Constraint = constraint };
+        }
+    }
+
+    private string GoodLooksLike
+    {
+        get => Lab.Intake.GoodLooksLike ?? "";
+        set => Lab.Intake = Lab.Intake with
+        {
+            GoodLooksLike = string.IsNullOrWhiteSpace(value) ? null : value.Trim(),
+        };
+    }
+
+    private static string TaskLabel(PlannerTask task) => task switch
+    {
+        PlannerTask.NarrowEdge => "Narrow edge model",
+        PlannerTask.ChatAssistant => "Chat assistant",
+        PlannerTask.DomainExpert => "Domain expert",
+        PlannerTask.ToolUser => "Tool-using agent",
+        PlannerTask.Classifier => "Classifier / router",
+        _ => task.ToString(),
+    };
+
+    private static string RuntimeLabel(PlannerRuntime runtime) => runtime switch
+    {
+        PlannerRuntime.ThisPc => "This PC",
+        PlannerRuntime.PhoneEdge => "Phone / edge",
+        PlannerRuntime.ServerGpu => "Server / GPU",
+        _ => "Not sure",
+    };
+
+    private static string DataLabel(PlannerDataShape data) => data switch
+    {
+        PlannerDataShape.None => "None yet",
+        PlannerDataShape.SmallCorpus => "Small corpus (<10 MB)",
+        PlannerDataShape.LargeCorpus => "Larger corpus (10 MB+)",
+        PlannerDataShape.InstructionData => "Instruction / chat data",
+        _ => data.ToString(),
+    };
+
+    private static string EffortLabel(PlannerEffort effort) => effort switch
+    {
+        PlannerEffort.Minutes => "Minutes",
+        PlannerEffort.Hours => "A few hours",
+        PlannerEffort.Overnight => "Overnight or longer",
+        _ => effort.ToString(),
+    };
+
+    private static string ConstraintLabel(PlannerConstraint constraint) => constraint switch
+    {
+        PlannerConstraint.Public => "Public data",
+        PlannerConstraint.Internal => "Internal only",
+        PlannerConstraint.Regulated => "Regulated / PII",
+        _ => "Not sure",
     };
 
     private static string GoalLabel(PlannerGoal goal) => goal switch

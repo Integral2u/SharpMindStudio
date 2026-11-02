@@ -327,6 +327,14 @@ public sealed class TrainingJobSettings
     public int? TrainedTokenizerVocab { get; set; }
 
     /// <summary>
+    /// Runtime-only flag: run a short, disposable rehearsal. Checkpoints go to a
+    /// temp folder, nothing is merged or exported, and incremental state is not
+    /// recorded. Never persisted with a saved job.
+    /// </summary>
+    [JsonIgnore]
+    public bool Rehearsal { get; set; }
+
+    /// <summary>
     /// True to train from random weights even when checkpoints exist, ignoring
     /// <see cref="ResumeFrom"/>. False (default) resumes the latest checkpoint
     /// under <see cref="CheckpointDir"/>, or starts fresh when none exist.
@@ -511,6 +519,12 @@ public sealed class TrainingJobSettings
     [
         QuantDType.F32, QuantDType.F16, QuantDType.Q8_0, QuantDType.Q4_0,
     ];
+
+    /// <summary>Deep copy via the same JSON shape used for `.smmt` persistence.</summary>
+    public TrainingJobSettings Clone()
+        => JsonSerializer.Deserialize<TrainingJobSettings>(
+               JsonSerializer.Serialize(this, Options), Options)
+           ?? throw new InvalidOperationException("Could not clone the training job.");
 
     private static string Sanitize(string name)
     {

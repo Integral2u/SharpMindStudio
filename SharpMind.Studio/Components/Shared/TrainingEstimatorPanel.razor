@@ -1,0 +1,210 @@
+@using SharpMind.Studio.Core.Training
+@using SharpMind.Studio.Services
+@implements IDisposable
+@inject StudioRehearsalService Rehearsal
+@inject StudioTrainingService Lab
+@inject StudioExamService Exam
+@inject StudioWorkspaceService Workspace
+
+<section class="panel training-estimator">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Estimate</div>
+            <h2>Before the full run</h2>
+        </div>
+        <div class="row">
+            <button type="button" class="button" @onclick="Refresh">Refresh</button>
+            <button type="button" class="button primary" @onclick="Rehearse"
+                    disabled="@(Rehearsal.IsRunning || Lab.IsRunning || Exam.IsRunning || !HasData)">
+                Rehearse @RehearsalStepsLabel steps
+            </button>
+            @if (Rehearsal.IsRunning)
+            {
+                <button type="button" class="button danger" @onclick="Rehearsal.Cancel">Cancel</button>
+            }
+        </div>
+    </div>
+    <div class="panel-body stack">
+        <div class="training-metrics">
+            <div>
+                <span class="eyebrow">Parameters</span>
+                <strong>@Count(_estimate.Parameters)</strong>
+            </div>
+            <div>
+                <span class="eyebrow">Training memory</span>
+                <strong>@Gib(_estimate.MemoryGiB)</strong>
+            </div>
+            <div>
+                <span class="eyebrow">Model file</span>
+                <strong>@Megabytes(_estimate.ModelSizeMb)</strong>
+            </div>
+            <div>
+                <span class="eyebrow">Corpus</span>
+                <strong>@CorpusLabel</strong>
+            </div>
+            <div>
+                <span class="eyebrow">Tokens / param</span>
+                <strong>@Ratio(_estimate.TokensPerParameter)</strong>
+            </div>
+            <div>
+                <span class="eyebrow">Est. full run</span>
+                <strong>@TimeLabel</strong>
+            </div>
+        </div>
+
+        <div class="small faint">
+            Memory and file size are heuristics at @_estimate.Precision. A rehearsal runs the real
+            pipeline for a few steps and measures step time, throughput and peak working set; it does
+            not export or merge anything.
+        </div>
+
+        @if (Rehearsal.IsRunning || Rehearsal.Progress > 0)
+        {
+            <div class="progress-track">
+                <div class="progress-fill" style="width:@((Rehearsal.Progress * 100).ToString("0"))%"></div>
+            </div>
+        }
+        <div class="status-line">@Rehearsal.Status</div>
+
+        @if (Rehearsal.Error is { } error)
+        {
+            <div class="error-line">@error</div>
+        }
+
+        @if (Rehearsal.Result is { } result)
+        {
+            <div class="training-metrics">
+                <div>
+                    <span class="eyebrow">Measured step</span>
+                    <strong>@result.MedianStepSeconds.ToString("0.00")s</strong>
+                </div>
+                <div>
+                    <span class="eyebrow">Throughput</span>
+                    <strong>@result.TokensPerSecond.ToString("0.0") tok/s</strong>
+                </div>
+                <div>
+                    <span class="eyebrow">Peak memory</span>
+                    <strong>@Bytes(result.PeakWorkingSetBytes)</strong>
+                </div>
+                <div>
+                    <span class="eyebrow">Rehearsed</span>
+                    <strong>@result.StepsRun step(s)</strong>
+                </div>
+            </div>
+            <div class="small faint">
+                Last rehearsal: @result.JobName at @result.FinishedUtc.ToLocalTime().ToString("dd MMM HH:mm"),
+                scaled to @result.TotalSteps steps. Rehearse again after changing the model, data or
+                batching.
+            </div>
+        }
+        else if (HasData)
+        {
+            <div class="small faint">Rehearse to measure the real step time instead of guessing.</div>
+        }
+        else
+        {
+            <div class="small faint">Add a corpus source with a path before rehearsing.</div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TrainingJobSettings Job { get; set; } = new();
+
+    private TrainingCorpusEstimate _corpus = TrainingCorpusEstimate.Empty;
+    private TrainingEstimate _estimate = TrainingEstimate.Empty;
+    private string _signature = "";
+
+    private bool HasData => Job.Sources.Any(source =>
+        source.Component.Args.TryGetValue("path", out string? path)
+        && !string.IsNullOrWhiteSpace(path));
+
+    private string RehearsalStepsLabel
+        => Math.Min(StudioRehearsalService.MaxSteps, Math.Max(1, Job.TotalSteps)).ToString();
+
+    private string CorpusLabel => _corpus.Bytes == 0
+        ? "-"
+        : _corpus.Tokens is { } tokens
+            ? $"{_corpus.Megabytes:0.0} MB - ~{tokens / 1_000d:0.0}k tok"
+            : $"{_corpus.Megabytes:0.0} MB";
+
+    private string TimeLabel
+    {
+        get
+        {
+            if (Rehearsal.Result is { } result && result.MedianStepSeconds > 0)
+                return Duration(TimeSpan.FromSeconds(result.MedianStepSeconds * Math.Max(1, Job.TotalSteps)));
+            return "rehearse";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Rehearsal.Changed += OnRehearsalChanged;
+        Refresh();
+    }
+
+    protected override void OnParametersSet() => RefreshIfChanged();
+
+    public void Dispose() => Rehearsal.Changed -= OnRehearsalChanged;
+
+    private void OnRehearsalChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Refresh()
+    {
+        _signature = Signature();
+        _corpus = TrainingCorpusFacts.Estimate(Job);
+        _estimate = TrainingEstimator.Estimate(Job, _corpus);
+    }
+
+    private void RefreshIfChanged()
+    {
+        string signature = Signature();
+        if (signature != _signature) Refresh();
+    }
+
+    private string Signature()
+        => string.Join('|',
+            Job.TokenizerKind,
+            Job.TokenizerVocabSize,
+            Job.HiddenDim,
+            Job.NumLayers,
+            Job.NumHeads,
+            Job.NumKvHeads,
+            Job.FfnDim,
+            Job.SeqLen,
+            Job.BatchSize,
+            Job.QuantAwareTraining,
+            Job.TotalSteps,
+            string.Join(';', Job.Sources.Select(source =>
+                source.Component.Args.TryGetValue("path", out string? path) ? path : "")));
+
+    private void Rehearse()
+    {
+        if (!HasData || Lab.IsRunning || Exam.IsRunning) return;
+        Rehearsal.Start(Job, Workspace.PluginsFolder);
+    }
+
+    private static string Count(long? value)
+        => value is null ? "-"
+         : value >= 1_000_000 ? $"{value.Value / 1_000_000d:0.0}M"
+         : $"{value.Value / 1_000d:0.0}k";
+
+    private static string Gib(double? value) => value is null ? "-" : $"{value.Value:0.0} GiB";
+
+    private static string Megabytes(double? value) => value is null ? "-" : $"{value.Value:0} MB";
+
+    private static string Ratio(double? value) => value is null ? "-" : value.Value.ToString("0.0");
+
+    private static string Bytes(long value)
+        => value >= 1024L * 1024 * 1024
+            ? $"{value / (1024d * 1024 * 1024):0.00} GiB"
+            : $"{value / (1024d * 1024):0} MiB";
+
+    private static string Duration(TimeSpan span)
+        => span.TotalHours >= 1
+            ? $"{span.TotalHours:0.0} h"
+            : span.TotalMinutes >= 1
+                ? $"{span.TotalMinutes:0} min"
+                : $"{span.TotalSeconds:0} s";
+}

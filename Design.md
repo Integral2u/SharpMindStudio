@@ -2,7 +2,7 @@
 
 > **Status:** implementation in progress, October 2026. Studio **1.1.0.0**.
 > Built: shell, projects/runs/recipes, canary and tool probes, TESTS run history, Chat lab, layered inference settings, Work mode MVP, model Tune presets, shared skills/tools, the phone pairing gateway, the corpus-to-export Training engine with its lab shell, LoRA fine-tuning, and SMM↔GGUF conversion.
-> Remaining: the planner's intake/estimator/rehearsal depth. Gateway proxy mode is intentionally left as built.
+> Remaining: planner rule files and graph forking. Gateway proxy mode is intentionally left as built.
 SharpMind Studio is a local-first application for chatting with models, doing project work with them, and building them: from scratch, from a base model, or by upgrading a model you already have. It is the successor to the terminal UI (CUI) as the primary front end, and it is meant to be something people want to use: attractive, calm and fast.
 
 ---
@@ -333,7 +333,7 @@ flowchart LR
 6. **A rehearsal run** of about 30 steps measures real throughput, refines the ETA and catches pipeline errors before hours are committed.
 7. **"Why can't I?"** on disabled options. For example, GPU training is currently LoRA-only, so a from-scratch run falls back to CPU, and the card says so with alternatives.
 
-The 1.1 planner implements the three-plan proposal and the reason/alternative structure, with a parameter-count estimate. The six-question intake, the full estimator rail and the rehearsal run remain future work.
+The 1.1 planner implements the six-question intake, the three-plan proposal, reasons/alternatives, parameter/memory/size/corpus estimates, and a ~30-step rehearsal that measures step time, throughput and peak working set. The estimator is explicitly heuristic until that rehearsal. Versioned rule files and graph forking remain future work.
 
 ### 5.5 Improve: the diagnosis loop
 
@@ -354,7 +354,7 @@ Experiments run as short, comparable trials with the same seed and validation se
 
 `/training` is a first-class section next to Chat and Work, with deep-linkable tabs: **New model** (`?tab=new`), **Improve**, **Playbooks**, **Data**, **Runs** and **Models**. Empty states stay honest: no fabricated runs, estimates or playbooks. Tabs whose engine work is not connected keep their start buttons disabled.
 
-**New model** is a full `.smmt` editor rather than a preset picker. It covers the architecture preset and manual dimensions/kernel options, tokenizer kind and vocabulary, batching, optimizer and LR schedule, accelerator plugin, QAT target (validated against the dimensions before a run), checkpoint interval/retention, resume and warm restart, validation/exam splits, export path, and the optional embedded system prompt, skills folder and tool DLLs. A source/stage section adds any discovered source or cleaning stage, renders each constructor parameter from its metadata, supports per-source and global stage chains, and exposes incremental mode; unknown plugin components are called out rather than silently dropped. A live review shows the resolved architecture, parameter estimate, precision, device and any blocking warning; the same `TrainingJobValidation` rules gate the start action, so the form cannot look valid and fail on a dimension it did not flag. **Save job** writes the `.smmt`, **Load selected** restores it, **Run selected job** starts a pretrain job directly (fine-tunes open in Improve), and the unsaved draft survives tab switches via `StudioTrainingService.Draft`. The **Data** tab summarises the configured sources, per-source stage counts, global stages and incremental state.
+**New model** is a full `.smmt` editor rather than a preset picker. It covers the architecture preset and manual dimensions/kernel options, tokenizer kind and vocabulary, batching, optimizer and LR schedule, accelerator plugin, QAT target (validated against the dimensions before a run), checkpoint interval/retention, resume and warm restart, validation/exam splits, export path, and the optional embedded system prompt, skills folder and tool DLLs. A source/stage section adds any discovered source or cleaning stage, renders each constructor parameter from its metadata, supports per-source and global stage chains, and exposes incremental mode; unknown plugin components are called out rather than silently dropped. The **estimator** above the editor shows parameters, heuristic training memory, packaged size, corpus size/tokens and tokens-per-parameter, and a **Rehearse** action runs up to 30 real steps in temp checkpoints to measure step time, throughput and peak working set without exporting anything. A live review shows the resolved architecture, parameter estimate, precision, device and any blocking warning; the same `TrainingJobValidation` rules gate the start action, so the form cannot look valid and fail on a dimension it did not flag. **Save job** writes the `.smmt`, **Load selected** restores it, **Run selected job** starts a pretrain job directly (fine-tunes open in Improve), and the unsaved draft survives tab switches via `StudioTrainingService.Draft`. The **Data** tab summarises the configured sources, per-source stage counts, global stages and incremental state.
 
 **Playbooks** are curated editor values behind **Training → Playbooks**: a tiny smoke test, a small domain pretrain, a LLaMA-style chat base, a Q8_0 packaging run, and two LoRA tunes (merged or adapter-only). Applying one fills New-model or Improve, keeping the corpus and base the user already chose. They are starting points, not measured results, and the tab says so.
 
@@ -564,7 +564,7 @@ Draft slices, not yet confirmed:
 
 | Version | Contents |
 |---|---|
-| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a rules-based build-map planner, a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume (smoke-tested on SmolLM2-135M), run history with curves and comparison, and a held-out exam backing a written promotion report |
+| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a rules-based build-map planner with intake, estimates and a measured rehearsal, a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume (smoke-tested on SmolLM2-135M), run history with curves and comparison, and a held-out exam backing a written promotion report |
 | 1.1.1.0 | Data Lab, Formatter Designer, probe-prompt snapshot timeline, A/B arena, hub client |
 | 1.1.2.0 | Quant Lab (sensitivity-aware plans, Pareto chart) and distillation (sequence-level first, logit-level second) |
 | 1.1.3.0 | Architect canvas, MoE load-balancing and utilisation heatmap, upcycling and Branch-Train-Mix, then HMoE |

@@ -190,6 +190,9 @@
         if (_sources.FirstOrDefault(d => d.Type == typeof(TextFileSource)) is not { } text) return;
 
         string path = _quickSourcePath.Trim();
+        if (Directory.Exists(path))
+            path = Path.Combine(path, "**", "*.txt");
+
         JobComponent? blank = Job.Sources
             .Select(source => source.Component)
             .FirstOrDefault(component =>

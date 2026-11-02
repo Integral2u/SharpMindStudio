@@ -9,6 +9,7 @@
 @inject StudioTrainingService Lab
 @inject StudioConversionService Convert
 @inject StudioExamService Exam
+@inject StudioRehearsalService Rehearsal
 @inject StudioWorkspaceService Workspace
 @inject NavigationManager Nav
 
@@ -47,6 +48,8 @@
 
     <TrainingPlannerPanel Job="_job" UsePlan="ApplyPlan" />
 
+    <TrainingEstimatorPanel Job="_job" />
+
     <section class="panel">
         <div class="panel-head">
             <div>
@@ -66,7 +69,7 @@
 
             <div class="training-actions">
                 <button type="button" class="button primary" @onclick="StartTraining"
-                        disabled="@(Lab.IsRunning || _starting)">
+                        disabled="@(Lab.IsRunning || Rehearsal.IsRunning || _starting)">
                     @(Lab.IsRunning ? "Training..." : "Start training")
                 </button>
                 <button type="button" class="button" @onclick="StartNewJob"
@@ -249,7 +252,7 @@ else if (_tab == "improve")
 
             <div class="training-actions">
                 <button type="button" class="button primary" @onclick="StartFineTune"
-                        disabled="@(Lab.IsRunning || _tuning)">
+                        disabled="@(Lab.IsRunning || Rehearsal.IsRunning || _tuning)">
                     @(Lab.IsRunning ? "Training..." : "Start fine-tune")
                 </button>
                 <span class="small faint">
@@ -1070,7 +1073,7 @@ else if (_tab == "models")
     private void StartFineTune()
     {
         _tuneError = null;
-        if (Lab.IsRunning) return;
+        if (Lab.IsRunning || Rehearsal.IsRunning) return;
 
         string basePath = _tuneBase.Trim();
         if (!File.Exists(basePath))
@@ -1199,7 +1202,7 @@ else if (_tab == "models")
     private async Task StartTraining()
     {
         _error = null;
-        if (Lab.IsRunning) return;
+        if (Lab.IsRunning || Rehearsal.IsRunning) return;
 
         if (string.IsNullOrWhiteSpace(_job.Name))
             _job.Name = $"corpus-{DateTime.Now:yyyyMMdd-HHmm}";

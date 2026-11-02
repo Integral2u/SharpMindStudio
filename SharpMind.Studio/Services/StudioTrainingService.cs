@@ -63,6 +63,9 @@ public sealed class StudioTrainingService : IDisposable
     /// <summary>Build-map planner selection, kept across tab switches.</summary>
     public PlannerStart PlannerStart { get; set; } = PlannerStart.Nothing;
 
+    /// <summary>Plain-language intake behind the planner rules.</summary>
+    public PlannerIntake Intake { get; set; } = new();
+
     /// <summary>Build-map goals; mutable so the panel can toggle them.</summary>
     public HashSet<PlannerGoal> PlannerGoals { get; } = [];
     public float Progress { get { lock (_gate) return _progress; } }

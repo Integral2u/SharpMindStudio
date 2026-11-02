@@ -172,6 +172,65 @@ public sealed class TrainingPlannerTests
         }
     }
 
+    [Fact]
+    public void Intake_DataNone_BlocksDataEvenWhenAPathExists()
+    {
+        IReadOnlyList<TrainingPlan> plans = TrainingPlanner.Plan(new PlannerInput
+        {
+            Start = PlannerStart.Nothing,
+            HasData = true,
+            Intake = new PlannerIntake { Data = PlannerDataShape.None },
+        });
+
+        PlannerMove data = Assert.Single(plans[0].Moves.Where(move => move.Action == PlannerAction.Data));
+        Assert.Equal(PlannerMoveStatus.Blocked, data.Status);
+        Assert.Contains("intake", data.BlockedReason, StringComparison.OrdinalIgnoreCase);
+
+        PlannerMove pretrain = Assert.Single(plans[0].Moves.Where(move => move.Action == PlannerAction.Pretrain));
+        Assert.Equal(PlannerMoveStatus.Blocked, pretrain.Status);
+    }
+
+    [Fact]
+    public void Intake_Minutes_FromScratchUsesTheSmokePlaybook()
+    {
+        IReadOnlyList<TrainingPlan> plans = TrainingPlanner.Plan(new PlannerInput
+        {
+            Start = PlannerStart.Nothing,
+            HasData = true,
+            Intake = new PlannerIntake { Effort = PlannerEffort.Minutes },
+        });
+
+        Assert.Equal("smoke", plans[0].PlaybookId);
+        Assert.Contains(plans[0].Risks, risk => risk.Contains("Minutes", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Intake_CarriesPrivacyInstructionAndEvalHintsIntoEveryPlan()
+    {
+        IReadOnlyList<TrainingPlan> plans = TrainingPlanner.Plan(new PlannerInput
+        {
+            Start = PlannerStart.BaseModel,
+            HasData = true,
+            Intake = new PlannerIntake
+            {
+                Constraint = PlannerConstraint.Regulated,
+                Data = PlannerDataShape.InstructionData,
+                Runtime = PlannerRuntime.PhoneEdge,
+                Task = PlannerTask.ToolUser,
+                GoodLooksLike = "answer support tickets",
+            },
+        });
+
+        Assert.All(plans, plan =>
+        {
+            Assert.Contains(plan.Risks, risk => risk.Contains("this machine", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(plan.Risks, risk => risk.Contains("SFT", StringComparison.Ordinal));
+            Assert.Contains(plan.Risks, risk => risk.Contains("Phone/edge", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(plan.Risks, risk => risk.Contains("tool probe", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(plan.Risks, risk => risk.Contains("eval prompts", StringComparison.OrdinalIgnoreCase));
+        });
+    }
+
     private static void AssertAllBlockedMovesAreExplained(IEnumerable<TrainingPlan> plans)
     {
         foreach (PlannerMove move in plans.SelectMany(plan => plan.Moves)
