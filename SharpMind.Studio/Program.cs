@@ -41,6 +41,7 @@ builder.Services.AddSingleton<WorkToolService>();
 builder.Services.AddSingleton<TuneRunnerService>();
 builder.Services.AddSingleton<StudioTrainingService>();
 builder.Services.AddSingleton<StudioConversionService>();
+builder.Services.AddSingleton<StudioExamService>();
 builder.Services.AddScoped<StudioDeviceAccess>();
 builder.Services.AddScoped<StudioWorkService>();
 builder.Services.AddScoped<StudioChatService>();

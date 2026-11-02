@@ -2,7 +2,7 @@
 
 > **Status:** implementation in progress, October 2026. Studio **1.1.0.0**.
 > Built: shell, projects/runs/recipes, canary and tool probes, TESTS run history, Chat lab, layered inference settings, Work mode MVP, model Tune presets, shared skills/tools, the phone pairing gateway, the corpus-to-export Training engine with its lab shell, LoRA fine-tuning, and SMM↔GGUF conversion.
-> Remaining: the Training planner and promotion reports, Work hardening (richer skills and tool management), and gateway proxy mode.
+> Remaining: the Training planner, Work hardening (richer skills and tool management), and gateway proxy mode.
 SharpMind Studio is a local-first application for chatting with models, doing project work with them, and building them: from scratch, from a base model, or by upgrading a model you already have. It is the successor to the terminal UI (CUI) as the primary front end, and it is meant to be something people want to use: attractive, calm and fast.
 
 ---
@@ -382,11 +382,21 @@ The lab needs a diagnosis signal, not just a final loss number:
 
 A finished run is persisted by `TrainingRunStore` as one JSON record under `Training/run-history`: the curve, best val step, final loss, elapsed time, export size and a compact job profile. `StudioTrainingService` caches the history and invalidates it when a run finishes or a record is deleted; a corrupt or half-written file is skipped rather than hiding the rest.
 
-**Training → Runs** lists those records under **Experiments**, each with **Use as base** (promote a successful `.smm` straight into an Improve job) and **Delete**. With two runs that logged at least two points, **Compare** offers two selectors, a metric table that marks the lower loss and elapsed time as better, and the two curves side by side. This is the Compare step of the diagnosis loop; a promotion report with a held-out exam is still to come.
+**Training → Runs** lists those records under **Experiments**, each with **Use as base** (promote a successful `.smm` straight into an Improve job) and **Delete**. With two runs that logged at least two points, **Compare** offers two selectors, a metric table that marks the lower loss and elapsed time as better, and the two curves side by side.
+
+### 5.10 Held-out exam and promotion
+
+A run can reserve a second deterministic slice, `TestPercent`, disjoint from validation. Training branches it out before the validation split and never reads it; the tokenizer still sees the full corpus. The slice is scored only when the user runs an **Exam**, either from a run card or as part of a comparison.
+
+- `TrainingExamRunner` loads the exported `.smm` with its embedded tokenizer, rebuilds the job's cleaned full-corpus pipeline (`TrainingRunner.BuildCleanPipeline`), applies the same content-hash test branch, reads up to eight fixed batches, and reports cross-entropy loss, perplexity and token count.
+- `StudioExamService` owns the one active exam, streams its status, writes `ExamLoss`/`ExamPerplexity`/tokens/timestamp back into the run record, and refreshes history. Adapter-only runs are rejected until merged; runs without a saved `.smmt` or a test split fail with a clear message.
+- **Promote A over B** compares two examined runs. `TrainingPromotionReport.Compare` calls a candidate better when its exam loss is at least 0.5% lower, worse when at least 0.5% higher, and inconclusive in between. `TrainingPromotionStore` writes the report as JSON and Markdown under `Training/promotions`; neither model file is modified.
+
+The exam is what makes the **Promote** step honest: the held-out slice was excluded from training and from checkpoint selection, so the reported difference is not just the run's own validation curve. `TrainingExamRunnerTests` trains, exports and scores a model; `TrainingPromotionStoreTests` covers verdicts, the inconclusive band and both output formats.
 
 `ValidationSplitSmokeTests` trains from several documents with validation on and asserts the split, the evaluation log, and a best step in range. `TrainingRunStoreTests` covers the history round trip, ordering, corrupt-file tolerance and deletion.
 
-### 5.10 Format conversion
+### 5.11 Format conversion
 
 **Training → Models** converts between the packaged model (`.smm`) and GGUF in both directions. The direction follows the source extension, the destination is suggested beside the source with the extension swapped, and overwriting an existing file needs an explicit tick. `.smmt` is not a model format: it is the saved training-job JSON, so it is never offered as a conversion source.
 
@@ -540,7 +550,7 @@ Draft slices, not yet confirmed:
 
 | Version | Contents |
 |---|---|
-| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. Fine-tuning a base with LoRA is wired into **Improve**, with merged `.smm` or adapter-only `.smlora` output and adapter resume |
+| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. Fine-tuning a base with LoRA is wired into **Improve**, with merged `.smm` or adapter-only `.smlora` output and adapter resume. Runs keep curves and history, and a held-out exam backs a written promotion report |
 | 1.1.1.0 | Data Lab, Formatter Designer, probe-prompt snapshot timeline, A/B arena, hub client |
 | 1.1.2.0 | Quant Lab (sensitivity-aware plans, Pareto chart) and distillation (sequence-level first, logit-level second) |
 | 1.1.3.0 | Architect canvas, MoE load-balancing and utilisation heatmap, upcycling and Branch-Train-Mix, then HMoE |

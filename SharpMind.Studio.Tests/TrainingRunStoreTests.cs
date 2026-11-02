@@ -84,6 +84,42 @@ public sealed class TrainingRunStoreTests
     }
 
     [Fact]
+    public void Update_WritesAnExamResultBackIntoTheExistingRecord()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "sharpmind-runs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var record = new TrainingRunRecord
+            {
+                Name = "examined",
+                Success = true,
+                FinishedUtc = DateTime.UtcNow,
+                ExportPath = @"C:\models\examined.smm",
+            };
+            string path = TrainingRunStore.Save(record, folder);
+
+            record.ExamLoss = 2.31;
+            record.ExamPerplexity = 10.1;
+            record.ExamBatches = 4;
+            record.ExamTokens = 1_024;
+            record.ExamEvaluatedUtc = DateTime.UtcNow;
+            TrainingRunStore.Update(path, record);
+
+            TrainingRunRecord reloaded = Assert.Single(TrainingRunStore.List(folder)).Record;
+            Assert.Equal(2.31, reloaded.ExamLoss);
+            Assert.Equal(10.1, reloaded.ExamPerplexity);
+            Assert.Equal(4, reloaded.ExamBatches);
+            Assert.Equal(1_024, reloaded.ExamTokens);
+            Assert.NotNull(reloaded.ExamEvaluatedUtc);
+        }
+        finally
+        {
+            try { Directory.Delete(folder, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void From_MapsTheLiveRunIntoAHistoryRecord()
     {
         string dir = Path.Combine(Path.GetTempPath(), "sharpmind-runs-" + Guid.NewGuid().ToString("N"));

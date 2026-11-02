@@ -35,6 +35,13 @@ public sealed class TrainingRunRecord
     public double? BestValLoss { get; set; }
     public int? BestValStep { get; set; }
 
+    /// <summary>Held-out exam loss, once the run's exported model has been scored.</summary>
+    public double? ExamLoss { get; set; }
+    public double? ExamPerplexity { get; set; }
+    public int ExamBatches { get; set; }
+    public long ExamTokens { get; set; }
+    public DateTime? ExamEvaluatedUtc { get; set; }
+
     /// <summary>Last logged training loss, when the run logged at least one step.</summary>
     public double? FinalLoss { get; set; }
 
@@ -156,6 +163,14 @@ public static class TrainingRunStore
     {
         if (string.IsNullOrWhiteSpace(path)) return;
         try { File.Delete(path); } catch { }
+    }
+
+    /// <summary>Rewrites an existing run record in place (after an exam result).</summary>
+    public static void Update(string path, TrainingRunRecord record)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(record);
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(record, JsonOptions));
     }
 
     private static readonly System.Text.Json.JsonSerializerOptions JsonOptions = new()

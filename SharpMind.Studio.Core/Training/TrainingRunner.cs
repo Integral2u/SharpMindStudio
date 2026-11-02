@@ -181,6 +181,14 @@ public static class TrainingRunner
             // an incremental run, so when the cache is missing we train it over the
             // complete configured sources (a no-op for fresh jobs, where the
             // deltas ARE the whole corpus anyway).
+            // The exam and validation slices must not consume the whole corpus.
+            if (Math.Max(0, job.ValidationPercent) + Math.Max(0, job.TestPercent) >= 100)
+                return new TrainingRunResult
+                {
+                    Success = false,
+                    Error = "Validation and held-out exam splits together must stay below 100%.",
+                };
+
             // A fine-tune needs somewhere for the trained adapters to go: a merged
             // model, an adapter file, or both.
             if (job.IsFineTune && !job.MergeOnExport && !job.SaveAdapterFile)
@@ -293,17 +301,35 @@ public static class TrainingRunner
             // 3. Data pipeline â€” clean â†’ tokenise â†’ TrainingBatches. Random-window
             // batching samples contiguous windows from one flat corpus stream
             // (nanoGPT-style); PackingBatcher is the default document packer.
-            // A validation split removes a deterministic, content-hashed slice of
-            // documents from the training stream and materialises a small fixed
-            // batch set for evaluation. Fixing the set means every point on the
-            // val curve scores the same documents, so the curve is comparable
-            // across steps. The tokenizer still trains over the full corpus: it
-            // learns the token inventory, not the loss being measured.
+            // Two deterministic, content-hashed slices can be removed:
+            //   * exam (TestPercent) - never trained on or used for model choice;
+            //     scored only after a run, for the promotion report.
+            //   * validation (ValidationPercent) - scored during the run.
+            // Both use the same seed and disjoint bucket ranges, so a document is
+            // never in two slices, and every point on a curve scores a fixed set.
+            // The tokenizer still trains over the full corpus: it learns the token
+            // inventory, not the loss being measured.
             List<TrainingBatch> validationBatches = [];
-            if (job.ValidationPercent > 0)
+            double testFraction = Math.Clamp(job.TestPercent, 0, 90) / 100.0;
+            double valFraction = Math.Clamp(job.ValidationPercent, 0, 90) / 100.0;
+
+            if (testFraction > 0)
             {
-                double fraction = Math.Clamp(job.ValidationPercent, 0, 99.9) / 100.0;
-                var (trainNode, valNode) = pipeline.TrainVal(fraction, Seed);
+                int examThreshold = (int)Math.Round(testFraction * DeterministicSplit.Buckets);
+                var (_, trainVal) = pipeline.Branch(
+                    "exam", doc => DeterministicSplit.Bucket(doc, Seed) < examThreshold);
+                pipeline = trainVal;
+                Log($"Exam: {job.TestPercent:0.#}% of documents held out for the promotion exam "
+                    + "(excluded from training and validation).");
+            }
+
+            if (valFraction > 0)
+            {
+                // The val range starts above the exam's, so the two slices stay
+                // disjoint even though both are keyed by the same content hash.
+                int valThreshold = (int)Math.Round((testFraction + valFraction) * DeterministicSplit.Buckets);
+                var (valNode, trainNode) = pipeline.Branch(
+                    "val", doc => DeterministicSplit.Bucket(doc, Seed) < valThreshold);
                 pipeline = trainNode;
 
                 IBatchStrategy valBatcher = job.UsesRandomWindowBatching
@@ -952,6 +978,43 @@ public static class TrainingRunner
             throw new InvalidOperationException("No data sources configured for this job.");
         var registry = ComponentRegistry.ScanFolder(pluginsFolder, out _);
         return FullCorpusComposite(job, registry);
+    }
+
+    /// <summary>
+    /// Builds the cleaned full-corpus pipeline (every source plus its stages and
+    /// the job's global stages) without the incremental delta restriction. The
+    /// exam uses this so it scores the same documents the run trained on, minus
+    /// the held-out slice.
+    /// </summary>
+    public static PipelineNode BuildCleanPipeline(TrainingJobSettings job, string pluginsFolder)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        var registry = ComponentRegistry.ScanFolder(pluginsFolder, out _);
+        var nodes = new List<PipelineNode>();
+        foreach (JobSource source in job.Sources)
+        {
+            if (source.Component is null) continue;
+            PipelineNode node = PipelineNode.From(BuildSource(source.Component, registry));
+            foreach (JobComponent stage in source.Stages)
+            {
+                var descriptor = ComponentRegistry.Find(stage.TypeName, registry)
+                    ?? throw new InvalidOperationException($"Unknown stage '{stage.TypeName}'.");
+                node = node.Pipe((ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, stage.Args));
+            }
+            nodes.Add(node);
+        }
+
+        if (nodes.Count == 0)
+            throw new InvalidOperationException("No data sources configured for this job.");
+
+        PipelineNode pipeline = nodes.Count == 1 ? nodes[0] : CleaningPipeline.Merge(nodes);
+        foreach (JobComponent stage in job.GlobalStages)
+        {
+            var descriptor = ComponentRegistry.Find(stage.TypeName, registry)
+                ?? throw new InvalidOperationException($"Unknown stage '{stage.TypeName}'.");
+            pipeline = pipeline.Pipe((ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, stage.Args));
+        }
+        return pipeline;
     }
 
     /// <summary>

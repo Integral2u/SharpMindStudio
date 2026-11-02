@@ -192,6 +192,15 @@ public sealed class TrainingJobSettings
     /// </summary>
     public double ValidationPercent { get; set; }
 
+    /// <summary>
+    /// Percentage of documents reserved for the promotion exam (0–90). The exam
+    /// slice is excluded from training and validation and is scored only after a
+    /// run, so it can judge candidates honestly. The split uses the same stable
+    /// content hash as <see cref="ValidationPercent"/> over a disjoint bucket
+    /// range. 0 (default) means no exam.
+    /// </summary>
+    public double TestPercent { get; set; }
+
     public float LearningRate { get; set; } = 8e-4f;
     public float MinLr { get; set; } = 3e-5f;
     public int WarmupSteps { get; set; } = 20;

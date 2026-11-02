@@ -7,6 +7,7 @@
 @using SharpMind.Studio.Services
 @inject StudioTrainingService Lab
 @inject StudioConversionService Convert
+@inject StudioExamService Exam
 @inject StudioWorkspaceService Workspace
 @inject NavigationManager Nav
 
@@ -86,6 +87,11 @@
                     <label class="field-label" for="training-val">Validation split (%)</label>
                     <input id="training-val" class="input" type="number" min="0" max="90" step="5"
                            @bind="_validationPercent" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="training-exam">Held-out exam (%)</label>
+                    <input id="training-exam" class="input" type="number" min="0" max="45" step="5"
+                           @bind="_testPercent" />
                 </div>
                 <div class="field training-form-wide">
                     <label class="field-label" for="training-export">Export file (optional)</label>
@@ -200,6 +206,11 @@ else if (_tab == "improve")
                            @bind="_tuneValidationPercent" />
                 </div>
                 <div class="field">
+                    <label class="field-label" for="tune-exam">Held-out exam (%)</label>
+                    <input id="tune-exam" class="input" type="number" min="0" max="45" step="5"
+                           @bind="_tuneTestPercent" />
+                </div>
+                <div class="field">
                     <label class="field-label" for="tune-lr">Learning rate</label>
                     <input id="tune-lr" class="input" type="number" min="0.000001" step="0.00001" @bind="_tuneLr" />
                 </div>
@@ -287,7 +298,7 @@ else if (_tab == "improve")
                 <div class="eyebrow">Diagnosis loop</div>
                 <h2>After the fine-tune</h2>
             </div>
-            <span class="faint small mono">curves and comparison live</span>
+            <span class="faint small mono">curves, exam and promotion live</span>
         </div>
         <div class="panel-body stack">
             <div class="training-flow">
@@ -461,6 +472,15 @@ else if (_tab == "runs")
             </div>
         </div>
         <div class="panel-body stack">
+            @if (Exam.IsRunning || Exam.Status != "No exam run yet.")
+            {
+                <div class="small faint">@Exam.Status</div>
+            }
+            @if (Exam.Error is { } examError)
+            {
+                <div class="error-line">@examError</div>
+            }
+
             @if (Lab.RunHistory.Count == 0)
             {
                 <div class="empty">
@@ -502,6 +522,20 @@ else if (_tab == "runs")
                                         val @Fmt(bestVal) @@ @run.Record.BestValStep
                                     </span>
                                 }
+                                @if (run.Record.ExamLoss is { } examLoss)
+                                {
+                                    <span class="small faint mono">
+                                        exam @Fmt(examLoss)
+                                        @if (run.Record.ExamPerplexity is { } perplexity)
+                                        {
+                                            <span> / ppl @perplexity.ToString("0.00")</span>
+                                        }
+                                    </span>
+                                }
+                                <button type="button" class="button" @onclick="() => StartExam(run)"
+                                        disabled="@(!CanExamine(run) || Exam.IsRunning)">
+                                    Exam
+                                </button>
                                 <button type="button" class="button" @onclick="() => UseAsBase(run)"
                                         disabled="@(!CanUseAsBase(run))">
                                     Use as base
@@ -575,6 +609,15 @@ else if (_tab == "runs")
                                 </td>
                             </tr>
                             <tr>
+                                <td>Exam loss</td>
+                                <td class="@(Lower(a.ExamLoss, b.ExamLoss))">
+                                    @Fmt(a.ExamLoss)@PerplexityAt(a.ExamPerplexity)
+                                </td>
+                                <td class="@(Lower(b.ExamLoss, a.ExamLoss))">
+                                    @Fmt(b.ExamLoss)@PerplexityAt(b.ExamPerplexity)
+                                </td>
+                            </tr>
+                            <tr>
                                 <td>Validation split</td>
                                 <td>@a.ValidationPercent.ToString("0.#")%</td>
                                 <td>@b.ValidationPercent.ToString("0.#")%</td>
@@ -603,6 +646,26 @@ else if (_tab == "runs")
                         <TrainingLossChart Title="@b.Name" Points="@b.Curve"
                                            BestStep="@b.BestValStep" BestLoss="@b.BestValLoss" />
                     </div>
+
+                    <div class="training-actions">
+                        <button type="button" class="button primary" @onclick="Promote"
+                                disabled="@(!CanPromote)">
+                            @PromotionLabel
+                        </button>
+                        <span class="small faint">
+                            Both runs need a held-out exam. The report records the verdict even when A
+                            does not win.
+                        </span>
+                    </div>
+
+                    @if (_promotionSummary is { } promotionSummary)
+                    {
+                        <div class="small">@promotionSummary</div>
+                    }
+                    @if (_promotionPath is { } promotionPath)
+                    {
+                        <div class="small faint mono">Report: @promotionPath</div>
+                    }
                 }
             }
             else if (Lab.RunHistory.Count >= 2)
@@ -754,6 +817,7 @@ else if (_tab == "models")
     private string _size = "small";
     private int _steps = 200;
     private double _validationPercent = 10;
+    private double _testPercent = 10;
     private string _exportPath = "";
     private string? _error;
     private bool _starting;
@@ -771,6 +835,7 @@ else if (_tab == "models")
     private float _tuneAlpha = 16f;
     private int _tuneSteps = 100;
     private double _tuneValidationPercent = 10;
+    private double _tuneTestPercent = 10;
     private float _tuneLr = 2e-4f;
     private string _tuneOutput = "merged";
     private string _tuneAdapterPath = "";
@@ -780,6 +845,8 @@ else if (_tab == "models")
     private bool _tuning;
     private string _compareA = "";
     private string _compareB = "";
+    private string? _promotionSummary;
+    private string? _promotionPath;
     private IReadOnlyList<string>? _resumeOptions;
     private readonly HashSet<string> _tuneTargets =
         ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"];
@@ -865,6 +932,7 @@ else if (_tab == "models")
     {
         Lab.Changed += OnTrainingChanged;
         Convert.Changed += OnTrainingChanged;
+        Exam.Changed += OnExamChanged;
     }
 
     protected override void OnParametersSet()
@@ -879,6 +947,7 @@ else if (_tab == "models")
     {
         Lab.Changed -= OnTrainingChanged;
         Convert.Changed -= OnTrainingChanged;
+        Exam.Changed -= OnExamChanged;
     }
 
     private void OnTrainingChanged() => _ = InvokeAsync(() =>
@@ -889,6 +958,8 @@ else if (_tab == "models")
         if (!Lab.IsRunning) _resumeOptions = null;
         StateHasChanged();
     });
+
+    private void OnExamChanged() => _ = InvokeAsync(StateHasChanged);
 
     private void PickSource(ChangeEventArgs args)
     {
@@ -1026,6 +1097,12 @@ else if (_tab == "models")
             return;
         }
 
+        if (_tuneValidationPercent + _tuneTestPercent >= 100)
+        {
+            _tuneError = "Validation and held-out exam splits together must stay below 100%.";
+            return;
+        }
+
         int rank = Math.Max(1, _tuneRank);
         float alpha = _tuneAlpha > 0 ? _tuneAlpha : rank * 2f;
         int steps = Math.Max(1, _tuneSteps);
@@ -1079,6 +1156,7 @@ else if (_tab == "models")
             ResumeFrom = string.IsNullOrWhiteSpace(_tuneResume) ? null : _tuneResume.Trim(),
             TotalSteps = steps,
             ValidationPercent = Math.Clamp(_tuneValidationPercent, 0, 90),
+            TestPercent = Math.Clamp(_tuneTestPercent, 0, 45),
             LogInterval = Math.Max(1, steps / 20),
             BatchSize = 2,
             SeqLen = Math.Max(1, seqLen),
@@ -1135,6 +1213,12 @@ else if (_tab == "models")
             return;
         }
 
+        if (_validationPercent + _testPercent >= 100)
+        {
+            _error = "Validation and held-out exam splits together must stay below 100%.";
+            return;
+        }
+
         (int hidden, int layers, int heads, int kvHeads, int ffn, int seqLen) = _size switch
         {
             "tiny" => (64, 2, 4, 4, 256, 128),
@@ -1186,6 +1270,7 @@ else if (_tab == "models")
             Optimizer = "AdamW",
             TotalSteps = steps,
             ValidationPercent = Math.Clamp(_validationPercent, 0, 90),
+            TestPercent = Math.Clamp(_testPercent, 0, 45),
             LogInterval = Math.Max(1, steps / 20),
             BatchSize = 4,
             SeqLen = Math.Min(seqLen, 64),
@@ -1243,6 +1328,7 @@ else if (_tab == "models")
             _tuneName = job.Name;
             _tuneSteps = Math.Max(1, job.TotalSteps);
             _tuneValidationPercent = job.ValidationPercent;
+            _tuneTestPercent = job.TestPercent;
             _tuneRank = Math.Max(1, job.LoRARank);
             _tuneAlpha = job.LoRAAlpha;
             _tuneLr = job.LearningRate;
@@ -1265,6 +1351,7 @@ else if (_tab == "models")
             : "";
         _steps = Math.Max(1, job.TotalSteps);
         _validationPercent = job.ValidationPercent;
+        _testPercent = job.TestPercent;
         _size = job.HiddenDim switch
         {
             <= 64 => "tiny",
@@ -1330,6 +1417,72 @@ else if (_tab == "models")
            && run.Record.ExportPath is { } export
            && export.EndsWith(".smm", StringComparison.OrdinalIgnoreCase)
            && File.Exists(export);
+
+    private static bool CanExamine(TrainingRunSummary run)
+        => run.Record.Success
+           && run.Record.ExportPath is { } export
+           && export.EndsWith(".smm", StringComparison.OrdinalIgnoreCase)
+           && File.Exists(export)
+           && run.Record.JobPath is { } job
+           && File.Exists(job);
+
+    private void StartExam(TrainingRunSummary run)
+    {
+        _promotionSummary = null;
+        _promotionPath = null;
+        Exam.Start(run, Workspace.PluginsFolder);
+    }
+
+    private bool CanPromote
+        => _compareA.Length > 0
+           && _compareB.Length > 0
+           && _compareA != _compareB
+           && CompareA?.ExamLoss is not null
+           && CompareB?.ExamLoss is not null;
+
+    private string PromotionLabel
+    {
+        get
+        {
+            if (CompareA?.ExamLoss is { } candidate
+                && CompareB?.ExamLoss is { } baseline
+                && baseline > 0)
+            {
+                double delta = (candidate - baseline) / baseline;
+                if (delta < -0.005) return "Promote A over B";
+                if (delta > 0.005) return "Write comparison report";
+                return "Write inconclusive report";
+            }
+            return "Promote A over B";
+        }
+    }
+
+    private void Promote()
+    {
+        _promotionSummary = null;
+        _promotionPath = null;
+
+        TrainingRunRecord? candidate = CompareA;
+        TrainingRunRecord? baseline = CompareB;
+        if (candidate is null || baseline is null) return;
+
+        try
+        {
+            TrainingPromotionReport report = TrainingPromotionReport.Compare(
+                candidate, baseline,
+                candidateRunPath: _compareA,
+                baselineRunPath: _compareB);
+            _promotionPath = TrainingPromotionStore.Save(report);
+            _promotionSummary = report.Summary;
+        }
+        catch (Exception ex)
+        {
+            _promotionSummary = $"Could not write the report: {ex.Message}";
+        }
+    }
+
+    private static string PerplexityAt(double? perplexity)
+        => perplexity is { } value && double.IsFinite(value) ? $" (ppl {value:0.00})" : "";
 
     private void UseAsBase(TrainingRunSummary run)
     {
