@@ -2,7 +2,7 @@
 
 > **Status:** implementation in progress, October 2026. Studio **1.1.0.0**.
 > Built: shell, projects/runs/recipes, canary and tool probes, TESTS run history, Chat lab, layered inference settings, Work mode MVP, model Tune presets, shared skills/tools, the phone pairing gateway, the corpus-to-export Training engine with its lab shell, LoRA fine-tuning, and SMM↔GGUF conversion.
-> Remaining: the Training planner, Work hardening (richer skills and tool management), and gateway proxy mode.
+> Remaining: the planner's intake/estimator/rehearsal depth, Work hardening (richer skills and tool management), and gateway proxy mode.
 SharpMind Studio is a local-first application for chatting with models, doing project work with them, and building them: from scratch, from a base model, or by upgrading a model you already have. It is the successor to the terminal UI (CUI) as the primary front end, and it is meant to be something people want to use: attractive, calm and fast.
 
 ---
@@ -296,6 +296,8 @@ flowchart LR
 
 **Preconditions keep the tree flexible without making it free-for-all:** SFT needs a formatter and a tokenizer with role tokens; distillation needs a teacher and a student; fine-tuning needs loadable float weights; quantization comes last. A user may jump to any node whose preconditions hold, and the wizard fills in the rest.
 
+**Implemented in 1.1:** `TrainingPlanner` is a deterministic rule set over the start node and the selected goals. It returns **Fast / Balanced / Ambitious** paths whose moves each carry a reason and whose unsupported steps (SFT, distillation, post-training quantisation) stay visible as **blocked** with a "why not" and a supported alternative. The New-model tab shows the intake, the three plans and a "Use plan" action that fills the relevant editor or playbook. The estimator is limited to the parameter count until the intake/estimator rail lands; the rehearsal run is still future work.
+
 ### 5.2 Typical paths
 
 | Start | Goal | Suggested path |
@@ -326,6 +328,8 @@ flowchart LR
 5. **A live estimator rail:** memory, time, file size, tokens-per-parameter, risk flags.
 6. **A rehearsal run** of about 30 steps measures real throughput, refines the ETA and catches pipeline errors before hours are committed.
 7. **"Why can't I?"** on disabled options. For example, GPU training is currently LoRA-only, so a from-scratch run falls back to CPU, and the card says so with alternatives.
+
+The 1.1 planner implements the three-plan proposal and the reason/alternative structure, with a parameter-count estimate. The six-question intake, the full estimator rail and the rehearsal run remain future work.
 
 ### 5.5 Improve: the diagnosis loop
 
@@ -556,7 +560,7 @@ Draft slices, not yet confirmed:
 
 | Version | Contents |
 |---|---|
-| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume (smoke-tested on SmolLM2-135M), run history with curves and comparison, and a held-out exam backing a written promotion report |
+| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a rules-based build-map planner, a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume (smoke-tested on SmolLM2-135M), run history with curves and comparison, and a held-out exam backing a written promotion report |
 | 1.1.1.0 | Data Lab, Formatter Designer, probe-prompt snapshot timeline, A/B arena, hub client |
 | 1.1.2.0 | Quant Lab (sensitivity-aware plans, Pareto chart) and distillation (sequence-level first, logit-level second) |
 | 1.1.3.0 | Architect canvas, MoE load-balancing and utilisation heatmap, upcycling and Branch-Train-Mix, then HMoE |

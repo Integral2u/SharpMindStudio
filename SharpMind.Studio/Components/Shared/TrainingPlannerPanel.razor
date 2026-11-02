@@ -1,0 +1,155 @@
+@using SharpMind.Studio.Core.Training
+@using SharpMind.Studio.Services
+@inject StudioTrainingService Lab
+
+<section class="panel training-planner">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Build map</div>
+            <h2>Plan the work</h2>
+        </div>
+        <span class="faint small mono">rules, not guesses</span>
+    </div>
+
+    <div class="panel-body stack">
+        <p class="small faint">
+            Pick where you are and what should change. The planner proposes three paths,
+            shows why each move is there, and marks moves the engine cannot run yet instead
+            of hiding them. Using a plan fills the editor or the fine-tune form.
+        </p>
+
+        <div class="training-form">
+            <div class="field">
+                <label class="field-label" for="planner-start">Start from</label>
+                <select id="planner-start" class="input" @bind="StartValue">
+                    @foreach (PlannerStart start in Enum.GetValues<PlannerStart>())
+                    {
+                        <option value="@start">@StartLabel(start)</option>
+                    }
+                </select>
+            </div>
+            <div class="field training-form-wide">
+                <label class="field-label">Goals</label>
+                <div class="training-goals">
+                    @foreach (PlannerGoal goal in Enum.GetValues<PlannerGoal>())
+                    {
+                        <button type="button"
+                                class="training-chip @(Lab.PlannerGoals.Contains(goal) ? "live" : "")"
+                                @onclick="() => ToggleGoal(goal)">
+                            @GoalLabel(goal)
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="training-grid training-plans">
+            @foreach (TrainingPlan plan in Plans)
+            {
+                <div class="training-plan">
+                    <div class="spread training-plan-head">
+                        <div>
+                            <div class="eyebrow">@plan.Name</div>
+                            <h3>@plan.Summary</h3>
+                        </div>
+                        <button type="button" class="button primary"
+                                @onclick="() => UsePlan.InvokeAsync(plan)">
+                            Use plan
+                        </button>
+                    </div>
+
+                    <ol class="training-plan-moves">
+                        @foreach (PlannerMove move in plan.Moves)
+                        {
+                            <li class="training-plan-move @(move.Status == PlannerMoveStatus.Ready ? "ready" : "blocked")">
+                                <div class="spread">
+                                    <strong>@move.Title</strong>
+                                    <span class="training-chip @(move.Status == PlannerMoveStatus.Ready ? "live" : "")">
+                                        @(move.Status == PlannerMoveStatus.Ready ? "ready" : "blocked")
+                                    </span>
+                                </div>
+                                <div class="small faint">@move.Detail</div>
+                                <div class="small">@move.Reason</div>
+                                @if (move.Status == PlannerMoveStatus.Blocked)
+                                {
+                                    <div class="small faint">Why not: @move.BlockedReason</div>
+                                    @if (move.Alternative is { } alternative)
+                                    {
+                                        <div class="small faint">Instead: @alternative</div>
+                                    }
+                                }
+                            </li>
+                        }
+                    </ol>
+
+                    @if (plan.Estimate is { } estimate)
+                    {
+                        <div class="small faint">@estimate</div>
+                    }
+                    @foreach (string risk in plan.Risks)
+                    {
+                        <div class="small faint">- @risk</div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TrainingJobSettings Job { get; set; } = new();
+    [Parameter] public EventCallback<TrainingPlan> UsePlan { get; set; }
+
+    private string StartValue
+    {
+        get => Lab.PlannerStart.ToString();
+        set
+        {
+            if (Enum.TryParse(value, out PlannerStart start)) Lab.PlannerStart = start;
+        }
+    }
+
+    private IReadOnlyList<TrainingPlan> Plans => TrainingPlanner.Plan(new PlannerInput
+    {
+        Start = Lab.PlannerStart,
+        Goals = Lab.PlannerGoals,
+        HasData = Job.Sources.Any(source =>
+            source.Component.Args.TryGetValue("path", out string? path)
+            && !string.IsNullOrWhiteSpace(path)),
+        // The formatter designer and quantized-only intake are not connected yet;
+        // the planner marks their moves blocked rather than assuming they exist.
+        HasFormatter = false,
+        IsQuantizedOnly = false,
+        ParameterCount = Lab.PlannerStart == PlannerStart.Nothing
+            ? TrainingJobValidation.ParameterCount(Job)
+            : null,
+    });
+
+    private void ToggleGoal(PlannerGoal goal)
+    {
+        if (!Lab.PlannerGoals.Add(goal)) Lab.PlannerGoals.Remove(goal);
+    }
+
+    private static string StartLabel(PlannerStart start) => start switch
+    {
+        PlannerStart.Nothing => "Nothing (from scratch)",
+        PlannerStart.BaseModel => "A base model",
+        PlannerStart.MyModel => "My model",
+        PlannerStart.Checkpoint => "A checkpoint",
+        PlannerStart.Playbook => "A playbook",
+        PlannerStart.PreviousRun => "A previous run",
+        _ => start.ToString(),
+    };
+
+    private static string GoalLabel(PlannerGoal goal) => goal switch
+    {
+        PlannerGoal.Knowledge => "New knowledge",
+        PlannerGoal.Behaviour => "Behaviour or style",
+        PlannerGoal.Improve => "Better at its job",
+        PlannerGoal.Smaller => "Smaller",
+        PlannerGoal.FitDevice => "Fit a device",
+        PlannerGoal.Capability => "New capability",
+        PlannerGoal.Architecture => "Change architecture",
+        _ => goal.ToString(),
+    };
+}

@@ -45,6 +45,8 @@
         <TrainingRunPanel />
     }
 
+    <TrainingPlannerPanel Job="_job" UsePlan="ApplyPlan" />
+
     <section class="panel">
         <div class="panel-head">
             <div>
@@ -110,29 +112,6 @@
             {
                 <div class="error-line">@_error</div>
             }
-        </div>
-    </section>
-
-    <section class="panel training-section">
-        <div class="panel-head">
-            <div>
-                <div class="eyebrow">Build map</div>
-                <h2>Moves over a lineage</h2>
-            </div>
-            <span class="faint small mono">corpus path is live</span>
-        </div>
-        <div class="panel-body stack">
-            <div class="training-chips">
-                @foreach (string move in Moves)
-                {
-                    <span class="training-chip @(ActiveMoves.Contains(move) ? "live" : "")">@move</span>
-                }
-            </div>
-            <p class="small faint">
-                The corpus path lights up Design, Tokenizer, Data, Pretrain, Evaluate and
-                Package. Fine-tuning runs from Improve; distillation and quantisation are not
-                connected yet.
-            </p>
         </div>
     </section>
 }
@@ -897,16 +876,6 @@ else if (_tab == "models")
         ("down_proj", "FFN down"),
     ];
 
-    private static readonly string[] Moves =
-    [
-        "Design", "Formatter", "Tokenizer", "Data", "Pretrain", "Continue",
-        "LoRA", "SFT", "Distill", "Prune", "QAT", "Quantize", "Merge",
-        "Evaluate", "Package",
-    ];
-
-    private static readonly HashSet<string> ActiveMoves =
-        ["Design", "Tokenizer", "Data", "Pretrain", "Evaluate", "Package"];
-
     private IReadOnlyList<FileInfo> Models
     {
         get
@@ -1479,6 +1448,21 @@ else if (_tab == "models")
             },
         },
     };
+
+    private void ApplyPlan(TrainingPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        if (plan.PlaybookId is { } id
+            && TrainingPlaybooks.All.FirstOrDefault(playbook => playbook.Id == id) is { } playbook)
+        {
+            ApplyPlaybook(playbook);
+            return;
+        }
+
+        _tab = plan.Destination == PlannerDestination.Improve ? "improve" : "new";
+        Nav.NavigateTo($"/training?tab={_tab}");
+    }
 
     private void ApplyPlaybook(TrainingPlaybook playbook)
     {

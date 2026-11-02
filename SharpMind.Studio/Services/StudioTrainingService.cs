@@ -59,6 +59,12 @@ public sealed class StudioTrainingService : IDisposable
         get { lock (_gate) return _draft; }
         set { lock (_gate) _draft = value; }
     }
+
+    /// <summary>Build-map planner selection, kept across tab switches.</summary>
+    public PlannerStart PlannerStart { get; set; } = PlannerStart.Nothing;
+
+    /// <summary>Build-map goals; mutable so the panel can toggle them.</summary>
+    public HashSet<PlannerGoal> PlannerGoals { get; } = [];
     public float Progress { get { lock (_gate) return _progress; } }
     public int CurrentStep { get { lock (_gate) return _currentStep; } }
     public int TotalSteps { get { lock (_gate) return _totalSteps; } }

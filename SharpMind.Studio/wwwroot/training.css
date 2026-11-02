@@ -133,6 +133,63 @@
     font-size: .68rem;
 }
 
+.training-plans {
+    align-items: start;
+}
+
+.training-plan {
+    display: grid;
+    gap: .6rem;
+    padding: .8rem;
+    border: 1px solid var(--line);
+    border-radius: .6rem;
+    background: rgba(10, 17, 24, .35);
+}
+
+.training-plan-head {
+    align-items: flex-start;
+    gap: .6rem;
+}
+
+.training-plan-head h3 {
+    margin: .15rem 0 0;
+    font-size: .88rem;
+}
+
+.training-plan-moves {
+    display: grid;
+    gap: .55rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.training-plan-move {
+    display: grid;
+    gap: .2rem;
+    padding: .45rem .6rem;
+    border-left: 2px solid var(--line-strong);
+}
+
+.training-plan-move.ready {
+    border-left-color: var(--accent);
+}
+
+.training-plan-move.blocked {
+    border-left-color: var(--warn);
+    opacity: .82;
+}
+
+.training-goals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+}
+
+.training-goals .training-chip {
+    cursor: pointer;
+}
+
 .training-log {
     max-height: 12rem;
     margin: 0;

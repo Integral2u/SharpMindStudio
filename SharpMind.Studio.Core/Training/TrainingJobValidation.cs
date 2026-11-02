@@ -58,21 +58,30 @@ public static class TrainingJobValidation
 
     public static string ParameterEstimate(TrainingJobSettings job)
     {
+        long? count = ParameterCount(job);
+        return count is > 0 ? FormatCount(count.Value) : "-";
+    }
+
+    /// <summary>Parameter count for the editor's model dimensions, or null when they are invalid.</summary>
+    public static long? ParameterCount(TrainingJobSettings job)
+    {
         ArgumentNullException.ThrowIfNull(job);
         try
         {
             int vocab = Math.Max(1, job.VocabSize > 0 ? job.VocabSize : job.TokenizerVocabSize);
             var config = TrainingModelOptions.ResolveModelConfig(job, vocab);
-            long count = ModelSizer.CountParameters(config);
-            return count >= 1_000_000
-                ? $"{count / 1_000_000d:0.0}M"
-                : $"{count / 1_000d:0.0}k";
+            return ModelSizer.CountParameters(config);
         }
         catch
         {
-            return "-";
+            return null;
         }
     }
+
+    private static string FormatCount(long count)
+        => count >= 1_000_000
+            ? $"{count / 1_000_000d:0.0}M"
+            : $"{count / 1_000d:0.0}k";
 
     public static string PrecisionLabel(TrainingJobSettings job)
         => string.IsNullOrWhiteSpace(job.QuantAwareTraining) ? "F32" : job.QuantAwareTraining;
