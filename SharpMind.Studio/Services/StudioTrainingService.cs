@@ -59,9 +59,6 @@ public sealed class StudioTrainingService : IDisposable
         get { lock (_gate) return _draft; }
         set { lock (_gate) _draft = value; }
     }
-
-    /// <summary>Corpus path as typed in the New-model editor, kept with the draft.</summary>
-    public string? DraftCorpusPath { get; set; }
     public float Progress { get { lock (_gate) return _progress; } }
     public int CurrentStep { get { lock (_gate) return _currentStep; } }
     public int TotalSteps { get { lock (_gate) return _totalSteps; } }

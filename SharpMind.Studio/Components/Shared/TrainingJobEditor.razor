@@ -178,6 +178,8 @@
     </div>
 </section>
 
+<TrainingSourcesEditor Job="Job" />
+
 <section class="training-subsection">
     <div class="training-subsection-head">
         <div class="eyebrow">Optimization</div>
@@ -335,6 +337,11 @@
             <input id="job-skills" class="input" @bind="Job.SkillsFolder"
                    placeholder="Folder of *.md skills to embed" />
         </div>
+        <div class="field training-form-wide">
+            <label class="field-label" for="job-tools">Tool DLLs to embed (optional)</label>
+            <input id="job-tools" class="input" @bind="PluginList"
+                   placeholder="One or more paths separated by ;" />
+        </div>
     </div>
 </section>
 
@@ -375,6 +382,13 @@
     private bool UsesSgd => string.Equals(Job.Optimizer, "SGD", StringComparison.OrdinalIgnoreCase);
     private string? QatProblem => TrainingModelOptions.ValidateQat(Job.QuantAwareTraining, Job.HiddenDim);
     private IReadOnlyList<string> Warnings => TrainingJobValidation.Warnings(Job);
+
+    private string PluginList
+    {
+        get => string.Join("; ", Job.PluginDllPaths);
+        set => Job.PluginDllPaths =
+            [.. value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+    }
 
     protected override void OnInitialized()
     {

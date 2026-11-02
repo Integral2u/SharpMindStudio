@@ -67,6 +67,7 @@ public sealed class TrainingJobOptionsTests
                 ExportPath = @"C:\tmp\options.smm",
                 SystemPromptPath = @"C:\tmp\prompt.txt",
                 SkillsFolder = @"C:\tmp\skills",
+                PluginDllPaths = [@"C:\tmp\tools\a.dll", @"C:\tmp\tools\b.dll"],
                 Sources =
                 [
                     new JobSource
@@ -135,6 +136,7 @@ public sealed class TrainingJobOptionsTests
             Assert.Equal(@"C:\tmp\options.smm", loaded.ExportPath);
             Assert.Equal(@"C:\tmp\prompt.txt", loaded.SystemPromptPath);
             Assert.Equal(@"C:\tmp\skills", loaded.SkillsFolder);
+            Assert.Equal([@"C:\tmp\tools\a.dll", @"C:\tmp\tools\b.dll"], loaded.PluginDllPaths);
             Assert.Equal(@"C:\tmp\corpus.txt", loaded.Sources[0].Component.Args["path"]);
         }
         finally
@@ -269,6 +271,22 @@ public sealed class TrainingJobOptionsTests
             ValidationPercent = 10,
             TestPercent = 10,
             QuantAwareTraining = "F16",
+            Sources =
+            [
+                new JobSource
+                {
+                    Component = new JobComponent
+                    {
+                        DisplayName = "Text File",
+                        TypeName = typeof(TextFileSource).FullName!,
+                        Args = new Dictionary<string, string>
+                        {
+                            ["path"] = @"C:\tmp\corpus.txt",
+                            ["mode"] = "FilePerDoc",
+                        },
+                    },
+                },
+            ],
         };
 
         Assert.Empty(TrainingJobValidation.Warnings(job));

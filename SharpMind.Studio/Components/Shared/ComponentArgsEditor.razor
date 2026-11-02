@@ -1,0 +1,119 @@
+@using System.Globalization
+@using SharpMind.Data.Metadata
+@using SharpMind.Studio.Core.Training
+
+@if (Descriptor.Parameters.Count == 0)
+{
+    <div class="small faint">No options.</div>
+}
+else
+{
+    <div class="training-form">
+        @foreach (ComponentParameter parameter in Descriptor.Parameters)
+        {
+            <div class="field @(IsWide(parameter) ? "training-form-wide" : "")">
+                <label class="field-label">@parameter.Name</label>
+                @if (parameter.Choices is { Length: > 0 } choices)
+                {
+                    <select class="input" value="@Value(parameter)" @onchange="e => Set(parameter, e.Value)">
+                        @foreach (string choice in choices)
+                        {
+                            <option value="@choice">@choice</option>
+                        }
+                    </select>
+                }
+                else if (parameter.Type.IsEnum)
+                {
+                    <select class="input" value="@Value(parameter)" @onchange="e => Set(parameter, e.Value)">
+                        @foreach (string name in Enum.GetNames(parameter.Type))
+                        {
+                            <option value="@name">@name</option>
+                        }
+                    </select>
+                }
+                else if (parameter.Type == typeof(bool))
+                {
+                    <label class="small faint training-check">
+                        <input type="checkbox" checked="@(Value(parameter) == "true")"
+                               @onchange="e => SetBool(parameter, e.Value)" />
+                        @(parameter.Tooltip?.Text ?? parameter.Name)
+                    </label>
+                }
+                else if (IsNumeric(parameter.Type))
+                {
+                    <input class="input" type="number"
+                           value="@Value(parameter)"
+                           min="@Min(parameter)"
+                           max="@Max(parameter)"
+                           step="@Step(parameter)"
+                           @onchange="e => Set(parameter, e.Value)" />
+                }
+                else
+                {
+                    <input class="input" value="@Value(parameter)"
+                           placeholder="@Placeholder(parameter)"
+                           @onchange="e => Set(parameter, e.Value)" />
+                }
+
+                @if (parameter.Tooltip is { } tooltip && parameter.Type != typeof(bool))
+                {
+                    <span class="small faint">@tooltip.Text</span>
+                }
+                else if (parameter.FileChooser is { Help: { } fileHelp })
+                {
+                    <span class="small faint">@fileHelp</span>
+                }
+                else if (parameter.FolderChooser is { Help: { } folderHelp })
+                {
+                    <span class="small faint">@folderHelp</span>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public JobComponent Component { get; set; } = null!;
+    [Parameter, EditorRequired] public ComponentDescriptor Descriptor { get; set; } = null!;
+
+    private string Value(ComponentParameter parameter)
+        => Component.Args.TryGetValue(parameter.Name, out string? value)
+            ? value
+            : JobComponentFactory.DefaultValue(parameter);
+
+    private void Set(ComponentParameter parameter, object? value)
+        => Component.Args[parameter.Name] = value as string ?? "";
+
+    private void SetBool(ComponentParameter parameter, object? value)
+        => Component.Args[parameter.Name] = value is true ? "true" : "false";
+
+    private static bool IsNumeric(Type type)
+    {
+        Type t = Nullable.GetUnderlyingType(type) ?? type;
+        return t == typeof(int) || t == typeof(long) || t == typeof(float)
+            || t == typeof(double) || t == typeof(decimal);
+    }
+
+    private static bool IsWide(ComponentParameter parameter)
+        => parameter.FileChooser is not null
+           || parameter.FolderChooser is not null
+           || parameter.Choices is { Length: > 3 };
+
+    private static string? Min(ComponentParameter parameter)
+        => parameter.MinMax is { } range ? range.Min.ToString(CultureInfo.InvariantCulture) : null;
+
+    private static string? Max(ComponentParameter parameter)
+        => parameter.MinMax is { } range ? range.Max.ToString(CultureInfo.InvariantCulture) : null;
+
+    private static string Step(ComponentParameter parameter)
+    {
+        if (parameter.MinMax is { } range) return range.Step.ToString(CultureInfo.InvariantCulture);
+        Type t = Nullable.GetUnderlyingType(parameter.Type) ?? parameter.Type;
+        return t == typeof(float) || t == typeof(double) || t == typeof(decimal) ? "0.01" : "1";
+    }
+
+    private static string Placeholder(ComponentParameter parameter)
+        => parameter.FileChooser is { } file ? file.Pattern
+         : parameter.FolderChooser is not null ? "Folder path"
+         : "";
+}

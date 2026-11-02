@@ -32,6 +32,21 @@ public static class TrainingJobValidation
         if (job.ValidationPercent + job.TestPercent >= 100)
             warnings.Add("Validation and held-out exam splits together must stay below 100%.");
 
+        if (job.Sources.Count == 0)
+        {
+            warnings.Add("Add at least one corpus source.");
+        }
+        else
+        {
+            if (job.Sources.Any(source => string.IsNullOrWhiteSpace(source.Component.TypeName)))
+                warnings.Add("A source has no component type; remove it and add it again.");
+            if (job.Sources.Any(source =>
+                    source.Component.TypeName.Contains("TextFileSource", StringComparison.Ordinal)
+                    && (!source.Component.Args.TryGetValue("path", out string? path)
+                        || string.IsNullOrWhiteSpace(path))))
+                warnings.Add("A text source has no path.");
+        }
+
         if (TrainingModelOptions.ValidateQat(job.QuantAwareTraining, job.HiddenDim) is { } qatProblem)
             warnings.Add(qatProblem);
 

@@ -1,0 +1,237 @@
+@using SharpMind.Data.Metadata
+@using SharpMind.Data.Sources
+@using SharpMind.Studio.Core.Training
+@using SharpMind.Studio.Services
+@inject StudioWorkspaceService Workspace
+
+<section class="training-subsection">
+    <div class="training-subsection-head">
+        <div class="eyebrow">Sources &amp; stages</div>
+        <span class="faint small mono">@Job.Sources.Count source(s)</span>
+    </div>
+
+    <div class="training-form">
+        <div class="field training-form-wide">
+            <label class="field-label" for="quick-source">Add a text corpus</label>
+            <div class="row">
+                <input id="quick-source" class="input" @bind="_quickSourcePath"
+                       placeholder="C:\path\to\corpus, a folder, or C:\path\**\*.txt" />
+                <button type="button" class="button" @onclick="AddQuickTextSource"
+                        disabled="@string.IsNullOrWhiteSpace(_quickSourcePath)">
+                    Add
+                </button>
+            </div>
+        </div>
+        <div class="field training-form-wide">
+            <label class="field-label" for="add-source">Add another kind of source</label>
+            <select id="add-source" class="input" value="" @onchange="e => AddSource(e.Value as string)">
+                <option value="">Choose a source type...</option>
+                @foreach (ComponentDescriptor source in _sources)
+                {
+                    <option value="@Key(source)">@source.Name - @source.Description</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @for (int i = 0; i < Job.Sources.Count; i++)
+    {
+        int index = i;
+        JobSource source = Job.Sources[index];
+        <div class="training-source-card">
+            <div class="spread training-source-head">
+                <div>
+                    <strong>@(source.Component.DisplayName ?? "Source")</strong>
+                    <div class="small faint mono">@source.Component.TypeName</div>
+                </div>
+                <button type="button" class="button" @onclick="() => RemoveSource(index)">Remove</button>
+            </div>
+
+            @if (DescriptorFor(source.Component) is { } descriptor)
+            {
+                <ComponentArgsEditor Component="source.Component" Descriptor="descriptor" />
+            }
+            else
+            {
+                <div class="error-line">Source type not found. Is its plugin still installed?</div>
+            }
+
+            <div class="training-subsection-head">
+                <span class="eyebrow">Stages for this source</span>
+                <select class="input training-inline-select" value=""
+                        @onchange="e => AddStage(source, e.Value as string)">
+                    <option value="">Add a stage...</option>
+                    @foreach (ComponentDescriptor stage in _stages)
+                    {
+                        <option value="@Key(stage)">@stage.Name</option>
+                    }
+                </select>
+            </div>
+
+            @if (source.Stages.Count == 0)
+            {
+                <div class="small faint">No stages; the source's documents go straight to the merge.</div>
+            }
+            else
+            {
+                @foreach (JobComponent stage in source.Stages.ToList())
+                {
+                    JobComponent current = stage;
+                    <div class="training-source-stage">
+                        <div class="spread">
+                            <strong>@(current.DisplayName ?? "Stage")</strong>
+                            <button type="button" class="button"
+                                    @onclick="() => source.Stages.Remove(current)">
+                                Remove
+                            </button>
+                        </div>
+                        @if (DescriptorFor(current) is { } stageDescriptor)
+                        {
+                            <ComponentArgsEditor Component="current" Descriptor="stageDescriptor" />
+                        }
+                        else
+                        {
+                            <div class="error-line">Stage type not found. Is its plugin still installed?</div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+
+    <div class="training-subsection-head">
+        <div class="eyebrow">Global stages</div>
+        <select class="input training-inline-select" value=""
+                @onchange="e => AddGlobalStage(e.Value as string)">
+            <option value="">Add a global stage...</option>
+            @foreach (ComponentDescriptor stage in _stages)
+            {
+                <option value="@Key(stage)">@stage.Name</option>
+            }
+        </select>
+    </div>
+
+    @if (Job.GlobalStages.Count == 0)
+    {
+        <div class="small faint">None. Global stages run after all sources are merged.</div>
+    }
+    else
+    {
+        @foreach (JobComponent stage in Job.GlobalStages.ToList())
+        {
+            JobComponent current = stage;
+            <div class="training-source-stage">
+                <div class="spread">
+                    <strong>@(current.DisplayName ?? "Stage")</strong>
+                    <button type="button" class="button" @onclick="() => Job.GlobalStages.Remove(current)">
+                        Remove
+                    </button>
+                </div>
+                @if (DescriptorFor(current) is { } stageDescriptor)
+                {
+                    <ComponentArgsEditor Component="current" Descriptor="stageDescriptor" />
+                }
+                else
+                {
+                    <div class="error-line">Stage type not found. Is its plugin still installed?</div>
+                }
+            </div>
+        }
+    }
+
+    <div class="field training-form-wide">
+        <label class="small faint training-check">
+            <input type="checkbox" @bind="Job.IncrementalMode" />
+            Incremental: train only on new or changed files
+        </label>
+        <span class="small faint">
+            File-based sources only. The first run trains everything; later runs diff against
+            the hashes recorded by the previous run.
+        </span>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TrainingJobSettings Job { get; set; } = new();
+
+    private IReadOnlyList<ComponentDescriptor> _sources = [];
+    private IReadOnlyList<ComponentDescriptor> _stages = [];
+    private string _quickSourcePath = "";
+
+    protected override void OnInitialized()
+    {
+        var descriptors = ComponentRegistry.ScanFolder(Workspace.PluginsFolder, out _);
+        _sources = [.. descriptors.Where(d => d.Kind == ComponentKind.Source)];
+        _stages = [.. descriptors.Where(d => d.Kind == ComponentKind.Stage)];
+
+        // Start a new job with a text source ready to fill in; an existing job
+        // keeps exactly the sources it was saved with.
+        if (Job.Sources.Count == 0
+            && _sources.FirstOrDefault(d => d.Type == typeof(TextFileSource)) is { } text)
+        {
+            Job.Sources.Add(new JobSource { Component = JobComponentFactory.Create(text) });
+        }
+    }
+
+    private static string Key(ComponentDescriptor descriptor)
+        => descriptor.Type.FullName ?? descriptor.Type.Name;
+
+    private ComponentDescriptor? DescriptorFor(JobComponent component)
+        => JobComponentFactory.Find(component, _sources.Concat(_stages));
+
+    private ComponentDescriptor? FindSource(string? key)
+        => _sources.FirstOrDefault(d => string.Equals(Key(d), key, StringComparison.Ordinal));
+
+    private ComponentDescriptor? FindStage(string? key)
+        => _stages.FirstOrDefault(d => string.Equals(Key(d), key, StringComparison.Ordinal));
+
+    private void AddQuickTextSource()
+    {
+        if (_sources.FirstOrDefault(d => d.Type == typeof(TextFileSource)) is not { } text) return;
+
+        string path = _quickSourcePath.Trim();
+        JobComponent? blank = Job.Sources
+            .Select(source => source.Component)
+            .FirstOrDefault(component =>
+                component.TypeName.Contains("TextFileSource", StringComparison.Ordinal)
+                && (!component.Args.TryGetValue("path", out string? existing)
+                    || string.IsNullOrWhiteSpace(existing)));
+
+        if (blank is not null)
+        {
+            blank.Args["path"] = path;
+            blank.Args["mode"] = nameof(TextFileSource.DocumentMode.FilePerDoc);
+        }
+        else
+        {
+            JobComponent component = JobComponentFactory.Create(text);
+            component.Args["path"] = path;
+            component.Args["mode"] = nameof(TextFileSource.DocumentMode.FilePerDoc);
+            Job.Sources.Add(new JobSource { Component = component });
+        }
+        _quickSourcePath = "";
+    }
+
+    private void AddSource(string? key)
+    {
+        if (FindSource(key) is not { } descriptor) return;
+        Job.Sources.Add(new JobSource { Component = JobComponentFactory.Create(descriptor) });
+    }
+
+    private void AddStage(JobSource source, string? key)
+    {
+        if (FindStage(key) is not { } descriptor) return;
+        source.Stages.Add(JobComponentFactory.Create(descriptor));
+    }
+
+    private void AddGlobalStage(string? key)
+    {
+        if (FindStage(key) is not { } descriptor) return;
+        Job.GlobalStages.Add(JobComponentFactory.Create(descriptor));
+    }
+
+    private void RemoveSource(int index)
+    {
+        if (index >= 0 && index < Job.Sources.Count) Job.Sources.RemoveAt(index);
+    }
+}

@@ -55,21 +55,10 @@
         </div>
         <div class="panel-body stack">
             <p class="small faint">
-                Point at a text file, a glob, or a folder of text and Markdown files. The editor
-                below covers the tokenizer, architecture, device, precision, optimizer, checkpoints
-                and splits. A run exports a packaged model and resumes from its latest checkpoint
-                unless you start fresh. This slice manages one text corpus; multi-source stage
-                chains come next.
+                The editor covers sources and stage chains, the tokenizer, architecture, device,
+                precision, optimizer, checkpoints and splits. A run exports a packaged model and
+                resumes from its latest checkpoint unless you start fresh.
             </p>
-
-            <div class="training-form">
-                <div class="field training-form-wide">
-                    <label class="field-label" for="training-corpus">Corpus path</label>
-                    <input id="training-corpus" class="input" @bind="_corpusPath"
-                           @bind:after="SaveCorpusDraft"
-                           placeholder="C:\path\to\corpus or C:\path\**\*.txt" />
-                </div>
-            </div>
 
             <TrainingJobEditor Job="_job" />
 
@@ -109,6 +98,10 @@
                 <button type="button" class="button" @onclick="LoadSelectedJob"
                         disabled="@(Lab.IsRunning || string.IsNullOrWhiteSpace(_selectedJobPath))">
                     Load selected job
+                </button>
+                <button type="button" class="button primary" @onclick="RunSelectedJob"
+                        disabled="@(Lab.IsRunning || string.IsNullOrWhiteSpace(_selectedJobPath))">
+                    Run selected job
                 </button>
                 <span class="small faint">Jobs are saved under <span class="mono">@Lab.Folder</span>.</span>
             </div>
@@ -368,6 +361,45 @@ else if (_tab == "playbooks")
 }
 else if (_tab == "data")
 {
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Configured pipeline</div>
+                <h2>Sources and stages</h2>
+            </div>
+            <a class="button" href="/training?tab=new">Edit in New model</a>
+        </div>
+        <div class="panel-body stack">
+            @if (_job.Sources.Count == 0)
+            {
+                <div class="empty">
+                    No sources yet. Add a corpus in <a href="/training?tab=new">New model</a>.
+                </div>
+            }
+            else
+            {
+                <div class="training-jobs">
+                    @foreach (JobSource source in _job.Sources)
+                    {
+                        <div class="training-job">
+                            <div>
+                                <strong>@(source.Component.DisplayName ?? "Source")</strong>
+                                <div class="small faint mono">@SourcePath(source)</div>
+                            </div>
+                            <div class="row">
+                                <span class="training-chip">@source.Stages.Count stage(s)</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="small faint">
+                    Global stages: @_job.GlobalStages.Count - incremental:
+                    @(_job.IncrementalMode ? "on" : "off")
+                </div>
+            }
+        </div>
+    </section>
+
     <div class="grid-2">
         <section class="panel">
             <div class="panel-head">
@@ -813,7 +845,6 @@ else if (_tab == "models")
     public string? TabQuery { get; set; }
 
     private string _tab = "new";
-    private string _corpusPath = "";
     private TrainingJobSettings _job = null!;
     private string _selectedJobPath = "";
     private string? _error;
@@ -929,10 +960,6 @@ else if (_tab == "models")
     {
         _job = Lab.Draft ?? CreateDefaultJob();
         Lab.Draft = _job;
-        _corpusPath = Lab.DraftCorpusPath
-            ?? (_job.Sources.FirstOrDefault()?.Component.Args.TryGetValue("path", out string? path) == true
-                ? path
-                : "");
 
         Lab.Changed += OnTrainingChanged;
         Convert.Changed += OnTrainingChanged;
@@ -1198,12 +1225,6 @@ else if (_tab == "models")
         _error = null;
         if (Lab.IsRunning) return;
 
-        if (!ApplyCorpusToJob(out string? corpusError))
-        {
-            _error = corpusError;
-            return;
-        }
-
         if (string.IsNullOrWhiteSpace(_job.Name))
             _job.Name = $"corpus-{DateTime.Now:yyyyMMdd-HHmm}";
 
@@ -1245,7 +1266,7 @@ else if (_tab == "models")
         if (latest is not null) LoadJob(latest);
     }
 
-    private void LoadJob(string path)
+    private void LoadJob(string path, bool navigate = true)
     {
         TrainingJobSettings? job = Lab.LoadJob(path, out string? error);
         if (job is null)
@@ -1276,20 +1297,16 @@ else if (_tab == "models")
             foreach (string target in job.LoRATargetModules) _tuneTargets.Add(target);
             _tuneError = null;
             _tab = "improve";
-            Nav.NavigateTo("/training?tab=improve");
+            if (navigate) Nav.NavigateTo("/training?tab=improve");
             return;
         }
 
         _job = job;
         Lab.Draft = _job;
-        _corpusPath = job.Sources.FirstOrDefault()?.Component.Args.TryGetValue("path", out string? corpus) == true
-            ? corpus
-            : "";
-        Lab.DraftCorpusPath = _corpusPath;
         _selectedJobPath = path;
         _error = null;
         _tab = "new";
-        Nav.NavigateTo("/training?tab=new");
+        if (navigate) Nav.NavigateTo("/training?tab=new");
     }
 
     private IReadOnlyList<TrainingRunSummary> Comparable
@@ -1322,6 +1339,11 @@ else if (_tab == "models")
 
     private static string Method(TrainingRunRecord record)
         => record.FineTune ? "LoRA fine-tune" : "Pretrain";
+
+    private static string SourcePath(JobSource source)
+        => source.Component.Args.TryGetValue("path", out string? path) && !string.IsNullOrWhiteSpace(path)
+            ? path
+            : source.Component.TypeName;
 
     private static string Duration(double seconds)
     {
@@ -1455,62 +1477,30 @@ else if (_tab == "models")
             TestPercent = 10,
             StartFresh = true,
             NormEps = 1e-5f,
+            Sources =
+            [
+                new JobSource
+                {
+                    Component = new JobComponent
+                    {
+                        DisplayName = "Text File",
+                        TypeName = typeof(TextFileSource).FullName!,
+                        Args = new Dictionary<string, string>
+                        {
+                            ["path"] = "",
+                            ["mode"] = "LinePerDoc",
+                        },
+                    },
+                },
+            ],
         };
         TrainingModelOptions.Apply(job, TrainingModelOptions.Presets[0]);
         return job;
     }
 
-    /// <summary>
-    /// Puts the single corpus path into the job's source. Multi-source chains and
-    /// per-source stages are the next editor slice; this one replaces the source
-    /// so the design/schedule fields stay unambiguous.
-    /// </summary>
-    private bool ApplyCorpusToJob(out string? error)
-    {
-        error = null;
-        string corpus = _corpusPath.Trim();
-        if (corpus.Length == 0)
-        {
-            error = "Point at a corpus file, glob or folder first.";
-            return false;
-        }
-
-        if (Directory.Exists(corpus))
-            corpus = Path.Combine(corpus, "**", "*.txt");
-        else if (!corpus.Contains('*') && !corpus.Contains('?') && !File.Exists(corpus))
-        {
-            error = $"Corpus not found: {corpus}";
-            return false;
-        }
-
-        _job.Sources =
-        [
-            new JobSource
-            {
-                Component = new JobComponent
-                {
-                    DisplayName = "Text File",
-                    TypeName = typeof(TextFileSource).FullName!,
-                    Args = new Dictionary<string, string>
-                    {
-                        ["path"] = corpus,
-                        ["mode"] = "FilePerDoc",
-                    },
-                },
-            },
-        ];
-        Lab.DraftCorpusPath = _corpusPath;
-        return true;
-    }
-
     private void SaveJob()
     {
         _error = null;
-        if (!ApplyCorpusToJob(out string? corpusError))
-        {
-            _error = corpusError;
-            return;
-        }
         if (string.IsNullOrWhiteSpace(_job.Name))
         {
             _error = "Give the model a name before saving the job.";
@@ -1530,13 +1520,9 @@ else if (_tab == "models")
     {
         _job = CreateDefaultJob();
         Lab.Draft = _job;
-        Lab.DraftCorpusPath = null;
-        _corpusPath = "";
         _selectedJobPath = "";
         _error = null;
     }
-
-    private void SaveCorpusDraft() => Lab.DraftCorpusPath = _corpusPath;
 
     private void LoadSelectedJob()
     {
@@ -1546,6 +1532,33 @@ else if (_tab == "models")
             return;
         }
         LoadJob(_selectedJobPath);
+    }
+
+    private async Task RunSelectedJob()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedJobPath))
+        {
+            _error = "Pick a saved job first.";
+            return;
+        }
+
+        TrainingJobSettings? job = Lab.LoadJob(_selectedJobPath, out string? loadError);
+        if (job is null)
+        {
+            _error = loadError ?? "Could not load that job.";
+            return;
+        }
+
+        // A fine-tune has its own form and base; load it there for review rather
+        // than starting it invisibly from here.
+        if (job.IsFineTune)
+        {
+            LoadJob(_selectedJobPath);
+            return;
+        }
+
+        LoadJob(_selectedJobPath, navigate: false);
+        await StartTraining();
     }
 
     private static string Sanitize(string name)
