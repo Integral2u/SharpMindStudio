@@ -74,19 +74,38 @@
                 }
                 else
                 {
-                    <div class="work-system-skills">
-                        @foreach (var skill in Repo.Skills)
-                        {
-                            bool enabled = !_disabledSystemSkills.Contains(skill.Id) &&
-                                           (skill.DefaultEnabled || _enabledSystemSkills.Contains(skill.Id));
-                            <label class="work-system-skill">
-                                <input type="checkbox" checked="@enabled"
-                                       @onchange="e => ToggleSystemSkill(skill, e.Value)" />
-                                <strong>@skill.Name</strong>
-                                <span class="small faint">@(skill.DefaultEnabled ? "default on" : "default off")</span>
-                            </label>
-                        }
+                    <div class="row work-skill-filter">
+                        <input class="input" @bind="_skillFilter" @bind:event="oninput"
+                               placeholder="Filter skills" />
+                        <button type="button" class="button" @onclick="() => SetSkillGroup(true)">All</button>
+                        <button type="button" class="button" @onclick="() => SetSkillGroup(false)">None</button>
                     </div>
+                    @if (FilteredSkills.Count == 0)
+                    {
+                        <div class="small faint">No skills match "@_skillFilter".</div>
+                    }
+                    else
+                    {
+                        <div class="work-system-skills">
+                            @foreach (WorkSkill skill in FilteredSkills)
+                            {
+                                bool enabled = !_disabledSystemSkills.Contains(skill.Id) &&
+                                               (skill.DefaultEnabled || _enabledSystemSkills.Contains(skill.Id));
+                                <div class="work-system-skill-block">
+                                    <label class="work-system-skill">
+                                        <input type="checkbox" checked="@enabled"
+                                               @onchange="e => ToggleSystemSkill(skill, e.Value)" />
+                                        <strong>@skill.Name</strong>
+                                        <span class="small faint">@(skill.DefaultEnabled ? "default on" : "default off")</span>
+                                    </label>
+                                    <details class="work-skill-details">
+                                        <summary class="small faint">Preview</summary>
+                                        <pre class="work-skill-preview">@skill.Content</pre>
+                                    </details>
+                                </div>
+                            }
+                        </div>
+                    }
                 }
                 @if (_showAddSkill)
                 {
@@ -166,20 +185,38 @@
                     <button type="button" class="button" @onclick="RefreshTools">Refresh plugins</button>
                 </div>
                 <p class="small faint">
-                    Tools are registered in Work only; Chat sessions never receive them. Disable any tool this project should not expose.
+                    Tools are registered in Work only; Chat sessions never receive them. Disable any tool this project should not expose. Changes apply when you save.
                 </p>
-                <div class="work-tools">
-                    @foreach (WorkToolInfo tool in ToolCatalog.Tools)
-                    {
-                        bool enabled = !_disabledTools.Contains(tool.Name) &&
-                                       (ToolCatalog.IsDefaultEnabled(tool.Name) || _enabledTools.Contains(tool.Name));
-                        <label class="work-tool" title="@tool.Source">
-                            <input type="checkbox" checked="@enabled"
-                                   @onchange="e => ToggleTool(tool, e.Value)" />
-                            <span>@tool.Name</span>
-                        </label>
-                    }
-                </div>
+                @foreach (IGrouping<string, WorkToolInfo> group in ToolCatalog.Tools.GroupBy(tool => tool.Group))
+                {
+                    <div class="work-tool-group">
+                        <div class="spread work-tool-group-head">
+                            <div class="eyebrow">@group.Key</div>
+                            <div class="row">
+                                <button type="button" class="button"
+                                        @onclick="() => SetToolGroup(group, true)">All</button>
+                                <button type="button" class="button"
+                                        @onclick="() => SetToolGroup(group, false)">None</button>
+                            </div>
+                        </div>
+                        <div class="work-tools">
+                            @foreach (WorkToolInfo tool in group)
+                            {
+                                bool enabled = !_disabledTools.Contains(tool.Name) &&
+                                               (ToolCatalog.IsDefaultEnabled(tool.Name) || _enabledTools.Contains(tool.Name));
+                                <label class="work-tool" title="@tool.Source">
+                                    <input type="checkbox" checked="@enabled"
+                                           @onchange="e => ToggleTool(tool, e.Value)" />
+                                    <span>@tool.Name</span>
+                                    @if (tool.IsPlugin)
+                                    {
+                                        <span class="small faint">plugin</span>
+                                    }
+                                </label>
+                            }
+                        </div>
+                    </div>
+                }
             </div>
             <div class="row work-project-save">
                 <button type="button" class="button primary" @onclick="SaveAsync" disabled="@(_saving || ChatService.IsStreaming || ChatService.IsLoading)">
@@ -212,6 +249,7 @@
     private bool _showAddSkill;
     private string _newSkillName = "";
     private string _newSkillContent = "";
+    private string _skillFilter = "";
     private HashSet<string> _disabledSystemSkills = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _enabledSystemSkills = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _disabledTools = new(StringComparer.OrdinalIgnoreCase);
@@ -336,15 +374,30 @@
         }
     }
 
-    private void RefreshTools()
+    private void SetToolGroup(IEnumerable<WorkToolInfo> group, bool enabled)
     {
-        ToolCatalog.Reload();
-        LoadFields();
+        foreach (WorkToolInfo tool in group)
+            ToggleTool(tool, enabled);
+    }
+
+    private IReadOnlyList<WorkSkill> FilteredSkills
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_skillFilter)) return Repo.Skills;
+            string filter = _skillFilter.Trim();
+            return [.. Repo.Skills.Where(skill =>
+                skill.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                || skill.Content.Contains(filter, StringComparison.OrdinalIgnoreCase))];
+        }
     }
 
     private void ToggleSystemSkill(WorkSkill skill, object? enabled)
+        => SetSkill(skill, enabled is true);
+
+    private void SetSkill(WorkSkill skill, bool enabled)
     {
-        if (enabled is true)
+        if (enabled)
         {
             _disabledSystemSkills.Remove(skill.Id);
             if (!skill.DefaultEnabled) _enabledSystemSkills.Add(skill.Id);
@@ -354,6 +407,18 @@
             _disabledSystemSkills.Add(skill.Id);
             _enabledSystemSkills.Remove(skill.Id);
         }
+    }
+
+    private void SetSkillGroup(bool enabled)
+    {
+        foreach (WorkSkill skill in FilteredSkills)
+            SetSkill(skill, enabled);
+    }
+
+    private void RefreshTools()
+    {
+        ToolCatalog.Reload();
+        LoadFields();
     }
 
     private void RefreshSkills()
@@ -435,6 +500,14 @@
             if (contexts.Length == 0)
                 contexts = [new WorkContext { Id = "project-root", Path = "." }];
 
+            string? contextError = WorkContextValidation.Validate(
+                contexts, Work.ProjectRoot, out IReadOnlyList<string> contextWarnings);
+            if (contextError is not null)
+            {
+                _status = contextError;
+                return;
+            }
+
             Work.Save(
                 Work.Settings with
                 {
@@ -450,7 +523,9 @@
 
             await ChatService.ReloadWorkContextAsync();
             LoadFields();
-            _status = "Project settings applied.";
+            _status = contextWarnings.Count == 0
+                ? "Project settings applied."
+                : "Project settings applied. " + string.Join(" ", contextWarnings);
         }
         catch (Exception ex)
         {
@@ -462,6 +537,8 @@
         }
     }
 }
+
+
 
 
 

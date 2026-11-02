@@ -288,7 +288,13 @@ else
                         <strong>Tool calls failed for this model.</strong>
                         <span class="small faint">Work may not be able to read or change files. Try another model or re-tune.</span>
                     </div>
-                    <button type="button" class="button" @onclick="OpenTune">Tune</button>
+                    <div class="row">
+                        <button type="button" class="button" @onclick="OpenTune">Tune</button>
+                        <label class="tool-toggle">
+                            <input type="checkbox" @bind="_allowFailedTools" />
+                            <span>Send anyway</span>
+                        </label>
+                    </div>
                 </div>
             }
             <div class="chat-composer">
@@ -307,7 +313,8 @@ else
                         <button type="button" class="button danger" @onclick="Stop">Interrupt</button>
                     }
                     <button id="chat-send" type="button" class="button primary" @onclick="SendAsync"
-                            disabled="@(ChatService.IsStreaming || ChatService.IsLoading || string.IsNullOrWhiteSpace(_input))">
+                            disabled="@(ChatService.IsStreaming || ChatService.IsLoading || string.IsNullOrWhiteSpace(_input) ||
+                                        (_workMode && _toolState.Capability == ToolCapability.Failed && !_allowFailedTools))">
                         Send
                     </button>
                 </div>
@@ -349,6 +356,7 @@ else
     private RunSummary? _latestModelRun;
     private ToolCapabilityState _toolState = new(ToolCapability.Untested, null, null);
     private bool _allowUnverifiedTools;
+    private bool _allowFailedTools;
     private string? _selectedModelPath;
     private string _input = "";
 
@@ -531,6 +539,7 @@ else
     {
         await Theme.SetLastChatModelAsync(_selectedModelPath);
         _allowUnverifiedTools = false;
+        _allowFailedTools = false;
         UpdateLatestModelRun();
         RefreshTuneSelection();
     }

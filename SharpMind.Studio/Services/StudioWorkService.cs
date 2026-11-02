@@ -288,10 +288,7 @@ public sealed class StudioWorkService : IDisposable
     public void Dispose() => _workspace.ProjectChanged -= OnProjectChanged;
 
     public string ResolveContextPath(WorkContext context)
-    {
-        string path = string.IsNullOrWhiteSpace(context.Path) ? "." : context.Path.Trim();
-        return Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(_store.ProjectRoot, path));
-    }
+        => WorkContextValidation.Resolve(context, _store.ProjectRoot);
 
     private List<string> AllowedRoots()
     {

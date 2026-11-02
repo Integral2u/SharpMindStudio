@@ -231,6 +231,38 @@
     font-size: .62rem;
 }
 
+.work-skill-filter {
+    align-items: center;
+}
+
+.work-skill-filter .input {
+    flex: 1 1 12rem;
+}
+
+.work-system-skill-block {
+    display: grid;
+    gap: .15rem;
+}
+
+.work-skill-details summary {
+    cursor: pointer;
+}
+
+.work-skill-preview {
+    max-height: 9rem;
+    margin: .3rem 0 .5rem;
+    padding: .5rem .6rem;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: .4rem;
+    background: rgba(4, 8, 12, .5);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: .64rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
 .work-tools {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
