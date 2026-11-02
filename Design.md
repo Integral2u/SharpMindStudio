@@ -375,6 +375,8 @@ What the CUI pipeline does **not** do is create a fine-tune job, so Studio adds 
 
 `FineTuneRunnerSmokeTests` trains a tiny base, fine-tunes it, asserts the base file's hash is unchanged, and reloads the merged export for inference. `AdapterResumeSmokeTests` covers adapter-only export, resume from a `.smlora`, checkpoint-folder resume continuing the recorded step, and the guard that rejects a resume with no steps left.
 
+**Real-model check (SmolLM2-135M-Instruct).** A Q8_0 GGUF (138 MB) converted to SMM in 3.9 s, then `LoadForTraining` rebuilt a Llama-family model (vocab 49,152, hidden 576, 30 layers, context 8,192). A rank-8/alpha-16 adapter on q/v produced 60 adapters and 460,800 trainable values — 0.34% of the base. Three CPU steps ran at roughly 4 s each after the base load (~10 s to the first step), peaked at 1.54 GB working set, and the merged F32 export was 515 MB. This is a feasibility smoke, not a quality run: it proves convert → load → LoRA → merge → export works on a real Llama-family base. GPU accelerators and non-Llama architectures remain untested.
+
 ### 5.9 Live curves and validation
 
 The lab needs a diagnosis signal, not just a final loss number:
@@ -517,8 +519,8 @@ Studio depends on additive library changes. The CUI and its tests must not move:
 
 | # | Change |
 |---|---|
-| C1 | `SmmTrainingPipeline.LoadForTraining`: load a GGUF or SMM as float weights, reuse its tokenizer and config, optionally attach LoRA. **Wired in Studio**; still wants a spike on a real model such as SmolLM2-135M |
-| C2 | Support matrix: which loaded architectures the training transformer can actually run, with a clear `NotSupported` for the rest |
+| C1 | `SmmTrainingPipeline.LoadForTraining`: load a GGUF or SMM as float weights, reuse its tokenizer and config, optionally attach LoRA. **Wired in Studio and smoke-tested end-to-end on SmolLM2-135M** (Q8_0 GGUF → SMM → LoRA → merged export) |
+| C2 | Support matrix: which loaded architectures the training transformer can actually run, with a clear `NotSupported` for the rest. Llama-family is verified; other architectures still need a load/train check |
 | C3 | Adapter-only save and load with a base-fingerprint check. Wired in Studio: `.smlora` export and resume from an adapter file or checkpoint folder |
 | C4 | Export fidelity: the tokenizer and `tokenizer.chat_template` survive a merged export; F16 or Q8_0 export before `SmmQuantizer` handles K-quants. Covered for merged output in the library; Studio writes the fine-tune at F32 |
 | C5 | Training memory estimator next to `ModelSizer` (full vs LoRA, optimizer, activations) |
@@ -554,7 +556,7 @@ Draft slices, not yet confirmed:
 
 | Version | Contents |
 |---|---|
-| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume, run history with curves and comparison, and a held-out exam backing a written promotion report |
+| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume (smoke-tested on SmolLM2-135M), run history with curves and comparison, and a held-out exam backing a written promotion report |
 | 1.1.1.0 | Data Lab, Formatter Designer, probe-prompt snapshot timeline, A/B arena, hub client |
 | 1.1.2.0 | Quant Lab (sensitivity-aware plans, Pareto chart) and distillation (sequence-level first, logit-level second) |
 | 1.1.3.0 | Architect canvas, MoE load-balancing and utilisation heatmap, upcycling and Branch-Train-Mix, then HMoE |

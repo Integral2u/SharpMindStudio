@@ -225,11 +225,18 @@ public static class TrainingRunner
                         "A LoRA fine-tune cannot use incremental mode; point it at the new corpus directly.");
 
                 Log($"Fine-tune: loading base {Path.GetFileName(basePath)}...");
+                int lastLoadPct = -1;
                 fineTuneModel = SmmTrainingPipeline.LoadForTraining(
                     basePath,
                     new TrainingLoadOptions
                     {
-                        Progress = new Progress<float>(p => Log($"Fine-tune: base weights {p:P0}")),
+                        Progress = new Progress<float>(p =>
+                        {
+                            int pct = (int)(p * 10);
+                            if (pct == lastLoadPct) return;
+                            lastLoadPct = pct;
+                            Log($"Fine-tune: base weights {pct * 10}%");
+                        }),
                     },
                     out tokenizer,
                     out modelConfig);
