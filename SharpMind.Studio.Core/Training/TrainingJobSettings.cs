@@ -334,6 +334,22 @@ public sealed class TrainingJobSettings
     [JsonIgnore]
     public bool Rehearsal { get; set; }
 
+    // --- Fork lineage ------------------------------------------------------
+    // A fork is a new job cloned from a finished run; it keeps the parent link
+    // for history and reuses the parent checkpoint where possible.
+
+    /// <summary>Run-record id this job was forked from, when it is a fork.</summary>
+    public string? ForkedFromRunId { get; set; }
+
+    /// <summary>The first run in the fork tree (itself for an original run).</summary>
+    public string? ForkRootId { get; set; }
+
+    /// <summary>Human-readable fork point, e.g. "step 120".</summary>
+    public string? ForkPoint { get; set; }
+
+    /// <summary>Optional variant label for the branch.</summary>
+    public string? Variant { get; set; }
+
     /// <summary>
     /// True to train from random weights even when checkpoints exist, ignoring
     /// <see cref="ResumeFrom"/>. False (default) resumes the latest checkpoint

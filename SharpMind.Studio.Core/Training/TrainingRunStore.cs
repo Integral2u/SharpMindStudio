@@ -25,6 +25,18 @@ public sealed class TrainingRunRecord
     public bool FineTune { get; set; }
     public string? BaseModelPath { get; set; }
 
+    /// <summary>Parent run id when this run was forked from another run.</summary>
+    public string? ForkedFromRunId { get; set; }
+
+    /// <summary>The first run in the fork tree; null for an original run.</summary>
+    public string? ForkRootId { get; set; }
+
+    /// <summary>Human-readable fork point, e.g. "step 120".</summary>
+    public string? ForkPoint { get; set; }
+
+    /// <summary>Variant label for the branch.</summary>
+    public string? Variant { get; set; }
+
     /// <summary>Configured number of steps.</summary>
     public int TotalSteps { get; set; }
 
@@ -89,6 +101,10 @@ public sealed class TrainingRunRecord
             Error = result.Error,
             FineTune = job.IsFineTune,
             BaseModelPath = job.BaseModelPath,
+            ForkedFromRunId = job.ForkedFromRunId,
+            ForkRootId = job.ForkRootId,
+            ForkPoint = job.ForkPoint,
+            Variant = job.Variant,
             TotalSteps = job.TotalSteps,
             FinalStep = result.FinalStep,
             ValidationPercent = job.ValidationPercent,

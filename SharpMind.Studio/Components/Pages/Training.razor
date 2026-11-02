@@ -531,6 +531,10 @@ else if (_tab == "runs")
             {
                 <div class="error-line">@examError</div>
             }
+            @if (_runNotice is not null)
+            {
+                <div class="status-line">@_runNotice</div>
+            }
 
             @if (Lab.RunHistory.Count == 0)
             {
@@ -583,9 +587,17 @@ else if (_tab == "runs")
                                         }
                                     </span>
                                 }
+                                @if (ForkLabel(run.Record) is { } forkLabel)
+                                {
+                                    <span class="training-chip">@forkLabel</span>
+                                }
                                 <button type="button" class="button" @onclick="() => StartExam(run)"
                                         disabled="@(!CanExamine(run) || Exam.IsRunning)">
                                     Exam
+                                </button>
+                                <button type="button" class="button" @onclick="() => ForkRun(run)"
+                                        disabled="@(!CanFork(run) || Lab.IsRunning || Rehearsal.IsRunning)">
+                                    Fork
                                 </button>
                                 <button type="button" class="button" @onclick="() => UseAsBase(run)"
                                         disabled="@(!CanUseAsBase(run))">
@@ -893,6 +905,7 @@ else if (_tab == "models")
     private string _compareB = "";
     private string? _promotionSummary;
     private string? _promotionPath;
+    private string? _runNotice;
     private IReadOnlyList<string>? _resumeOptions;
     private readonly HashSet<string> _tuneTargets =
         ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"];
@@ -1302,6 +1315,29 @@ else if (_tab == "models")
         if (latest is not null) LoadJob(latest);
     }
 
+    private void ApplyFineTuneJob(TrainingJobSettings job)
+    {
+        _tuneBase = job.BaseModelPath ?? "";
+        _tuneCorpusPath = job.Sources.FirstOrDefault()?.Component.Args.TryGetValue("path", out string? tuneCorpus) == true
+            ? tuneCorpus
+            : "";
+        _tuneName = job.Name;
+        _tuneSteps = Math.Max(1, job.TotalSteps);
+        _tuneValidationPercent = job.ValidationPercent;
+        _tuneTestPercent = job.TestPercent;
+        _tuneRank = Math.Max(1, job.LoRARank);
+        _tuneAlpha = job.LoRAAlpha;
+        _tuneLr = job.LearningRate;
+        _tuneExport = job.ExportPath ?? "";
+        _tuneOutput = !job.MergeOnExport ? "adapter" : job.SaveAdapterFile ? "both" : "merged";
+        _tuneAdapterPath = job.AdapterPath ?? "";
+        _tuneResume = job.ResumeFrom ?? "";
+        _tuneStartFresh = job.StartFresh;
+        _tuneTargets.Clear();
+        foreach (string target in job.LoRATargetModules) _tuneTargets.Add(target);
+        _tuneError = null;
+    }
+
     private void LoadJob(string path, bool navigate = true)
     {
         TrainingJobSettings? job = Lab.LoadJob(path, out string? error);
@@ -1313,25 +1349,7 @@ else if (_tab == "models")
 
         if (job.IsFineTune)
         {
-            _tuneBase = job.BaseModelPath ?? "";
-            _tuneCorpusPath = job.Sources.FirstOrDefault()?.Component.Args.TryGetValue("path", out string? tuneCorpus) == true
-                ? tuneCorpus
-                : "";
-            _tuneName = job.Name;
-            _tuneSteps = Math.Max(1, job.TotalSteps);
-            _tuneValidationPercent = job.ValidationPercent;
-            _tuneTestPercent = job.TestPercent;
-            _tuneRank = Math.Max(1, job.LoRARank);
-            _tuneAlpha = job.LoRAAlpha;
-            _tuneLr = job.LearningRate;
-            _tuneExport = job.ExportPath ?? "";
-            _tuneOutput = !job.MergeOnExport ? "adapter" : job.SaveAdapterFile ? "both" : "merged";
-            _tuneAdapterPath = job.AdapterPath ?? "";
-            _tuneResume = job.ResumeFrom ?? "";
-            _tuneStartFresh = job.StartFresh;
-            _tuneTargets.Clear();
-            foreach (string target in job.LoRATargetModules) _tuneTargets.Add(target);
-            _tuneError = null;
+            ApplyFineTuneJob(job);
             _tab = "improve";
             if (navigate) Nav.NavigateTo("/training?tab=improve");
             return;
@@ -1478,6 +1496,61 @@ else if (_tab == "models")
         _tuneError = null;
         _tab = "improve";
         Nav.NavigateTo("/training?tab=improve");
+    }
+
+    private static bool CanFork(TrainingRunSummary run)
+        => run.Record.Success
+           && run.Record.JobPath is { } jobPath
+           && File.Exists(jobPath);
+
+    private void ForkRun(TrainingRunSummary run)
+    {
+        _runNotice = null;
+
+        if (run.Record.JobPath is not { } jobPath || !File.Exists(jobPath))
+        {
+            _runNotice = "This run has no saved job to fork.";
+            return;
+        }
+
+        TrainingJobSettings? job = Lab.LoadJob(jobPath, out string? error);
+        if (job is null)
+        {
+            _runNotice = error ?? "Could not load the run's job.";
+            return;
+        }
+
+        string? latest = Checkpoint.FindLatest(job.CheckpointDir);
+        int? latestStep = latest is null ? null : Checkpoint.ReadMeta(latest).Step;
+        TrainingJobSettings fork = TrainingFork.Create(run.Record, job, latest, latestStep);
+
+        _runNotice = latest is null
+            ? $"Forked {run.Record.Name}; adjust a downstream setting and run."
+            : $"Forked {run.Record.Name}; continuing from checkpoint step {latestStep}.";
+
+        if (fork.IsFineTune)
+        {
+            ApplyFineTuneJob(fork);
+            _tab = "improve";
+            Nav.NavigateTo("/training?tab=improve");
+            return;
+        }
+
+        _job = fork;
+        Lab.Draft = fork;
+        _selectedJobPath = "";
+        _error = null;
+        _tab = "new";
+        Nav.NavigateTo("/training?tab=new");
+    }
+
+    private string? ForkLabel(TrainingRunRecord record)
+    {
+        if (string.IsNullOrWhiteSpace(record.ForkedFromRunId)) return null;
+
+        string? parent = Lab.RunHistory
+            .FirstOrDefault(item => item.Record.Id == record.ForkedFromRunId)?.Record.Name;
+        return parent is null ? "fork" : $"fork of {parent}";
     }
 
     private void DeleteRun(TrainingRunSummary run)

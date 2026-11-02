@@ -2,7 +2,7 @@
 
 > **Status:** implementation in progress, October 2026. Studio **1.1.0.0**.
 > Built: shell, projects/runs/recipes, canary and tool probes, TESTS run history, Chat lab, layered inference settings, Work mode MVP, model Tune presets, shared skills/tools, the phone pairing gateway, the corpus-to-export Training engine with its lab shell, LoRA fine-tuning, and SMM↔GGUF conversion.
-> Remaining: planner rule files and graph forking. Gateway proxy mode is intentionally left as built.
+> Remaining: planner rule files and content-addressed fork reuse. Gateway proxy mode is intentionally left as built.
 SharpMind Studio is a local-first application for chatting with models, doing project work with them, and building them: from scratch, from a base model, or by upgrading a model you already have. It is the successor to the terminal UI (CUI) as the primary front end, and it is meant to be something people want to use: attractive, calm and fast.
 
 ---
@@ -221,6 +221,7 @@ The canary dashboard lives at `/test`; the full history lives at `/runs`.
 - `/runs` shows every run in the current project. It filters by search text, run type, status and tool status, and groups by **family**, **model** or **run type**.
 - Runs are sorted fastest to slowest inside each group; runs without a measurement follow, newest first. Measured decode is the comparison, so tool-probe runs never win a speed award.
 - Gold star: fastest successful `model-bench` run whose tool probe passed. Silver star: fastest successful `model-bench` run without a passing tool probe. Users can delete a run or re-run its model from either view.
+- **Fork** creates a child job from a finished run: the job records the parent run, the root of the fork tree, the fork point and a variant label, and continues from the parent's latest checkpoint where one exists. The Runs list shows the parent link, and the normal Compare/Exam view works across siblings. Content-addressed step reuse is the later Recipe-graph layer.
 - Run summaries are cached for three seconds and invalidated on delete, re-run completion, and project switch, so opening a page does not rescan 200 event streams per render.
 
 ### 4.12 Phone gateway
@@ -319,7 +320,7 @@ flowchart LR
 
 ### 5.3 What "upgrade" means
 
-1. **From a point.** Pick any lineage node and choose *resume* (same recipe and optimizer state) or *branch*.
+1. **From a point.** Pick any lineage node and choose *resume* (same recipe and optimizer state), *branch* into a sibling experiment, or **Fork this run** in Runs to clone the job and continue from its latest checkpoint.
 2. **Prefab settings, tweaked.** An **Upgrade Kit** is a playbook of improvement moves with sensible defaults, such as "add data and re-tune" with replay and a low LoRA rank.
 3. **New training sets added.** The planner marks downstream steps stale and runs from the data node onward. It chooses between appending and rebuilding and explains why; for small or off-domain data it recommends replay mixing to reduce forgetting.
 
@@ -564,7 +565,7 @@ Draft slices, not yet confirmed:
 
 | Version | Contents |
 |---|---|
-| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a rules-based build-map planner with intake, estimates and a measured rehearsal, a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume (smoke-tested on SmolLM2-135M), run history with curves and comparison, and a held-out exam backing a written promotion report |
+| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a rules-based build-map planner with intake, estimates and a measured rehearsal, a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume (smoke-tested on SmolLM2-135M), run history with curves, comparison and run forking, and a held-out exam backing a written promotion report |
 | 1.1.1.0 | Data Lab, Formatter Designer, probe-prompt snapshot timeline, A/B arena, hub client |
 | 1.1.2.0 | Quant Lab (sensitivity-aware plans, Pareto chart) and distillation (sequence-level first, logit-level second) |
 | 1.1.3.0 | Architect canvas, MoE load-balancing and utilisation heatmap, upcycling and Branch-Train-Mix, then HMoE |
