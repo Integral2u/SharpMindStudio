@@ -335,26 +335,33 @@ else if (_tab == "playbooks")
                 <div class="eyebrow">Reusable recipes</div>
                 <h2>Playbooks</h2>
             </div>
-            <button type="button" class="button" disabled>New playbook</button>
+            <span class="faint small mono">@TrainingPlaybooks.All.Count starting points</span>
         </div>
         <div class="panel-body stack">
-            <div class="empty">No playbooks yet. An Upgrade Kit will bundle improvement moves, replay settings and defaults for a class of model.</div>
+            <p class="small faint">
+                Prefab editor values for common goals. Each one fills the form; you still
+                supply the corpus (and, for a fine-tune, the base model). They are starting
+                points, not measured results.
+            </p>
+
             <div class="training-grid">
-                <div class="training-card">
-                    <div class="eyebrow">Add data</div>
-                    <h3>Low-rank refresh</h3>
-                    <p>New data with replay mixing and a small LoRA rank, for a model that already works.</p>
-                </div>
-                <div class="training-card">
-                    <div class="eyebrow">Shrink</div>
-                    <h3>Smaller, still capable</h3>
-                    <p>Distil to a smaller student, then verify against the device profile before packaging.</p>
-                </div>
-                <div class="training-card">
-                    <div class="eyebrow">Serve faster</div>
-                    <h3>Re-quantise this device</h3>
-                    <p>A sensitivity-aware plan with measured speed, without changing the weights' training.</p>
-                </div>
+                @foreach (TrainingPlaybook playbook in TrainingPlaybooks.All)
+                {
+                    <div class="training-card">
+                        <div class="eyebrow">@playbook.Eyebrow</div>
+                        <h3>@playbook.Name</h3>
+                        <p>@playbook.Description</p>
+                        <div class="small faint">@playbook.Outcome</div>
+                        <div class="training-actions">
+                            <button type="button" class="button primary"
+                                    @onclick="() => ApplyPlaybook(playbook)">
+                                @(playbook.Kind == TrainingPlaybookKind.FineTune
+                                    ? "Open in Improve"
+                                    : "Use in New model")
+                            </button>
+                        </div>
+                    </div>
+                }
             </div>
         </div>
     </section>
@@ -1454,48 +1461,63 @@ else if (_tab == "models")
 
     private static TrainingJobSettings CreateDefaultJob()
     {
-        var job = new TrainingJobSettings
-        {
-            Name = "",
-            TokenizerKind = "Bpe",
-            TokenizerVocabSize = 2048,
-            TotalSteps = 200,
-            LogInterval = 10,
-            BatchSize = 4,
-            SeqLen = 64,
-            BatchingKind = "RandomWindow",
-            Optimizer = "AdamW",
-            LearningRate = 3e-4f,
-            MinLr = 3e-5f,
-            WarmupSteps = 10,
-            WeightDecay = 0.01f,
-            GradClipNorm = 1f,
-            LabelSmoothing = 0f,
-            CheckpointInterval = 50,
-            KeepRecent = 2,
-            ValidationPercent = 10,
-            TestPercent = 10,
-            StartFresh = true,
-            NormEps = 1e-5f,
-            Sources =
-            [
-                new JobSource
-                {
-                    Component = new JobComponent
-                    {
-                        DisplayName = "Text File",
-                        TypeName = typeof(TextFileSource).FullName!,
-                        Args = new Dictionary<string, string>
-                        {
-                            ["path"] = "",
-                            ["mode"] = "LinePerDoc",
-                        },
-                    },
-                },
-            ],
-        };
-        TrainingModelOptions.Apply(job, TrainingModelOptions.Presets[0]);
+        TrainingJobSettings job = TrainingJobDefaults.Create();
+        job.Sources = [DefaultTextSource()];
         return job;
+    }
+
+    private static JobSource DefaultTextSource() => new()
+    {
+        Component = new JobComponent
+        {
+            DisplayName = "Text File",
+            TypeName = typeof(TextFileSource).FullName!,
+            Args = new Dictionary<string, string>
+            {
+                ["path"] = "",
+                ["mode"] = "LinePerDoc",
+            },
+        },
+    };
+
+    private void ApplyPlaybook(TrainingPlaybook playbook)
+    {
+        ArgumentNullException.ThrowIfNull(playbook);
+
+        if (playbook.Kind == TrainingPlaybookKind.FineTune && playbook.FineTune is { } tune)
+        {
+            _tuneRank = tune.Rank;
+            _tuneAlpha = tune.Alpha;
+            _tuneTargets.Clear();
+            foreach (string target in tune.Targets) _tuneTargets.Add(target);
+            _tuneSteps = tune.Steps;
+            _tuneLr = tune.LearningRate;
+            _tuneValidationPercent = tune.ValidationPercent;
+            _tuneTestPercent = tune.TestPercent;
+            _tuneOutput = tune.Output;
+            _tuneResume = "";
+            _tuneStartFresh = true;
+            _tuneError = null;
+            _tuneName = string.IsNullOrWhiteSpace(_tuneBase)
+                ? ""
+                : Path.GetFileNameWithoutExtension(_tuneBase) + "-lora";
+            _tab = "improve";
+            Nav.NavigateTo("/training?tab=improve");
+            return;
+        }
+
+        if (playbook.CreateJob is not { } create) return;
+
+        // Keep the corpus the user already configured; a playbook changes the
+        // recipe, not the data.
+        List<JobSource> sources = _job.Sources.Count > 0 ? _job.Sources : [DefaultTextSource()];
+        _job = create();
+        _job.Sources = sources;
+        Lab.Draft = _job;
+        _selectedJobPath = "";
+        _error = null;
+        _tab = "new";
+        Nav.NavigateTo("/training?tab=new");
     }
 
     private void SaveJob()

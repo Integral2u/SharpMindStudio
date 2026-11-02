@@ -348,6 +348,8 @@ Experiments run as short, comparable trials with the same seed and validation se
 
 **New model** is a full `.smmt` editor rather than a preset picker. It covers the architecture preset and manual dimensions/kernel options, tokenizer kind and vocabulary, batching, optimizer and LR schedule, accelerator plugin, QAT target (validated against the dimensions before a run), checkpoint interval/retention, resume and warm restart, validation/exam splits, export path, and the optional embedded system prompt, skills folder and tool DLLs. A source/stage section adds any discovered source or cleaning stage, renders each constructor parameter from its metadata, supports per-source and global stage chains, and exposes incremental mode; unknown plugin components are called out rather than silently dropped. A live review shows the resolved architecture, parameter estimate, precision, device and any blocking warning; the same `TrainingJobValidation` rules gate the start action, so the form cannot look valid and fail on a dimension it did not flag. **Save job** writes the `.smmt`, **Load selected** restores it, **Run selected job** starts a pretrain job directly (fine-tunes open in Improve), and the unsaved draft survives tab switches via `StudioTrainingService.Draft`. The **Data** tab summarises the configured sources, per-source stage counts, global stages and incremental state.
 
+**Playbooks** are curated editor values behind **Training → Playbooks**: a tiny smoke test, a small domain pretrain, a LLaMA-style chat base, a Q8_0 packaging run, and two LoRA tunes (merged or adapter-only). Applying one fills New-model or Improve, keeping the corpus and base the user already chose. They are starting points, not measured results, and the tab says so.
+
 ### 5.7 Engine reused from the CUI
 
 The CUI already trains a model from a corpus to an exported `.smm`, and that pipeline is not UI-bound. Studio ports the UI-free pieces into `Studio.Core/Training` rather than writing a second engine:
@@ -552,7 +554,7 @@ Draft slices, not yet confirmed:
 
 | Version | Contents |
 |---|---|
-| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a full `.smmt` editor (architecture, accelerator, QAT, schedule, checkpoints, splits), fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume, run history with curves and comparison, and a held-out exam backing a written promotion report |
+| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. The Training lab exposes a full `.smmt` editor (sources/stages, architecture, accelerator, QAT, schedule, checkpoints, splits), curated playbooks, fine-tuning with merged `.smm` or adapter-only `.smlora` output and resume, run history with curves and comparison, and a held-out exam backing a written promotion report |
 | 1.1.1.0 | Data Lab, Formatter Designer, probe-prompt snapshot timeline, A/B arena, hub client |
 | 1.1.2.0 | Quant Lab (sensitivity-aware plans, Pareto chart) and distillation (sequence-level first, logit-level second) |
 | 1.1.3.0 | Architect canvas, MoE load-balancing and utilisation heatmap, upcycling and Branch-Train-Mix, then HMoE |
