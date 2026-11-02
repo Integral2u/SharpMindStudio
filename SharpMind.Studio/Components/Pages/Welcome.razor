@@ -41,9 +41,9 @@
             <span class="welcome-mode-name">Test</span>
             <span class="welcome-mode-hint">Open the canary dashboard</span>
         </button>
-        <button type="button" class="welcome-mode" disabled title="Training lab is later">
+        <button type="button" class="welcome-mode" @onclick="OpenTraining">
             <span class="welcome-mode-name">Train</span>
-            <span class="welcome-mode-hint">Coming in a later lab</span>
+            <span class="welcome-mode-hint">Open the training lab</span>
         </button>
     </div>
 
@@ -81,6 +81,7 @@
             <ModelToolStatus ModelPath="_selectedModelPath" FileName="@SelectedFileName" Runs="_runs" />
         </div>
     </div>
+    <div class="status-line">@(ChatService.IsLoading || _busy ? ChatService.Status : "Ready.")</div>
 
     @if (ChatService.IsLoading)
     {
@@ -123,7 +124,6 @@
         </div>
     }
 
-    <div class="status-line">@(ChatService.IsLoading || _busy ? ChatService.Status : "Ready.")</div>
     @if (_error is not null)
     {
         <div class="error-line">@_error</div>
@@ -302,6 +302,8 @@
         UpdateLatestRun();
     }
     private void OpenTest() => Nav.NavigateTo("/test");
+
+    private void OpenTraining() => Nav.NavigateTo("/training");
 
     private static string StatusClass(string status) => status switch
     {

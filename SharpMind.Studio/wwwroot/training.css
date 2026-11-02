@@ -1,0 +1,342 @@
+.training-tabs {
+    align-items: center;
+}
+
+.training-shell {
+    margin-left: auto;
+    padding: .18rem .5rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: .58rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.training-section,
+.training-run {
+    margin-top: 1.2rem;
+}
+
+.training-run {
+    margin-top: 0;
+    margin-bottom: 1.2rem;
+}
+
+.training-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: .8rem;
+}
+
+.training-form-wide {
+    grid-column: 1 / -1;
+}
+
+.training-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    gap: .7rem;
+}
+
+.training-metrics > div {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    padding: .55rem .7rem;
+    border: 1px solid var(--line);
+    border-radius: .5rem;
+    background: rgba(10, 17, 24, .45);
+}
+
+.training-metrics strong {
+    font-family: var(--mono);
+    font-size: .86rem;
+    font-weight: 500;
+}
+
+.training-log {
+    max-height: 12rem;
+    margin: 0;
+    padding: .7rem .8rem;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: .5rem;
+    background: rgba(4, 8, 12, .6);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: .68rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+}
+
+.training-chart {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+}
+
+.training-chart-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.training-chart-legend {
+    display: flex;
+    gap: .9rem;
+    color: var(--muted);
+    font-size: .7rem;
+}
+
+.training-chart-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+}
+
+.training-chart-swatch {
+    display: inline-block;
+    width: .7rem;
+    height: .18rem;
+    border-radius: 1rem;
+}
+
+.training-chart-swatch.train { background: var(--accent); }
+.training-chart-swatch.val { background: var(--warn); }
+
+.training-chart-empty {
+    padding: 1.4rem .8rem;
+    border: 1px dashed var(--line);
+    border-radius: .5rem;
+    color: var(--muted);
+    font-size: .75rem;
+    text-align: center;
+}
+
+.training-chart-plot {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.training-chart-grid {
+    stroke: var(--line);
+    stroke-width: 1;
+    stroke-dasharray: 3 4;
+}
+
+.training-chart-axis {
+    stroke: var(--line-strong);
+    stroke-width: 1;
+}
+
+.training-chart-label {
+    fill: var(--muted);
+    font-family: var(--mono);
+    font-size: 9px;
+}
+
+.training-chart-line {
+    fill: none;
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+
+.training-chart-line.train { stroke: var(--accent); }
+.training-chart-line.val { stroke: var(--warn); stroke-width: 1.3; }
+
+.training-chart-dot.val { fill: var(--warn); }
+.training-chart-dot.best { fill: none; stroke: var(--accent); stroke-width: 2; }
+
+.training-chart-best {
+    stroke: var(--accent);
+    stroke-width: 1;
+    stroke-dasharray: 4 4;
+    opacity: .6;
+}
+
+.training-chart-best-label {
+    fill: var(--accent);
+    font-family: var(--mono);
+    font-size: 9px;
+}
+
+.training-compare-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: .8rem;
+}
+
+.training-compare {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .78rem;
+}
+
+.training-compare th,
+.training-compare td {
+    padding: .45rem .6rem;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+}
+
+.training-compare th {
+    color: var(--muted);
+    font-weight: 500;
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+}
+
+.training-compare td:first-child {
+    color: var(--muted);
+}
+
+.training-compare td.better {
+    color: var(--accent);
+    font-family: var(--mono);
+}
+
+.training-compare td.better::after {
+    content: "  best";
+    font-size: .62rem;
+    opacity: .7;
+}
+
+
+
+.training-jobs {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+
+.training-job {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .65rem .8rem;
+    border: 1px solid var(--line);
+    border-radius: .55rem;
+    background: rgba(10, 17, 24, .35);
+}
+
+.training-job > div {
+    min-width: 0;
+}
+
+.training-job .small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.training-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: .8rem;
+}
+
+.training-card {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: .7rem;
+    background: rgba(10, 17, 24, .45);
+}
+
+.training-card h3 {
+    font-size: .92rem;
+}
+
+.training-card p {
+    color: var(--muted);
+    font-size: .78rem;
+    line-height: 1.5;
+}
+
+.training-actions {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    flex-wrap: wrap;
+}
+
+.training-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+}
+
+.training-chip {
+    padding: .3rem .6rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: .65rem;
+}
+
+.training-chip.live {
+    border-color: rgba(var(--accent-rgb), .45);
+    color: var(--accent);
+}
+
+.training-check {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+}
+
+.training-targets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .55rem 1rem;
+}
+
+.training-target {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    color: var(--muted);
+    font-size: .78rem;
+}
+
+.training-convert .training-actions {
+    margin-top: -.2rem;
+}
+
+.training-flow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .45rem;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.training-flow-arrow {
+    color: var(--faint);
+}
+
+@media (max-width: 760px) {
+    .training-tabs {
+        overflow-x: auto;
+        padding-bottom: .35rem;
+    }
+
+    .training-shell {
+        display: none;
+    }
+}

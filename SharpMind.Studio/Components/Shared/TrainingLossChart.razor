@@ -1,0 +1,180 @@
+@using SharpMind.Studio.Core.Training
+
+<div class="training-chart">
+    <div class="training-chart-head">
+        <span class="eyebrow">@Title</span>
+        <div class="training-chart-legend">
+            <span><i class="training-chart-swatch train"></i>train</span>
+            <span><i class="training-chart-swatch val"></i>validation</span>
+        </div>
+    </div>
+
+    @if (!HasData)
+    {
+        <div class="training-chart-empty">
+            @(Points.Count == 0 ? "The curve appears at the first logged step." : "One step logged - the curve needs a second point.")
+        </div>
+    }
+    else
+    {
+        <svg class="training-chart-plot" viewBox="0 0 @Width @Height" role="img"
+             aria-label="Training and validation loss by step">
+            @for (int i = 0; i <= 3; i++)
+            {
+                double loss = YMax - (YMax - YMin) * i / 3.0;
+                double y = Y(loss);
+                <line class="training-chart-grid" x1="@PadLeft" y1="@Fmt(y)"
+                      x2="@Fmt(Width - PadRight)" y2="@Fmt(y)" />
+                @Text(4, y + 4, loss.ToString(LossFormat))
+            }
+
+            <polyline class="training-chart-line train" points="@TrainPoints" />
+
+            @if (ValPoints.Length > 0)
+            {
+                <polyline class="training-chart-line val" points="@ValPoints" />
+                @foreach (var dot in ValDots)
+                {
+                    <circle class="training-chart-dot val" cx="@Fmt(dot.X)" cy="@Fmt(dot.Y)" r="2.2" />
+                }
+            }
+
+            @if (BestStep is { } bestStep && BestLoss is { } bestLoss)
+            {
+                double bx = X(bestStep);
+                double by = Y(bestLoss);
+                <line class="training-chart-best" x1="@Fmt(bx)" y1="@PadTop"
+                      x2="@Fmt(bx)" y2="@Fmt(Height - PadBottom)" />
+                <circle class="training-chart-dot best" cx="@Fmt(bx)" cy="@Fmt(by)" r="4" />
+                @Text(bx + 6, by - 8,
+                    $"best {bestLoss.ToString("0.###", Invariant)} @ {bestStep}",
+                    "training-chart-best-label")
+            }
+
+            <line class="training-chart-axis" x1="@PadLeft" y1="@Fmt(Height - PadBottom)"
+                  x2="@Fmt(Width - PadRight)" y2="@Fmt(Height - PadBottom)" />
+            @Text(PadLeft, Height - 8, FirstStep.ToString(Invariant))
+            @Text(Width - PadRight - 24, Height - 8, LastStep.ToString(Invariant))
+            @Text(Width / 2 - 12, Height - 8, "step")
+        </svg>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<TrainingCurvePoint> Points { get; set; } = [];
+
+    /// <summary>Heading shown above the plot; the compare view uses the run name.</summary>
+    [Parameter] public string Title { get; set; } = "Loss";
+
+    /// <summary>Step of the lowest validation loss, drawn as a marker.</summary>
+    [Parameter] public int? BestStep { get; set; }
+
+    [Parameter] public double? BestLoss { get; set; }
+
+    private const double Width = 720;
+    private const double Height = 240;
+    private const double PadLeft = 44;
+    private const double PadRight = 8;
+    private const double PadTop = 12;
+    private const double PadBottom = 24;
+
+    private static readonly System.Globalization.CultureInfo Invariant = System.Globalization.CultureInfo.InvariantCulture;
+
+    // Keep the SVG light for a long run: the eye cannot resolve more than a few
+    // hundred points on a 720-unit canvas anyway.
+    private const int MaxPoints = 400;
+    private static readonly string LossFormat = "0.00##";
+
+    private bool HasData => Points.Count >= 2;
+
+    private IReadOnlyList<TrainingCurvePoint> _sampled = [];
+    private IReadOnlyList<TrainingCurvePoint> Sampled => _sampled;
+
+    private static IReadOnlyList<TrainingCurvePoint> Sample(IReadOnlyList<TrainingCurvePoint> points)
+    {
+        if (points.Count <= MaxPoints) return points;
+        int stride = (int)Math.Ceiling(points.Count / (double)MaxPoints);
+        var sampled = new List<TrainingCurvePoint>(MaxPoints + 1);
+        for (int i = 0; i < points.Count; i += stride) sampled.Add(points[i]);
+        if (sampled[^1].Step != points[^1].Step) sampled.Add(points[^1]);
+        return sampled;
+    }
+
+    private int FirstStep => Sampled.Count > 0 ? Sampled[0].Step : 0;
+    private int LastStep => Sampled.Count > 0 ? Sampled[^1].Step : 0;
+
+    private double YMin { get; set; }
+    private double YMax { get; set; } = 1;
+
+    protected override void OnParametersSet()
+    {
+        _sampled = Sample(Points);
+
+        var values = new List<double>();
+        foreach (TrainingCurvePoint point in Sampled)
+        {
+            if (double.IsFinite(point.Loss)) values.Add(point.Loss);
+            if (point.ValLoss is { } val && double.IsFinite(val)) values.Add(val);
+        }
+
+        if (values.Count == 0)
+        {
+            YMin = 0;
+            YMax = 1;
+            return;
+        }
+
+        double min = values.Min();
+        double max = values.Max();
+        if (Math.Abs(max - min) < 1e-6)
+        {
+            min -= 0.5;
+            max += 0.5;
+        }
+
+        // A little headroom keeps the first and last points off the frame.
+        double margin = (max - min) * 0.08;
+        YMin = Math.Max(0, min - margin);
+        YMax = max + margin;
+    }
+
+    private double X(double step)
+    {
+        int first = FirstStep, last = LastStep;
+        if (last <= first) return PadLeft;
+        double t = (step - first) / (double)(last - first);
+        return PadLeft + t * (Width - PadLeft - PadRight);
+    }
+
+    private double Y(double loss)
+    {
+        double range = YMax - YMin;
+        if (range <= 0) return Height - PadBottom;
+        double t = (loss - YMin) / range;
+        return Height - PadBottom - t * (Height - PadBottom - PadTop);
+    }
+
+    private string TrainPoints => BuildPolyline(Sampled, point => point.Loss);
+
+    private string ValPoints
+        => BuildPolyline(Sampled.Where(point => point.ValLoss is not null), point => point.ValLoss!.Value);
+
+    private IEnumerable<(double X, double Y)> ValDots
+        => Sampled
+            .Where(point => point.ValLoss is not null)
+            .Select(point => (X(point.Step), Y(point.ValLoss!.Value)));
+
+    private static string Fmt(double value) => value.ToString("0.##", Invariant);
+
+    // Razor reserves <text> for its own template syntax, so SVG text is emitted
+    // as raw markup instead.
+    private static MarkupString Text(double x, double y, string text, string cssClass = "training-chart-label")
+        => new($"<text class=\"{cssClass}\" x=\"{Fmt(x)}\" y=\"{Fmt(y)}\">"
+             + System.Net.WebUtility.HtmlEncode(text)
+             + "</text>");
+
+    private string BuildPolyline(IEnumerable<TrainingCurvePoint> points, Func<TrainingCurvePoint, double> value)
+        => string.Join(' ', points
+            .Where(point => double.IsFinite(value(point)))
+            .Select(point => $"{Fmt(X(point.Step))},{Fmt(Y(value(point)))}"));
+}

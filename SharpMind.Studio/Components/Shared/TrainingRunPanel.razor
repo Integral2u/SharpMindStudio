@@ -1,0 +1,97 @@
+@using SharpMind.Studio.Services
+@inject StudioTrainingService Training
+
+<section class="panel training-run">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">@(Training.IsRunning ? "Training now" : "Last run")</div>
+            <h2>@Training.Status</h2>
+        </div>
+        @if (Training.IsRunning)
+        {
+            <button type="button" class="button danger" @onclick="Training.Cancel">Interrupt</button>
+        }
+    </div>
+    <div class="panel-body stack">
+        <div class="progress-track">
+            <div class="progress-fill" style="width:@Percent"></div>
+        </div>
+
+        <div class="training-metrics">
+            <div>
+                <span class="eyebrow">Step</span>
+                <strong>@Training.CurrentStep / @Training.TotalSteps</strong>
+            </div>
+            <div>
+                <span class="eyebrow">Loss</span>
+                <strong>@Number(Training.Loss)</strong>
+            </div>
+            <div>
+                <span class="eyebrow">Val loss</span>
+                <strong>@Number(Training.ValLoss)</strong>
+            </div>
+            <div>
+                <span class="eyebrow">Best val</span>
+                <strong>@Number(Training.BestValLoss)</strong>
+                @if (Training.BestValStep is { } bestStep)
+                {
+                    <span class="small faint mono"> @@ @bestStep</span>
+                }
+            </div>
+            <div>
+                <span class="eyebrow">Learning rate</span>
+                <strong>@Number(Training.LearningRate)</strong>
+            </div>
+            <div>
+                <span class="eyebrow">Tokens/s</span>
+                <strong>@Number(Training.TokensPerSecond)</strong>
+            </div>
+            <div>
+                <span class="eyebrow">Elapsed</span>
+                <strong>@Training.Elapsed.ToString(@"hh\:mm\:ss")</strong>
+            </div>
+        </div>
+
+        <TrainingLossChart Points="@Training.Curve"
+                           BestStep="@Training.BestValStep"
+                           BestLoss="@Training.BestValLoss" />
+
+        @if (Training.ExportPath is { } export)
+        {
+            <div class="small faint">
+                Saved model: <span class="mono">@export</span>
+            </div>
+        }
+
+        @if (Training.AdapterPath is { } adapter)
+        {
+            <div class="small faint">
+                Saved adapters: <span class="mono">@adapter</span>
+            </div>
+        }
+
+        @if (Training.Error is { } error)
+        {
+            <div class="error-line">@error</div>
+        }
+
+        <pre class="training-log">@LogTail</pre>
+    </div>
+</section>
+
+@code {
+    private string Percent => (Training.Progress * 100).ToString("0") + "%";
+
+    private string LogTail
+    {
+        get
+        {
+            IReadOnlyList<string> log = Training.Log;
+            return log.Count == 0
+                ? "Waiting for output…"
+                : string.Join(Environment.NewLine, log.TakeLast(14));
+        }
+    }
+
+    private static string Number(double? value) => value?.ToString("0.####") ?? "—";
+}

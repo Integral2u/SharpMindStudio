@@ -93,17 +93,23 @@
 
             @if (!DeviceAccess.IsMobile)
             {
+                <NavLink class="nav-link" href="training">
+                    <span class="nav-index">05</span> Training
+                </NavLink>
                 <NavLink class="nav-link" href="settings">
-                    <span class="nav-index">05</span> Settings
+                    <span class="nav-index">06</span> Settings
                 </NavLink>
             }        </nav>
 
-        <div class="sidebar-foot">
-            <div class="eyebrow">Project</div>
-            <div class="project-name">@Workspace.Project.Document.Name</div>
-            <div class="project-path">@Workspace.Project.Root</div>
-            <div class="local-pill">local only</div>
-        </div>
+        @if (!DeviceAccess.IsMobile)
+        {
+            <div class="sidebar-foot">
+                <div class="eyebrow">Project</div>
+                <div class="project-name">@Workspace.Project.Document.Name</div>
+                <div class="project-path">@Workspace.Project.Root</div>
+                <div class="local-pill">local only</div>
+            </div>
+        }
     </aside>
 
     <main class="main">
@@ -114,8 +120,11 @@
                     <span class="spinner-ring"></span>
                     <span>@Activity.Status</span>
                 }
-                <span class="dot"></span>
-                <span>127.0.0.1</span>
+                @if (!DeviceAccess.IsMobile)
+                {
+                    <span class="dot"></span>
+                    <span>127.0.0.1</span>
+                }
             </div>
         </header>
 

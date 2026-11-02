@@ -3,6 +3,7 @@ using SharpMind.Studio.Components;
 using SharpMind.Studio.Services;
 using SharpMind.Studio.Core.Storage;
 using SharpMind.Studio.Core.Gateway;
+using Yarp.ReverseProxy.Forwarder;
 
 var builder = WebApplication.CreateBuilder(args);
 if (builder.Configuration["Studio:Root"] is { Length: > 0 } root)
@@ -11,10 +12,9 @@ if (builder.Configuration["Studio:Root"] is { Length: > 0 } root)
 builder.WebHost.UseStaticWebAssets();
 
 var studioUrls = builder.Configuration["Studio:Url"] ?? "http://127.0.0.1:5117";
-bool lanEnabled = builder.Configuration.GetValue<bool>("Studio:LanEnabled") ||
-    new GatewayStore(StudioPaths.Gateway).LoadConfig().LanEnabled;
-if (lanEnabled)
-    studioUrls += ";" + (builder.Configuration["Studio:LanUrl"] ?? "http://0.0.0.0:5118");
+// The LAN port is always bound. GatewayAuthMiddleware answers other addresses with 404
+// until LAN pairing is on, so the Settings toggle takes effect without a restart.
+studioUrls += ";" + (builder.Configuration["Studio:LanUrl"] ?? "http://0.0.0.0:5118");
 builder.WebHost.UseUrls(studioUrls);
 builder.Services.Configure<StudioOptions>(builder.Configuration.GetSection("Studio"));
 builder.Services.AddSingleton<StudioWorkspaceService>();
@@ -27,8 +27,20 @@ builder.Services.AddSingleton<SharpMind.Studio.Core.Chat.StudioModelHost>();
 builder.Services.AddSingleton<MarkdownService>();
 builder.Services.AddSingleton<SystemWorkSkillsService>();
 builder.Services.AddSingleton<GatewayService>();
+builder.Services.AddSingleton<GatewayRateLimiter>();
+builder.Services.AddHttpForwarder();
+builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
+{
+    AllowAutoRedirect = false,
+    AutomaticDecompression = System.Net.DecompressionMethods.None,
+    UseCookies = false,
+    UseProxy = false,
+    ConnectTimeout = TimeSpan.FromSeconds(10),
+}));
 builder.Services.AddSingleton<WorkToolService>();
 builder.Services.AddSingleton<TuneRunnerService>();
+builder.Services.AddSingleton<StudioTrainingService>();
+builder.Services.AddSingleton<StudioConversionService>();
 builder.Services.AddScoped<StudioDeviceAccess>();
 builder.Services.AddScoped<StudioWorkService>();
 builder.Services.AddScoped<StudioChatService>();
@@ -46,6 +58,7 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseMiddleware<GatewayAuthMiddleware>();
+app.UseMiddleware<GatewayProxyMiddleware>();
 app.UseAntiforgery();
 
 app.MapStaticAssets();

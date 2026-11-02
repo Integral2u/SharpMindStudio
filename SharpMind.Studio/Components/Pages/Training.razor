@@ -1,0 +1,1358 @@
+@page "/training"
+@implements IDisposable
+@using SharpMind.Data.Sources
+@using SharpMind.Model.Format
+@using SharpMind.Studio.Core.Storage
+@using SharpMind.Studio.Core.Training
+@using SharpMind.Studio.Services
+@inject StudioTrainingService Lab
+@inject StudioConversionService Convert
+@inject StudioWorkspaceService Workspace
+@inject NavigationManager Nav
+
+<PageTitle>Training - SharpMind Studio</PageTitle>
+
+<div class="hero">
+    <div class="hero-copy">
+        <div class="eyebrow">Training lab</div>
+        <h1>Teach the machine.</h1>
+        <p>
+            Build a model from a corpus, or fine-tune a packaged <span class="mono">.smm</span>
+            with LoRA. Both end in a tested export you can run on this machine.
+        </p>
+    </div>
+    <div class="hero-mark">
+        corpus to export<br />
+        LoRA to merged model
+    </div>
+</div>
+
+<div class="settings-tabs training-tabs">
+    <a class="settings-tab @(_tab == "new" ? "selected" : "")" href="/training?tab=new" data-enhance-nav="false">New model</a>
+    <a class="settings-tab @(_tab == "improve" ? "selected" : "")" href="/training?tab=improve" data-enhance-nav="false">Improve</a>
+    <a class="settings-tab @(_tab == "playbooks" ? "selected" : "")" href="/training?tab=playbooks" data-enhance-nav="false">Playbooks</a>
+    <a class="settings-tab @(_tab == "data" ? "selected" : "")" href="/training?tab=data" data-enhance-nav="false">Data</a>
+    <a class="settings-tab @(_tab == "runs" ? "selected" : "")" href="/training?tab=runs" data-enhance-nav="false">Runs</a>
+    <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/training?tab=models" data-enhance-nav="false">Models</a>
+</div>
+
+@if (_tab == "new")
+{
+    @if (Lab.IsRunning || Lab.Result is not null)
+    {
+        <TrainingRunPanel />
+    }
+
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">From a corpus</div>
+                <h2>New model</h2>
+            </div>
+            <span class="faint small mono">tokenizer - weights - checkpoints - .smm</span>
+        </div>
+        <div class="panel-body stack">
+            <p class="small faint">
+                Point at a text file, a glob, or a folder of text and Markdown files. The run
+                trains a tokenizer on the corpus, starts from random weights, and exports a
+                packaged model. It resumes from its latest checkpoint unless you start fresh.
+                Hold back a validation split to see a held-out loss curve beside the training one.
+            </p>
+
+            <div class="training-form">
+                <div class="field">
+                    <label class="field-label" for="training-name">Model name</label>
+                    <input id="training-name" class="input" @bind="_name"
+                           placeholder="my-corpus-model" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="training-corpus">Corpus path</label>
+                    <input id="training-corpus" class="input" @bind="_corpusPath"
+                           placeholder="C:\path\to\corpus or C:\path\**\*.txt" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="training-size">Model size</label>
+                    <select id="training-size" class="input" @bind="_size">
+                        <option value="tiny">Tiny - fast test (64 hidden, 2 layers)</option>
+                        <option value="small">Small - 128 hidden, 4 layers</option>
+                        <option value="medium">Medium - 384 hidden, 6 layers</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="training-steps">Steps</label>
+                    <input id="training-steps" class="input" type="number" min="1" @bind="_steps" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="training-val">Validation split (%)</label>
+                    <input id="training-val" class="input" type="number" min="0" max="90" step="5"
+                           @bind="_validationPercent" />
+                </div>
+                <div class="field training-form-wide">
+                    <label class="field-label" for="training-export">Export file (optional)</label>
+                    <input id="training-export" class="input" @bind="_exportPath"
+                           placeholder="Leave blank to save in the Training folder" />
+                </div>
+            </div>
+
+            <div class="training-actions">
+                <button type="button" class="button primary" @onclick="StartTraining"
+                        disabled="@(Lab.IsRunning || _starting)">
+                    @(Lab.IsRunning ? "Training..." : "Start training")
+                </button>
+                <button type="button" class="button" @onclick="LoadLatestJob"
+                        disabled="@(Lab.IsRunning || Lab.SavedJobs.Count == 0)">
+                    Load latest job
+                </button>
+                <span class="small faint">Runs are saved under <span class="mono">@Lab.Folder</span>.</span>
+            </div>
+
+            @if (_error is not null)
+            {
+                <div class="error-line">@_error</div>
+            }
+        </div>
+    </section>
+
+    <section class="panel training-section">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Build map</div>
+                <h2>Moves over a lineage</h2>
+            </div>
+            <span class="faint small mono">corpus path is live</span>
+        </div>
+        <div class="panel-body stack">
+            <div class="training-chips">
+                @foreach (string move in Moves)
+                {
+                    <span class="training-chip @(ActiveMoves.Contains(move) ? "live" : "")">@move</span>
+                }
+            </div>
+            <p class="small faint">
+                The corpus path lights up Design, Tokenizer, Data, Pretrain, Evaluate and
+                Package. Fine-tuning runs from Improve; distillation and quantisation are not
+                connected yet.
+            </p>
+        </div>
+    </section>
+}
+else if (_tab == "improve")
+{
+    @if (Lab.IsRunning || Lab.Result is not null)
+    {
+        <TrainingRunPanel />
+    }
+
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Fine-tune</div>
+                <h2>Improve a base model</h2>
+            </div>
+            <span class="faint small mono">LoRA - base stays frozen</span>
+        </div>
+        <div class="panel-body stack">
+            <p class="small faint">
+                Pick a packaged <span class="mono">.smm</span> and a corpus of new or corrective text.
+                Only small LoRA adapters train. Export a merged <span class="mono">.smm</span> that
+                loads like any other model, save the adapters as a <span class="mono">.smlora</span>
+                file, or both. A run can resume the weights from an adapter checkpoint and continue
+                with a fresh optimizer. A <span class="mono">.gguf</span> base can be converted first
+                on Models.
+            </p>
+
+            <div class="training-form">
+                <div class="field training-form-wide">
+                    <label class="field-label" for="tune-pick">Base model</label>
+                    <select id="tune-pick" class="input" value="@_tuneBase" @onchange="PickBase">
+                        <option value="">Choose an .smm file...</option>
+                        @foreach (FileInfo file in SmmModels)
+                        {
+                            <option value="@file.FullName">@file.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="field training-form-wide">
+                    <label class="field-label" for="tune-base">Base file</label>
+                    <input id="tune-base" class="input" @bind="_tuneBase"
+                           placeholder="C:\path\to\base.smm" />
+                </div>
+                <div class="field training-form-wide">
+                    <label class="field-label" for="tune-corpus">New corpus</label>
+                    <input id="tune-corpus" class="input" @bind="_tuneCorpusPath"
+                           placeholder="C:\path\to\new-text or C:\path\**\*.txt" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="tune-rank">LoRA rank</label>
+                    <input id="tune-rank" class="input" type="number" min="1" max="256" @bind="_tuneRank" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="tune-alpha">LoRA alpha</label>
+                    <input id="tune-alpha" class="input" type="number" min="1" step="1" @bind="_tuneAlpha" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="tune-steps">Steps</label>
+                    <input id="tune-steps" class="input" type="number" min="1" @bind="_tuneSteps" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="tune-val">Validation split (%)</label>
+                    <input id="tune-val" class="input" type="number" min="0" max="90" step="5"
+                           @bind="_tuneValidationPercent" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="tune-lr">Learning rate</label>
+                    <input id="tune-lr" class="input" type="number" min="0.000001" step="0.00001" @bind="_tuneLr" />
+                </div>
+                <div class="field training-form-wide">
+                    <label class="field-label">Adapted projections</label>
+                    <div class="training-targets">
+                        @foreach ((string id, string label) in LoraTargets)
+                        {
+                            <label class="training-target">
+                                <input type="checkbox" checked="@_tuneTargets.Contains(id)"
+                                       @onchange="args => ToggleTarget(id, args)" />
+                                @label
+                            </label>
+                        }
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="tune-name">Job name</label>
+                    <input id="tune-name" class="input" @bind="_tuneName" placeholder="base-lora" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="tune-export">Merged model (optional)</label>
+                    <input id="tune-export" class="input" @bind="_tuneExport"
+                           placeholder="Leave blank to save in the Training folder" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="tune-output">Output</label>
+                    <select id="tune-output" class="input" @bind="_tuneOutput">
+                        <option value="merged">Merged .smm</option>
+                        <option value="adapter">Adapter only .smlora</option>
+                        <option value="both">Merged + adapter</option>
+                    </select>
+                </div>
+                @if (_tuneOutput != "merged")
+                {
+                    <div class="field training-form-wide">
+                        <label class="field-label" for="tune-adapter">Adapter file (optional)</label>
+                        <input id="tune-adapter" class="input" @bind="_tuneAdapterPath"
+                               placeholder="Beside the model, extension .smlora" />
+                    </div>
+                }
+                <div class="field training-form-wide">
+                    <label class="field-label" for="tune-resume">Resume from</label>
+                    <select id="tune-resume" class="input" value="@_tuneResume" @onchange="PickResume"
+                            disabled="@_tuneStartFresh">
+                        <option value="">Latest checkpoint for this job</option>
+                        @foreach (string path in AdapterResumeOptions)
+                        {
+                            <option value="@path">@ResumeLabel(path)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field training-form-wide">
+                    <label class="field-label" for="tune-resume-path">Adapter file or checkpoint folder</label>
+                    <input id="tune-resume-path" class="input" @bind="_tuneResume"
+                           placeholder="C:\...\adapters.smlora or a checkpoint folder" />
+                    <label class="small faint training-check">
+                        <input type="checkbox" @bind="_tuneStartFresh" />
+                        Start fresh, ignore adapter checkpoints
+                    </label>
+                </div>
+            </div>
+
+            <div class="training-actions">
+                <button type="button" class="button primary" @onclick="StartFineTune"
+                        disabled="@(Lab.IsRunning || _tuning)">
+                    @(Lab.IsRunning ? "Training..." : "Start fine-tune")
+                </button>
+                <span class="small faint">
+                    Checkpoints save adapters alongside the optimizer state; resume reuses the
+                    weights and restarts the schedule.
+                </span>
+            </div>
+
+            @if (_tuneError is not null)
+            {
+                <div class="error-line">@_tuneError</div>
+            }
+        </div>
+    </section>
+
+    <section class="panel training-section">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Diagnosis loop</div>
+                <h2>After the fine-tune</h2>
+            </div>
+            <span class="faint small mono">curves and comparison live</span>
+        </div>
+        <div class="panel-body stack">
+            <div class="training-flow">
+                <span>Diagnose</span>
+                <span class="training-flow-arrow">&#8594;</span>
+                <span>Hypothesise</span>
+                <span class="training-flow-arrow">&#8594;</span>
+                <span>Experiment</span>
+                <span class="training-flow-arrow">&#8594;</span>
+                <span>Compare</span>
+                <span class="training-flow-arrow">&#8594;</span>
+                <span>Promote</span>
+            </div>
+
+            <div class="training-grid">
+                <div class="training-card">
+                    <div class="eyebrow">Read</div>
+                    <h3>Curves and evaluations</h3>
+                    <p>Under-training, overfit, unstable steps and forgetting each point at a different first experiment.</p>
+                </div>
+                <div class="training-card">
+                    <div class="eyebrow">Experiment</div>
+                    <h3>Short, comparable trials</h3>
+                    <p>Same seed and validation set. Data experiments come before hyperparameter tuning.</p>
+                </div>
+                <div class="training-card">
+                    <div class="eyebrow">Promote</div>
+                    <h3>A new version with a report</h3>
+                    <p>The held-out exam stays untouched until promotion, so the comparison is honest.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+}
+else if (_tab == "playbooks")
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Reusable recipes</div>
+                <h2>Playbooks</h2>
+            </div>
+            <button type="button" class="button" disabled>New playbook</button>
+        </div>
+        <div class="panel-body stack">
+            <div class="empty">No playbooks yet. An Upgrade Kit will bundle improvement moves, replay settings and defaults for a class of model.</div>
+            <div class="training-grid">
+                <div class="training-card">
+                    <div class="eyebrow">Add data</div>
+                    <h3>Low-rank refresh</h3>
+                    <p>New data with replay mixing and a small LoRA rank, for a model that already works.</p>
+                </div>
+                <div class="training-card">
+                    <div class="eyebrow">Shrink</div>
+                    <h3>Smaller, still capable</h3>
+                    <p>Distil to a smaller student, then verify against the device profile before packaging.</p>
+                </div>
+                <div class="training-card">
+                    <div class="eyebrow">Serve faster</div>
+                    <h3>Re-quantise this device</h3>
+                    <p>A sensitivity-aware plan with measured speed, without changing the weights' training.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+}
+else if (_tab == "data")
+{
+    <div class="grid-2">
+        <section class="panel">
+            <div class="panel-head">
+                <div>
+                    <div class="eyebrow">Pretraining and continued</div>
+                    <h2>Corpus triage</h2>
+                </div>
+            </div>
+            <div class="panel-body stack">
+                <div class="empty">No corpus sources yet.</div>
+                <p class="small faint">Quality, near-duplicates, language, licence, PII, length and domain tags. The corpus path on New model feeds the run directly today; triage stages arrive next.</p>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div>
+                    <div class="eyebrow">SFT</div>
+                    <h2>Instruction triage</h2>
+                </div>
+            </div>
+            <div class="panel-body stack">
+                <div class="empty">No instruction sets yet.</div>
+                <p class="small faint">Each example is rendered through the model's formatter and checked for roles, length, loss mask and eval contamination.</p>
+            </div>
+        </section>
+    </div>
+
+    <section class="panel training-section">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Local teacher</div>
+                <h2>Data Factory</h2>
+            </div>
+            <span class="faint small mono">generate, rewrite, judge</span>
+        </div>
+        <div class="panel-body stack">
+            <div class="empty">No synthetic jobs yet.</div>
+            <p class="small faint">
+                A local model can draft Q&amp;A from your documents, rewrite and clean records,
+                or produce teacher answers for distillation. Speed and licence estimates come first.
+            </p>
+        </div>
+    </section>
+}
+else if (_tab == "runs")
+{
+    @if (Lab.IsRunning || Lab.Result is not null)
+    {
+        <TrainingRunPanel />
+    }
+
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Saved jobs</div>
+                <h2>Runs</h2>
+            </div>
+            <span class="faint small mono">@Lab.Folder</span>
+        </div>
+        <div class="panel-body stack">
+            @if (Lab.SavedJobs.Count == 0)
+            {
+                <div class="empty">
+                    No training runs yet. Start one from <a href="/training?tab=new">New model</a>;
+                    every run will stream loss, learning rate, grad norm, tokens/s, memory and ETA here.
+                </div>
+            }
+            else
+            {
+                <div class="training-jobs">
+                    @foreach (string path in Lab.SavedJobs)
+                    {
+                        <div class="training-job">
+                            <div>
+                                <strong class="mono">@Path.GetFileNameWithoutExtension(path)</strong>
+                                <div class="small faint">@path</div>
+                            </div>
+                            <div class="row">
+                                <span class="small faint mono">@File.GetLastWriteTime(path).ToString("dd MMM HH:mm")</span>
+                                <button type="button" class="button" @onclick="() => LoadJob(path)"
+                                        disabled="@Lab.IsRunning">Load</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="panel training-section">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">History</div>
+                <h2>Experiments</h2>
+            </div>
+            <div class="row">
+                <span class="faint small mono">@Lab.RunHistory.Count kept</span>
+                <button type="button" class="button" @onclick="Lab.RefreshRunHistory"
+                        disabled="@Lab.IsRunning">
+                    Refresh
+                </button>
+            </div>
+        </div>
+        <div class="panel-body stack">
+            @if (Lab.RunHistory.Count == 0)
+            {
+                <div class="empty">
+                    Finished runs are kept here with their curves, so two experiments can be
+                    compared after the live panel is gone.
+                </div>
+            }
+            else
+            {
+                <div class="training-jobs">
+                    @foreach (TrainingRunSummary run in Lab.RunHistory)
+                    {
+                        <div class="training-job">
+                            <div>
+                                <strong class="mono">@run.Record.Name</strong>
+                                <div class="small faint">
+                                    @Method(run.Record)
+                                    - @run.Record.FinishedUtc.ToLocalTime().ToString("dd MMM HH:mm")
+                                    - step @run.Record.FinalStep / @run.Record.TotalSteps
+                                    @if (run.Record.ElapsedSeconds > 0)
+                                    {
+                                        <span> - @Duration(run.Record.ElapsedSeconds)</span>
+                                    }
+                                </div>
+                                <div class="small faint mono">@run.Path</div>
+                                @if (run.Record.AdapterPath is { } adapterPath)
+                                {
+                                    <div class="small faint mono">adapters: @adapterPath</div>
+                                }
+                            </div>
+                            <div class="row">
+                                <span class="training-chip @(run.Record.Success ? "live" : "")">
+                                    @(run.Record.Success ? "ok" : "failed")
+                                </span>
+                                <span class="small faint mono">loss @Fmt(run.Record.FinalLoss)</span>
+                                @if (run.Record.BestValLoss is { } bestVal)
+                                {
+                                    <span class="small faint mono">
+                                        val @Fmt(bestVal) @@ @run.Record.BestValStep
+                                    </span>
+                                }
+                                <button type="button" class="button" @onclick="() => UseAsBase(run)"
+                                        disabled="@(!CanUseAsBase(run))">
+                                    Use as base
+                                </button>
+                                <button type="button" class="button" @onclick="() => DeleteRun(run)"
+                                        disabled="@Lab.IsRunning">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (Comparable.Count >= 2)
+            {
+                <div class="training-compare-picker">
+                    <div class="field">
+                        <label class="field-label" for="compare-a">Run A</label>
+                        <select id="compare-a" class="input" @bind="_compareA">
+                            @foreach (TrainingRunSummary run in Comparable)
+                            {
+                                <option value="@run.Path">@OptionLabel(run)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="compare-b">Run B</label>
+                        <select id="compare-b" class="input" @bind="_compareB">
+                            @foreach (TrainingRunSummary run in Comparable)
+                            {
+                                <option value="@run.Path">@OptionLabel(run)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                @if (CompareA is { } a && CompareB is { } b)
+                {
+                    <table class="training-compare">
+                        <thead>
+                            <tr>
+                                <th>Metric</th>
+                                <th>@a.Name</th>
+                                <th>@b.Name</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Method</td>
+                                <td>@Method(a)</td>
+                                <td>@Method(b)</td>
+                            </tr>
+                            <tr>
+                                <td>Steps</td>
+                                <td>@a.FinalStep / @a.TotalSteps</td>
+                                <td>@b.FinalStep / @b.TotalSteps</td>
+                            </tr>
+                            <tr>
+                                <td>Final loss</td>
+                                <td class="@(Lower(a.FinalLoss, b.FinalLoss))">@Fmt(a.FinalLoss)</td>
+                                <td class="@(Lower(b.FinalLoss, a.FinalLoss))">@Fmt(b.FinalLoss)</td>
+                            </tr>
+                            <tr>
+                                <td>Best val</td>
+                                <td class="@(Lower(a.BestValLoss, b.BestValLoss))">
+                                    @Fmt(a.BestValLoss)@StepAt(a.BestValStep)
+                                </td>
+                                <td class="@(Lower(b.BestValLoss, a.BestValLoss))">
+                                    @Fmt(b.BestValLoss)@StepAt(b.BestValStep)
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Validation split</td>
+                                <td>@a.ValidationPercent.ToString("0.#")%</td>
+                                <td>@b.ValidationPercent.ToString("0.#")%</td>
+                            </tr>
+                            <tr>
+                                <td>Elapsed</td>
+                                <td class="@(Lower(b.ElapsedSeconds, a.ElapsedSeconds))">@Duration(a.ElapsedSeconds)</td>
+                                <td class="@(Lower(a.ElapsedSeconds, b.ElapsedSeconds))">@Duration(b.ElapsedSeconds)</td>
+                            </tr>
+                            <tr>
+                                <td>Model</td>
+                                <td>@ModelSize(a)</td>
+                                <td>@ModelSize(b)</td>
+                            </tr>
+                            <tr>
+                                <td>Profile</td>
+                                <td>H@(a.HiddenDim) - batch @a.BatchSize - seq @a.SeqLen</td>
+                                <td>H@(b.HiddenDim) - batch @b.BatchSize - seq @b.SeqLen</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="grid-2">
+                        <TrainingLossChart Title="@a.Name" Points="@a.Curve"
+                                           BestStep="@a.BestValStep" BestLoss="@a.BestValLoss" />
+                        <TrainingLossChart Title="@b.Name" Points="@b.Curve"
+                                           BestStep="@b.BestValStep" BestLoss="@b.BestValLoss" />
+                    </div>
+                }
+            }
+            else if (Lab.RunHistory.Count >= 2)
+            {
+                <div class="small faint">
+                    Comparison needs two runs that logged at least two curve points.
+                </div>
+            }
+        </div>
+    </section>
+}
+else if (_tab == "models")
+{
+    <section class="panel training-convert">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Convert</div>
+                <h2>Between .smm and GGUF</h2>
+            </div>
+            <span class="faint small mono">tensors copied verbatim</span>
+        </div>
+        <div class="panel-body stack">
+            <p class="small faint">
+                SMM to GGUF exports a SharpMind model for another runtime. GGUF to SMM packages
+                a downloaded model so Studio can load it. Nothing is re-quantised: the tensor
+                bytes and the tokenizer move across unchanged.
+            </p>
+
+            <div class="training-form">
+                <div class="field training-form-wide">
+                    <label class="field-label" for="convert-pick">Known model files</label>
+                    <select id="convert-pick" class="input" value="@_convertSource" @onchange="PickSource">
+                        <option value="">Choose a model file…</option>
+                        @foreach (FileInfo file in ConvertibleModels)
+                        {
+                            <option value="@file.FullName">@file.Name - @file.Directory?.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="field training-form-wide">
+                    <label class="field-label" for="convert-source">Source file</label>
+                    <input id="convert-source" class="input" @bind="_convertSource" @bind:after="SuggestDestination"
+                           placeholder="C:\path\to\model.smm or C:\path\to\model.gguf" />
+                </div>
+                <div class="field training-form-wide">
+                    <label class="field-label" for="convert-destination">Destination file</label>
+                    <input id="convert-destination" class="input" @bind="_convertDestination"
+                           placeholder="Leave blank to write beside the source" />
+                </div>
+            </div>
+
+            <div class="training-actions">
+                <span class="training-chip live">@DirectionLabel</span>
+                <button type="button" class="button primary" @onclick="StartConversion"
+                        disabled="@(Convert.IsRunning || !CanConvert || (DestinationExists && !_allowOverwrite))">
+                    @(Convert.IsRunning ? "Converting..." : "Convert")
+                </button>
+                @if (Convert.IsRunning)
+                {
+                    <button type="button" class="button danger" @onclick="Convert.Cancel">Cancel</button>
+                }
+                <label class="small faint training-check">
+                    <input type="checkbox" @bind="_allowOverwrite" />
+                    Overwrite the destination if it exists
+                </label>
+            </div>
+
+            @if (DestinationExists && !_allowOverwrite)
+            {
+                <div class="small faint">
+                    <span class="mono">@_convertDestination</span> already exists. Tick overwrite to replace it.
+                </div>
+            }
+
+            @if (Convert.IsRunning || Convert.Result is not null)
+            {
+                <div class="progress-track">
+                    <div class="progress-fill" style="width:@ConvertPercent"></div>
+                </div>
+                <div class="small faint">@Convert.Status</div>
+            }
+
+            @if (Convert.Result is { Success: true } done)
+            {
+                <div class="small">
+                    Saved <span class="mono">@done.DestinationPath</span>
+                    - @Megabytes(done.DestinationBytes) MB in @done.Elapsed.TotalSeconds.ToString("0.0")s,
+                    validated as @done.Label.
+                </div>
+            }
+            else if (Convert.Error is { } conversionError)
+            {
+                <div class="error-line">@conversionError</div>
+            }
+
+            @if (_convertError is { } localError)
+            {
+                <div class="error-line">@localError</div>
+            }
+        </div>
+    </section>
+
+    <section class="panel training-section">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Model files</div>
+                <h2>Models</h2>
+            </div>
+            <a class="button" href="/settings?tab=models">Model settings</a>
+        </div>
+        <div class="panel-body stack">
+            @if (Models.Count == 0)
+            {
+                <div class="empty">No model files yet. Finished runs export an <span class="mono">.smm</span> or <span class="mono">.smlora</span> here, and conversions land beside their source.</div>
+            }
+            else
+            {
+                <div class="training-jobs">
+                    @foreach (FileInfo file in Models)
+                    {
+                        <div class="training-job">
+                            <div>
+                                <strong class="mono">@file.Name</strong>
+                                <div class="small faint">@file.FullName</div>
+                            </div>
+                            <div class="row">
+                                <span class="training-chip">@file.Extension.TrimStart('.').ToUpperInvariant()</span>
+                                <span class="small faint mono">@Megabytes(file.Length) MB</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            <p class="small faint">
+                A model version is a float master plus derived quant builds per device profile.
+                Quantised builds are outputs and never training roots.
+            </p>
+        </div>
+    </section>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? TabQuery { get; set; }
+
+    private string _tab = "new";
+    private string _name = "";
+    private string _corpusPath = "";
+    private string _size = "small";
+    private int _steps = 200;
+    private double _validationPercent = 10;
+    private string _exportPath = "";
+    private string? _error;
+    private bool _starting;
+
+    private string _convertSource = "";
+    private string _convertDestination = "";
+    private bool _allowOverwrite;
+    private string? _convertError;
+
+    private string _tuneBase = "";
+    private string _tuneCorpusPath = "";
+    private string _tuneName = "";
+    private string _tuneExport = "";
+    private int _tuneRank = 8;
+    private float _tuneAlpha = 16f;
+    private int _tuneSteps = 100;
+    private double _tuneValidationPercent = 10;
+    private float _tuneLr = 2e-4f;
+    private string _tuneOutput = "merged";
+    private string _tuneAdapterPath = "";
+    private string _tuneResume = "";
+    private bool _tuneStartFresh = true;
+    private string? _tuneError;
+    private bool _tuning;
+    private string _compareA = "";
+    private string _compareB = "";
+    private IReadOnlyList<string>? _resumeOptions;
+    private readonly HashSet<string> _tuneTargets =
+        ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"];
+
+    private static readonly (string Id, string Label)[] LoraTargets =
+    [
+        ("q_proj", "Attention Q"),
+        ("k_proj", "Attention K"),
+        ("v_proj", "Attention V"),
+        ("o_proj", "Attention O"),
+        ("gate_proj", "FFN gate"),
+        ("up_proj", "FFN up"),
+        ("down_proj", "FFN down"),
+    ];
+
+    private static readonly string[] Moves =
+    [
+        "Design", "Formatter", "Tokenizer", "Data", "Pretrain", "Continue",
+        "LoRA", "SFT", "Distill", "Prune", "QAT", "Quantize", "Merge",
+        "Evaluate", "Package",
+    ];
+
+    private static readonly HashSet<string> ActiveMoves =
+        ["Design", "Tokenizer", "Data", "Pretrain", "Evaluate", "Package"];
+
+    private IReadOnlyList<FileInfo> Models
+    {
+        get
+        {
+            try
+            {
+                var found = new List<FileInfo>();
+                foreach (string folder in new[] { Lab.Folder, StudioPaths.Models }.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    if (!Directory.Exists(folder)) continue;
+                    var directory = new DirectoryInfo(folder);
+                    found.AddRange(directory.GetFiles("*.smm", SearchOption.TopDirectoryOnly));
+                    found.AddRange(directory.GetFiles("*.gguf", SearchOption.TopDirectoryOnly));
+                    found.AddRange(directory.GetFiles("*" + TrainingJobSettings.AdapterExtension, SearchOption.TopDirectoryOnly));
+                }
+
+                return [.. found
+                    .OrderByDescending(file => file.LastWriteTimeUtc)
+                    .Take(50)];
+            }
+            catch
+            {
+                return [];
+            }
+        }
+    }
+
+    private IReadOnlyList<FileInfo> SmmModels =>
+        [.. Models.Where(file => file.Extension.Equals(".smm", StringComparison.OrdinalIgnoreCase))];
+
+    /// <summary>Model files the converter understands; adapters are not convertible.</summary>
+    private IReadOnlyList<FileInfo> ConvertibleModels =>
+        [.. Models.Where(file => !file.Extension.Equals(TrainingJobSettings.AdapterExtension, StringComparison.OrdinalIgnoreCase))];
+
+    private ModelConversionDirection? Direction => ModelConverter.Detect(_convertSource);
+
+    private string DirectionLabel => Direction switch
+    {
+        ModelConversionDirection.SmmToGguf => "SMM to GGUF",
+        ModelConversionDirection.GgufToSmm => "GGUF to SMM",
+        _ => "Pick a .smm or .gguf source",
+    };
+
+    private bool CanConvert => Direction is not null && !string.IsNullOrWhiteSpace(_convertSource);
+
+    private bool DestinationExists
+    {
+        get
+        {
+            string destination = _convertDestination.Trim();
+            return destination.Length > 0 && File.Exists(destination);
+        }
+    }
+
+    private string ConvertPercent => (Convert.Progress * 100).ToString("0") + "%";
+
+    protected override void OnInitialized()
+    {
+        Lab.Changed += OnTrainingChanged;
+        Convert.Changed += OnTrainingChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        _tab = TabQuery is "new" or "improve" or "playbooks" or "data" or "runs" or "models"
+            ? TabQuery
+            : "new";
+        if (_tab == "runs") EnsureCompareSelection();
+    }
+
+    public void Dispose()
+    {
+        Lab.Changed -= OnTrainingChanged;
+        Convert.Changed -= OnTrainingChanged;
+    }
+
+    private void OnTrainingChanged() => _ = InvokeAsync(() =>
+    {
+        if (_tab == "runs") EnsureCompareSelection();
+        // A finished run may have written a new adapter checkpoint; the resume
+        // picker should see it next time the Improve tab renders.
+        if (!Lab.IsRunning) _resumeOptions = null;
+        StateHasChanged();
+    });
+
+    private void PickSource(ChangeEventArgs args)
+    {
+        _convertSource = args.Value as string ?? "";
+        SuggestDestination();
+    }
+
+    private void SuggestDestination()
+    {
+        _convertError = null;
+        if (ModelConverter.Detect(_convertSource) is null)
+        {
+            _convertDestination = "";
+            return;
+        }
+
+        _convertDestination = ModelConverter.SuggestDestination(_convertSource.Trim());
+        _allowOverwrite = false;
+    }
+
+    private void StartConversion()
+    {
+        _convertError = null;
+        if (Convert.IsRunning) return;
+
+        string source = _convertSource.Trim();
+        if (ModelConverter.Detect(source) is null)
+        {
+            _convertError = "Pick a .smm or .gguf source file.";
+            return;
+        }
+        if (!File.Exists(source))
+        {
+            _convertError = $"Source model not found: {source}";
+            return;
+        }
+
+        string destination = string.IsNullOrWhiteSpace(_convertDestination)
+            ? ModelConverter.SuggestDestination(source)
+            : _convertDestination.Trim();
+
+        if (!Convert.Start(source, destination, _allowOverwrite))
+            _convertError = "A conversion is already running.";
+    }
+
+    private static string Megabytes(long bytes) => (bytes / 1024d / 1024d).ToString("0.0");
+
+    private void PickBase(ChangeEventArgs args)
+    {
+        _tuneBase = args.Value as string ?? "";
+        _tuneError = null;
+        if (string.IsNullOrWhiteSpace(_tuneName) && File.Exists(_tuneBase))
+            _tuneName = Path.GetFileNameWithoutExtension(_tuneBase) + "-lora";
+    }
+
+    private void ToggleTarget(string id, ChangeEventArgs args)
+    {
+        if (args.Value is not bool wanted) return;
+        if (wanted) _tuneTargets.Add(id);
+        else _tuneTargets.Remove(id);
+    }
+
+    private void PickResume(ChangeEventArgs args)
+        => _tuneResume = args.Value as string ?? "";
+
+    private IReadOnlyList<string> AdapterResumeOptions => _resumeOptions ??= LoadAdapterResumeOptions();
+
+    private IReadOnlyList<string> LoadAdapterResumeOptions()
+    {
+        try
+        {
+            var found = new List<string>();
+            foreach (string folder in new[] { StudioPaths.Training, StudioPaths.Models }
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!Directory.Exists(folder)) continue;
+                found.AddRange(Directory.GetFiles(
+                    folder, "*" + TrainingJobSettings.AdapterExtension, SearchOption.TopDirectoryOnly));
+                foreach (string checkpoints in Directory.GetDirectories(folder, "checkpoints-*"))
+                    found.AddRange(Directory.GetFiles(
+                        checkpoints, "adapters.smlora", SearchOption.AllDirectories));
+            }
+
+            return [.. found
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .Take(20)];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string ResumeLabel(string path)
+    {
+        string label = Path.GetRelativePath(StudioPaths.Training, path);
+        return label.StartsWith("..", StringComparison.Ordinal) ? path : label;
+    }
+
+    private void StartFineTune()
+    {
+        _tuneError = null;
+        if (Lab.IsRunning) return;
+
+        string basePath = _tuneBase.Trim();
+        if (!File.Exists(basePath))
+        {
+            _tuneError = $"Base model not found: {basePath}";
+            return;
+        }
+        if (!Path.GetExtension(basePath).Equals(".smm", StringComparison.OrdinalIgnoreCase))
+        {
+            _tuneError = "A fine-tune base must be a packaged .smm. Convert a .gguf on the Models tab first.";
+            return;
+        }
+
+        string corpus = _tuneCorpusPath.Trim();
+        if (corpus.Length == 0)
+        {
+            _tuneError = "Point at the corpus of new or corrective text first.";
+            return;
+        }
+        if (Directory.Exists(corpus))
+            corpus = Path.Combine(corpus, "**", "*.txt");
+        else if (!corpus.Contains('*') && !corpus.Contains('?') && !File.Exists(corpus))
+        {
+            _tuneError = $"Corpus not found: {corpus}";
+            return;
+        }
+
+        if (_tuneTargets.Count == 0)
+        {
+            _tuneError = "Pick at least one projection to adapt.";
+            return;
+        }
+
+        int rank = Math.Max(1, _tuneRank);
+        float alpha = _tuneAlpha > 0 ? _tuneAlpha : rank * 2f;
+        int steps = Math.Max(1, _tuneSteps);
+        float lr = _tuneLr > 0 ? _tuneLr : 2e-4f;
+
+        string name = string.IsNullOrWhiteSpace(_tuneName)
+            ? Path.GetFileNameWithoutExtension(basePath) + "-lora-" + DateTime.Now.ToString("yyyyMMdd-HHmm")
+            : _tuneName.Trim();
+
+        int seqLen = 64;
+        try
+        {
+            var config = SmmLoader.LoadConfig(SmmLoader.LoadMeta(basePath));
+            if (config is { MaxSeqLen: > 0 }) seqLen = Math.Min(seqLen, config.MaxSeqLen);
+        }
+        catch
+        {
+            // The runner reports a broken base with a clearer message.
+        }
+
+        string export = string.IsNullOrWhiteSpace(_tuneExport)
+            ? Path.Combine(StudioPaths.Training, Sanitize(name) + ".smm")
+            : _tuneExport.Trim();
+
+        var job = new TrainingJobSettings
+        {
+            Name = name,
+            BaseModelPath = basePath,
+            Sources =
+            [
+                new JobSource
+                {
+                    Component = new JobComponent
+                    {
+                        DisplayName = "Text File",
+                        TypeName = typeof(TextFileSource).FullName!,
+                        Args = new Dictionary<string, string>
+                        {
+                            ["path"] = corpus,
+                            ["mode"] = "FilePerDoc",
+                        },
+                    },
+                },
+            ],
+            LoRARank = rank,
+            LoRAAlpha = alpha,
+            LoRATargetModules = [.. _tuneTargets.OrderBy(target => target, StringComparer.Ordinal)],
+            MergeOnExport = _tuneOutput != "adapter",
+            SaveAdapterFile = _tuneOutput != "merged",
+            AdapterPath = string.IsNullOrWhiteSpace(_tuneAdapterPath) ? null : _tuneAdapterPath.Trim(),
+            ResumeFrom = string.IsNullOrWhiteSpace(_tuneResume) ? null : _tuneResume.Trim(),
+            TotalSteps = steps,
+            ValidationPercent = Math.Clamp(_tuneValidationPercent, 0, 90),
+            LogInterval = Math.Max(1, steps / 20),
+            BatchSize = 2,
+            SeqLen = Math.Max(1, seqLen),
+            BatchingKind = "RandomWindow",
+            LearningRate = lr,
+            MinLr = lr / 10f,
+            WarmupSteps = Math.Max(1, steps / 20),
+            WeightDecay = 0f,
+            GradClipNorm = 1f,
+            LabelSmoothing = 0f,
+            CheckpointInterval = Math.Max(1, steps / 4),
+            KeepRecent = 2,
+            ExportPath = export,
+            StartFresh = _tuneStartFresh,
+        };
+
+        _tuning = true;
+        try
+        {
+            if (!Lab.Start(job, Workspace.PluginsFolder))
+                _tuneError = "A training run is already active.";
+        }
+        catch (Exception ex)
+        {
+            _tuneError = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _tuning = false;
+        }
+    }
+
+    private async Task StartTraining()
+    {
+        _error = null;
+        if (Lab.IsRunning) return;
+
+        string name = string.IsNullOrWhiteSpace(_name)
+            ? $"corpus-{DateTime.Now:yyyyMMdd-HHmm}"
+            : _name.Trim();
+
+        string corpus = _corpusPath.Trim();
+        if (corpus.Length == 0)
+        {
+            _error = "Point at a corpus file, glob or folder first.";
+            return;
+        }
+
+        if (Directory.Exists(corpus))
+            corpus = Path.Combine(corpus, "**", "*.txt");
+        else if (!corpus.Contains('*') && !corpus.Contains('?') && !File.Exists(corpus))
+        {
+            _error = $"Corpus not found: {corpus}";
+            return;
+        }
+
+        (int hidden, int layers, int heads, int kvHeads, int ffn, int seqLen) = _size switch
+        {
+            "tiny" => (64, 2, 4, 4, 256, 128),
+            "medium" => (384, 6, 6, 6, 1536, 256),
+            _ => (128, 4, 8, 8, 512, 256),
+        };
+
+        int steps = Math.Max(1, _steps);
+        string export = string.IsNullOrWhiteSpace(_exportPath)
+            ? Path.Combine(StudioPaths.Training, Sanitize(name) + ".smm")
+            : _exportPath.Trim();
+
+        var job = new TrainingJobSettings
+        {
+            Name = name,
+            Sources =
+            [
+                new JobSource
+                {
+                    Component = new JobComponent
+                    {
+                        DisplayName = "Text File",
+                        TypeName = typeof(TextFileSource).FullName!,
+                        Args = new Dictionary<string, string>
+                        {
+                            ["path"] = corpus,
+                            ["mode"] = "FilePerDoc",
+                        },
+                    },
+                },
+            ],
+            TokenizerKind = "Bpe",
+            TokenizerVocabSize = 2048,
+            HiddenDim = hidden,
+            NumLayers = layers,
+            NumHeads = heads,
+            NumKvHeads = kvHeads,
+            FfnDim = ffn,
+            MaxSeqLen = seqLen,
+            NormEps = 1e-5f,
+            ArchitecturePreset = "gpt2",
+            Activation = "GELU",
+            Gate = "None",
+            Ffn = "Dense",
+            Attention = "MHA",
+            Norm = "LayerNorm",
+            Arch = "Decoder",
+            PositionalEncoding = "RoPE",
+            Optimizer = "AdamW",
+            TotalSteps = steps,
+            ValidationPercent = Math.Clamp(_validationPercent, 0, 90),
+            LogInterval = Math.Max(1, steps / 20),
+            BatchSize = 4,
+            SeqLen = Math.Min(seqLen, 64),
+            BatchingKind = "RandomWindow",
+            LearningRate = 3e-4f,
+            MinLr = 3e-5f,
+            WarmupSteps = Math.Max(1, steps / 20),
+            WeightDecay = 0.01f,
+            GradClipNorm = 1f,
+            LabelSmoothing = 0f,
+            CheckpointInterval = Math.Max(1, steps / 4),
+            KeepRecent = 2,
+            ExportPath = export,
+            StartFresh = true,
+        };
+
+        _starting = true;
+        try
+        {
+            if (!Lab.Start(job, Workspace.PluginsFolder))
+                _error = "A training run is already active.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+            await Task.CompletedTask;
+        }
+        finally
+        {
+            _starting = false;
+        }
+    }
+
+    private void LoadLatestJob()
+    {
+        string? latest = Lab.SavedJobs.FirstOrDefault();
+        if (latest is not null) LoadJob(latest);
+    }
+
+    private void LoadJob(string path)
+    {
+        TrainingJobSettings? job = Lab.LoadJob(path, out string? error);
+        if (job is null)
+        {
+            _error = error ?? "Could not load that job.";
+            return;
+        }
+
+        if (job.IsFineTune)
+        {
+            _tuneBase = job.BaseModelPath ?? "";
+            _tuneCorpusPath = job.Sources.FirstOrDefault()?.Component.Args.TryGetValue("path", out string? tuneCorpus) == true
+                ? tuneCorpus
+                : "";
+            _tuneName = job.Name;
+            _tuneSteps = Math.Max(1, job.TotalSteps);
+            _tuneValidationPercent = job.ValidationPercent;
+            _tuneRank = Math.Max(1, job.LoRARank);
+            _tuneAlpha = job.LoRAAlpha;
+            _tuneLr = job.LearningRate;
+            _tuneExport = job.ExportPath ?? "";
+            _tuneOutput = !job.MergeOnExport ? "adapter" : job.SaveAdapterFile ? "both" : "merged";
+            _tuneAdapterPath = job.AdapterPath ?? "";
+            _tuneResume = job.ResumeFrom ?? "";
+            _tuneStartFresh = job.StartFresh;
+            _tuneTargets.Clear();
+            foreach (string target in job.LoRATargetModules) _tuneTargets.Add(target);
+            _tuneError = null;
+            _tab = "improve";
+            Nav.NavigateTo("/training?tab=improve");
+            return;
+        }
+
+        _name = job.Name;
+        _corpusPath = job.Sources.FirstOrDefault()?.Component.Args.TryGetValue("path", out string? corpus) == true
+            ? corpus
+            : "";
+        _steps = Math.Max(1, job.TotalSteps);
+        _validationPercent = job.ValidationPercent;
+        _size = job.HiddenDim switch
+        {
+            <= 64 => "tiny",
+            >= 384 => "medium",
+            _ => "small",
+        };
+        _exportPath = job.ExportPath ?? "";
+        _error = null;
+        _tab = "new";
+        Nav.NavigateTo("/training?tab=new");
+    }
+
+    private IReadOnlyList<TrainingRunSummary> Comparable
+        => [.. Lab.RunHistory.Where(run => run.Record.Success && run.Record.Curve.Count >= 2)];
+
+    private TrainingRunRecord? CompareA => FindRecord(_compareA);
+    private TrainingRunRecord? CompareB => FindRecord(_compareB);
+
+    private TrainingRunRecord? FindRecord(string path)
+        => Lab.RunHistory.FirstOrDefault(run => run.Path == path)?.Record;
+
+    private void EnsureCompareSelection()
+    {
+        IReadOnlyList<TrainingRunSummary> comparable = Comparable;
+        if (comparable.Count == 0)
+        {
+            _compareA = "";
+            _compareB = "";
+            return;
+        }
+
+        if (!comparable.Any(run => run.Path == _compareA))
+            _compareA = comparable[0].Path;
+        if (!comparable.Any(run => run.Path == _compareB) || _compareB == _compareA)
+            _compareB = comparable.FirstOrDefault(run => run.Path != _compareA)?.Path ?? "";
+    }
+
+    private static string OptionLabel(TrainingRunSummary run)
+        => $"{run.Record.Name} - {run.Record.FinishedUtc.ToLocalTime():dd MMM HH:mm}";
+
+    private static string Method(TrainingRunRecord record)
+        => record.FineTune ? "LoRA fine-tune" : "Pretrain";
+
+    private static string Duration(double seconds)
+    {
+        var span = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return span.TotalHours >= 1 ? span.ToString(@"h\:mm\:ss") : span.ToString(@"m\:ss");
+    }
+
+    private static string Fmt(double? value) => value?.ToString("0.####") ?? "—";
+
+    private static string StepAt(int? step) => step is { } value ? $" @ {value}" : "";
+
+    /// <summary>Marks the lower of two values, the winner for loss and elapsed time.</summary>
+    private static string Lower(double? a, double? b)
+        => a is { } av && b is { } bv && av < bv - 1e-9 ? "better" : "";
+
+    private string ModelSize(TrainingRunRecord record)
+        => record.ExportBytes > 0 ? $"{Megabytes(record.ExportBytes)} MB" : "not exported";
+
+    private static bool CanUseAsBase(TrainingRunSummary run)
+        => run.Record.Success
+           && run.Record.ExportPath is { } export
+           && export.EndsWith(".smm", StringComparison.OrdinalIgnoreCase)
+           && File.Exists(export);
+
+    private void UseAsBase(TrainingRunSummary run)
+    {
+        if (!CanUseAsBase(run)) return;
+        _tuneBase = run.Record.ExportPath!;
+        _tuneName = Path.GetFileNameWithoutExtension(_tuneBase) + "-lora";
+        _tuneError = null;
+        _tab = "improve";
+        Nav.NavigateTo("/training?tab=improve");
+    }
+
+    private void DeleteRun(TrainingRunSummary run)
+    {
+        Lab.DeleteRun(run.Path);
+        if (_compareA == run.Path) _compareA = "";
+        if (_compareB == run.Path) _compareB = "";
+        EnsureCompareSelection();
+    }
+
+    private static string Sanitize(string name)
+    {
+        foreach (char invalid in Path.GetInvalidFileNameChars())
+            name = name.Replace(invalid, '_');
+        return string.IsNullOrWhiteSpace(name) ? "model" : name.Trim();
+    }
+}
