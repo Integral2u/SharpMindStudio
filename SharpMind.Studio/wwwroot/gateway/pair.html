@@ -62,7 +62,11 @@ form.addEventListener('submit', async e => {
     else show('Check the PIN and try again.', 'bad');
   } catch { show('Could not reach the host.', 'bad'); }
 });
-if(!token){ show('Open this page from the host QR code.', 'bad'); form.classList.add('hidden'); }
+if(new URLSearchParams(location.search).has('expired')){
+  show('This login code expired or was already used. Scan a new code in Settings → Pair.', 'bad');
+  form.classList.add('hidden'); intro.classList.add('hidden');
+}
+else if(!token){ show('Open this page from the host QR code.', 'bad'); form.classList.add('hidden'); }
 else { polling=setInterval(poll,2000); poll(); }
 </script>
 </body>

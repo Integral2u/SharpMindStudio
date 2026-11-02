@@ -8,11 +8,13 @@
 @if (!DeviceAccess.IsDevice)
 {
     <div class="gateway-admin">
-        @if (!LanEnabled)
+        @if (!Gateway.LanAllowed)
         {
-            <div class="small faint">
-                LAN device pairing is off. Turn it on above and restart Studio before scanning this code.
-            </div>
+            <div class="error-line">LAN device pairing is off. Turn it on above; phones can connect right away.</div>
+        }
+        else
+        {
+            <div class="small faint">Phone port @Gateway.LanPort is open. Scan the code, or open the address below on the phone.</div>
         }
         @if (_addresses.Count == 0)
         {
@@ -25,7 +27,7 @@
             <div class="gateway-admin-head">
                 <div class="field gateway-address">
                     <label class="field-label" for="gateway-address">LAN address</label>
-                    <select id="gateway-address" class="input" @bind="_selectedAddress">
+                    <select id="gateway-address" class="input" @bind="_selectedAddress" @bind:after="RefreshDeviceQr">
                         @foreach (LanAddress address in _addresses)
                         {
                             <option value="@address.Url">@address.Address - @address.Url</option>
@@ -36,11 +38,6 @@
                     @(_busy ? "Preparing..." : _offer is null ? "Create pairing" : "New pairing")
                 </button>
             </div>
-
-            @if (_error is not null)
-            {
-                <div class="error-line">@_error</div>
-            }
 
             @if (_offer is null)
             {
@@ -54,10 +51,22 @@
                 <div class="gateway-pair-box">
                     <img class="gateway-qr" src="@_qrDataUrl" alt="Pairing QR" />
                     <div class="gateway-pair-copy">
-                        <div class="small faint">Scan on the phone, or open:</div>
+                        <div class="address-toggle">
+                            <button type="button" class="button @(_useGlobal ? "" : "primary")"
+                                    @onclick="() => SetAddressChoice(false)">Local @LanHost</button>
+                            <button type="button" class="button @(_useGlobal ? "primary" : "")"
+                                    @onclick="UseGlobalAsync" disabled="@_detectingIp">Global</button>
+                        </div>
+                        <div class="small faint">
+                            @(_globalPairingUrl.Length == 0
+                                ? "Global needs a public address. Choose Global and Studio will find one."
+                                : _useGlobal
+                                    ? "Outside your network. Needs router port forwarding."
+                                    : "Same Wi-Fi only.")
+                        </div>
                         <div class="gateway-url">
-                            <span class="mono">@_pairingUrl</span>
-                            <button type="button" class="button" @onclick="CopyUrlAsync">Copy</button>
+                            <span class="mono">@ActivePairingUrl</span>
+                            <button type="button" class="button" @onclick="() => CopyUrlAsync(ActivePairingUrl)">Copy</button>
                         </div>
                         <div class="small faint">PIN</div>
                         <div class="gateway-pin">@_offer.Pin</div>
@@ -68,6 +77,186 @@
 
             <div class="gateway-status small">@_status</div>
         }
+
+        <div class="gateway-section">
+            <div class="eyebrow">Trusted devices</div>
+            @if (_devices.Count == 0)
+            {
+                <div class="small faint">No paired devices.</div>
+            }
+            else
+            {
+                @foreach (GatewayDevice device in _devices)
+                {
+                    <div class="gateway-device">
+                        <div>
+                            <strong>@device.Name</strong>
+                            <div class="small faint">
+                                @device.Mode · @(string.IsNullOrWhiteSpace(device.LastIp) ? "no address" : device.LastIp)
+                                · seen @(device.LastSeenUtc is { } seen ? seen.ToLocalTime().ToString("dd MMM HH:mm") : "never")
+                            </div>
+                        </div>
+                        <div class="row">
+                            <button type="button" class="button" @onclick="() => ToggleDeviceQr(device)">
+                                @(_deviceQrId == device.Id ? "Hide QR" : "Login QR")
+                            </button>
+                            <button type="button" class="button" @onclick="() => SetModeAsync(device.Id, GatewayModes.Mobile)"
+                                    disabled="@(device.Mode == GatewayModes.Mobile)">
+                                Mobile
+                            </button>
+                            <button type="button" class="button" @onclick="() => SetModeAsync(device.Id, GatewayModes.Full)"
+                                    disabled="@(device.Mode == GatewayModes.Full)">
+                                Full
+                            </button>
+                            <button type="button" class="button danger" @onclick="() => RevokeAsync(device.Id)">
+                                Revoke
+                            </button>
+                        </div>
+                        @if (_deviceQrId == device.Id)
+                        {
+                            <div class="gateway-device-qr">
+                                <img class="gateway-qr device" src="@_deviceQrDataUrl" alt="Login QR for @device.Name" />
+                                <div class="gateway-pair-copy">
+                                    <div class="address-toggle">
+                                        <button type="button" class="button @(_deviceQrGlobal ? "" : "primary")"
+                                                @onclick="() => SetDeviceQrAddress(false)">Local @LanHost</button>
+                                        <button type="button" class="button @(_deviceQrGlobal ? "primary" : "")"
+                                                @onclick="() => SetDeviceQrAddress(true)"
+                                                disabled="@(ExternalBaseUrl.Length == 0)">Global</button>
+                                    </div>
+                                    <div class="small faint">
+                                        @(_deviceQrGlobal ? "Outside your network." : "Same Wi-Fi only.")</div>
+                                    <div class="small faint">
+                                        Scan to sign in as this device. The code works once and expires at
+                                        @(_deviceQrExpires?.ToLocalTime().ToString("HH:mm")).
+                                        Anyone who scans it gets this device's access.
+                                    </div>
+                                    <div class="gateway-url">
+                                        <span class="mono">@_deviceQrUrl</span>
+                                        <button type="button" class="button" @onclick="() => CopyUrlAsync(_deviceQrUrl)">Copy</button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="gateway-section">
+            <div class="eyebrow">Global address (outside your network)</div>
+            <div class="row">
+                <div class="field" style="flex: 2 1 18rem;">
+                    <label class="field-label" for="gateway-external">Public address</label>
+                    <input id="gateway-external" class="input mono" placeholder="http://203.0.113.10:5118"
+                           @bind="_externalUrl" @bind:after="SaveExternalUrlAsync" />
+                </div>
+                <button type="button" class="button" @onclick="DetectPublicIpAsync" disabled="@_detectingIp">
+                    @(_detectingIp ? "Finding..." : "Find my public IP")
+                </button>
+            </div>
+            <div class="small faint">
+                @(_publicIp is null ? "Public IP not checked yet." : $"Public IP: {_publicIp}.")
+                Finding it asks api.ipify.org and sends nothing else. A dynamic DNS name also works here.
+            </div>
+        </div>
+
+        <div class="gateway-section gateway-note">
+            <div class="eyebrow">Connecting a phone</div>
+            <ol class="small faint">
+                <li>
+                    <strong>Same Wi-Fi:</strong> the phone must reach @LanHost:@Gateway.LanPort. Windows Firewall
+                    blocks that by default, so allow TCP @Gateway.LanPort on the network profile your Wi-Fi uses
+                    (usually Private).
+                    <div class="row" style="margin-top: .4rem;">
+                        <span class="status @FirewallClass">@FirewallLabel</span>
+                        <button type="button" class="button" @onclick="CheckFirewallAsync" disabled="@_firewallBusy">
+                            Check
+                        </button>
+                        <button type="button" class="button primary" @onclick="AllowFirewallAsync"
+                                disabled="@(_firewallBusy || _firewallAllowed == true)">
+                            Allow through Windows Firewall
+                        </button>
+                    </div>
+                    <div class="small faint">This asks Windows for administrator approval. Manual command if you prefer:</div>
+                    <div class="mono gateway-command">New-NetFirewallRule -DisplayName "SharpMind Studio phone" -Direction Inbound -Protocol TCP -LocalPort @Gateway.LanPort -Profile Private -Action Allow</div>
+                </li>
+                <li>
+                    <strong>Outside your network:</strong> do the firewall step above, then forward external TCP
+                    @Gateway.LanPort on your router to @LanHost port @Gateway.LanPort. Enter your public address in
+                    the field above. Router port forwarding is needed only for this.
+                </li>
+                <li>
+                    Pairing uses plain HTTP. Forward the port only when you need outside access, and remove the
+                    forward when you no longer need it.
+                </li>
+            </ol>
+        </div>
+        @if (_error is not null)
+        {
+            <div class="error-line">@_error</div>
+        }
+
+        <div class="gateway-section">
+            <div class="eyebrow">Remote studio</div>
+            <div class="row">
+                <div class="field">
+                    <label class="field-label" for="gateway-mode">Phone sessions run</label>
+                    <select id="gateway-mode" class="input" @bind="_mode" @bind:after="SaveGatewaySettingsAsync">
+                        <option value="@GatewayConfigModes.Local">On this PC</option>
+                        <option value="@GatewayConfigModes.Proxy">On a remote Studio</option>
+                    </select>
+                </div>
+                @if (IsProxySelected)
+                {
+                    <div class="field" style="flex: 2 1 18rem;">
+                        <label class="field-label" for="gateway-upstream">Upstream URL</label>
+                        <input id="gateway-upstream" class="input" placeholder="http://192.168.1.20:5117"
+                               @bind="_upstreamUrl" @bind:after="SaveGatewaySettingsAsync" />
+                    </div>
+                }
+            </div>
+
+            @if (IsProxySelected)
+            {
+                <div class="row">
+                    <div class="field" style="flex: 2 1 16rem;">
+                        <label class="field-label" for="gateway-upstream-token">Upstream token</label>
+                        <input id="gateway-upstream-token" type="password" class="input" autocomplete="off"
+                               placeholder="@(_hasUpstreamAuthorization ? "stored - type to replace" : "optional")"
+                               @bind="_upstreamAuthorization" @bind:after="SaveGatewaySettingsAsync" />
+                    </div>
+                    <button type="button" class="button" @onclick="ClearUpstreamAuthorizationAsync"
+                            disabled="@(!_hasUpstreamAuthorization)">
+                        Clear token
+                    </button>
+                    <span class="status @HealthClass">@HealthLabel</span>
+                </div>
+                <div class="small faint">@(_health?.Detail ?? "Checking the upstream Studio...")</div>
+            }
+
+            <div class="field">
+                <label class="field-label" for="gateway-secret">Gateway trust secret</label>
+                <div class="row">
+                    <input id="gateway-secret" class="input mono" autocomplete="off" spellcheck="false"
+                           placeholder="Generate or paste a secret"
+                           @bind="_gatewaySecret" @bind:after="SaveGatewaySettingsAsync" />
+                    <button type="button" class="button" @onclick="CopySecretAsync"
+                            disabled="@string.IsNullOrWhiteSpace(_gatewaySecret)">
+                        Copy
+                    </button>
+                    <button type="button" class="button" @onclick="GenerateSecretAsync">Generate</button>
+                    <button type="button" class="button danger" @onclick="ClearGatewaySecretAsync"
+                            disabled="@string.IsNullOrWhiteSpace(_gatewaySecret)">
+                        Clear
+                    </button>
+                </div>
+                <div class="small faint">
+                    Signs each proxied request. The upstream Studio accepts signed requests only when
+                    its Phone pairing panel holds the same secret.
+                </div>
+            </div>
+        </div>
 
         @if (_pending.Count > 0)
         {
@@ -97,42 +286,6 @@
             </div>
         }
 
-        <div class="gateway-section">
-            <div class="eyebrow">Trusted devices</div>
-            @if (_devices.Count == 0)
-            {
-                <div class="small faint">No paired devices.</div>
-            }
-            else
-            {
-                @foreach (GatewayDevice device in _devices)
-                {
-                    <div class="gateway-device">
-                        <div>
-                            <strong>@device.Name</strong>
-                            <div class="small faint">
-                                @(device.Revoked ? "revoked" : device.Mode) · @(string.IsNullOrWhiteSpace(device.LastIp) ? "no address" : device.LastIp)
-                                · seen @(device.LastSeenUtc is { } seen ? seen.ToLocalTime().ToString("dd MMM HH:mm") : "never")
-                            </div>
-                        </div>
-                        <div class="row">
-                            <button type="button" class="button" @onclick="() => SetModeAsync(device.Id, GatewayModes.Mobile)"
-                                    disabled="@(device.Mode == GatewayModes.Mobile && !device.Revoked)">
-                                Mobile
-                            </button>
-                            <button type="button" class="button" @onclick="() => SetModeAsync(device.Id, GatewayModes.Full)"
-                                    disabled="@(device.Mode == GatewayModes.Full && !device.Revoked)">
-                                Full
-                            </button>
-                            <button type="button" class="button danger" @onclick="() => RevokeAsync(device.Id)"
-                                    disabled="@device.Revoked">
-                                Revoke
-                            </button>
-                        </div>
-                    </div>
-                }
-            }
-        </div>
     </div>
 }
 
@@ -144,12 +297,80 @@
     private IReadOnlyList<GatewayDevice> _devices = [];
     private string? _selectedAddress;
     private PairingOffer? _offer;
-    private string _pairingUrl = "";
+    private string _lanPairingUrl = "";
+    private string _globalPairingUrl = "";
+    private string _externalUrl = "";
+    private bool _useGlobal;
+    private bool _detectingIp;
+    private string? _publicIp;
+    private bool? _firewallAllowed;
+    private bool _firewallBusy;
+    private string? _deviceQrId;
+    private string _deviceLoginToken = "";
+    private string _deviceQrUrl = "";
+    private string _deviceQrDataUrl = "";
+    private bool _deviceQrGlobal;
+    private DateTimeOffset? _deviceQrExpires;
+    private static readonly TimeSpan DeviceLoginLifetime = TimeSpan.FromMinutes(5);
+
+    private string FirewallClass => _firewallAllowed switch
+    {
+        true => "ok",
+        false => "failed",
+        _ => "n-a",
+    };
+
+    private string FirewallLabel => _firewallAllowed switch
+    {
+        true => "firewall open",
+        false => "firewall blocked",
+        _ => "firewall unknown",
+    };
+
+    private string LanHost => _addresses.FirstOrDefault()?.Address ?? "this PC's LAN address";
+
+    private string ActivePairingUrl =>
+        _useGlobal && _globalPairingUrl.Length > 0 ? _globalPairingUrl : _lanPairingUrl;
+
+    private string LanBaseUrl =>
+        string.IsNullOrWhiteSpace(_selectedAddress)
+            ? _addresses.FirstOrDefault()?.Url ?? $"http://127.0.0.1:{Gateway.LanPort}"
+            : _selectedAddress.TrimEnd('/');
+
+    private string ExternalBaseUrl =>
+        string.IsNullOrWhiteSpace(_externalUrl) ? "" : _externalUrl.Trim().TrimEnd('/');
     private string _qrDataUrl = "";
     private string _status = "";
     private string? _error;
     private bool _busy;
     private CancellationTokenSource? _cts;
+    private string _mode = GatewayConfigModes.Local;
+    private string _upstreamUrl = "";
+    private string _upstreamAuthorization = "";
+    private string _gatewaySecret = "";
+    private bool _hasUpstreamAuthorization;
+    private UpstreamHealth? _health;
+    private bool _savingSettings;
+
+    private bool IsProxySelected =>
+        string.Equals(_mode, GatewayConfigModes.Proxy, StringComparison.OrdinalIgnoreCase);
+
+    private string HealthClass => _health is null ? "running" : _health.Healthy ? "ok" : "failed";
+
+    private string HealthLabel => _health switch
+    {
+        null => "checking",
+        { Healthy: true } health => $"upstream {health.LatencyMs} ms",
+        { Status: int status } => $"upstream {status}",
+        _ => "upstream down",
+    };
+
+    protected override void OnInitialized()
+    {
+        LoadSettings();
+        LoadAddresses();
+        RefreshLists();
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -159,6 +380,8 @@
         LoadAddresses();
         RefreshLists();
         if (_addresses.Count > 0) await CreatePairingAsync();
+        _firewallAllowed = await GatewayFirewall.RuleExistsAsync(Gateway.LanPort, _cts.Token);
+        if (IsProxySelected) await RefreshHealthAsync(_cts.Token);
         _ = PollAsync(_cts.Token);
         StateHasChanged();
     }
@@ -167,6 +390,261 @@
     {
         _cts?.Cancel();
         _cts?.Dispose();
+    }
+
+    private void LoadSettings()
+    {
+        GatewayConfig config = Gateway.Config;
+        _mode = string.Equals(config.Mode, GatewayConfigModes.Proxy, StringComparison.OrdinalIgnoreCase)
+            ? GatewayConfigModes.Proxy
+            : GatewayConfigModes.Local;
+        _upstreamUrl = config.UpstreamUrl ?? "";
+        _hasUpstreamAuthorization = !string.IsNullOrWhiteSpace(config.UpstreamAuthorizationProtected);
+        _gatewaySecret = Gateway.GatewaySecret ?? "";
+        _externalUrl = Gateway.ExternalUrl ?? "";
+    }
+
+    private async Task SaveGatewaySettingsAsync()
+    {
+        if (_savingSettings) return;
+        _savingSettings = true;
+        try
+        {
+            Gateway.SaveProxySettings(_mode, _upstreamUrl, _upstreamAuthorization, _gatewaySecret);
+            _upstreamAuthorization = "";
+            LoadSettings();
+            _error = null;
+            _status = IsProxySelected && !Gateway.ProxyActive
+                ? "Saved. Proxying starts once an upstream URL and trust secret are set."
+                : "Remote studio settings saved.";
+            if (IsProxySelected) await RefreshHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _savingSettings = false;
+        }
+    }
+
+    private async Task RefreshHealthAsync(CancellationToken cancellationToken = default)
+    {
+        _health = IsProxySelected
+            ? await Gateway.CheckUpstreamAsync(cancellationToken)
+            : null;
+    }
+
+    private async Task GenerateSecretAsync()
+    {
+        try
+        {
+            _gatewaySecret = Gateway.GenerateGatewaySecret();
+            _status = "New trust secret generated. Copy it into the upstream Studio's pairing panel.";
+            await RefreshHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+    }
+
+    private async Task CopySecretAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_gatewaySecret)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _gatewaySecret);
+            _status = "Trust secret copied.";
+        }
+        catch
+        {
+            _status = "Could not copy automatically. Select the secret and copy it.";
+        }
+    }
+
+    private Task ClearGatewaySecretAsync()
+    {
+        Gateway.SaveProxySettings(_mode, _upstreamUrl, clearGatewaySecret: true);
+        LoadSettings();
+        _health = null;
+        _status = "Trust secret cleared. Proxying stops until a matching secret is set again.";
+        return Task.CompletedTask;
+    }
+
+    private async Task ClearUpstreamAuthorizationAsync()
+    {
+        Gateway.SaveProxySettings(_mode, _upstreamUrl, clearAuthorization: true);
+        _upstreamAuthorization = "";
+        LoadSettings();
+        _status = "Upstream token cleared.";
+        await RefreshHealthAsync();
+    }
+
+    private void RefreshPairingUrls()
+    {
+        _globalPairingUrl = _offer is not null && !string.IsNullOrWhiteSpace(_externalUrl)
+            ? $"{_externalUrl.Trim().TrimEnd('/')}/pair?t={Uri.EscapeDataString(_offer.Token)}"
+            : "";
+        if (_globalPairingUrl.Length == 0) _useGlobal = false;
+        _qrDataUrl = _offer is null ? "" : GatewayService.QrDataUrl(ActivePairingUrl);
+        RefreshDeviceQr();
+    }
+
+    private void SetAddressChoice(bool global)
+    {
+        _useGlobal = global && _globalPairingUrl.Length > 0;
+        _qrDataUrl = _offer is null ? "" : GatewayService.QrDataUrl(ActivePairingUrl);
+    }
+
+    private void ToggleDeviceQr(GatewayDevice device)
+    {
+        if (_deviceQrId == device.Id)
+        {
+            ClearDeviceQr();
+            return;
+        }
+
+        string? token = Gateway.IssueDeviceLogin(device.Id, DeviceLoginLifetime);
+        if (token is null)
+        {
+            ClearDeviceQr();
+            _error = $"{device.Name} cannot sign in because it is revoked or missing.";
+            return;
+        }
+
+        _deviceQrId = device.Id;
+        _deviceLoginToken = token;
+        _deviceQrGlobal = _useGlobal && ExternalBaseUrl.Length > 0;
+        _deviceQrExpires = DateTimeOffset.UtcNow.Add(DeviceLoginLifetime);
+        RefreshDeviceQr();
+        _status = $"Login code ready for {device.Name}. Scan it within 5 minutes; it works once.";
+    }
+
+    private void SetDeviceQrAddress(bool global)
+    {
+        _deviceQrGlobal = global && ExternalBaseUrl.Length > 0;
+        RefreshDeviceQr();
+    }
+
+    private void RefreshDeviceQr()
+    {
+        if (_deviceQrId is null || _deviceLoginToken.Length == 0) return;
+        if (_deviceQrGlobal && ExternalBaseUrl.Length == 0) _deviceQrGlobal = false;
+
+        string baseUrl = _deviceQrGlobal ? ExternalBaseUrl : LanBaseUrl;
+        _deviceQrUrl = $"{baseUrl}/pair/device?t={Uri.EscapeDataString(_deviceLoginToken)}";
+        _deviceQrDataUrl = GatewayService.QrDataUrl(_deviceQrUrl);
+    }
+
+    private void ClearDeviceQr()
+    {
+        _deviceQrId = null;
+        _deviceLoginToken = "";
+        _deviceQrUrl = "";
+        _deviceQrDataUrl = "";
+        _deviceQrGlobal = false;
+        _deviceQrExpires = null;
+    }
+
+    private async Task UseGlobalAsync()
+    {
+        if (_globalPairingUrl.Length == 0)
+        {
+            if (string.IsNullOrWhiteSpace(_externalUrl) && !await DetectAndSavePublicIpAsync()) return;
+            RefreshPairingUrls();
+        }
+
+        if (_globalPairingUrl.Length == 0)
+        {
+            _error = "Enter a global address below, then choose Global again.";
+            return;
+        }
+
+        SetAddressChoice(true);
+        _status = "Global address selected. Works from mobile data or another network; same Wi-Fi may still use Local.";
+    }
+
+    private async Task SaveExternalUrlAsync()
+    {
+        try
+        {
+            Gateway.SaveExternalUrl(_externalUrl);
+            _error = null;
+            _status = string.IsNullOrWhiteSpace(_externalUrl)
+                ? "Global address cleared."
+                : "Global address saved. Choose Local or Global above the code.";
+        }
+        catch (ArgumentException ex)
+        {
+            _error = ex.Message;
+        }
+        RefreshPairingUrls();
+        await Task.CompletedTask;
+    }
+
+    private async Task CheckFirewallAsync()
+    {
+        _firewallBusy = true;
+        try
+        {
+            _firewallAllowed = await GatewayFirewall.RuleExistsAsync(Gateway.LanPort);
+        }
+        finally
+        {
+            _firewallBusy = false;
+        }
+    }
+
+    private async Task AllowFirewallAsync()
+    {
+        _firewallBusy = true;
+        try
+        {
+            FirewallAttempt attempt = await GatewayFirewall.AllowAsync(Gateway.LanPort);
+            _firewallAllowed = attempt.Ok
+                ? true
+                : attempt.Cancelled ? false : await GatewayFirewall.RuleExistsAsync(Gateway.LanPort);
+            _status = attempt.Ok
+                ? $"Windows Firewall now allows TCP {Gateway.LanPort}."
+                : attempt.Cancelled
+                    ? "The administrator prompt was cancelled. Nothing changed."
+                    : $"Firewall rule not added: {attempt.Detail}";
+            if (!attempt.Ok) _error = null;
+        }
+        finally
+        {
+            _firewallBusy = false;
+        }
+    }
+
+    private async Task DetectPublicIpAsync() => await DetectAndSavePublicIpAsync();
+
+    private async Task<bool> DetectAndSavePublicIpAsync()
+    {
+        if (_detectingIp) return false;
+        _detectingIp = true;
+        _error = null;
+        try
+        {
+            string? ip = await Gateway.DetectPublicIpAsync();
+            if (ip is null)
+            {
+                _error = "Could not find your public IP. Check the internet connection, or type the address below.";
+                return false;
+            }
+
+            _publicIp = ip;
+            _externalUrl = $"http://{ip}:{Gateway.LanPort}";
+            await SaveExternalUrlAsync();
+            _status = $"Public IP {ip} saved as the global address.";
+            return true;
+        }
+        finally
+        {
+            _detectingIp = false;
+        }
     }
 
     private void LoadAddresses()
@@ -191,8 +669,8 @@
         {
             string address = string.IsNullOrWhiteSpace(_selectedAddress) ? _addresses[0].Url : _selectedAddress;
             _offer = Gateway.CreatePairing();
-            _pairingUrl = $"{address}/pair?t={Uri.EscapeDataString(_offer.Token)}";
-            _qrDataUrl = GatewayService.QrDataUrl(_pairingUrl);
+            _lanPairingUrl = $"{address}/pair?t={Uri.EscapeDataString(_offer.Token)}";
+            RefreshPairingUrls();
             _status = "Waiting for the phone to enter the PIN.";
             RefreshLists();
         }
@@ -208,12 +686,12 @@
         }
     }
 
-    private async Task CopyUrlAsync()
+    private async Task CopyUrlAsync(string url)
     {
-        if (string.IsNullOrWhiteSpace(_pairingUrl)) return;
+        if (string.IsNullOrWhiteSpace(url)) return;
         try
         {
-            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _pairingUrl);
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
             _status = "Pairing URL copied.";
         }
         catch
@@ -249,6 +727,7 @@
     private async Task RevokeAsync(string id)
     {
         Gateway.Revoke(id);
+        if (_deviceQrId == id) ClearDeviceQr();
         RefreshLists();
         _status = "Device revoked.";
         await Task.CompletedTask;
@@ -280,12 +759,20 @@
     {
         try
         {
+            int ticks = 0;
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
+                ticks++;
+                bool checkHealth = IsProxySelected && ticks % 8 == 0;
+                UpstreamHealth? health = checkHealth
+                    ? await Gateway.CheckUpstreamAsync(cancellationToken)
+                    : null;
+
                 await InvokeAsync(() =>
                 {
                     RefreshLists();
+                    if (health is not null) _health = health;
                     StateHasChanged();
                 });
             }

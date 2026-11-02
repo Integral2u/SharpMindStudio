@@ -987,6 +987,31 @@ code, .mono {
     border-top: 1px solid var(--line);
 }
 
+.gateway-note ol {
+    margin: .2rem 0 0 1.1rem;
+    padding: 0;
+}
+
+.gateway-note li {
+    margin: .4rem 0;
+}
+
+.address-toggle {
+    display: flex;
+    gap: .4rem;
+    flex-wrap: wrap;
+}
+
+.gateway-command {
+    margin-top: .3rem;
+    padding: .4rem .6rem;
+    border-radius: 8px;
+    background: var(--panel-2, rgba(255, 255, 255, .04));
+    color: var(--text);
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
 .gateway-pending,
 .gateway-device {
     display: flex;
@@ -998,6 +1023,21 @@ code, .mono {
     border: 1px solid var(--line);
     border-radius: .55rem;
     background: rgba(15, 22, 32, .55);
+}
+
+.gateway-device-qr {
+    flex: 1 1 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+    padding-top: .55rem;
+    border-top: 1px solid var(--line);
+}
+
+.gateway-qr.device {
+    width: 9rem;
+    height: 9rem;
 }
 
 @media (max-width: 780px) {

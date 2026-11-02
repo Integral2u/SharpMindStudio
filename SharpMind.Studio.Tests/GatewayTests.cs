@@ -56,6 +56,52 @@ public sealed class GatewayStoreTests
     }
 
     [Fact]
+    public void DeviceLoginToken_IsSingleUse_AndRotatesDeviceToken()
+    {
+        using var temp = new TempDirectory();
+        var store = new GatewayStore(temp.Path);
+        string deviceToken = GatewaySecurity.NewToken();
+        store.AddDevice(new GatewayDevice
+        {
+            Id = "device-1",
+            Name = "Phone",
+            TokenHash = GatewaySecurity.HashToken(deviceToken),
+            Mode = GatewayModes.Mobile,
+        });
+
+        string login = GatewaySecurity.NewToken();
+        Assert.True(store.SetDeviceLoginToken(
+            "device-1", GatewaySecurity.HashToken(login), DateTimeOffset.UtcNow.AddMinutes(5)));
+        Assert.NotNull(store.FindDeviceByLoginTokenHash(GatewaySecurity.HashToken(login)));
+
+        string rotated = GatewaySecurity.NewToken();
+        Assert.True(store.RedeemDeviceLogin("device-1", GatewaySecurity.HashToken(rotated)));
+
+        Assert.Null(store.FindDeviceByLoginTokenHash(GatewaySecurity.HashToken(login)));
+        Assert.Null(store.FindDeviceByTokenHash(GatewaySecurity.HashToken(deviceToken)));
+        Assert.NotNull(store.FindDeviceByTokenHash(GatewaySecurity.HashToken(rotated)));
+    }
+
+    [Fact]
+    public void ExpiredDeviceLoginToken_IsRejected()
+    {
+        using var temp = new TempDirectory();
+        var store = new GatewayStore(temp.Path);
+        store.AddDevice(new GatewayDevice
+        {
+            Id = "device-1",
+            Name = "Phone",
+            TokenHash = GatewaySecurity.HashToken(GatewaySecurity.NewToken()),
+        });
+
+        string login = GatewaySecurity.NewToken();
+        Assert.True(store.SetDeviceLoginToken(
+            "device-1", GatewaySecurity.HashToken(login), DateTimeOffset.UtcNow.AddMinutes(-1)));
+
+        Assert.Null(store.FindDeviceByLoginTokenHash(GatewaySecurity.HashToken(login)));
+    }
+
+    [Fact]
     public void Config_RoundTrips()
     {
         using var temp = new TempDirectory();

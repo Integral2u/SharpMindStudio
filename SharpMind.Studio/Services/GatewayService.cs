@@ -1,7 +1,9 @@
 ﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 using QRCoder;
@@ -12,6 +14,7 @@ namespace SharpMind.Studio.Services;
 
 public sealed record PairingOffer(PairingSession Session, string Token, string Pin);
 public sealed record LanAddress(string Address, string Url);
+public sealed record UpstreamHealth(bool Healthy, int? Status, long LatencyMs, string Detail, string? Version);
 
 public sealed class GatewayService : IDisposable
 {
@@ -22,13 +25,29 @@ public sealed class GatewayService : IDisposable
     private readonly ConcurrentDictionary<string, string> _approvedTokens = new();
     private readonly List<Channel<PairingSession>> _subscribers = [];
     private readonly Lock _subscriberGate = new();
+    private readonly string _keyFile;
+    private readonly HttpClient _healthClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(4),
+    };
+    private readonly HttpClient _publicIpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(6),
+    };
 
     public GatewayService(IOptions<StudioOptions> options)
     {
         _options = options.Value;
         StudioPaths.EnsureCreated();
         _store = new GatewayStore(StudioPaths.Gateway);
+        _keyFile = Path.Combine(_store.Root, "gateway.key");
     }
+
+    /// <summary>Whether phones on the LAN listener are served. Read live, so the toggle needs no restart.</summary>
+    public bool LanAllowed => _options.LanEnabled || Config.LanEnabled;
+
+    public int LanPort =>
+        Uri.TryCreate(_options.LanUrl, UriKind.Absolute, out Uri? lanUri) ? lanUri.Port : 5118;
 
     public string DataFolder => _store.Root;
     public GatewayConfig Config => _store.LoadConfig();
@@ -37,6 +56,152 @@ public sealed class GatewayService : IDisposable
     {
         GatewayConfig config = _store.LoadConfig();
         _store.SaveConfig(config with { LanEnabled = enabled });
+    }
+
+    public string? ExternalUrl => Config.ExternalUrl;
+
+    /// <summary>Asks a public echo service for this PC's internet address. Called only from an explicit button press.</summary>
+    public async Task<string?> DetectPublicIpAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            string text = (await _publicIpClient.GetStringAsync("https://api.ipify.org", cancellationToken)
+                .ConfigureAwait(false)).Trim();
+            return IPAddress.TryParse(text, out IPAddress? address) &&
+                   address.AddressFamily == AddressFamily.InterNetwork
+                ? text
+                : null;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+        catch (TaskCanceledException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The address a phone uses from outside the home network, typed by the user (port forwarded on the router).</summary>
+    public void SaveExternalUrl(string? url)
+    {
+        string? normalized = null;
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            if (!GatewayProxyRules.TryNormalizeUpstream(url, out _))
+                throw new ArgumentException("Enter a full address such as http://myhome.example.net:5118.");
+            normalized = url.Trim().TrimEnd('/');
+        }
+
+        SaveConfig(Config with { ExternalUrl = normalized });
+    }
+
+    public void SaveConfig(GatewayConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        _store.SaveConfig(config);
+    }
+
+    public string? GatewaySecret =>
+        GatewaySecretBox.Unprotect(Config.GatewaySecretProtected, _keyFile);
+
+    public string? UpstreamAuthorization =>
+        GatewaySecretBox.Unprotect(Config.UpstreamAuthorizationProtected, _keyFile);
+
+    public Uri? UpstreamUri =>
+        GatewayProxyRules.TryNormalizeUpstream(Config.UpstreamUrl, out Uri? uri) ? uri : null;
+
+    public bool ProxyActive => GatewayProxyRules.IsActive(Config, GatewaySecret);
+
+    public string EnsureGatewaySecret()
+    {
+        string? existing = GatewaySecret;
+        return string.IsNullOrWhiteSpace(existing) ? GenerateGatewaySecret() : existing;
+    }
+
+    public string GenerateGatewaySecret()
+    {
+        string secret = GatewaySecurity.NewToken();
+        SaveConfig(Config with
+        {
+            GatewaySecretProtected = GatewaySecretBox.Protect(secret, _keyFile),
+        });
+        return secret;
+    }
+
+    /// <summary>Stores proxy settings. Empty secrets mean "leave the stored value alone".</summary>
+    public void SaveProxySettings(
+        string? mode,
+        string? upstreamUrl,
+        string? upstreamAuthorization = null,
+        string? gatewaySecret = null,
+        bool clearAuthorization = false,
+        bool clearGatewaySecret = false)
+    {
+        GatewayConfig config = Config;
+        string normalizedMode = string.Equals(mode, GatewayConfigModes.Proxy, StringComparison.OrdinalIgnoreCase)
+            ? GatewayConfigModes.Proxy
+            : GatewayConfigModes.Local;
+
+        string? authorization = config.UpstreamAuthorizationProtected;
+        if (clearAuthorization) authorization = null;
+        else if (!string.IsNullOrWhiteSpace(upstreamAuthorization))
+            authorization = GatewaySecretBox.Protect(upstreamAuthorization.Trim(), _keyFile);
+
+        string? secret = config.GatewaySecretProtected;
+        if (clearGatewaySecret) secret = null;
+        else if (!string.IsNullOrWhiteSpace(gatewaySecret))
+            secret = GatewaySecretBox.Protect(gatewaySecret.Trim(), _keyFile);
+
+        SaveConfig(config with
+        {
+            Mode = normalizedMode,
+            UpstreamUrl = string.IsNullOrWhiteSpace(upstreamUrl) ? null : upstreamUrl.Trim(),
+            UpstreamAuthorizationProtected = authorization,
+            GatewaySecretProtected = secret,
+        });
+    }
+
+    public async Task<UpstreamHealth> CheckUpstreamAsync(CancellationToken cancellationToken = default)
+    {
+        if (!ProxyActive)
+            return new UpstreamHealth(false, null, 0, "Proxy mode is not active.", null);
+
+        Uri upstream = UpstreamUri!;
+        string url = upstream.ToString().TrimEnd('/') + "/health";
+        long started = Stopwatch.GetTimestamp();
+        try
+        {
+            using HttpResponseMessage response =
+                await _healthClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            long latency = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            string? version = null;
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(body);
+                if (document.RootElement.TryGetProperty("version", out JsonElement value))
+                    version = value.GetString();
+            }
+            catch (JsonException)
+            {
+            }
+
+            return new UpstreamHealth(
+                response.IsSuccessStatusCode,
+                (int)response.StatusCode,
+                latency,
+                response.IsSuccessStatusCode ? "Upstream reachable." : response.ReasonPhrase ?? "Upstream error.",
+                version);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new UpstreamHealth(false, null, 0, "Upstream health check timed out.", null);
+        }
+        catch (HttpRequestException ex)
+        {
+            return new UpstreamHealth(false, null, 0, ex.Message, null);
+        }
     }
     public PairingOffer CreatePairing()
     {
@@ -177,7 +342,41 @@ public sealed class GatewayService : IDisposable
 
     public void Touch(GatewayDevice device, string? ip) => _store.TouchDevice(device.Id, ip);
 
-    public IReadOnlyList<GatewayDevice> Devices() => _store.ListDevices();
+    /// <summary>
+    /// Creates a one-time login token for an already trusted device. The QR shows
+    /// this token; redeeming it swaps in a fresh device token, so a screenshot of
+    /// the code stops working after the first scan or when it expires.
+    /// </summary>
+    public string? IssueDeviceLogin(string deviceId, TimeSpan lifetime)
+    {
+        GatewayDevice? device = _store.FindDevice(deviceId);
+        if (device is null || device.Revoked) return null;
+
+        string token = GatewaySecurity.NewToken();
+        return _store.SetDeviceLoginToken(
+            deviceId,
+            GatewaySecurity.HashToken(token),
+            DateTimeOffset.UtcNow.Add(lifetime))
+            ? token
+            : null;
+    }
+
+    /// <summary>Exchanges a login QR token for a device cookie token. Returns null when stale or reused.</summary>
+    public (string Token, string Mode)? RedeemDeviceLogin(string loginToken)
+    {
+        if (string.IsNullOrWhiteSpace(loginToken)) return null;
+
+        GatewayDevice? device = _store.FindDeviceByLoginTokenHash(GatewaySecurity.HashToken(loginToken));
+        if (device is null) return null;
+
+        string deviceToken = GatewaySecurity.NewToken();
+        return _store.RedeemDeviceLogin(device.Id, GatewaySecurity.HashToken(deviceToken))
+            ? (deviceToken, device.Mode)
+            : null;
+    }
+
+    public IReadOnlyList<GatewayDevice> Devices() =>
+        [.. _store.ListDevices().Where(value => !value.Revoked)];
     public IReadOnlyList<PairingSession> Pairings() => _store.ListPairings();
     public bool Revoke(string id) => _store.RevokeDevice(id);
     public bool SetMode(string id, string mode) => _store.SetDeviceMode(id, mode);
@@ -223,6 +422,8 @@ public sealed class GatewayService : IDisposable
 
     public void Dispose()
     {
+        _healthClient.Dispose();
+        _publicIpClient.Dispose();
         lock (_subscriberGate)
         {
             foreach (Channel<PairingSession> subscriber in _subscribers)

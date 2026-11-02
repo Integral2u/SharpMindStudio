@@ -14,6 +14,12 @@ public sealed class GatewayAuthMiddleware(RequestDelegate next)
             return;
         }
 
+        if (!gateway.LanAllowed)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
         string path = context.Request.Path.Value ?? "/";
         if (path.StartsWith("/pair", StringComparison.OrdinalIgnoreCase))
         {
@@ -28,8 +34,33 @@ public sealed class GatewayAuthMiddleware(RequestDelegate next)
             return;
         }
 
-        if (path is "/favicon.ico" or "/sharpmind-icon.svg" or "/sharpmind-logo.svg")
+        if (path is "/favicon.ico" or "/sharpmind-icon.svg" or "/sharpmind-logo.svg" or "/health")
         {
+            await next(context);
+            return;
+        }
+
+        // A gateway in proxy mode signs each request. The upstream Studio trusts
+        // that short-lived claim instead of holding the phone's device token.
+        if (!gateway.ProxyActive &&
+            GatewayClaims.TryValidate(
+                gateway.GatewaySecret,
+                context.Request.Headers[GatewayClaims.HeaderName],
+                context.Request.Method,
+                context.Request.Path + context.Request.QueryString,
+                DateTimeOffset.UtcNow,
+                out GatewayClaim? claim) &&
+            claim is not null)
+        {
+            context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, claim.DeviceId),
+                new Claim(ClaimTypes.Name, "Paired device"),
+                new Claim("studio:mode", claim.Mode),
+                new Claim("studio:device", "true"),
+                new Claim("studio:gateway", "true"),
+            ], "StudioGateway"));
+
             await next(context);
             return;
         }

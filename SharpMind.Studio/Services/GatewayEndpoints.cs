@@ -27,7 +27,53 @@ public static class GatewayEndpoints
 
         app.MapGet("/gateway", (HttpContext context) =>
             IsLoopback(context)
-                ? Results.Redirect("/settings?tab=system")
+                ? Results.Redirect("/settings?tab=pair")
+                : Results.StatusCode(StatusCodes.Status403Forbidden));
+
+        // A trusted device can be signed in from a QR shown in Settings -> Pair.
+        // The code is single-use and expires; redeeming it rotates the device token.
+        app.MapGet("/pair/device", (HttpContext context, GatewayService gateway, string t) =>
+        {
+            (string Token, string Mode)? login = gateway.RedeemDeviceLogin(t);
+            if (login is null) return Results.Redirect("/pair?expired=1");
+
+            AppendDeviceCookie(context, login.Value.Token);
+            return Results.Redirect(login.Value.Mode == GatewayModes.Mobile ? "/chat" : "/");
+        });
+
+        app.MapGet("/health", () => Results.Json(new
+        {
+            ok = true,
+            app = "SharpMind Studio",
+            version = typeof(GatewayEndpoints).Assembly.GetName().Version?.ToString(),
+        }));
+
+        app.MapGet("/gateway/api/settings", (HttpContext context, GatewayService gateway) =>
+            IsLoopback(context)
+                ? Results.Json(ToPublicSettings(gateway))
+                : Results.StatusCode(StatusCodes.Status403Forbidden));
+
+        app.MapPost("/gateway/api/settings", (HttpContext context, GatewayService gateway, GatewaySettingsRequest request) =>
+        {
+            if (!IsLoopback(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+            gateway.SaveProxySettings(
+                request.Mode,
+                request.UpstreamUrl,
+                request.UpstreamAuthorization,
+                request.GatewaySecret,
+                request.ClearAuthorization,
+                request.ClearGatewaySecret);
+            return Results.Json(ToPublicSettings(gateway));
+        });
+
+        app.MapPost("/gateway/api/settings/secret", (HttpContext context, GatewayService gateway) =>
+            IsLoopback(context)
+                ? Results.Json(new { secret = gateway.GenerateGatewaySecret() })
+                : Results.StatusCode(StatusCodes.Status403Forbidden));
+
+        app.MapGet("/gateway/api/upstream", async (HttpContext context, GatewayService gateway) =>
+            IsLoopback(context)
+                ? Results.Json(await gateway.CheckUpstreamAsync(context.RequestAborted))
                 : Results.StatusCode(StatusCodes.Status403Forbidden));
 
         app.MapGet("/gateway/api/network", (HttpContext context, GatewayService gateway) =>
@@ -140,23 +186,25 @@ public static class GatewayEndpoints
             if (session.Status == PairingStatuses.Approved)
             {
                 string? deviceToken = gateway.TakeApprovedToken(session.Id);
-                if (deviceToken is not null)
-                {
-                    context.Response.Cookies.Append(GatewayService.DeviceCookie, deviceToken, new CookieOptions
-                    {
-                        HttpOnly = true,
-                        SameSite = SameSiteMode.Lax,
-                        Secure = context.Request.IsHttps,
-                        Path = "/",
-                        Expires = DateTimeOffset.UtcNow.AddDays(180),
-                    });
-                }
+                if (deviceToken is not null) AppendDeviceCookie(context, deviceToken);
             }
 
             return Results.Json(ToPublicPairing(session));
         });
 
         return app;
+    }
+
+    private static void AppendDeviceCookie(HttpContext context, string token)
+    {
+        context.Response.Cookies.Append(GatewayService.DeviceCookie, token, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = context.Request.IsHttps,
+            Path = "/",
+            Expires = DateTimeOffset.UtcNow.AddDays(180),
+        });
     }
 
     public static bool IsLoopback(HttpContext context)
@@ -179,8 +227,28 @@ public static class GatewayEndpoints
         session.ExpiresUtc,
     };
 
+    private static object ToPublicSettings(GatewayService gateway)
+    {
+        GatewayConfig config = gateway.Config;
+        return new
+        {
+            mode = config.Mode,
+            upstreamUrl = config.UpstreamUrl,
+            gatewaySecret = gateway.GatewaySecret,
+            hasUpstreamAuthorization = !string.IsNullOrWhiteSpace(config.UpstreamAuthorizationProtected),
+            proxyActive = gateway.ProxyActive,
+        };
+    }
+
     public sealed record ApproveRequest(string Mode);
     public sealed record PairSubmit(string? Token, string? Pin, string? Name);
+    public sealed record GatewaySettingsRequest(
+        string? Mode,
+        string? UpstreamUrl,
+        string? UpstreamAuthorization,
+        string? GatewaySecret,
+        bool ClearAuthorization,
+        bool ClearGatewaySecret);
 }
 
 

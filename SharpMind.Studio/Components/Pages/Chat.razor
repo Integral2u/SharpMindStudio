@@ -70,7 +70,7 @@
                 }
                 else
                 {
-                    <div class="welcome-controls" style="grid-template-columns: minmax(16rem, 2fr) minmax(16rem, 1fr);">
+                    <div class="welcome-controls chat-welcome-controls">
                         <div class="field">
                             <label class="field-label" for="chat-model">Model</label>
                             <select id="chat-model" class="input" @bind="_selectedModelPath" @bind:after="SaveModelChoiceAsync">

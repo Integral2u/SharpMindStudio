@@ -25,6 +25,7 @@
     <a class="settings-tab @(_tab == "system" ? "selected" : "")" href="/settings?tab=system" data-enhance-nav="false">System</a>
     <a class="settings-tab @(_tab == "families" ? "selected" : "")" href="/settings?tab=families" data-enhance-nav="false">Families</a>
     <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/settings?tab=models" data-enhance-nav="false">Models</a>
+    <a class="settings-tab @(_tab == "pair" ? "selected" : "")" href="/settings?tab=pair" data-enhance-nav="false">Pair</a>
 </div>
 
 @if (_tab == "system")
@@ -59,26 +60,6 @@
     <SystemSkillsEditor />
 
     <SystemToolsEditor />
-
-    <section class="panel">
-        <div class="panel-head">
-            <div>
-                <div class="eyebrow">Device access</div>
-                <h2>Phone pairing</h2>
-            </div>
-            <span class="faint small mono">loopback admin only</span>
-        </div>
-        <div class="panel-body stack">
-            <label class="tool-toggle">
-                <input type="checkbox" checked="@_lanEnabled" @onchange="SetLanEnabled" />
-                <span>Allow LAN device pairing</span>
-            </label>
-            <div class="small faint">Enables the public LAN listener. Restart Studio after changing this. Pairing setup stays loopback-only.</div>
-            <div class="status-line">@_lanStatus</div>
-
-            <GatewayAdminPanel LanEnabled="_lanEnabled" />
-        </div>
-    </section>
 
     <section class="panel">
         <div class="panel-head">
@@ -129,6 +110,28 @@
         </div>
     </section>
 
+}
+else if (_tab == "pair")
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Device access</div>
+                <h2>Phone pairing</h2>
+            </div>
+            <span class="faint small mono">loopback admin only</span>
+        </div>
+        <div class="panel-body stack">
+            <label class="tool-toggle">
+                <input type="checkbox" checked="@_lanEnabled" @onchange="SetLanEnabled" />
+                <span>Allow LAN device pairing</span>
+            </label>
+            <div class="small faint">Lets phones on this network connect. Takes effect immediately; no restart needed. Pairing setup stays loopback-only.</div>
+            <div class="status-line">@_lanStatus</div>
+
+            <GatewayAdminPanel LanEnabled="_lanEnabled" />
+        </div>
+    </section>
 }
 else if (_tab == "families")
 {
@@ -291,7 +294,7 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        _tab = TabQuery is "system" or "families" or "models" ? TabQuery : "appearance";
+        _tab = TabQuery is "system" or "families" or "models" or "pair" ? TabQuery : "appearance";
         _system = Inference.System;
         _studioHost = Theme.StudioHost;
         _studioPort = Theme.StudioPort;
@@ -411,8 +414,8 @@ else
         _lanEnabled = args.Value is true;
         Gateway.SaveLanEnabled(_lanEnabled);
         _lanStatus = _lanEnabled
-            ? "LAN pairing enabled. Restart Studio to start the LAN listener."
-            : "LAN pairing disabled. Restart Studio to stop the LAN listener.";
+            ? "LAN pairing is on. Phones on this network can connect now."
+            : "LAN pairing is off. Phones are disconnected.";
     }
 
     private async Task ResetServerAsync()

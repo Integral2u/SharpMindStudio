@@ -101,6 +101,64 @@ public sealed class GatewayStore
         }
     }
 
+    public GatewayDevice? FindDevice(string id)
+    {
+        lock (_gate) return LoadDevices().FirstOrDefault(value => value.Id == id);
+    }
+
+    public GatewayDevice? FindDeviceByLoginTokenHash(string tokenHash)
+    {
+        lock (_gate)
+        {
+            return LoadDevices().FirstOrDefault(value =>
+                !value.Revoked &&
+                value.LoginExpiresUtc > DateTimeOffset.UtcNow &&
+                value.LoginTokenHash is { Length: > 0 } hash &&
+                hash.Equals(tokenHash, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    /// <summary>Stores the hash of a one-time login QR token, or clears it when null.</summary>
+    public bool SetDeviceLoginToken(string id, string? tokenHash, DateTimeOffset? expiresUtc)
+    {
+        lock (_gate)
+        {
+            List<GatewayDevice> devices = LoadDevices();
+            int index = devices.FindIndex(value => value.Id == id);
+            if (index < 0) return false;
+            devices[index] = devices[index] with
+            {
+                LoginTokenHash = tokenHash,
+                LoginExpiresUtc = expiresUtc,
+            };
+            SaveDevices(devices);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Consumes a login QR: replaces the device token with a fresh one and clears
+    /// the login hash, so the QR works exactly once.
+    /// </summary>
+    public bool RedeemDeviceLogin(string id, string newTokenHash)
+    {
+        lock (_gate)
+        {
+            List<GatewayDevice> devices = LoadDevices();
+            int index = devices.FindIndex(value => value.Id == id);
+            if (index < 0) return false;
+            devices[index] = devices[index] with
+            {
+                TokenHash = newTokenHash,
+                LoginTokenHash = null,
+                LoginExpiresUtc = null,
+                LastSeenUtc = DateTimeOffset.UtcNow,
+            };
+            SaveDevices(devices);
+            return true;
+        }
+    }
+
     public GatewayDevice AddDevice(GatewayDevice device)
     {
         lock (_gate)
