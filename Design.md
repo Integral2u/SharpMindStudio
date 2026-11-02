@@ -1,8 +1,8 @@
 ﻿# SharpMind Studio - Design
 
 > **Status:** implementation in progress, October 2026. Studio **1.1.0.0**.
-> Built: shell, projects/runs/recipes, canary and tool probes, TESTS run history, Chat lab, layered inference settings, Work mode MVP, model Tune presets, shared skills/tools, and the phone pairing gateway.
-> Remaining: the Training lab, Work hardening (richer skills and tool management), and gateway proxy mode.
+> Built: shell, projects/runs/recipes, canary and tool probes, TESTS run history, Chat lab, layered inference settings, Work mode MVP, model Tune presets, shared skills/tools, the phone pairing gateway, the corpus-to-export Training engine with its lab shell, LoRA fine-tuning, and SMM↔GGUF conversion.
+> Remaining: the Training planner and promotion reports, Work hardening (richer skills and tool management), and gateway proxy mode.
 SharpMind Studio is a local-first application for chatting with models, doing project work with them, and building them: from scratch, from a base model, or by upgrading a model you already have. It is the successor to the terminal UI (CUI) as the primary front end, and it is meant to be something people want to use: attractive, calm and fast.
 
 ---
@@ -223,10 +223,14 @@ The canary dashboard lives at `/test`; the full history lives at `/runs`.
 
 Studio hosts the phone experience itself; there is no separate gateway project.
 
-- Two listeners in one process: loopback admin on `127.0.0.1:5117` and an optional LAN listener on `0.0.0.0:5118`. LAN pairing is off by default. mDNS discovery is not used in 1.1.
+- Two listeners in one process: loopback admin on `127.0.0.1:5117` and a LAN listener on `0.0.0.0:5118`. The LAN port is always bound; `GatewayAuthMiddleware` returns 404 for non-loopback requests while LAN pairing is off, so the toggle takes effect immediately with no restart. mDNS discovery is not used in 1.1.
 - Pairing data is JSON under `Studio\Gateway`. Device tokens and pairing tokens are stored as hashes; PINs are salted and slow-hashed; upstream secrets are encrypted. A pairing expires after five minutes, is single-use, and locks after five bad PIN attempts.
-- A phone scans the QR code, enters the PIN, and waits for approval. The PC approves **mobile** or **full** access, can change a device's mode, and can revoke it.
-- Pairing admin lives in **Settings > System**. The QR code is generated as a PNG data URL by QRCoder and appears as soon as the panel opens. `/gateway` redirects to that panel; the standalone `/gateway/admin.html` page is kept for diagnostics.
+- A phone scans the QR code, enters the PIN, and waits for approval. The PC approves **mobile** or **full** access, can change a device's mode, and can revoke it. Revoking invalidates the token and removes the row from the trusted list. Trusted devices sit directly below the QR code.
+- Each trusted device also has a **Login QR** button. It issues a one-time, five-minute login token; scanning `/pair/device` swaps in a fresh device token, sets the cookie and opens Chat. Reusing or outliving the code redirects to the normal pairing page. The device QR has its own **Local / Global** switch, independent of the main pairing QR.
+- Pairing admin lives in **Settings > Pair**, the last settings tab, so sidebar and back navigation stay available. The QR code is generated as a PNG data URL by QRCoder and appears as soon as the panel opens.
+- The QR and URL follow a **Local / Global** choice. Global uses a user-supplied public address or DDNS name; **Find my public IP** asks `api.ipify.org` only when pressed. Global access needs a router port-forward to the LAN address.
+- A **Check / Allow through Windows Firewall** action reads or creates the inbound TCP 5118 rule for the Private profile, raising one UAC prompt instead of requiring an administrator shell. The manual `New-NetFirewallRule` command is shown as a fallback.
+- `/gateway` redirects to `/settings?tab=pair`; the standalone `/gateway/admin.html` page is kept for diagnostics.
 - A paired phone receives an HttpOnly `sharpmind_device` cookie with signed claims. Mobile scope is Chat plus a bare-bones Work: prompt, interrupt, and view sessions and artifacts. Settings, tools, skills, context rules and project switching stay on the PC.
 - Restrictions are enforced in Studio from the signed claims, including inside Blazor circuit actions, not only by hiding navigation.
 
@@ -325,7 +329,7 @@ flowchart LR
 
 ### 5.5 Improve: the diagnosis loop
 
-**Diagnose â†’ Hypothesise â†’ Experiment â†’ Compare â†’ Promote.** Diagnosis reads run history and evals:
+**Diagnose → Hypothesise → Experiment → Compare → Promote.** Diagnosis reads run history and evals:
 
 | Observation | Likely cause | First experiments |
 |---|---|---|
@@ -337,6 +341,56 @@ flowchart LR
 | Better in domain, worse in general | Forgetting | Mix in 10â€“30% general replay, lower LR |
 
 Experiments run as short, comparable trials with the same seed and validation set. **Data experiments come first**, since data usually matters more than hyperparameters. A held-out "final exam" set is touched only on promotion, to avoid tuning to the validation set. *Promote* creates a new version with a changelog and a before/after report that doubles as the client upgrade pitch.
+
+### 5.6 Lab shell
+
+`/training` is a first-class section next to Chat and Work, with deep-linkable tabs: **New model** (`?tab=new`), **Improve**, **Playbooks**, **Data**, **Runs** and **Models**. Empty states stay honest: no fabricated runs, estimates or playbooks. Tabs whose engine work is not connected keep their start buttons disabled.
+
+### 5.7 Engine reused from the CUI
+
+The CUI already trains a model from a corpus to an exported `.smm`, and that pipeline is not UI-bound. Studio ports the UI-free pieces into `Studio.Core/Training` rather than writing a second engine:
+
+- `TrainingJobSettings` (the persisted `.smmt` job), `JobComponent`/`JobSource`, and the job save/load format stay compatible with existing CUI jobs.
+- `TrainingModelOptions` supplies the architecture presets, QAT parsing and vocab padding rules.
+- `IncrementalPlanner`, `IncrementalStore` and `SourceHasher` provide per-file corpus deltas and content fingerprints.
+- `TrainingRunner` builds the data pipeline, trains or grows the BPE tokenizer, constructs random weights, runs the train loop with checkpoints and QAT, exports each retained checkpoint and the final `.smm`, and stamps lineage.
+
+The Studio-specific layer is `StudioTrainingService`: one active run, a log tail, step metrics, progress, cancellation and auto-saved jobs under `StudioPaths.Training`. `TrainingRunnerSmokeTests` runs a one-layer, two-step character-tokenizer job end-to-end so the port cannot regress silently.
+
+What the CUI pipeline does **not** do is create a fine-tune job, so Studio adds one.
+
+### 5.8 LoRA fine-tune
+
+**Training → Improve** turns a base `.smm` into a tuned model with LoRA:
+
+- `TrainingRunner` loads the base with `SmmTrainingPipeline.LoadForTraining`; the base's tokenizer, model config and chat template are reused, so the new corpus is encoded exactly as the base was trained.
+- `LoRAModel` attaches rank-`r` adapters to the selected projections; only `LoRAParameters()` go to the optimizer and backprop, so the base stays frozen and memory stays small.
+- Output is chosen per run: **merged** (fold `W += scale·A·B` into the base and export an ordinary `.smm`), **adapter only** (write a portable `.smlora` with rank, alpha, targets, base fingerprint and the adapter tensors), or **both**. A `.smlora` is a few MB even for a large base and is rejected up front when paired with a base it was not trained against.
+- Every fine-tune checkpoint (rolling, best-validation, interrupted and final) also carries `adapters.smlora` beside the generic checkpoint state. Resume resolves an explicit `.smlora` file or checkpoint folder first, then the latest step checkpoint, then the best-validation checkpoint. The adapter file supplies the rank/targets and its base fingerprint is validated; the run continues the step counter with a fresh optimizer (weights warm-restart, data cursor restarts). `StartFresh` ignores all of it.
+- After the loop, the ordinary SMM exporter writes a merged result with the base chat template, system prompt, skills and lineage (`method=lora`, `base`, `lora_rank`, `lora_alpha`). The merged file needs no adapter at inference.
+
+`FineTuneRunnerSmokeTests` trains a tiny base, fine-tunes it, asserts the base file's hash is unchanged, and reloads the merged export for inference. `AdapterResumeSmokeTests` covers adapter-only export, resume from a `.smlora`, checkpoint-folder resume continuing the recorded step, and the guard that rejects a resume with no steps left.
+
+### 5.9 Live curves and validation
+
+The lab needs a diagnosis signal, not just a final loss number:
+
+- `TrainingJobSettings.ValidationPercent` (0–90, default 0 for old jobs) asks for a held-out split. `TrainingRunner` uses the library's `DeterministicSplit.TrainVal`, which buckets documents by a stable content hash — appending files never moves an existing document across the split.
+- The split is taken **after** cleaning, and a fixed set of up to four held-out batches is materialised once. Every evaluation scores the same documents, so val-loss points are comparable across steps. The tokenizer is still trained over the full corpus; it learns the token inventory, not the loss being measured.
+- The loop's existing `evaluate` hook runs at the logging cadence, so every logged step carries a val loss. `TrainLoop` already keeps the best checkpoint when val loss improves; the runner logs each evaluation and reports `BestValLoss`/`BestValStep` on the result.
+- `StudioTrainingService` keeps a `Curve` of logged points plus the best step. `TrainingLossChart` draws train and validation lines in the run panel, with a dashed marker at the best val step.
+
+A finished run is persisted by `TrainingRunStore` as one JSON record under `Training/run-history`: the curve, best val step, final loss, elapsed time, export size and a compact job profile. `StudioTrainingService` caches the history and invalidates it when a run finishes or a record is deleted; a corrupt or half-written file is skipped rather than hiding the rest.
+
+**Training → Runs** lists those records under **Experiments**, each with **Use as base** (promote a successful `.smm` straight into an Improve job) and **Delete**. With two runs that logged at least two points, **Compare** offers two selectors, a metric table that marks the lower loss and elapsed time as better, and the two curves side by side. This is the Compare step of the diagnosis loop; a promotion report with a held-out exam is still to come.
+
+`ValidationSplitSmokeTests` trains from several documents with validation on and asserts the split, the evaluation log, and a best step in range. `TrainingRunStoreTests` covers the history round trip, ordering, corrupt-file tolerance and deletion.
+
+### 5.10 Format conversion
+
+**Training → Models** converts between the packaged model (`.smm`) and GGUF in both directions. The direction follows the source extension, the destination is suggested beside the source with the extension swapped, and overwriting an existing file needs an explicit tick. `.smmt` is not a model format: it is the saved training-job JSON, so it is never offered as a conversion source.
+
+`ModelConverter` (in `Studio.Core/Training`) is a thin wrapper over the library's `SmmToGufConverter` and `GgufToSmmConverter`. Both stream each tensor's raw bytes and cannot normalise or re-quantise them. The wrapper adds a progress relay, cancellation (leaving the destination untouched), and a read-back check that reopens the new file with the loader that will consume it, so a truncated or config-less output fails at conversion time rather than at model load. `StudioConversionService` holds the single active conversion and its progress across tab switches; `ModelConverterTests` covers the round trip and the overwrite/unknown-source guards.
 
 ---
 
@@ -449,10 +503,10 @@ Studio depends on additive library changes. The CUI and its tests must not move:
 
 | # | Change |
 |---|---|
-| C1 | `SmmTrainingPipeline.LoadForTraining`: load a GGUF or SMM as float weights, reuse its tokenizer and config, optionally attach LoRA. **Unproven on real models**: LoRA is only tested today on a small synthetic config, so start with a spike on SmolLM2-135M |
+| C1 | `SmmTrainingPipeline.LoadForTraining`: load a GGUF or SMM as float weights, reuse its tokenizer and config, optionally attach LoRA. **Wired in Studio**; still wants a spike on a real model such as SmolLM2-135M |
 | C2 | Support matrix: which loaded architectures the training transformer can actually run, with a clear `NotSupported` for the rest |
-| C3 | Adapter-only save and load with a base-fingerprint check |
-| C4 | Export fidelity: the tokenizer and `tokenizer.chat_template` survive a merged export; F16 or Q8_0 export before `SmmQuantizer` handles K-quants |
+| C3 | Adapter-only save and load with a base-fingerprint check. Wired in Studio: `.smlora` export and resume from an adapter file or checkpoint folder |
+| C4 | Export fidelity: the tokenizer and `tokenizer.chat_template` survive a merged export; F16 or Q8_0 export before `SmmQuantizer` handles K-quants. Covered for merged output in the library; Studio writes the fine-tune at F32 |
 | C5 | Training memory estimator next to `ModelSizer` (full vs LoRA, optimizer, activations) |
 
 ### Streaming MoE and precision
@@ -486,7 +540,7 @@ Draft slices, not yet confirmed:
 
 | Version | Contents |
 |---|---|
-| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: fine-tune a base with LoRA, watch it live with checkpoint markers, package it |
+| **1.1.0.0** | Studio shell, Chat, Work, and one polished guided flow: train from a corpus, watch it live with checkpoint markers, package it. Fine-tuning a base with LoRA is wired into **Improve**, with merged `.smm` or adapter-only `.smlora` output and adapter resume |
 | 1.1.1.0 | Data Lab, Formatter Designer, probe-prompt snapshot timeline, A/B arena, hub client |
 | 1.1.2.0 | Quant Lab (sensitivity-aware plans, Pareto chart) and distillation (sequence-level first, logit-level second) |
 | 1.1.3.0 | Architect canvas, MoE load-balancing and utilisation heatmap, upcycling and Branch-Train-Mix, then HMoE |
@@ -499,7 +553,8 @@ Draft slices, not yet confirmed:
 
 - **Scope.** This is a product-sized project. The two riskiest items, GPU full-parameter training and from-scratch MoE, stay off the 1.1.0.0 critical path.
 - **Hardware reality.** Per the library README, the GPU engine trains LoRA adapters only, so from-scratch training is CPU-only today. MoE training is CPU-only and has no load-balancing loss, so from-scratch MoE can collapse onto a few experts.
-- **C1 is unproven** on real models (section 9).
+- **C1 is unproven** on real models (section 9). The shipped corpus-to-export path does not depend on it: it starts from random weights and trains the tokenizer and model together.
+- **Ported engine drift.** The CUI's training job and runner are copied into Studio.Core until they move to a shared library, so changes to `.smmt` semantics must be made in both places.
 - **Chat-template masking (B6)** can break on templates that strip or inject text.
 - **Synthetic data licensing** is flagged, not solved.
 - **Remote access** widens the attack surface and stays opt-in.
