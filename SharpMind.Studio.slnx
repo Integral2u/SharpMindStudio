@@ -2,12 +2,6 @@
   <Project Path="SharpMind.Studio.Cli/SharpMind.Studio.Cli.csproj" />
   <Project Path="SharpMind.Studio.Core/SharpMind.Studio.Core.csproj" />
   <Project Path="SharpMind.Studio.Tests/SharpMind.Studio.Tests.csproj" />
-  <Project Path="../SharpMind/SharpMind.Core/SharpMind.Core.csproj" />
-  <Project Path="../SharpMind/SharpMind.Data/SharpMind.Data.csproj" />
-  <Project Path="../SharpMind/SharpMind.Inference/SharpMind.Inference.csproj" />
-  <Project Path="../SharpMind/SharpMind.Model/SharpMind.Model.csproj" />
-  <Project Path="../SharpMind/SharpMind.Tokenization/SharpMind.Tokenization.csproj" />
-  <Project Path="../SharpMind/SharpMind.Training/SharpMind.Training.csproj" />
   <Project Path="SharpMind.Studio.UI/SharpMind.Studio.UI.csproj" />
   <Project Path="SharpMind.Studio/SharpMind.Studio.csproj" />
 </Solution>

@@ -1,0 +1,36 @@
+# Normalize line endings
+* text=auto eol=lf
+
+# Windows-friendly solution and project files
+*.slnx text eol=crlf
+*.sln   text eol=crlf
+*.csproj text eol=crlf
+*.props text eol=crlf
+*.targets text eol=crlf
+
+# Source
+*.cs    text eol=crlf
+*.razor text eol=crlf
+*.css   text eol=crlf
+*.js    text eol=crlf
+*.json  text eol=crlf
+*.yml   text eol=crlf
+*.yaml  text eol=crlf
+
+# Scripts and docs
+*.ps1   text eol=crlf
+*.cmd   text eol=crlf
+*.sh    text eol=lf
+*.md    text eol=lf
+
+# Binary assets
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.dll   binary
+*.exe   binary
+*.smm   binary
+*.smlora binary
+*.gguf  binary

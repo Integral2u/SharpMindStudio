@@ -1,10 +1,12 @@
 <Project>
   <PropertyGroup>
-    <SharpMindSource Condition="'$(SharpMindSource)' == ''">project</SharpMindSource>
+    <!-- Default to the published NuGet packages. Set SharpMindSource=project to build against the sibling source tree. -->
+    <SharpMindSource Condition="'$(SharpMindSource)' == ''">package</SharpMindSource>
     <SharpMindRoot Condition="'$(SharpMindRoot)' == ''">$(MSBuildThisFileDirectory)..\SharpMind\</SharpMindRoot>
-    <SharpMindVersion Condition="'$(SharpMindVersion)' == ''">1.0.9.0</SharpMindVersion>
   </PropertyGroup>
 
+  <!-- Local source-tree references. Uncomment this ItemGroup (and set SharpMindSource=project) for local library development. -->
+  <!--
   <ItemGroup Condition="'$(SharpMindSource)' == 'project'">
     <ProjectReference Include="$(SharpMindRoot)SharpMind.Core\SharpMind.Core.csproj"
                       SetConfiguration="Configuration=$(Configuration)" />
@@ -19,13 +21,14 @@
     <ProjectReference Include="$(SharpMindRoot)SharpMind.Training\SharpMind.Training.csproj"
                       SetConfiguration="Configuration=$(Configuration)" />
   </ItemGroup>
+  -->
 
   <ItemGroup Condition="'$(SharpMindSource)' == 'package'">
-    <PackageReference Include="SharpMind.Core" Version="$(SharpMindVersion)" />
-    <PackageReference Include="SharpMind.Data" Version="$(SharpMindVersion)" />
-    <PackageReference Include="SharpMind.Inference" Version="$(SharpMindVersion)" />
-    <PackageReference Include="SharpMind.Model" Version="$(SharpMindVersion)" />
-    <PackageReference Include="SharpMind.Tokenization" Version="$(SharpMindVersion)" />
-    <PackageReference Include="SharpMind.Training" Version="$(SharpMindVersion)" />
+    <PackageReference Include="SharpMind.Core" />
+    <PackageReference Include="SharpMind.Data" />
+    <PackageReference Include="SharpMind.Inference" />
+    <PackageReference Include="SharpMind.Model" />
+    <PackageReference Include="SharpMind.Tokenization" />
+    <PackageReference Include="SharpMind.Training" />
   </ItemGroup>
 </Project>
