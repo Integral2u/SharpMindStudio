@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using SharpMind.Inference.Chat;
 using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.Jobs;
 using SharpMind.Studio.Core.Runs;
@@ -43,6 +44,11 @@ public sealed class TuneRunnerService
             bool toolPassed = true;
             if (profile.Target == TuneTarget.Work)
             {
+                ToolCallRecoveryMode recovery = Enum.TryParse(
+                    profile.Overrides.ToolCallRecovery, ignoreCase: true, out ToolCallRecoveryMode parsedRecovery)
+                    ? parsedRecovery
+                    : ToolCallRecoveryMode.Lenient;
+
                 RunHandle probeRun = _workspace.Runs.Create(ToolProbeJob.Kind, Path.GetFileNameWithoutExtension(model.Path));
                 await using RunEventWriter probeEvents = probeRun.OpenWriter();
                 ToolProbeResult probe = await ToolProbeJob.RunAsync(new ToolProbeRequest
@@ -51,6 +57,7 @@ public sealed class TuneRunnerService
                     FullLoad = request.FullLoad,
                     GeneratorType = generator,
                     CacheType = cache,
+                    ToolCallRecovery = recovery,
                 }, probeRun, probeEvents, cancellationToken);
                 toolPassed = probe.Passed;
             }

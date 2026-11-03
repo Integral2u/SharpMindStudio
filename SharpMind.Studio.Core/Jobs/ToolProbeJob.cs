@@ -23,6 +23,9 @@ public sealed record ToolProbeRequest
     public bool FullLoad { get; init; } = true;
     public Type? GeneratorType { get; init; }
     public Type? CacheType { get; init; }
+
+    /// <summary>Tool-call parsing policy for this probe.</summary>
+    public ToolCallRecoveryMode ToolCallRecovery { get; init; } = ToolCallRecoveryMode.Lenient;
 }
 
 public sealed record ToolProbeResult
@@ -104,6 +107,7 @@ public static class ToolProbeJob
                 request.CacheType ?? typeof(KVCacherBuilder),
                 model, tokenizer, meta, agentBuilder: agent, seed: 1234);
             session.MaxNewTokens = Math.Max(1, request.MaxNewTokens);
+            session.ToolCallRecovery = request.ToolCallRecovery;
             session.Temperature = 0f;
             session.TopK = 1;
             session.RepetitionPenalty = 1.0f;
