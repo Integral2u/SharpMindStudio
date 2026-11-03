@@ -77,12 +77,14 @@ Two TinyStories runs used the same 128-hidden / 4-layer model, BPE 2048,
 | TinyStories prefix, 23,311 JSONL docs | 5,000 | 3.49 / ppl 32.6 | 3.60 / ppl 36.6 | 47 min |
 | Same corpus, continued from step 5,000 | 10,000 | 3.26 / ppl 26.0 | 3.36 / ppl 28.9 | +47 min |
 | Same corpus, larger 256/6 model, first pass | 2,000 | 3.62 / ppl 37.4 | 3.69 / ppl 39.9 | 57 min |
+| Same corpus, 256/6 continued from 2,000 | 4,000 | 3.32 / ppl 27.6 | 3.38 / ppl 29.4 | +51 min |
 
 The larger corpus reduced both validation loss and the validation-to-exam gap.
 Extending the same run continued to improve it, but the gain from 5,000 to
-10,000 steps was smaller than the gain from more data. The 256/6 model is
-promising but needs a longer run before it beats the 128/4 at 10,000 steps;
-the CPU is the limiting factor for the larger model.
+10,000 steps was smaller than the gain from more data. The 256/6 model caught
+up to the 128/4 at 10,000 steps, but it runs about three times slower on this
+CPU. On this hardware the 128/4 is the better value; a larger model needs much
+more compute to justify itself.
 
 Example generation from the 10,000-step model, prompted with
 `Once upon a time, there was a little`:
@@ -95,6 +97,16 @@ This is a smoke-test result, not a quality benchmark: the model is a 4.3 MB
 128/4 model, not a production model. It is enough to prove the merge, JSONL
 source, tokenizer, EOS boundaries, checkpoints, curves, export, checkpoint
 continuation and exam paths.
+
+The 256/6 4,000-step model generated:
+
+> named Lily. She loved to play outside in the park with her friends. One day,
+> Lily's mom asked her to help her mom if she could go to the park. Lily was so
+> excited to
+
+It is comparable to the 128/4 model on the exam but much slower to train and
+generate, so the 128/4 + 20 MB corpus is the current practical sweet spot on
+this machine.
 
 ## SharpMind reference mode
 
