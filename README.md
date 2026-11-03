@@ -76,11 +76,13 @@ Two TinyStories runs used the same 128-hidden / 4-layer model, BPE 2048,
 | TinyStories subset, 256 stories | 2,000 | 4.43 / ppl 83.9 | 4.70 / ppl 110.2 | ~16 min |
 | TinyStories prefix, 23,311 JSONL docs | 5,000 | 3.49 / ppl 32.6 | 3.60 / ppl 36.6 | 47 min |
 | Same corpus, continued from step 5,000 | 10,000 | 3.26 / ppl 26.0 | 3.36 / ppl 28.9 | +47 min |
+| Same corpus, larger 256/6 model, first pass | 2,000 | 3.62 / ppl 37.4 | 3.69 / ppl 39.9 | 57 min |
 
 The larger corpus reduced both validation loss and the validation-to-exam gap.
 Extending the same run continued to improve it, but the gain from 5,000 to
-10,000 steps was smaller than the gain from more data. The model is still
-capacity-limited.
+10,000 steps was smaller than the gain from more data. The 256/6 model is
+promising but needs a longer run before it beats the 128/4 at 10,000 steps;
+the CPU is the limiting factor for the larger model.
 
 Example generation from the 10,000-step model, prompted with
 `Once upon a time, there was a little`:
