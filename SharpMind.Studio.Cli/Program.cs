@@ -433,7 +433,15 @@ internal static class StudioCli
             return 0;
         }
 
-        Console.Error.WriteLine($"Failed   {result.Error}");
+        if (result.AcceleratorRequested is { } accelerator)
+        {
+            Console.Error.WriteLine(
+                $"Accelerator '{accelerator}' refused: {result.AcceleratorReason ?? "no reason supplied"}");
+        }
+        else
+        {
+            Console.Error.WriteLine($"Failed   {result.Error}");
+        }
         return 1;
     }
 

@@ -108,6 +108,13 @@ It is comparable to the 128/4 model on the exam but much slower to train and
 generate, so the 128/4 + 20 MB corpus is the current practical sweet spot on
 this machine.
 
+The optional **SharpMind.GPU** plugin was also probed. ILGPU sees the Vega 3
+through OpenCL (`gfx902`), but the GPU training engine is **LoRA-only**: it
+refuses full pretraining because `EmbeddingTable.weight` is not trainable in
+M1. These pretraining runs therefore use the CPU engine. A GPU LoRA fine-tune
+is the only GPU training path worth testing on this hardware, and the
+integrated Vega 3 is likely slower than the existing CPU path.
+
 ## SharpMind reference mode
 
 Studio defaults to the published **SharpMind 1.0.9** NuGet packages.
