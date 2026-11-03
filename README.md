@@ -75,21 +75,24 @@ Two TinyStories runs used the same 128-hidden / 4-layer model, BPE 2048,
 |---|---:|---:|---:|---:|
 | TinyStories subset, 256 stories | 2,000 | 4.43 / ppl 83.9 | 4.70 / ppl 110.2 | ~16 min |
 | TinyStories prefix, 23,311 JSONL docs | 5,000 | 3.49 / ppl 32.6 | 3.60 / ppl 36.6 | 47 min |
+| Same corpus, continued from step 5,000 | 10,000 | 3.26 / ppl 26.0 | 3.36 / ppl 28.9 | +47 min |
 
 The larger corpus reduced both validation loss and the validation-to-exam gap.
-The model is still capacity-limited, and validation loss was still falling at
-5,000 steps.
+Extending the same run continued to improve it, but the gain from 5,000 to
+10,000 steps was smaller than the gain from more data. The model is still
+capacity-limited.
 
-Example generation from the 5,000-step model, prompted with
+Example generation from the 10,000-step model, prompted with
 `Once upon a time, there was a little`:
 
 > named Lily. She loved to play outside in the park with her toys. One day,
-> Lily's mom saw a big tree with a big tree. She wanted to play with her toys
-> and make her
+> Lily's mom asked her to help her mom if she could play with her. Lily asked
+> her mom if she
 
 This is a smoke-test result, not a quality benchmark: the model is a 4.3 MB
 128/4 model, not a production model. It is enough to prove the merge, JSONL
-source, tokenizer, EOS boundaries, checkpoints, curves, export and exam paths.
+source, tokenizer, EOS boundaries, checkpoints, curves, export, checkpoint
+continuation and exam paths.
 
 ## SharpMind reference mode
 
