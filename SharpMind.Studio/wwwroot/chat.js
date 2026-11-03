@@ -12,6 +12,12 @@
     focus: function (id) {
         const element = document.getElementById(id);
         if (element) element.focus();
+    },
+    focusAndScroll: function (id) {
+        const element = document.getElementById(id);
+        if (!element) return;
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        element.focus({ preventScroll: true });
     }
 };
 

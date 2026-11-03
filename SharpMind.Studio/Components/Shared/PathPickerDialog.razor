@@ -1,0 +1,353 @@
+@using SharpMind.Studio.Core.Storage
+@using SharpMind.Studio.Services
+@implements IDisposable
+@inject PathPickerService Picker
+
+@if (_open && Picker.Current is { } request)
+{
+    <div class="tune-modal-backdrop" @onclick="() => Cancel()">
+        <div class="tune-modal path-picker" @onclick:stopPropagation="true">
+            <div class="tune-modal-head">
+                <span>@Title</span>
+                <button type="button" class="button" @onclick="() => Cancel()">Close</button>
+            </div>
+
+            <div class="path-picker-body">
+                <div class="row path-picker-nav">
+                    <button type="button" class="button" @onclick="GoUpAsync" disabled="@(_atDrives || _loading)">
+                        Up
+                    </button>
+                    <input class="input mono" @bind="_pathInput" @bind:event="oninput"
+                           @onkeydown="OnPathKeyDown" placeholder="C:\path\to\folder" />
+                    <button type="button" class="button" @onclick="GoAsync" disabled="@_loading">Go</button>
+                    <button type="button" class="button" @onclick="RefreshAsync" disabled="@_loading">Refresh</button>
+                </div>
+
+                @if (_loading)
+                {
+                    <div class="path-picker-empty"><span class="spinner-ring"></span> Loading...</div>
+                }
+                else if (_error is not null)
+                {
+                    <div class="error-line">@_error</div>
+                }
+
+                <div class="path-picker-list">
+                    @if (_atDrives)
+                    {
+                        <div class="path-picker-hint small faint">Drives</div>
+                        @foreach (PathEntry entry in _entries)
+                        {
+                            <button type="button" class="path-entry" @onclick="() => OpenAsync(entry.FullPath)">
+                                <span class="path-entry-icon">&#128190;</span>
+                                <span>@entry.Name</span>
+                            </button>
+                        }
+                    }
+                    else
+                    {
+                        @foreach (PathEntry entry in _entries.Where(value => value.IsDirectory))
+                        {
+                            <button type="button" class="path-entry" @onclick="() => OpenAsync(entry.FullPath)">
+                                <span class="path-entry-icon">&#128193;</span>
+                                <span>@entry.Name</span>
+                            </button>
+                        }
+                        @if (Mode != PathPickerMode.Folder)
+                        {
+                            @foreach (PathEntry entry in _entries.Where(value => !value.IsDirectory))
+                            {
+                                if (Mode == PathPickerMode.MultiFile)
+                                {
+                                    <label class="path-entry @(IsSelected(entry) ? "selected" : "")">
+                                        <span class="path-entry-icon">
+                                            <input type="checkbox" checked="@IsSelected(entry)"
+                                                   @onchange="e => ToggleFile(entry, e.Value)" />
+                                        </span>
+                                        <span>@entry.Name</span>
+                                    </label>
+                                }
+                                else
+                                {
+                                    <button type="button" class="path-entry @(IsSelected(entry) ? "selected" : "")"
+                                            @onclick="() => ToggleFile(entry)"
+                                            @ondblclick="() => ChooseFileAsync(entry)">
+                                        <span class="path-entry-icon">&#128196;</span>
+                                        <span>@entry.Name</span>
+                                    </button>
+                                }
+                            }
+                        }
+                        @if (_entries.Count == 0)
+                        {
+                            <div class="path-picker-empty small faint">
+                                @(Mode == PathPickerMode.Folder
+                                    ? "No subfolders. Use this folder to select it."
+                                    : "This folder is empty.")
+                            </div>
+                        }
+                    }
+                </div>
+
+                @if (Mode == PathPickerMode.SaveFile)
+                {
+                    <div class="field">
+                        <label class="field-label" for="path-picker-name">File name</label>
+                        <input id="path-picker-name" class="input mono" @bind="_fileName" />
+                    </div>
+                }
+
+                <div class="row path-picker-actions">
+                    <span class="small faint">@SelectionHint</span>
+                    <button type="button" class="button primary" @onclick="CompleteAsync"
+                            disabled="@(!CanComplete)">
+                        @(Mode == PathPickerMode.Folder ? "Use this folder" : "Use selection")
+                    </button>
+                    <button type="button" class="button" @onclick="() => Cancel()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private sealed record PathEntry(string Name, string FullPath, bool IsDirectory);
+
+    private bool _open;
+    private bool _loading;
+    private bool _atDrives;
+    private string _title = "Choose a path";
+    private string _pathInput = "";
+    private string? _currentPath;
+    private string? _selectedFile;
+    private readonly HashSet<string> _selectedFiles = new(StringComparer.OrdinalIgnoreCase);
+    private List<PathEntry> _entries = [];
+    private string? _error;
+    private string _fileName = "";
+    private PathPickerMode Mode => Picker.Current?.Mode ?? PathPickerMode.Folder;
+    private string SearchPattern => Picker.Current?.SearchPattern ?? "*.*";
+    private string Title => Picker.Current?.Title ?? "Choose a path";
+
+    protected override void OnInitialized() => Picker.Changed += OnPickerChanged;
+
+    public void Dispose() => Picker.Changed -= OnPickerChanged;
+
+    private void OnPickerChanged() => _ = InvokeAsync(async () =>
+    {
+        if (Picker.Current is null)
+        {
+            _open = false;
+            StateHasChanged();
+            return;
+        }
+
+        _open = true;
+        _selectedFile = null;
+        _selectedFiles.Clear();
+        _fileName = "";
+        await LoadInitialAsync();
+        StateHasChanged();
+    });
+
+    private async Task LoadInitialAsync()
+    {
+        string? start = Picker.Current?.StartPath;
+        if (Mode == PathPickerMode.SaveFile && start is not null && !Directory.Exists(start))
+        {
+            _fileName = Path.GetFileName(start);
+            start = Path.GetDirectoryName(start);
+        }
+
+        if (start is not null && File.Exists(start)) start = Path.GetDirectoryName(start);
+        if (string.IsNullOrWhiteSpace(start) || !Directory.Exists(start))
+            start = Directory.Exists(StudioPaths.Root) ? StudioPaths.Root : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        await LoadAsync(start);
+    }
+
+    private Task RefreshAsync() => LoadAsync(_currentPath);
+
+    private async Task GoAsync()
+    {
+        string path = _pathInput.Trim();
+        if (path.Length == 0) return;
+        await LoadAsync(path);
+    }
+
+    private async Task OnPathKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") await GoAsync();
+    }
+
+    private async Task GoUpAsync()
+    {
+        if (_atDrives) return;
+        if (_currentPath is null)
+        {
+            await LoadDrivesAsync();
+            return;
+        }
+
+        DirectoryInfo? parent = Directory.GetParent(_currentPath);
+        if (parent is null) await LoadDrivesAsync();
+        else await LoadAsync(parent.FullName);
+    }
+
+    private Task OpenAsync(string path) => LoadAsync(path);
+
+    private async Task LoadAsync(string? path)
+    {
+        _loading = true;
+        _error = null;
+        _selectedFile = null;
+        _selectedFiles.Clear();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                await LoadDrivesAsync();
+                return;
+            }
+
+            string full = Path.GetFullPath(path);
+            if (File.Exists(full))
+            {
+                full = Path.GetDirectoryName(full) ?? full;
+            }
+
+            if (!Directory.Exists(full))
+            {
+                _error = $"Folder not found: {full}";
+                _entries = [];
+                return;
+            }
+
+            var entries = new List<PathEntry>();
+            var directory = new DirectoryInfo(full);
+            foreach (DirectoryInfo child in directory.EnumerateDirectories()
+                         .OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                entries.Add(new PathEntry(child.Name, child.FullName, true));
+                if (entries.Count >= 750) break;
+            }
+
+            if (Mode != PathPickerMode.Folder && entries.Count < 750)
+            {
+                foreach (FileInfo file in directory.EnumerateFiles(SearchPattern, SearchOption.TopDirectoryOnly)
+                             .OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    entries.Add(new PathEntry(file.Name, file.FullName, false));
+                    if (entries.Count >= 750) break;
+                }
+            }
+
+            _currentPath = full;
+            _pathInput = full;
+            _atDrives = false;
+            _entries = entries;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _error = ex.Message;
+            _entries = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task LoadDrivesAsync()
+    {
+        _atDrives = true;
+        _currentPath = null;
+        _pathInput = "";
+        _entries = [];
+        try
+        {
+            _entries = [.. DriveInfo.GetDrives()
+                .Where(drive => drive.IsReady)
+                .OrderBy(drive => drive.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(drive => new PathEntry(
+                    $"{drive.Name.TrimEnd('\\')} {drive.VolumeLabel}".Trim(),
+                    drive.RootDirectory.FullName,
+                    true))];
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        return Task.CompletedTask;
+    }
+
+    private bool IsSelected(PathEntry entry) =>
+        entry.IsDirectory
+            ? false
+            : Mode == PathPickerMode.MultiFile
+                ? _selectedFiles.Contains(entry.FullPath)
+                : string.Equals(_selectedFile, entry.FullPath, StringComparison.OrdinalIgnoreCase);
+
+    private void ToggleFile(PathEntry entry)
+    {
+        if (entry.IsDirectory) return;
+        if (Mode == PathPickerMode.MultiFile)
+        {
+            ToggleFile(entry, !_selectedFiles.Contains(entry.FullPath));
+            return;
+        }
+        _selectedFile = entry.FullPath;
+    }
+
+    private void ToggleFile(PathEntry entry, object? value)
+    {
+        if (value is true) _selectedFiles.Add(entry.FullPath);
+        else _selectedFiles.Remove(entry.FullPath);
+    }
+
+    private Task ChooseFileAsync(PathEntry entry)
+    {
+        _selectedFile = entry.FullPath;
+        return CompleteAsync();
+    }
+
+    private bool CanComplete => Mode switch
+    {
+        PathPickerMode.Folder => _currentPath is not null,
+        PathPickerMode.File => _selectedFile is not null,
+        PathPickerMode.MultiFile => _selectedFiles.Count > 0,
+        PathPickerMode.SaveFile => _currentPath is not null && !string.IsNullOrWhiteSpace(_fileName),
+        _ => false,
+    };
+
+    private string SelectionHint => Mode switch
+    {
+        PathPickerMode.Folder => _currentPath ?? "Choose a drive or folder.",
+        PathPickerMode.File => _selectedFile ?? "Choose a file.",
+        PathPickerMode.MultiFile => _selectedFiles.Count == 0
+            ? "Check one or more files."
+            : $"{_selectedFiles.Count} file(s) selected.",
+        PathPickerMode.SaveFile => _currentPath is null
+            ? "Choose a folder and enter a file name."
+            : Path.Combine(_currentPath, _fileName),
+        _ => "",
+    };
+
+    private Task CompleteAsync()
+    {
+        if (!CanComplete) return Task.CompletedTask;
+
+        PathPickerSelection? selection = Mode switch
+        {
+            PathPickerMode.Folder => PathPickerSelection.Folder(_currentPath!),
+            PathPickerMode.File => PathPickerSelection.Files([_selectedFile!]),
+            PathPickerMode.MultiFile => PathPickerSelection.Files([.. _selectedFiles]),
+            PathPickerMode.SaveFile => PathPickerSelection.Files(
+                [Path.Combine(_currentPath!, _fileName.Trim())]),
+            _ => null,
+        };
+        Picker.Complete(selection);
+        return Task.CompletedTask;
+    }
+
+    private void Cancel() => Picker.Complete(null);
+}

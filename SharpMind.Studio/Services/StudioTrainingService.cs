@@ -121,6 +121,10 @@ public sealed class StudioTrainingService : IDisposable
 
     public string Folder => TrainingJobSettings.DefaultFolder;
 
+    /// <summary>User-saved pretrain and LoRA playbooks under Training/playbooks.</summary>
+    public TrainingPlaybookStore Playbooks { get; } =
+        new(Path.Combine(StudioPaths.Training, "playbooks"));
+
     /// <summary>Starts a run. Returns false when one is already running.</summary>
     public bool Start(TrainingJobSettings job, string pluginsFolder)
     {

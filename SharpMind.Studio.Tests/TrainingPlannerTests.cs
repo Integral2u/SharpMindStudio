@@ -42,6 +42,7 @@ public sealed class TrainingPlannerTests
         TrainingPlan ambitious = plans[2];
         PlannerMove sft = Assert.Single(ambitious.Moves.Where(move => move.Action == PlannerAction.Sft));
         Assert.Equal(PlannerMoveStatus.Blocked, sft.Status);
+        Assert.Equal(PlannerBlockKind.NotSupported, sft.BlockKind);
         Assert.False(string.IsNullOrWhiteSpace(sft.BlockedReason));
         Assert.False(string.IsNullOrWhiteSpace(sft.Alternative));
 
@@ -72,6 +73,10 @@ public sealed class TrainingPlannerTests
         Assert.Contains(balanced.Moves, move => move.Action == PlannerAction.Quantize
                                                && move.Status == PlannerMoveStatus.Blocked);
 
+        PlannerMove continueMove = Assert.Single(
+            balanced.Moves.Where(move => move.Action == PlannerAction.Continue));
+        Assert.Equal(PlannerBlockKind.NeedsCheckpoint, continueMove.BlockKind);
+
         AssertAllBlockedMovesAreExplained(plans);
     }
 
@@ -86,10 +91,12 @@ public sealed class TrainingPlannerTests
 
         PlannerMove data = Assert.Single(plans[0].Moves.Where(move => move.Action == PlannerAction.Data));
         Assert.Equal(PlannerMoveStatus.Blocked, data.Status);
+        Assert.Equal(PlannerBlockKind.NeedsInput, data.BlockKind);
         Assert.Contains("corpus", data.BlockedReason, StringComparison.OrdinalIgnoreCase);
 
         PlannerMove pretrain = Assert.Single(plans[0].Moves.Where(move => move.Action == PlannerAction.Pretrain));
         Assert.Equal(PlannerMoveStatus.Blocked, pretrain.Status);
+        Assert.Equal(PlannerBlockKind.NeedsInput, pretrain.BlockKind);
         Assert.Contains("corpus", pretrain.BlockedReason, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -127,6 +134,7 @@ public sealed class TrainingPlannerTests
         {
             PlannerMove distill = Assert.Single(plan.Moves.Where(move => move.Action == PlannerAction.Distill));
             Assert.Equal(PlannerMoveStatus.Blocked, distill.Status);
+            Assert.Equal(PlannerBlockKind.NotSupported, distill.BlockKind);
             Assert.False(string.IsNullOrWhiteSpace(distill.BlockedReason));
             Assert.False(string.IsNullOrWhiteSpace(distill.Alternative));
         });

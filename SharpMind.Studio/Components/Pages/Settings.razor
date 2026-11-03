@@ -110,6 +110,29 @@
         </div>
     </section>
 
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Desktop</div>
+                <h2>Window behaviour</h2>
+            </div>
+            <span class="faint small mono">desktop app only</span>
+        </div>
+        <div class="panel-body stack">
+            <div class="field">
+                <label class="field-label" for="close-to-tray">When I close the window</label>
+                <select id="close-to-tray" class="input" @bind="_closeToTray" @bind:after="SaveCloseToTrayAsync">
+                    <option value="true">Minimize to tray (default)</option>
+                    <option value="false">Exit Studio</option>
+                </select>
+            </div>
+            <div class="small faint">
+                The desktop shell reads this when the close button is pressed. The browser UI is unaffected.
+            </div>
+            <div class="status-line">@_closeToTrayStatus</div>
+        </div>
+    </section>
+
 }
 else if (_tab == "pair")
 {
@@ -277,6 +300,8 @@ else
     private string? _lastApplied;
     private string _studioHost = ThemeService.DefaultHost;
     private int _studioPort = ThemeService.DefaultPort;
+    private bool _closeToTray = true;
+    private string _closeToTrayStatus = "";
     private string _serverStatus = "";
     private bool _lanEnabled;
     private string _lanStatus = "";
@@ -298,6 +323,7 @@ else
         _system = Inference.System;
         _studioHost = Theme.StudioHost;
         _studioPort = Theme.StudioPort;
+        _closeToTray = Theme.CloseToTray;
         _lanEnabled = Gateway.Config.LanEnabled;
         if (_tab is "system" or "families" or "models") await LoadCatalogAsync();
 
@@ -391,6 +417,14 @@ else
         _studioPort = Theme.StudioPort;
         _lanEnabled = Gateway.Config.LanEnabled;
         _serverStatus = $"Connection saved: {_studioHost}:{_studioPort}";
+    }
+
+    private async Task SaveCloseToTrayAsync()
+    {
+        await Theme.SetCloseToTrayAsync(_closeToTray);
+        _closeToTrayStatus = _closeToTray
+            ? "The close button will minimize to the tray."
+            : "The close button will exit Studio.";
     }
 
     private void OpenFolder(string path)

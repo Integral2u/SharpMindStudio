@@ -182,9 +182,31 @@ public partial class MainWindow : Window
     private void OnClosing(object? sender, CancelEventArgs e)
     {
         if (_exiting) return;
+        if (!ReadCloseToTray())
+        {
+            e.Cancel = true;
+            BeginExit();
+            return;
+        }
+
         e.Cancel = true;
         Hide();
         ShowTrayHint();
+    }
+
+    private static bool ReadCloseToTray()
+    {
+        try
+        {
+            if (!File.Exists(StudioPaths.SettingsFile)) return true;
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(StudioPaths.SettingsFile));
+            if (document.RootElement.TryGetProperty("closeToTray", out JsonElement value))
+                return value.ValueKind != JsonValueKind.False;
+        }
+        catch
+        {
+        }
+        return true;
     }
 
     private void ShowTrayHint()

@@ -129,7 +129,18 @@
                 <label class="field-label">Load mode</label>
                 <div class="input tune-readonly">@_estimate.LoadMode</div>
             </div>
+            <div class="field">
+                <label class="field-label">Tool-call recovery</label>
+                <select class="input" value="@_draft.ToolCallRecovery"
+                        @onchange="e => Update(v => v with { ToolCallRecovery = Text(e) })">
+                    <option value="Strict">Strict</option>
+                    <option value="Lenient">Lenient</option>
+                    <option value="Loose">Loose</option>
+                </select>
+            </div>
         </div>
+
+        <div class="small faint">Chat has no tools, so Chat presets start at Strict. Work probes the selected recovery mode.</div>
 
         <div class="row">
             <button type="button" class="button primary" @onclick="TuneAllAsync" disabled="@_running">
@@ -193,7 +204,7 @@
 
         if (_profiles.TryGetValue(_preset, out TuneProfile? existing))
         {
-            _draft = existing.Overrides;
+            _draft = EnsureRecovery(existing.Overrides);
             _estimate = existing.Estimate;
             _measurement = existing.Measurement;
             _notes = existing.Notes;
@@ -222,7 +233,7 @@
         _preset = preset;
         if (_profiles.TryGetValue(preset, out TuneProfile? existing))
         {
-            _draft = existing.Overrides;
+            _draft = EnsureRecovery(existing.Overrides);
             _estimate = existing.Estimate;
             _measurement = existing.Measurement;
             _notes = existing.Notes;
@@ -256,6 +267,11 @@
         _draft = change(_draft);
         Recalculate();
     }
+
+    private InferenceOverrides EnsureRecovery(InferenceOverrides value) =>
+        string.IsNullOrWhiteSpace(value.ToolCallRecovery)
+            ? value with { ToolCallRecovery = _target == TuneTarget.Work ? "Lenient" : "Strict" }
+            : value;
 
     private void UpdateContext(ChangeEventArgs args)
     {

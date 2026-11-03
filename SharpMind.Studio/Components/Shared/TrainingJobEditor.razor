@@ -1,12 +1,15 @@
+@using System.Globalization
 @using SharpMind.Core
 @using SharpMind.Core.Plugins
 @using SharpMind.Model.Config
+@using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Services
 @using SharpMind.Training
 @inject StudioWorkspaceService Workspace
+@inject PathPickerService Picker
 
-<section class="training-subsection">
+<section class="training-subsection" id="training-model">
     <div class="training-subsection-head">
         <div class="eyebrow">Model</div>
         <div class="row">
@@ -58,7 +61,8 @@
         </div>
         <div class="field">
             <label class="field-label" for="job-norm-eps">Norm epsilon</label>
-            <input id="job-norm-eps" class="input" type="number" step="0.0001" @bind="Job.NormEps" />
+            <input id="job-norm-eps" class="input" type="number" step="0.00001"
+                   @bind="NormEpsText" />
         </div>
 
         <div class="field">
@@ -125,7 +129,7 @@
     </div>
 </section>
 
-<section class="training-subsection">
+<section class="training-subsection" id="training-data">
     <div class="training-subsection-head">
         <div class="eyebrow">Data &amp; batching</div>
         <span class="faint small mono">the corpus path is set above</span>
@@ -172,8 +176,11 @@
         </div>
         <div class="field training-form-wide">
             <label class="field-label" for="job-tokenizer-cache">Tokenizer cache (optional)</label>
-            <input id="job-tokenizer-cache" class="input" @bind="Job.TokenizerCachePath"
-                   placeholder="Beside the job file by default" />
+            <div class="row">
+                <input id="job-tokenizer-cache" class="input" @bind="Job.TokenizerCachePath"
+                       placeholder="Beside the job file by default" />
+                <button type="button" class="button" @onclick="BrowseTokenizerCacheAsync">Browse</button>
+            </div>
         </div>
     </div>
 </section>
@@ -202,11 +209,13 @@
         }
         <div class="field">
             <label class="field-label" for="job-lr">Learning rate</label>
-            <input id="job-lr" class="input" type="number" min="0.000001" step="0.00001" @bind="Job.LearningRate" />
+            <input id="job-lr" class="input" type="number" min="0.000001" step="0.00001"
+                   @bind="LearningRateText" />
         </div>
         <div class="field">
             <label class="field-label" for="job-min-lr">Minimum LR</label>
-            <input id="job-min-lr" class="input" type="number" min="0" step="0.00001" @bind="Job.MinLr" />
+            <input id="job-min-lr" class="input" type="number" min="0" step="0.00001"
+                   @bind="MinLrText" />
         </div>
         <div class="field">
             <label class="field-label" for="job-warmup">Warmup steps</label>
@@ -215,7 +224,7 @@
         <div class="field">
             <label class="field-label" for="job-weight-decay">Weight decay</label>
             <input id="job-weight-decay" class="input" type="number" min="0" step="0.01"
-                   @bind="Job.WeightDecay" />
+                   @bind="WeightDecayText" />
         </div>
         <div class="field">
             <label class="field-label" for="job-clip">Grad clip norm</label>
@@ -224,7 +233,7 @@
         <div class="field">
             <label class="field-label" for="job-smoothing">Label smoothing</label>
             <input id="job-smoothing" class="input" type="number" min="0" max="0.9" step="0.01"
-                   @bind="Job.LabelSmoothing" />
+                   @bind="LabelSmoothingText" />
         </div>
     </div>
 </section>
@@ -300,13 +309,19 @@
         </div>
         <div class="field">
             <label class="field-label" for="job-resume">Resume from checkpoint</label>
-            <input id="job-resume" class="input" @bind="Job.ResumeFrom"
-                   placeholder="Latest under the checkpoint folder" disabled="@Job.StartFresh" />
+            <div class="row">
+                <input id="job-resume" class="input" @bind="Job.ResumeFrom"
+                       placeholder="Latest under the checkpoint folder" disabled="@Job.StartFresh" />
+                <button type="button" class="button" @onclick="BrowseResumeAsync" disabled="@Job.StartFresh">Browse</button>
+            </div>
         </div>
         <div class="field">
             <label class="field-label" for="job-warm">Warm restart from</label>
-            <input id="job-warm" class="input" @bind="Job.WarmRestartFrom"
-                   placeholder="Reuse weights under a fresh schedule" disabled="@Job.StartFresh" />
+            <div class="row">
+                <input id="job-warm" class="input" @bind="Job.WarmRestartFrom"
+                       placeholder="Reuse weights under a fresh schedule" disabled="@Job.StartFresh" />
+                <button type="button" class="button" @onclick="BrowseWarmRestartAsync" disabled="@Job.StartFresh">Browse</button>
+            </div>
         </div>
         @if (Job.ValidationPercent + Job.TestPercent >= 100)
         {
@@ -324,23 +339,36 @@
     <div class="training-form">
         <div class="field training-form-wide">
             <label class="field-label" for="job-export">Export model (optional)</label>
-            <input id="job-export" class="input" @bind="Job.ExportPath"
-                   placeholder="Leave blank to save in the Training folder" />
+            <div class="row">
+                <input id="job-export" class="input" @bind="Job.ExportPath"
+                       placeholder="Leave blank to save in the Training folder" />
+                <button type="button" class="button" @onclick="BrowseExportFileAsync">File</button>
+                <button type="button" class="button" @onclick="BrowseExportFolderAsync">Folder</button>
+            </div>
         </div>
         <div class="field training-form-wide">
             <label class="field-label" for="job-prompt">System prompt file (optional)</label>
-            <input id="job-prompt" class="input" @bind="Job.SystemPromptPath"
-                   placeholder="C:\path\to\prompt.txt" />
+            <div class="row">
+                <input id="job-prompt" class="input" @bind="Job.SystemPromptPath"
+                       placeholder="C:\path\to\prompt.txt" />
+                <button type="button" class="button" @onclick="BrowsePromptAsync">Browse</button>
+            </div>
         </div>
         <div class="field training-form-wide">
             <label class="field-label" for="job-skills">Skills folder (optional)</label>
-            <input id="job-skills" class="input" @bind="Job.SkillsFolder"
-                   placeholder="Folder of *.md skills to embed" />
+            <div class="row">
+                <input id="job-skills" class="input" @bind="Job.SkillsFolder"
+                       placeholder="Folder of *.md skills to embed" />
+                <button type="button" class="button" @onclick="BrowseSkillsAsync">Browse</button>
+            </div>
         </div>
         <div class="field training-form-wide">
             <label class="field-label" for="job-tools">Tool DLLs to embed (optional)</label>
-            <input id="job-tools" class="input" @bind="PluginList"
-                   placeholder="One or more paths separated by ;" />
+            <div class="row">
+                <input id="job-tools" class="input" @bind="PluginList"
+                       placeholder="One or more paths separated by ;" />
+                <button type="button" class="button" @onclick="BrowseToolsAsync">Browse</button>
+            </div>
         </div>
     </div>
 </section>
@@ -388,6 +416,141 @@
         get => string.Join("; ", Job.PluginDllPaths);
         set => Job.PluginDllPaths =
             [.. value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+    }
+
+    // Small rates are displayed as fixed decimals so 1e-5 reads as 0.00001.
+    private string NormEpsText
+    {
+        get => Job.NormEps.ToString("0.00000", CultureInfo.InvariantCulture);
+        set { if (ParseRate(value) is { } value2) Job.NormEps = value2; }
+    }
+
+    private string LearningRateText
+    {
+        get => Job.LearningRate.ToString("0.000000", CultureInfo.InvariantCulture);
+        set { if (ParseRate(value) is { } value2) Job.LearningRate = value2; }
+    }
+
+    private string MinLrText
+    {
+        get => Job.MinLr.ToString("0.000000", CultureInfo.InvariantCulture);
+        set { if (ParseRate(value) is { } value2) Job.MinLr = value2; }
+    }
+
+    private string WeightDecayText
+    {
+        get => Job.WeightDecay.ToString("0.000", CultureInfo.InvariantCulture);
+        set { if (ParseRate(value) is { } value2) Job.WeightDecay = value2; }
+    }
+
+    private string LabelSmoothingText
+    {
+        get => Job.LabelSmoothing.ToString("0.000", CultureInfo.InvariantCulture);
+        set { if (ParseRate(value) is { } value2) Job.LabelSmoothing = value2; }
+    }
+
+    private static float? ParseRate(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (float.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out float current))
+            return current;
+        if (float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float invariant))
+            return invariant;
+        return null;
+    }
+
+    private async Task BrowseTokenizerCacheAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StartFolder(Job.TokenizerCachePath, Job.ExportFolder),
+            "Choose a tokenizer cache file");
+        if (selection?.Path is { Length: > 0 } path) Job.TokenizerCachePath = path;
+    }
+
+    private async Task BrowseResumeAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StartFolder(Job.ResumeFrom, Job.ExportFolder),
+            "Choose a checkpoint");
+        if (selection?.Path is { Length: > 0 } path) Job.ResumeFrom = path;
+    }
+
+    private async Task BrowseWarmRestartAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StartFolder(Job.WarmRestartFrom, Job.ExportFolder),
+            "Choose weights to restart from");
+        if (selection?.Path is { Length: > 0 } path) Job.WarmRestartFrom = path;
+    }
+
+    private async Task BrowseExportFileAsync()
+    {
+        string suggested = Path.Combine(
+            Job.ExportFolder,
+            string.IsNullOrWhiteSpace(Job.Name) ? "model.smm" : Job.Name + ".smm");
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.SaveFile,
+            suggested,
+            "Save the exported model as");
+        if (selection?.Path is { Length: > 0 } path) Job.ExportPath = path;
+    }
+
+    private async Task BrowseExportFolderAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.Folder,
+            Job.ExportFolder,
+            "Choose an export folder");
+        if (selection?.Path is { Length: > 0 } path) Job.ExportPath = path;
+    }
+
+    private async Task BrowsePromptAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StartFolder(Job.SystemPromptPath, StudioPaths.Corpus),
+            "Choose a system prompt file");
+        if (selection?.Path is { Length: > 0 } path) Job.SystemPromptPath = path;
+    }
+
+    private async Task BrowseSkillsAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.Folder,
+            StartFolder(Job.SkillsFolder, StudioPaths.Skills),
+            "Choose a skills folder");
+        if (selection?.Path is { Length: > 0 } path) Job.SkillsFolder = path;
+    }
+
+    private async Task BrowseToolsAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.MultiFile,
+            StartFolder(null, Workspace.PluginsFolder),
+            "Choose tool DLLs",
+            "*.dll");
+        if (selection is { All.Count: > 0 }) Job.PluginDllPaths = [.. selection.All];
+    }
+
+    private static string StartFolder(string? path, string fallback)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                if (Directory.Exists(path)) return path;
+                if (File.Exists(path)) return Path.GetDirectoryName(path) ?? fallback;
+                string? directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory)) return directory;
+            }
+        }
+        catch
+        {
+        }
+        return fallback;
     }
 
     protected override void OnInitialized()

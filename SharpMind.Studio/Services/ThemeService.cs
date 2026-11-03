@@ -14,6 +14,7 @@ public sealed class StudioSettings
     public string? LastChatModel { get; set; }
     public string StudioHost { get; set; } = ThemeService.DefaultHost;
     public int StudioPort { get; set; } = ThemeService.DefaultPort;
+    public bool CloseToTray { get; set; } = true;
 }
 
 /// <summary>
@@ -42,7 +43,7 @@ public sealed class ThemeService
     public ThemeService()
     {
         StudioPaths.EnsureCreated();
-        (Theme, CustomColor, DefaultGenerator, DefaultCache, LastChatModel, StudioHost, StudioPort) = LoadSettings();
+        (Theme, CustomColor, DefaultGenerator, DefaultCache, LastChatModel, StudioHost, StudioPort, CloseToTray) = LoadSettings();
     }
 
     public event Action? Changed;
@@ -53,6 +54,7 @@ public sealed class ThemeService
     public string? LastChatModel { get; private set; }
     public string StudioHost { get; private set; }
     public int StudioPort { get; private set; }
+    public bool CloseToTray { get; private set; }
     // --accent is declared on :root in app.css, so overriding only
     // --accent-rgb on .app-shell would leave the inherited, already-computed
     // --accent at the default green. Set both on the themed element.
@@ -85,6 +87,7 @@ public sealed class ThemeService
                 LastChatModel = LastChatModel,
                 StudioHost = StudioHost,
                 StudioPort = StudioPort,
+                CloseToTray = CloseToTray,
             };
             await File.WriteAllTextAsync(
                 StudioPaths.SettingsFile,
@@ -129,6 +132,14 @@ public sealed class ThemeService
 
     public Task ResetServerAsync(CancellationToken cancellationToken = default) =>
         SetServerAsync(DefaultHost, DefaultPort, cancellationToken);
+
+    public async Task SetCloseToTrayAsync(bool closeToTray, CancellationToken cancellationToken = default)
+    {
+        CloseToTray = closeToTray;
+        await SaveSettingsAsync(cancellationToken);
+        Changed?.Invoke();
+    }
+
     private async Task SaveSettingsAsync(CancellationToken cancellationToken)
     {
         try
@@ -142,6 +153,7 @@ public sealed class ThemeService
                 LastChatModel = LastChatModel,
                 StudioHost = StudioHost,
                 StudioPort = StudioPort,
+                CloseToTray = CloseToTray,
             };
             await File.WriteAllTextAsync(
                 StudioPaths.SettingsFile,
@@ -167,12 +179,12 @@ public sealed class ThemeService
         return text.ToLowerInvariant();
     }
 
-    private static (string Theme, string CustomColor, string Generator, string Cache, string? LastChatModel, string StudioHost, int StudioPort) LoadSettings()
+    private static (string Theme, string CustomColor, string Generator, string Cache, string? LastChatModel, string StudioHost, int StudioPort, bool CloseToTray) LoadSettings()
     {
         try
         {
             if (!File.Exists(StudioPaths.SettingsFile))
-                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, DefaultHost, DefaultPort);
+                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, DefaultHost, DefaultPort, true);
 
             var settings = JsonSerializer.Deserialize<StudioSettings>(
                 File.ReadAllText(StudioPaths.SettingsFile), StudioJson.File);
@@ -187,11 +199,12 @@ public sealed class ThemeService
                 : settings!.DefaultCache!;
             string host = string.IsNullOrWhiteSpace(settings?.StudioHost) ? DefaultHost : settings!.StudioHost!;
             int port = settings is { StudioPort: > 0 and <= 65535 } ? settings.StudioPort : DefaultPort;
-            return (theme, color, generator, cache, string.IsNullOrWhiteSpace(settings?.LastChatModel) ? null : settings!.LastChatModel, host, port);
+            bool closeToTray = settings?.CloseToTray ?? true;
+            return (theme, color, generator, cache, string.IsNullOrWhiteSpace(settings?.LastChatModel) ? null : settings!.LastChatModel, host, port, closeToTray);
         }
         catch
         {
-            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, DefaultHost, DefaultPort);
+            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, DefaultHost, DefaultPort, true);
         }
     }
 

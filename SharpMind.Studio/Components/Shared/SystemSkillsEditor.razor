@@ -2,6 +2,7 @@
 @using SharpMind.Studio.Core.Work
 @inject SystemWorkSkillsService Skills
 @inject StudioChatService ChatService
+@inject PathPickerService Picker
 
 <section class="panel">
     <div class="panel-head">
@@ -39,6 +40,7 @@
 
         <div class="row">
             <button type="button" class="button" @onclick="Add">Add skill</button>
+            <button type="button" class="button" @onclick="ImportAsync">Import .md</button>
             <button type="button" class="button" @onclick="Refresh">Refresh folder</button>
             <button type="button" class="button primary" @onclick="SaveAsync">Save system skills</button>
             <span class="status-line">@_status</span>
@@ -82,6 +84,54 @@
     {
         _drafts.Add(new SkillDraft { Id = Guid.NewGuid().ToString("n"), DefaultEnabled = true });
         _status = "";
+    }
+
+    private async Task ImportAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.MultiFile,
+            Skills.Folder,
+            "Import system skills",
+            "*.md");
+        if (selection is null) return;
+
+        int imported = 0;
+        foreach (string file in selection.All)
+        {
+            try
+            {
+                string name = UniqueName(
+                    Path.GetFileNameWithoutExtension(file),
+                    _drafts.Select(skill => skill.Name));
+                _drafts.Add(new SkillDraft
+                {
+                    Id = Guid.NewGuid().ToString("n"),
+                    Name = name,
+                    Content = await File.ReadAllTextAsync(file),
+                    DefaultEnabled = true,
+                });
+                imported++;
+            }
+            catch (Exception ex)
+            {
+                _status = $"Could not import {Path.GetFileName(file)}: {ex.Message}";
+            }
+        }
+
+        if (imported > 0) _status = $"Imported {imported} skill(s). Save system skills to apply.";
+    }
+
+    private static string UniqueName(string? name, IEnumerable<string> existing)
+    {
+        string baseName = string.IsNullOrWhiteSpace(name) ? "Imported skill" : name.Trim();
+        var taken = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
+        if (!taken.Contains(baseName)) return baseName;
+
+        for (int suffix = 2; ; suffix++)
+        {
+            string candidate = $"{baseName} ({suffix})";
+            if (!taken.Contains(candidate)) return candidate;
+        }
     }
 
     private void Remove(SkillDraft skill)

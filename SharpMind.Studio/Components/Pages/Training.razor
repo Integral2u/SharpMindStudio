@@ -12,6 +12,8 @@
 @inject StudioRehearsalService Rehearsal
 @inject StudioWorkspaceService Workspace
 @inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject PathPickerService Picker
 
 <PageTitle>Training - SharpMind Studio</PageTitle>
 
@@ -46,7 +48,40 @@
         <TrainingRunPanel />
     }
 
-    <TrainingPlannerPanel Job="_job" UsePlan="ApplyPlan" />
+    <section class="panel training-saved">
+        <div class="panel-body stack">
+            <div class="row">
+                <div class="field training-form-wide">
+                    <label class="field-label" for="training-saved">Saved jobs</label>
+                    <select id="training-saved" class="input" @bind="_selectedJobPath">
+                        <option value="">Choose a saved job...</option>
+                        @foreach (string path in Lab.SavedJobs)
+                        {
+                            <option value="@path">@Path.GetFileNameWithoutExtension(path)</option>
+                        }
+                    </select>
+                </div>
+                <button type="button" class="button" @onclick="LoadLatestJob"
+                        disabled="@(Lab.IsRunning || Lab.SavedJobs.Count == 0)">
+                    Load latest
+                </button>
+                <button type="button" class="button" @onclick="LoadSelectedJob"
+                        disabled="@(Lab.IsRunning || string.IsNullOrWhiteSpace(_selectedJobPath))">
+                    Load selected
+                </button>
+                <button type="button" class="button primary" @onclick="RunSelectedJob"
+                        disabled="@(Lab.IsRunning || string.IsNullOrWhiteSpace(_selectedJobPath))">
+                    Run selected
+                </button>
+            </div>
+            <div class="small faint">
+                Jobs are saved under <span class="mono">@Lab.Folder</span>.
+                @if (Lab.SavedJobs.Count == 0) { <span> No saved jobs yet.</span> }
+            </div>
+        </div>
+    </section>
+
+    <TrainingPlannerPanel Job="_job" UsePlan="ApplyPlan" FocusMove="FocusPlannerMove" />
 
     <TrainingEstimatorPanel Job="_job" />
 
@@ -80,35 +115,7 @@
                         disabled="@Lab.IsRunning">
                     Save job
                 </button>
-                <button type="button" class="button" @onclick="LoadLatestJob"
-                        disabled="@(Lab.IsRunning || Lab.SavedJobs.Count == 0)">
-                    Load latest
-                </button>
-            </div>
-
-            <div class="training-form">
-                <div class="field training-form-wide">
-                    <label class="field-label" for="training-saved">Saved jobs</label>
-                    <select id="training-saved" class="input" @bind="_selectedJobPath">
-                        <option value="">Choose a saved job...</option>
-                        @foreach (string path in Lab.SavedJobs)
-                        {
-                            <option value="@path">@Path.GetFileNameWithoutExtension(path)</option>
-                        }
-                    </select>
-                </div>
-            </div>
-
-            <div class="training-actions">
-                <button type="button" class="button" @onclick="LoadSelectedJob"
-                        disabled="@(Lab.IsRunning || string.IsNullOrWhiteSpace(_selectedJobPath))">
-                    Load selected job
-                </button>
-                <button type="button" class="button primary" @onclick="RunSelectedJob"
-                        disabled="@(Lab.IsRunning || string.IsNullOrWhiteSpace(_selectedJobPath))">
-                    Run selected job
-                </button>
-                <span class="small faint">Jobs are saved under <span class="mono">@Lab.Folder</span>.</span>
+                <span class="small faint">Saved jobs are at the top of this tab.</span>
             </div>
 
             @if (_error is not null)
@@ -346,17 +353,28 @@ else if (_tab == "playbooks")
                 <div class="eyebrow">Reusable recipes</div>
                 <h2>Playbooks</h2>
             </div>
-            <span class="faint small mono">@TrainingPlaybooks.All.Count starting points</span>
+            <span class="faint small mono">@AllPlaybooks.Count starting points</span>
         </div>
         <div class="panel-body stack">
             <p class="small faint">
                 Prefab editor values for common goals. Each one fills the form; you still
                 supply the corpus (and, for a fine-tune, the base model). They are starting
-                points, not measured results.
+                points, not measured results. Save the current New model job or Improve LoRA
+                settings below to add your own.
             </p>
 
+            <div class="row">
+                <button type="button" class="button" @onclick="SaveJobAsPlaybookAsync">
+                    Save current job as playbook
+                </button>
+                <button type="button" class="button" @onclick="SaveLoraAsPlaybookAsync">
+                    Save current LoRA as playbook
+                </button>
+                <span class="status-line">@_playbookStatus</span>
+            </div>
+
             <div class="training-grid">
-                @foreach (TrainingPlaybook playbook in TrainingPlaybooks.All)
+                @foreach (TrainingPlaybook playbook in AllPlaybooks)
                 {
                     <div class="training-card">
                         <div class="eyebrow">@playbook.Eyebrow</div>
@@ -370,6 +388,13 @@ else if (_tab == "playbooks")
                                     ? "Open in Improve"
                                     : "Use in New model")
                             </button>
+                            @if (IsCustomPlaybook(playbook))
+                            {
+                                <button type="button" class="button danger"
+                                        @onclick="() => DeletePlaybook(playbook)">
+                                    Delete
+                                </button>
+                            }
                         </div>
                     </div>
                 }
@@ -414,6 +439,56 @@ else if (_tab == "data")
                     Global stages: @_job.GlobalStages.Count - incremental:
                     @(_job.IncrementalMode ? "on" : "off")
                 </div>
+                <div class="small faint">
+                    @CorpusEstimate.Files file(s), @Megabytes(CorpusEstimate.Bytes) MB,
+                    about @(CorpusEstimate.Tokens?.ToString("N0") ?? "unknown") tokens.
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Corpus tools</div>
+                <h2>Merge text files</h2>
+            </div>
+            <span class="faint small mono">.txt / .html to one clean corpus</span>
+        </div>
+        <div class="panel-body stack">
+            <p class="small faint">
+                Walks a folder, drops Project Gutenberg headers, strips HTML, normalises
+                paragraphs, removes exact duplicates, and joins the documents with an
+                end-of-text marker. The output is a plain text file the editor can use.
+            </p>
+            <div class="training-form">
+                <div class="field training-form-wide">
+                    <label class="field-label" for="merge-source">Source folder</label>
+                    <div class="row">
+                        <input id="merge-source" class="input" @bind="_mergeSource"
+                               placeholder="C:\path\to\books" />
+                        <button type="button" class="button" @onclick="BrowseMergeSourceAsync">Browse</button>
+                    </div>
+                </div>
+                <div class="field training-form-wide">
+                    <label class="field-label" for="merge-output">Output file</label>
+                    <div class="row">
+                        <input id="merge-output" class="input" @bind="_mergeOutput"
+                               placeholder="C:\path\to\merged.txt" />
+                        <button type="button" class="button" @onclick="BrowseMergeOutputAsync">Browse</button>
+                    </div>
+                </div>
+            </div>
+            <div class="training-actions">
+                <button type="button" class="button primary" @onclick="MergeCorpusAsync"
+                        disabled="@(_merging || string.IsNullOrWhiteSpace(_mergeSource) || string.IsNullOrWhiteSpace(_mergeOutput))">
+                    @(_merging ? "Merging..." : "Merge")
+                </button>
+                <span class="status-line">@_mergeStatus</span>
+            </div>
+            @if (_mergeError is not null)
+            {
+                <div class="error-line">@_mergeError</div>
             }
         </div>
     </section>
@@ -445,23 +520,6 @@ else if (_tab == "data")
             </div>
         </section>
     </div>
-
-    <section class="panel training-section">
-        <div class="panel-head">
-            <div>
-                <div class="eyebrow">Local teacher</div>
-                <h2>Data Factory</h2>
-            </div>
-            <span class="faint small mono">generate, rewrite, judge</span>
-        </div>
-        <div class="panel-body stack">
-            <div class="empty">No synthetic jobs yet.</div>
-            <p class="small faint">
-                A local model can draft Q&amp;A from your documents, rewrite and clean records,
-                or produce teacher answers for distillation. Speed and licence estimates come first.
-            </p>
-        </div>
-    </section>
 }
 else if (_tab == "runs")
 {
@@ -920,6 +978,12 @@ else if (_tab == "models")
     private string? _runNotice;
     private string? _planId;
     private string? _ruleSetVersion;
+    private string _playbookStatus = "";
+    private string _mergeSource = "";
+    private string _mergeOutput = "";
+    private string _mergeStatus = "";
+    private string? _mergeError;
+    private bool _merging;
     private IReadOnlyList<string>? _resumeOptions;
     private readonly HashSet<string> _tuneTargets =
         ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"];
@@ -965,6 +1029,14 @@ else if (_tab == "models")
     private IReadOnlyList<FileInfo> SmmModels =>
         [.. Models.Where(file => file.Extension.Equals(".smm", StringComparison.OrdinalIgnoreCase))];
 
+    private IReadOnlyList<TrainingPlaybook> AllPlaybooks =>
+        [.. TrainingPlaybooks.All, .. Lab.Playbooks.List().Select(TrainingPlaybookStore.ToPlaybook)];
+
+    private TrainingCorpusEstimate CorpusEstimate => TrainingCorpusFacts.Estimate(_job);
+
+    private static bool IsCustomPlaybook(TrainingPlaybook playbook) =>
+        playbook.Id.StartsWith("custom:", StringComparison.Ordinal);
+
     /// <summary>Model files the converter understands; adapters are not convertible.</summary>
     private IReadOnlyList<FileInfo> ConvertibleModels =>
         [.. Models.Where(file => !file.Extension.Equals(TrainingJobSettings.AdapterExtension, StringComparison.OrdinalIgnoreCase))];
@@ -995,6 +1067,10 @@ else if (_tab == "models")
     {
         _job = Lab.Draft ?? CreateDefaultJob();
         Lab.Draft = _job;
+        _mergeOutput = Path.Combine(StudioPaths.Corpus, "merged.txt");
+        _mergeSource = _job.Sources
+            .Select(source => source.Component.Args.GetValueOrDefault("path"))
+            .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path)) ?? "";
 
         Lab.Changed += OnTrainingChanged;
         Convert.Changed += OnTrainingChanged;
@@ -1620,7 +1696,7 @@ else if (_tab == "models")
         _ruleSetVersion = plan.RuleSetVersion;
 
         if (plan.PlaybookId is { } id
-            && TrainingPlaybooks.All.FirstOrDefault(playbook => playbook.Id == id) is { } playbook)
+            && AllPlaybooks.FirstOrDefault(playbook => playbook.Id == id) is { } playbook)
         {
             ApplyPlaybook(playbook);
             return;
@@ -1628,6 +1704,169 @@ else if (_tab == "models")
 
         _tab = plan.Destination == PlannerDestination.Improve ? "improve" : "new";
         Nav.NavigateTo($"/training?tab={_tab}");
+    }
+
+    private async Task FocusPlannerMove(PlannerAction action)
+    {
+        switch (action)
+        {
+            case PlannerAction.Data:
+                await FocusTabAsync("new", "quick-source");
+                break;
+            case PlannerAction.Design:
+                await FocusTabAsync("new", "job-hidden");
+                break;
+            case PlannerAction.Tokenizer:
+                await FocusTabAsync("new", "job-vocab");
+                break;
+            case PlannerAction.LoRA:
+                await FocusTabAsync("improve", "tune-corpus");
+                break;
+            case PlannerAction.Continue:
+            case PlannerAction.Resume:
+                await FocusTabAsync("new", "job-resume");
+                break;
+            case PlannerAction.Evaluate:
+            case PlannerAction.Compare:
+            case PlannerAction.Promote:
+                await EnsureTabAsync("runs");
+                break;
+            case PlannerAction.Package:
+                await FocusTabAsync("new", "job-export");
+                break;
+            case PlannerAction.Pretrain:
+                await FocusTabAsync("new", "quick-source");
+                break;
+            default:
+                await FocusTabAsync("new", "training-model");
+                break;
+        }
+    }
+
+    private async Task FocusTabAsync(string tab, string elementId)
+    {
+        await EnsureTabAsync(tab);
+        try
+        {
+            await JS.InvokeVoidAsync("studioChat.focusAndScroll", elementId);
+        }
+        catch
+        {
+            // A browser without the helper should not break the page.
+        }
+    }
+
+    private async Task EnsureTabAsync(string tab)
+    {
+        if (_tab != tab)
+        {
+            _tab = tab;
+            Nav.NavigateTo($"/training?tab={tab}");
+            await Task.Delay(120);
+        }
+        else
+        {
+            await Task.Yield();
+        }
+    }
+
+    private async Task BrowseMergeSourceAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.Folder,
+            Directory.Exists(_mergeSource) ? _mergeSource : StudioPaths.Corpus,
+            "Choose the folder to merge");
+        if (selection?.Path is { Length: > 0 } path) _mergeSource = path;
+    }
+
+    private async Task BrowseMergeOutputAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.SaveFile,
+            string.IsNullOrWhiteSpace(_mergeOutput)
+                ? Path.Combine(StudioPaths.Corpus, "merged.txt")
+                : _mergeOutput,
+            "Save the merged corpus as");
+        if (selection?.Path is { Length: > 0 } path) _mergeOutput = path;
+    }
+
+    private async Task MergeCorpusAsync()
+    {
+        if (_merging) return;
+        _merging = true;
+        _mergeError = null;
+        _mergeStatus = "";
+        try
+        {
+            CorpusMergeResult result = await CorpusMerger.MergeAsync(
+                _mergeSource.Trim(), _mergeOutput.Trim());
+            _mergeStatus =
+                $"Merged {result.FilesRead} file(s) into {result.Documents} document(s); " +
+                $"{result.DuplicatesRemoved} duplicate(s) removed; " +
+                $"{Megabytes(result.OutputBytes)} MB written to {result.OutputPath}.";
+        }
+        catch (Exception ex)
+        {
+            _mergeError = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _merging = false;
+        }
+    }
+
+    private async Task SaveJobAsPlaybookAsync()
+    {
+        string suggested = string.IsNullOrWhiteSpace(_job.Name) ? "My pretrain playbook" : _job.Name;
+        string? name = await JS.InvokeAsync<string?>("prompt", "Playbook name", suggested);
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        try
+        {
+            SavedTrainingPlaybook saved = Lab.Playbooks.Save(
+                SavedTrainingPlaybook.FromJob(name.Trim(), _job));
+            _playbookStatus = $"Saved playbook '{saved.Name}'.";
+        }
+        catch (Exception ex)
+        {
+            _playbookStatus = $"{ex.GetType().Name}: {ex.Message}";
+        }
+    }
+
+    private async Task SaveLoraAsPlaybookAsync()
+    {
+        string suggested = string.IsNullOrWhiteSpace(_tuneName)
+            ? "My LoRA playbook"
+            : _tuneName;
+        string? name = await JS.InvokeAsync<string?>("prompt", "Playbook name", suggested);
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        try
+        {
+            var recipe = new TrainingFineTuneRecipe(
+                Rank: _tuneRank,
+                Alpha: _tuneAlpha,
+                Targets: [.. _tuneTargets],
+                Steps: _tuneSteps,
+                LearningRate: _tuneLr,
+                ValidationPercent: _tuneValidationPercent,
+                TestPercent: _tuneTestPercent,
+                Output: _tuneOutput);
+            SavedTrainingPlaybook saved = Lab.Playbooks.Save(
+                SavedTrainingPlaybook.FromFineTune(name.Trim(), recipe, _tuneBase));
+            _playbookStatus = $"Saved playbook '{saved.Name}'.";
+        }
+        catch (Exception ex)
+        {
+            _playbookStatus = $"{ex.GetType().Name}: {ex.Message}";
+        }
+    }
+
+    private void DeletePlaybook(TrainingPlaybook playbook)
+    {
+        if (!IsCustomPlaybook(playbook)) return;
+        Lab.Playbooks.Delete(playbook.Id["custom:".Length..]);
+        _playbookStatus = $"Deleted playbook '{playbook.Name}'.";
     }
 
     private void ApplyPlaybook(TrainingPlaybook playbook)

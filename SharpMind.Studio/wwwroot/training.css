@@ -180,6 +180,17 @@
     opacity: .82;
 }
 
+.training-plan-move.needs-input,
+.training-plan-move.needs-checkpoint {
+    border-left-color: var(--warn);
+    opacity: .9;
+}
+
+.training-plan-move.not-supported {
+    border-left-color: var(--line-strong);
+    opacity: .68;
+}
+
 .training-goals {
     display: flex;
     flex-wrap: wrap;

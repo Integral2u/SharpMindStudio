@@ -9,6 +9,7 @@
 @inject StudioDeviceAccess DeviceAccess
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject PathPickerService Picker
 
 <div class="work-project panel">
     <div class="work-project-head">
@@ -61,6 +62,7 @@
                         <h3>Project skills</h3>
                     </div>
                     <button type="button" class="button" @onclick="AddProjectSkill">Add project skill</button>
+                    <button type="button" class="button" @onclick="ImportProjectSkillsAsync">Import .md</button>
                 </div>
                 <p class="small faint">
                     These live in this project's <span class="mono">work.json</span>, not the shared repository.
@@ -106,6 +108,7 @@
                     <div class="row">
                         <button type="button" class="button" @onclick="RefreshSkills">Refresh</button>
                         <button type="button" class="button" @onclick="ToggleAddSkill">Add skill</button>
+                        <button type="button" class="button" @onclick="ImportRepositorySkillsAsync">Import .md</button>
                     </div>
                 </div>
                 <p class="small faint">
@@ -477,6 +480,96 @@
     private void AddProjectSkill()
         => _projectSkills.Add(new ProjectSkillDraft { Id = Guid.NewGuid().ToString("n") });
 
+    private async Task ImportProjectSkillsAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.MultiFile,
+            Work.ProjectRoot,
+            "Import project skills",
+            "*.md");
+        if (selection is null) return;
+
+        int imported = 0;
+        foreach (string file in selection.All)
+        {
+            try
+            {
+                string name = UniqueName(
+                    Path.GetFileNameWithoutExtension(file),
+                    _projectSkills.Select(skill => skill.Name));
+                _projectSkills.Add(new ProjectSkillDraft
+                {
+                    Id = Guid.NewGuid().ToString("n"),
+                    Name = name,
+                    Content = await File.ReadAllTextAsync(file),
+                    Enabled = true,
+                });
+                imported++;
+            }
+            catch (Exception ex)
+            {
+                _status = $"Could not import {Path.GetFileName(file)}: {ex.Message}";
+            }
+        }
+
+        if (imported > 0) _status = $"Imported {imported} project skill(s). Save project settings to apply.";
+    }
+
+    private async Task ImportRepositorySkillsAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.MultiFile,
+            Repo.Folder,
+            "Import repository skills",
+            "*.md");
+        if (selection is null) return;
+
+        var next = Repo.Skills.ToList();
+        int imported = 0;
+        foreach (string file in selection.All)
+        {
+            try
+            {
+                string name = UniqueName(
+                    Path.GetFileNameWithoutExtension(file),
+                    next.Select(skill => skill.Name));
+                next.Add(new WorkSkill
+                {
+                    Id = "",
+                    Name = name,
+                    Content = await File.ReadAllTextAsync(file),
+                    DefaultEnabled = true,
+                });
+                imported++;
+            }
+            catch (Exception ex)
+            {
+                _status = $"Could not import {Path.GetFileName(file)}: {ex.Message}";
+            }
+        }
+
+        if (imported == 0) return;
+
+        Repo.Save(next);
+        Repo.Reload();
+        LoadFields();
+        await ChatService.ReloadWorkContextAsync();
+        _status = $"Imported {imported} repository skill(s).";
+    }
+
+    private static string UniqueName(string? name, IEnumerable<string> existing)
+    {
+        string baseName = string.IsNullOrWhiteSpace(name) ? "Imported skill" : name.Trim();
+        var taken = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
+        if (!taken.Contains(baseName)) return baseName;
+
+        for (int suffix = 2; ; suffix++)
+        {
+            string candidate = $"{baseName} ({suffix})";
+            if (!taken.Contains(candidate)) return candidate;
+        }
+    }
+
     private void RemoveProjectSkill(ProjectSkillDraft skill)
         => _projectSkills.Remove(skill);
 
@@ -534,13 +627,33 @@
     }
     private async Task AddContextAsync()
     {
-        string? path = await JS.InvokeAsync<string?>("prompt", "Context folder", ".");
-        if (string.IsNullOrWhiteSpace(path)) return;
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.Folder,
+            Work.ProjectRoot,
+            "Choose a context folder");
+        if (selection?.Path is not { Length: > 0 } path) return;
+
         _contexts.Add(new ContextDraft
         {
             Id = Guid.NewGuid().ToString("n"),
-            Path = path.Trim(),
+            Path = RelativeToProject(path),
         });
+    }
+
+    private string RelativeToProject(string path)
+    {
+        try
+        {
+            string root = Path.GetFullPath(Work.ProjectRoot);
+            string full = Path.GetFullPath(path);
+            string prefix = root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return Path.GetRelativePath(root, full);
+        }
+        catch
+        {
+        }
+        return path;
     }
 
     private void RemoveContext(ContextDraft context)

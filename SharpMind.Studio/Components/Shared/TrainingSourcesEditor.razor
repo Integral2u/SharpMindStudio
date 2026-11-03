@@ -1,10 +1,12 @@
 @using SharpMind.Data.Metadata
 @using SharpMind.Data.Sources
+@using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Services
 @inject StudioWorkspaceService Workspace
+@inject PathPickerService Picker
 
-<section class="training-subsection">
+<section class="training-subsection" id="training-sources">
     <div class="training-subsection-head">
         <div class="eyebrow">Sources &amp; stages</div>
         <span class="faint small mono">@Job.Sources.Count source(s)</span>
@@ -16,6 +18,8 @@
             <div class="row">
                 <input id="quick-source" class="input" @bind="_quickSourcePath"
                        placeholder="C:\path\to\corpus, a folder, or C:\path\**\*.txt" />
+                <button type="button" class="button" @onclick="BrowseSourceFileAsync">File</button>
+                <button type="button" class="button" @onclick="BrowseSourceFolderAsync">Folder</button>
                 <button type="button" class="button" @onclick="AddQuickTextSource"
                         disabled="@string.IsNullOrWhiteSpace(_quickSourcePath)">
                     Add
@@ -184,6 +188,32 @@
 
     private ComponentDescriptor? FindStage(string? key)
         => _stages.FirstOrDefault(d => string.Equals(Key(d), key, StringComparison.Ordinal));
+
+    private async Task BrowseSourceFileAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StartFolder(),
+            "Choose a corpus file");
+        if (selection?.Path is { Length: > 0 } path) _quickSourcePath = path;
+    }
+
+    private async Task BrowseSourceFolderAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.Folder,
+            StartFolder(),
+            "Choose a corpus folder");
+        if (selection?.Path is { Length: > 0 } path) _quickSourcePath = path;
+    }
+
+    private string StartFolder()
+    {
+        if (Directory.Exists(_quickSourcePath)) return _quickSourcePath;
+        if (File.Exists(_quickSourcePath))
+            return Path.GetDirectoryName(_quickSourcePath) ?? StudioPaths.Corpus;
+        return StudioPaths.Corpus;
+    }
 
     private void AddQuickTextSource()
     {

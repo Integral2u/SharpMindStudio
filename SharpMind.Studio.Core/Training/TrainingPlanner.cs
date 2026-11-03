@@ -27,6 +27,15 @@ public enum PlannerMoveStatus
     Blocked,
 }
 
+/// <summary>Why a move cannot run: missing input, a prerequisite, or no engine support yet.</summary>
+public enum PlannerBlockKind
+{
+    None,
+    NeedsInput,
+    NeedsCheckpoint,
+    NotSupported,
+}
+
 public enum PlannerAction
 {
     Design,
@@ -129,6 +138,7 @@ public sealed record PlannerMove
     public required string Detail { get; init; }
     public required string Reason { get; init; }
     public PlannerMoveStatus Status { get; init; } = PlannerMoveStatus.Ready;
+    public PlannerBlockKind BlockKind { get; init; } = PlannerBlockKind.None;
     public string? BlockedReason { get; init; }
     public string? Alternative { get; init; }
 }
@@ -210,7 +220,8 @@ public static class TrainingPlanner
                     : "A light adapter shifts style or tone without touching the base.",
                 input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
                 input.EffectiveHasData ? null : "Add the fine-tune corpus first.",
-                input.EffectiveHasData ? null : "Open Improve and choose a corpus."));
+                input.EffectiveHasData ? null : "Open Improve and choose a corpus.",
+                PlannerBlockKind.NeedsInput));
         }
         else
         {
@@ -219,7 +230,8 @@ public static class TrainingPlanner
                 "From-scratch training suits a narrow-domain edge model; it is not a shortcut to general chat.",
                 input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
                 input.EffectiveHasData ? null : "Add a corpus first.",
-                input.EffectiveHasData ? null : "Use the smoke playbook to validate the pipeline first."));
+                input.EffectiveHasData ? null : "Use the smoke playbook to validate the pipeline first.",
+                PlannerBlockKind.NeedsInput));
         }
 
         moves.Add(EvaluateMove());
@@ -279,7 +291,8 @@ public static class TrainingPlanner
                 "LoRA is the supported way to adapt a packaged base without a full retrain.",
                 input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
                 input.EffectiveHasData ? null : "Add the fine-tune corpus first.",
-                input.EffectiveHasData ? null : "Open Improve and choose a corpus."));
+                input.EffectiveHasData ? null : "Open Improve and choose a corpus.",
+                PlannerBlockKind.NeedsInput));
         }
         else
         {
@@ -288,7 +301,8 @@ public static class TrainingPlanner
                 "A larger from-scratch run suits a domain base; it needs enough tokens to be worth the time.",
                 input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
                 input.EffectiveHasData ? null : "Add a corpus first.",
-                input.EffectiveHasData ? null : "Start with the smoke playbook."));
+                input.EffectiveHasData ? null : "Start with the smoke playbook.",
+                PlannerBlockKind.NeedsInput));
         }
 
         if (wantsBehaviour) moves.Add(SftMove(input));
@@ -352,7 +366,8 @@ public static class TrainingPlanner
                 "LoRA is the supported first move; it is cheap enough to compare against the base.",
                 input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
                 input.EffectiveHasData ? null : "Add the fine-tune corpus first.",
-                input.EffectiveHasData ? null : "Open Improve and choose a corpus."));
+                input.EffectiveHasData ? null : "Open Improve and choose a corpus.",
+                PlannerBlockKind.NeedsInput));
         }
         else
         {
@@ -361,7 +376,8 @@ public static class TrainingPlanner
                 "An ambitious path needs a stronger base before behaviour tuning.",
                 input.EffectiveHasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
                 input.EffectiveHasData ? null : "Add a corpus first.",
-                input.EffectiveHasData ? null : "Use the chat-base playbook once the corpus is ready."));
+                input.EffectiveHasData ? null : "Use the chat-base playbook once the corpus is ready.",
+                PlannerBlockKind.NeedsInput));
         }
 
         moves.Add(SftMove(input));
@@ -439,7 +455,8 @@ public static class TrainingPlanner
             reason,
             hasData ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
             blocked,
-            hasData ? null : "Add a text corpus in the editor below.");
+            hasData ? null : "Add a text corpus in the editor below.",
+            PlannerBlockKind.NeedsInput);
     }
 
     private static PlannerMove DesignMove(bool ready)
@@ -467,7 +484,8 @@ public static class TrainingPlanner
                 "Continuing a packaged .smm directly needs a checkpoint; LoRA is the supported adapt move.",
                 PlannerMoveStatus.Blocked,
                 "No training checkpoint is selected; a packaged .smm has no optimizer state.",
-                "Use LoRA on the packaged base, or point Resume/Warm restart at a checkpoint in the editor.");
+                "Use LoRA on the packaged base, or point Resume/Warm restart at a checkpoint in the editor.",
+                PlannerBlockKind.NeedsCheckpoint);
 
     private static PlannerMove QuantizedMasterMove(PlannerInput input)
         => input.IsQuantizedOnly
@@ -476,7 +494,8 @@ public static class TrainingPlanner
                 "LoRA and QAT want float master weights.",
                 PlannerMoveStatus.Blocked,
                 "This base is quantized-only; the float master is missing.",
-                "Find the float .smm, or accept a lower ceiling with LoRA on the dequantized weights.")
+                "Find the float .smm, or accept a lower ceiling with LoRA on the dequantized weights.",
+                PlannerBlockKind.NeedsInput)
             : Move(PlannerAction.Fields, "Confirm the float master",
                 "The packaged base must expose float weights for training.",
                 "LoadForTraining dequantizes the base; adapter quality depends on the master.",
@@ -490,7 +509,8 @@ public static class TrainingPlanner
                 : "Behaviour changes usually need instruction data and a formatter with role tokens.",
             PlannerMoveStatus.Blocked,
             "The SFT data path, formatter designer and record batcher are not connected in this build.",
-            "Use LoRA on curated chat text and evaluate on the held-out exam until SFT lands.");
+            "Use LoRA on curated chat text and evaluate on the held-out exam until SFT lands.",
+            PlannerBlockKind.NotSupported);
 
     private static PlannerMove EvaluateMove()
         => Move(PlannerAction.Evaluate, "Evaluate",
@@ -516,7 +536,8 @@ public static class TrainingPlanner
             "Quantization comes after training and evaluation.",
             PlannerMoveStatus.Blocked,
             "Post-training quantisation is not in this build; QAT and GGUF conversion are available.",
-            "Use a QAT target during training and convert to GGUF on Models when needed.");
+            "Use a QAT target during training and convert to GGUF on Models when needed.",
+            PlannerBlockKind.NotSupported);
 
     private static PlannerMove DistillMove()
         => Move(PlannerAction.Distill, "Distill",
@@ -524,7 +545,8 @@ public static class TrainingPlanner
             "Distillation is the honest route to a smaller model that stays capable.",
             PlannerMoveStatus.Blocked,
             "Teacher/student selection and the distillation loop are not connected in this build.",
-            "Keep the current model and revisit distillation when the loop lands.");
+            "Keep the current model and revisit distillation when the loop lands.",
+            PlannerBlockKind.NotSupported);
 
     private static PlannerMove PackageMove()
         => Move(PlannerAction.Package, "Package",
@@ -539,7 +561,8 @@ public static class TrainingPlanner
         string reason,
         PlannerMoveStatus status,
         string? blockedReason,
-        string? alternative)
+        string? alternative,
+        PlannerBlockKind blockKind = PlannerBlockKind.None)
         => new()
         {
             Action = action,
@@ -547,6 +570,7 @@ public static class TrainingPlanner
             Detail = detail,
             Reason = reason,
             Status = status,
+            BlockKind = status == PlannerMoveStatus.Blocked ? blockKind : PlannerBlockKind.None,
             BlockedReason = status == PlannerMoveStatus.Blocked ? blockedReason : null,
             Alternative = status == PlannerMoveStatus.Blocked ? alternative : null,
         };
@@ -589,6 +613,9 @@ public static class TrainingPlanner
                 moves[i] = moves[i] with
                 {
                     Status = PlannerMoveStatus.Blocked,
+                    BlockKind = moves[i].BlockKind == PlannerBlockKind.None
+                        ? PlannerBlockKind.NeedsInput
+                        : moves[i].BlockKind,
                     BlockedReason = rule.Then.BlockedReason ?? moves[i].BlockedReason ?? $"Blocked by rule '{rule.Id}'.",
                     Alternative = rule.Then.Alternative ?? moves[i].Alternative,
                 };

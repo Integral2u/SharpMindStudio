@@ -44,6 +44,7 @@ builder.Services.AddSingleton<StudioConversionService>();
 builder.Services.AddSingleton<StudioExamService>();
 builder.Services.AddSingleton<StudioRehearsalService>();
 builder.Services.AddScoped<StudioDeviceAccess>();
+builder.Services.AddScoped<PathPickerService>();
 builder.Services.AddScoped<StudioWorkService>();
 builder.Services.AddScoped<StudioChatService>();
 

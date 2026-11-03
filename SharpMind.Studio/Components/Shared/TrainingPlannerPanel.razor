@@ -88,7 +88,16 @@
                        placeholder="e.g. answers customer questions from these documents" />
             </div>
             <div class="field training-form-wide">
-                <label class="field-label">Goals</label>
+                <div class="spread">
+                    <label class="field-label">Goals</label>
+                    <div class="row">
+                        <span class="small faint">@Lab.PlannerGoals.Count selected</span>
+                        <button type="button" class="button" @onclick="ClearGoals"
+                                disabled="@(Lab.PlannerGoals.Count == 0)">
+                            Clear
+                        </button>
+                    </div>
+                </div>
                 <div class="training-goals">
                     @foreach (PlannerGoal goal in Enum.GetValues<PlannerGoal>())
                     {
@@ -121,18 +130,28 @@
                     <ol class="training-plan-moves">
                         @foreach (PlannerMove move in plan.Moves)
                         {
-                            <li class="training-plan-move @(move.Status == PlannerMoveStatus.Ready ? "ready" : "blocked")">
+                            <li class="training-plan-move @MoveClass(move)">
                                 <div class="spread">
                                     <strong>@move.Title</strong>
-                                    <span class="training-chip @(move.Status == PlannerMoveStatus.Ready ? "live" : "")">
-                                        @(move.Status == PlannerMoveStatus.Ready ? "ready" : "blocked")
-                                    </span>
+                                    <div class="row">
+                                        <span class="training-chip @(move.Status == PlannerMoveStatus.Ready ? "live" : "")">
+                                            @MoveBadge(move)
+                                        </span>
+                                        @if (move.Status == PlannerMoveStatus.Ready
+                                             || move.BlockKind is PlannerBlockKind.NeedsInput or PlannerBlockKind.NeedsCheckpoint)
+                                        {
+                                            <button type="button" class="button"
+                                                    @onclick="() => FocusMove.InvokeAsync(move.Action)">
+                                                Open
+                                            </button>
+                                        }
+                                    </div>
                                 </div>
                                 <div class="small faint">@move.Detail</div>
                                 <div class="small">@move.Reason</div>
                                 @if (move.Status == PlannerMoveStatus.Blocked)
                                 {
-                                    <div class="small faint">Why not: @move.BlockedReason</div>
+                                    <div class="small faint">Why: @move.BlockedReason</div>
                                     @if (move.Alternative is { } alternative)
                                     {
                                         <div class="small faint">Instead: @alternative</div>
@@ -159,6 +178,7 @@
 @code {
     [Parameter, EditorRequired] public TrainingJobSettings Job { get; set; } = new();
     [Parameter] public EventCallback<TrainingPlan> UsePlan { get; set; }
+    [Parameter] public EventCallback<PlannerAction> FocusMove { get; set; }
 
     private TrainingRuleSet? _ruleSet;
     private string _ruleSource = "";
@@ -207,6 +227,28 @@
     {
         if (!Lab.PlannerGoals.Add(goal)) Lab.PlannerGoals.Remove(goal);
     }
+
+    private void ClearGoals() => Lab.PlannerGoals.Clear();
+
+    private static string MoveBadge(PlannerMove move) => move.Status == PlannerMoveStatus.Ready
+        ? "ready"
+        : move.BlockKind switch
+        {
+            PlannerBlockKind.NeedsInput => "needs input",
+            PlannerBlockKind.NeedsCheckpoint => "needs checkpoint",
+            PlannerBlockKind.NotSupported => "not available yet",
+            _ => "blocked",
+        };
+
+    private static string MoveClass(PlannerMove move) => move.Status == PlannerMoveStatus.Ready
+        ? "ready"
+        : move.BlockKind switch
+        {
+            PlannerBlockKind.NeedsInput => "needs-input",
+            PlannerBlockKind.NeedsCheckpoint => "needs-checkpoint",
+            PlannerBlockKind.NotSupported => "not-supported",
+            _ => "blocked",
+        };
 
     private static string StartLabel(PlannerStart start) => start switch
     {
