@@ -237,6 +237,70 @@ public sealed class CorpusMergerTests
     }
 
     [Fact]
+    public async Task Merge_CustomSeparatorSplitsAndDropsTheMarker()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("stories");
+        Directory.CreateDirectory(source);
+        await File.WriteAllTextAsync(temp.Combine("stories", "stories.txt"),
+            "First story.\n<|endoftext|>\nSecond story.\n<|endoftext|>\nThird story.\n<|endoftext|>\n");
+
+        string output = temp.Combine("merged.jsonl");
+        CorpusMergeResult result = await CorpusMerger.MergeAsync(source, output, new CorpusMergeOptions
+        {
+            Extensions = [".txt"],
+            DocumentLayout = CorpusDocumentLayout.Separator,
+            DocumentSeparator = "<|endoftext|>",
+        });
+
+        Assert.Equal(3, result.Documents);
+        string[] lines = await File.ReadAllLinesAsync(output);
+        Assert.Equal(3, lines.Length);
+        Assert.DoesNotContain("<|endoftext|>", string.Join('\n', lines), StringComparison.Ordinal);
+        Assert.Contains("First story", lines[0], StringComparison.Ordinal);
+        Assert.Contains("Second story", lines[1], StringComparison.Ordinal);
+        Assert.Contains("Third story", lines[2], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Merge_CustomSeparatorDropsEmptySections()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("stories");
+        Directory.CreateDirectory(source);
+        await File.WriteAllTextAsync(temp.Combine("stories", "stories.txt"),
+            "First story.\n<|endoftext|>\n<|endoftext|>\nSecond story.");
+
+        string output = temp.Combine("merged.jsonl");
+        CorpusMergeResult result = await CorpusMerger.MergeAsync(source, output, new CorpusMergeOptions
+        {
+            Extensions = [".txt"],
+            DocumentLayout = CorpusDocumentLayout.Separator,
+            DocumentSeparator = "<|endoftext|>",
+        });
+
+        Assert.Equal(2, result.Documents);
+    }
+
+    [Fact]
+    public async Task Merge_CustomSeparatorRequiresAValue()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("stories");
+        Directory.CreateDirectory(source);
+        await File.WriteAllTextAsync(temp.Combine("stories", "stories.txt"), "One story.");
+
+        await Assert.ThrowsAsync<ArgumentException>(() => CorpusMerger.MergeAsync(
+            source,
+            temp.Combine("merged.jsonl"),
+            new CorpusMergeOptions
+            {
+                Extensions = [".txt"],
+                DocumentLayout = CorpusDocumentLayout.Separator,
+            }));
+    }
+
+    [Fact]
     public async Task Merge_RequiresAnExistingSourceFolder()
     {
         using var temp = new TempDirectory();

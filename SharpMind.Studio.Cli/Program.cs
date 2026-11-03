@@ -4,6 +4,8 @@ using SharpMind.Studio.Core.Jobs;
 using SharpMind.Studio.Core.Projects;
 using SharpMind.Studio.Core.Recipes;
 using SharpMind.Studio.Core.Runs;
+using SharpMind.Studio.Core.Training;
+using SharpMind.Training;
 
 return await StudioCli.RunAsync(args);
 
@@ -28,6 +30,8 @@ internal static class StudioCli
                 "bench" => await BenchAsync(args),
                 "canary" => await CanaryAsync(args),
                 "tooltest" => await ToolTestAsync(args),
+                "merge" => await MergeAsync(args),
+                "train" => await TrainAsync(args),
                 "version" => Version(),
                 _ => Unknown(args[0]),
             };
@@ -259,6 +263,174 @@ internal static class StudioCli
         return 0;
     }
 
+    private static async Task<int> MergeAsync(string[] args)
+    {
+        if (args.Length < 3) return UsageError("merge needs a source folder and an output file.");
+
+        string source = Path.GetFullPath(args[1]);
+        string output = Path.GetFullPath(args[2]);
+        if (!Directory.Exists(source)) return UsageError($"source folder '{source}' was not found.");
+
+        CorpusMergeFormat format = string.Equals(
+            Option(args, "--format"), "text", StringComparison.OrdinalIgnoreCase)
+            ? CorpusMergeFormat.Text
+            : CorpusMergeFormat.Jsonl;
+
+        CorpusDocumentLayout layout = Option(args, "--layout")?.ToLowerInvariant() switch
+        {
+            "whole" => CorpusDocumentLayout.WholeFile,
+            "blank" => CorpusDocumentLayout.BlankLine,
+            "qa" => CorpusDocumentLayout.QaPairs,
+            "html" => CorpusDocumentLayout.HtmlBlocks,
+            "separator" => CorpusDocumentLayout.Separator,
+            _ => CorpusDocumentLayout.Auto,
+        };
+
+        var options = new CorpusMergeOptions
+        {
+            Format = format,
+            DocumentLayout = layout,
+            DocumentSeparator = Option(args, "--separator"),
+            StripHtml = !HasFlag(args, "--no-strip-html"),
+            NormalizeText = !HasFlag(args, "--no-normalize"),
+            Deduplicate = !HasFlag(args, "--no-dedupe"),
+            DropDocumentPattern = Option(args, "--drop"),
+            TextSeparator = Option(args, "--text-separator") ?? "\n\n",
+        };
+
+        try
+        {
+            CorpusMergeResult result = await CorpusMerger.MergeAsync(source, output, options);
+            Console.WriteLine($"Files     {result.FilesRead}");
+            Console.WriteLine($"Documents {result.Documents}");
+            Console.WriteLine($"Duplicates{result.DuplicatesRemoved,4}");
+            Console.WriteLine($"Dropped   {result.Dropped,4}");
+            Console.WriteLine($"Format    {result.Format}");
+            Console.WriteLine($"Layout    {result.Layout}");
+            Console.WriteLine($"Output    {result.OutputPath}");
+            Console.WriteLine($"Bytes     {result.OutputBytes}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"studio: {ex.GetType().Name}: {ex.Message}");
+            return 1;
+        }
+    }
+
+    private static async Task<int> TrainAsync(string[] args)
+    {
+        if (args.Length < 2) return UsageError("train needs a .smmt job path.");
+
+        string path = Path.GetFullPath(args[1]);
+        if (!File.Exists(path)) return UsageError($"job '{path}' was not found.");
+
+        TrainingJobSettings? job = TrainingJobSettings.Load(path, out string? loadError);
+        if (job is null)
+        {
+            Console.Error.WriteLine($"studio: {loadError}");
+            return 1;
+        }
+
+        string pluginsFolder = Path.GetFullPath(
+            Option(args, "--plugins") ?? Path.Combine(AppContext.BaseDirectory, "plugins"));
+        string? recipesOption = Option(args, "--recipes");
+        string? recipeFolder = string.IsNullOrWhiteSpace(recipesOption)
+            ? null
+            : Path.GetFullPath(recipesOption);
+
+        if (Option(args, "--steps") is { } stepsText)
+        {
+            if (!int.TryParse(stepsText, out int steps) || steps <= 0)
+                return UsageError("--steps must be a positive integer.");
+            job.TotalSteps = steps;
+            if (job.WarmupSteps > steps) job.WarmupSteps = steps;
+            if (job.LogInterval > steps) job.LogInterval = 1;
+        }
+
+        if (Option(args, "--export") is { Length: > 0 } export)
+            job.ExportPath = Path.GetFullPath(export);
+
+        if (args.Any(value => value.Equals("--fresh", StringComparison.OrdinalIgnoreCase)))
+            job.StartFresh = true;
+        if (args.Any(value => value.Equals("--resume", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (job.StartFresh && args.Any(value => value.Equals("--fresh", StringComparison.OrdinalIgnoreCase)))
+                return UsageError("--fresh and --resume cannot both be used.");
+            job.StartFresh = false;
+        }
+
+        Console.WriteLine($"Job      {job.Name}");
+        Console.WriteLine($"File     {path}");
+        Console.WriteLine($"Sources  {job.Sources.Count}");
+        Console.WriteLine($"Kind     {(job.IsFineTune ? "fine-tune" : "pretrain")}");
+        Console.WriteLine($"Steps    {job.TotalSteps}");
+        Console.WriteLine($"Export   {job.ExportFilePath}");
+        Console.WriteLine($"Plugins  {pluginsFolder}");
+        Console.WriteLine($"Recipes  {recipeFolder ?? TrainingRecipeStore.Folder}");
+        Console.WriteLine();
+
+        using var cancellation = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cancellation.Cancel();
+            Console.WriteLine("Cancelling; the runner will keep its latest checkpoint...");
+        };
+
+        var clock = Stopwatch.StartNew();
+        var log = new Relay<string>(line => Console.WriteLine(line));
+        var progress = new Relay<float>(_ => { });
+
+        TrainingRunResult result = await TrainingRunner.RunAsync(
+            job,
+            pluginsFolder,
+            log,
+            progress,
+            onStep: step =>
+            {
+                string validation = step.ValLoss is { } valLoss ? $"  val {valLoss,8:F4}" : "";
+                Console.WriteLine(
+                    $"step {step.Step,6}  loss {step.Loss,8:F4}{validation}  " +
+                    $"lr {step.LearningRate:0.######}  {step.TokensPerSecond,8:F1} tok/s");
+            },
+            cancellationToken: cancellation.Token,
+            recipeFolder: recipeFolder).ConfigureAwait(false);
+        clock.Stop();
+
+        Console.WriteLine();
+        if (result.Success)
+        {
+            Console.WriteLine($"OK       {FormatDuration(clock.Elapsed)}");
+            Console.WriteLine($"Export   {result.ExportPath ?? "(adapter only)"}");
+            if (result.AdapterPath is { } adapter)
+                Console.WriteLine($"Adapter  {adapter}");
+            Console.WriteLine($"Step     {result.FinalStep}/{job.TotalSteps}");
+            if (result.BestValLoss is { } best)
+                Console.WriteLine($"Best val {best:F4} @ {result.BestValStep}");
+            if (result.Cached)
+                Console.WriteLine($"Cached   {result.CachedPhase ?? "yes"}");
+            if (result.RecipeHash is { } recipe)
+                Console.WriteLine($"Recipe   {TrainingRecipeHash.Short(recipe)}");
+            return 0;
+        }
+
+        Console.Error.WriteLine($"Failed   {result.Error}");
+        return 1;
+    }
+
+    private static string FormatDuration(TimeSpan value) =>
+        value.TotalHours >= 1
+            ? $"{(int)value.TotalHours}h {value.Minutes:D2}m {value.Seconds:D2}s"
+            : value.TotalMinutes >= 1
+                ? $"{(int)value.TotalMinutes}m {value.Seconds:D2}s"
+                : $"{value.TotalSeconds:F1}s";
+
+    private sealed class Relay<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
+    }
+
     private static int Unknown(string command)
     {
         Console.Error.WriteLine($"studio: unknown command '{command}'.");
@@ -283,6 +455,9 @@ internal static class StudioCli
         Console.WriteLine("  studio bench <model> [prompt] [warmup] [measure] [--streaming]");
         Console.WriteLine("  studio canary <models.txt> [prompt] [warmup] [measure] [--streaming]");
         Console.WriteLine("  studio tooltest <model> [prompt] [maxTokens] [--streaming]");
+        Console.WriteLine("  studio merge <folder> <output> [--format jsonl|text] [--layout auto|whole|blank|qa|html|separator]");
+        Console.WriteLine("               [--separator TEXT] [--drop REGEX] [--no-strip-html] [--no-normalize] [--no-dedupe]");
+        Console.WriteLine("  studio train <job.smmt> [--plugins DIR] [--recipes DIR] [--steps N] [--export PATH] [--fresh|--resume]");
         Console.WriteLine("  studio version                   print versions");
     }
 
@@ -308,6 +483,9 @@ internal static class StudioCli
                 return args[i + 1];
         return null;
     }
+
+    private static bool HasFlag(string[] args, string name) =>
+        args.Any(value => value.Equals(name, StringComparison.OrdinalIgnoreCase));
 
     private static string RunsRoot()
     {

@@ -19,6 +19,8 @@ public enum CorpusDocumentLayout
     BlankLine,
     QaPairs,
     HtmlBlocks,
+    /// <summary>Split on a literal string supplied by the caller, dropping the separator.</summary>
+    Separator,
 }
 
 /// <summary>
@@ -35,6 +37,9 @@ public sealed record CorpusMergeOptions
     public IReadOnlyList<string> Extensions { get; init; } = [".txt", ".html", ".htm"];
 
     public CorpusDocumentLayout DocumentLayout { get; init; } = CorpusDocumentLayout.Auto;
+
+    /// <summary>Literal separator used by <see cref="CorpusDocumentLayout.Separator"/>.</summary>
+    public string? DocumentSeparator { get; init; }
 
     public bool StripHtml { get; init; } = true;
     public bool NormalizeText { get; init; } = true;
@@ -90,6 +95,14 @@ public static class CorpusMerger
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFile);
 
         options ??= new CorpusMergeOptions();
+        if (options.DocumentLayout == CorpusDocumentLayout.Separator
+            && string.IsNullOrWhiteSpace(options.DocumentSeparator))
+        {
+            throw new ArgumentException(
+                "A custom separator is required when DocumentLayout is Separator.",
+                nameof(options));
+        }
+
         string root = Path.GetFullPath(sourceFolder);
         if (!Directory.Exists(root))
             throw new DirectoryNotFoundException($"Source folder not found: {root}");
@@ -197,6 +210,7 @@ public static class CorpusMerger
             CorpusDocumentLayout.BlankLine => SplitBlankLines(content),
             CorpusDocumentLayout.QaPairs => SplitQaPairs(content),
             CorpusDocumentLayout.HtmlBlocks => SplitBlankLines(content),
+            CorpusDocumentLayout.Separator => SplitOnSeparator(content, options.DocumentSeparator!),
             _ => [content],
         };
 
@@ -210,6 +224,11 @@ public static class CorpusMerger
 
     private static IEnumerable<string> SplitBlankLines(string text)
         => BlankLine.Split(text).Select(part => part.Trim()).Where(part => part.Length > 0);
+
+    private static IEnumerable<string> SplitOnSeparator(string text, string separator)
+        => text.Split(separator, StringSplitOptions.None)
+            .Select(part => part.Trim())
+            .Where(part => part.Length > 0);
 
     private static IEnumerable<string> SplitQaPairs(string text)
     {

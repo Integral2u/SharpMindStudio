@@ -497,12 +497,24 @@ else if (_tab == "data")
                         <option value="blank">Blank-line separated</option>
                         <option value="qa">Q&amp;A pairs (Q:/Question:)</option>
                         <option value="html">HTML blocks - one per paragraph</option>
+                        <option value="separator">Custom separator</option>
                     </select>
                     <div class="small faint">
                         Blank-line works for files where a clear double newline separates entries.
                         Q&amp;A keeps each question and its answer together.
                     </div>
                 </div>
+                @if (_mergeLayout == "separator")
+                {
+                    <div class="field training-form-wide">
+                        <label class="field-label" for="merge-separator">Custom separator</label>
+                        <input id="merge-separator" class="input mono" @bind="_mergeSeparator"
+                               placeholder="e.g. <|endoftext|> or ###" />
+                        <div class="small faint">
+                            Literal text between documents; it is removed from the output.
+                        </div>
+                    </div>
+                }
                 <div class="field training-form-wide">
                     <label class="field-label" for="merge-drop">Drop documents matching regex (optional)</label>
                     <input id="merge-drop" class="input mono" @bind="_mergeDropPattern"
@@ -1029,6 +1041,7 @@ else if (_tab == "models")
     private string _mergeOutput = "";
     private string _mergeFormat = "jsonl";
     private string _mergeLayout = "auto";
+    private string _mergeSeparator = "";
     private string _mergeDropPattern = "";
     private bool _mergeStripHtml = true;
     private bool _mergeNormalizeText = true;
@@ -1865,6 +1878,12 @@ else if (_tab == "models")
         _mergeStatus = "";
         try
         {
+            if (_mergeLayout == "separator" && string.IsNullOrWhiteSpace(_mergeSeparator))
+            {
+                _mergeError = "Enter the literal separator used between documents.";
+                return;
+            }
+
             var options = new CorpusMergeOptions
             {
                 Format = _mergeFormat == "text" ? CorpusMergeFormat.Text : CorpusMergeFormat.Jsonl,
@@ -1874,8 +1893,12 @@ else if (_tab == "models")
                     "blank" => CorpusDocumentLayout.BlankLine,
                     "qa" => CorpusDocumentLayout.QaPairs,
                     "html" => CorpusDocumentLayout.HtmlBlocks,
+                    "separator" => CorpusDocumentLayout.Separator,
                     _ => CorpusDocumentLayout.Auto,
                 },
+                DocumentSeparator = string.IsNullOrWhiteSpace(_mergeSeparator)
+                    ? null
+                    : _mergeSeparator,
                 StripHtml = _mergeStripHtml,
                 NormalizeText = _mergeNormalizeText,
                 Deduplicate = _mergeDeduplicate,
