@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Reflection;
+using System.Text.Json;
 using SharpMind.Studio.Core.Jobs;
 using SharpMind.Studio.Core.Projects;
 using SharpMind.Studio.Core.Recipes;
@@ -32,6 +33,7 @@ internal static class StudioCli
                 "tooltest" => await ToolTestAsync(args),
                 "merge" => await MergeAsync(args),
                 "train" => await TrainAsync(args),
+                "exam" => await ExamAsync(args),
                 "version" => Version(),
                 _ => Unknown(args[0]),
             };
@@ -381,6 +383,7 @@ internal static class StudioCli
         var clock = Stopwatch.StartNew();
         var log = new Relay<string>(line => Console.WriteLine(line));
         var progress = new Relay<float>(_ => { });
+        var curve = new List<TrainingCurvePoint>();
 
         TrainingRunResult result = await TrainingRunner.RunAsync(
             job,
@@ -389,6 +392,9 @@ internal static class StudioCli
             progress,
             onStep: step =>
             {
+                curve.Add(new TrainingCurvePoint(
+                    step.Step, step.Loss, step.LearningRate,
+                    step.ValLoss is { } val && double.IsFinite(val) ? val : null));
                 string validation = step.ValLoss is { } valLoss ? $"  val {valLoss,8:F4}" : "";
                 Console.WriteLine(
                     $"step {step.Step,6}  loss {step.Loss,8:F4}{validation}  " +
@@ -397,6 +403,18 @@ internal static class StudioCli
             cancellationToken: cancellation.Token,
             recipeFolder: recipeFolder).ConfigureAwait(false);
         clock.Stop();
+
+        try
+        {
+            TrainingRunRecord record = TrainingRunRecord.From(
+                job, result, curve, clock.Elapsed, result.Success ? result.ExportPath : null);
+            string recordPath = TrainingRunStore.Save(record);
+            Console.WriteLine($"Record   {recordPath}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"studio: could not save run history: {ex.Message}");
+        }
 
         Console.WriteLine();
         if (result.Success)
@@ -425,6 +443,107 @@ internal static class StudioCli
             : value.TotalMinutes >= 1
                 ? $"{(int)value.TotalMinutes}m {value.Seconds:D2}s"
                 : $"{value.TotalSeconds:F1}s";
+
+    private static async Task<int> ExamAsync(string[] args)
+    {
+        if (args.Length < 2)
+            return UsageError("exam needs a run record JSON, or a job and model path.");
+
+        string first = Path.GetFullPath(args[1]);
+        string? recordPath = null;
+        string jobPath;
+        string modelPath;
+        TrainingRunRecord? record = null;
+
+        if (first.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(first)) return UsageError($"run record '{first}' was not found.");
+            try
+            {
+                record = JsonSerializer.Deserialize<TrainingRunRecord>(
+                    File.ReadAllText(first), RunRecordOptions);
+            }
+            catch (Exception ex)
+            {
+                return UsageError($"could not read the run record: {ex.Message}");
+            }
+
+            if (record is null) return UsageError("the run record contains no value.");
+            recordPath = first;
+            jobPath = record.JobPath ?? "";
+            modelPath = record.ExportPath ?? "";
+            if (string.IsNullOrWhiteSpace(jobPath) || !File.Exists(jobPath))
+                return UsageError("the run record has no saved .smmt job to rebuild the exam split.");
+            if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath))
+                return UsageError("the run record has no merged .smm to examine.");
+        }
+        else
+        {
+            if (args.Length < 3)
+                return UsageError("exam needs <job.smmt> <model.smm> when no run record is given.");
+            jobPath = first;
+            modelPath = Path.GetFullPath(args[2]);
+        }
+
+        if (!File.Exists(jobPath)) return UsageError($"job '{jobPath}' was not found.");
+        if (!File.Exists(modelPath)) return UsageError($"model '{modelPath}' was not found.");
+
+        TrainingJobSettings? job = TrainingJobSettings.Load(jobPath, out string? loadError);
+        if (job is null)
+        {
+            Console.Error.WriteLine($"studio: {loadError}");
+            return 1;
+        }
+
+        string pluginsFolder = Path.GetFullPath(
+            Option(args, "--plugins") ?? Path.Combine(AppContext.BaseDirectory, "plugins"));
+
+        Console.WriteLine($"Job      {job.Name}");
+        Console.WriteLine($"File     {jobPath}");
+        Console.WriteLine($"Model    {modelPath}");
+        Console.WriteLine($"Plugins  {pluginsFolder}");
+        Console.WriteLine($"Exam     {job.TestPercent:0.#}% held out");
+        Console.WriteLine();
+
+        try
+        {
+            TrainingExamResult result = await TrainingExamRunner.RunAsync(
+                job,
+                modelPath,
+                pluginsFolder,
+                line => Console.WriteLine(line)).ConfigureAwait(false);
+
+            Console.WriteLine();
+            Console.WriteLine($"Loss     {result.Loss:0.0000}");
+            Console.WriteLine($"PPL      {result.Perplexity:0.00}");
+            Console.WriteLine($"Batches  {result.Batches}");
+            Console.WriteLine($"Tokens   {result.Tokens:N0}");
+            Console.WriteLine($"At       {result.EvaluatedUtc.ToLocalTime():g}");
+
+            if (record is not null && recordPath is not null)
+            {
+                record.ExamLoss = result.Loss;
+                record.ExamPerplexity = result.Perplexity;
+                record.ExamBatches = result.Batches;
+                record.ExamTokens = result.Tokens;
+                record.ExamEvaluatedUtc = result.EvaluatedUtc;
+                TrainingRunStore.Update(recordPath, record);
+                Console.WriteLine($"Record   {recordPath}");
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"studio: {ex.GetType().Name}: {ex.Message}");
+            return 1;
+        }
+    }
+
+    private static readonly JsonSerializerOptions RunRecordOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
 
     private sealed class Relay<T>(Action<T> report) : IProgress<T>
     {
@@ -458,6 +577,7 @@ internal static class StudioCli
         Console.WriteLine("  studio merge <folder> <output> [--format jsonl|text] [--layout auto|whole|blank|qa|html|separator]");
         Console.WriteLine("               [--separator TEXT] [--drop REGEX] [--no-strip-html] [--no-normalize] [--no-dedupe]");
         Console.WriteLine("  studio train <job.smmt> [--plugins DIR] [--recipes DIR] [--steps N] [--export PATH] [--fresh|--resume]");
+        Console.WriteLine("  studio exam <run.json> | <job.smmt> <model.smm> [--plugins DIR]");
         Console.WriteLine("  studio version                   print versions");
     }
 

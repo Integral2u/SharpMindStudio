@@ -506,12 +506,18 @@ public sealed class TrainingJobSettings
                 }
 
                 if (rootElement.TryGetProperty("job", out var jobProp) && jobProp.ValueKind == JsonValueKind.Object)
-                    return jobProp.Deserialize<TrainingJobSettings>(Options);
+                {
+                    TrainingJobSettings? loaded = jobProp.Deserialize<TrainingJobSettings>(Options);
+                    if (loaded is not null) loaded.SourcePath = Path.GetFullPath(path);
+                    return loaded;
+                }
                 error = "Job file is missing its 'job' payload.";
                 return null;
             }
 
-            return rootElement.Deserialize<TrainingJobSettings>(Options);
+            TrainingJobSettings? legacy = rootElement.Deserialize<TrainingJobSettings>(Options);
+            if (legacy is not null) legacy.SourcePath = Path.GetFullPath(path);
+            return legacy;
         }
         catch (Exception ex)
         {
