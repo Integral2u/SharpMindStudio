@@ -80,19 +80,11 @@ public static class TrainingRecipeStore
 /// </summary>
 public static class TrainingRecipeHash
 {
-    /// <summary>
-    /// Bump when the data/training semantics change so old cache entries are
-    /// not reused for a pipeline that now behaves differently. Version 2 adds
-    /// a tokenizer EOS between documents for concatenating batchers.
-    /// </summary>
-    public const int CurrentVersion = 2;
-
     public static string Data(TrainingJobSettings job)
     {
         ArgumentNullException.ThrowIfNull(job);
         return HashOf(new
         {
-            Version = CurrentVersion,
             Sources = job.Sources.Select(source => new
             {
                 Component = Canonical(source.Component),

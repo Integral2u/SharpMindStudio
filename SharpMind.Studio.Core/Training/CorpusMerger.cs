@@ -10,11 +10,22 @@ public enum CorpusMergeFormat
     Text,
 }
 
+/// <summary>How a file is divided into training documents.</summary>
+public enum CorpusDocumentLayout
+{
+    /// <summary>Detect Q:/Question: pairs; otherwise treat the file as one document.</summary>
+    Auto,
+    WholeFile,
+    BlankLine,
+    QaPairs,
+    HtmlBlocks,
+}
+
 /// <summary>
 /// What a merge run should do. The defaults are deliberately generic: text and
-/// HTML files become one JSONL document per line, which the library's
-/// <c>JsonlSource</c> reads without a tokenizer-specific boundary. Boilerplate
-/// belongs to a user-supplied regex or a cleaning stage, not to this tool.
+/// HTML files become JSONL documents, which the library's <c>JsonlSource</c>
+/// reads without a tokenizer-specific boundary. Boilerplate belongs to a
+/// user-supplied regex or a cleaning stage, not to this tool.
 /// </summary>
 public sealed record CorpusMergeOptions
 {
@@ -23,11 +34,13 @@ public sealed record CorpusMergeOptions
     /// <summary>File extensions to read. Comparison is case-insensitive.</summary>
     public IReadOnlyList<string> Extensions { get; init; } = [".txt", ".html", ".htm"];
 
+    public CorpusDocumentLayout DocumentLayout { get; init; } = CorpusDocumentLayout.Auto;
+
     public bool StripHtml { get; init; } = true;
     public bool NormalizeText { get; init; } = true;
     public bool Deduplicate { get; init; } = true;
 
-    /// <summary>Drops a cleaned document when it matches this regex, if supplied.</summary>
+    /// <summary>Drops a document when it matches this regex, if supplied.</summary>
     public string? DropDocumentPattern { get; init; }
 
     /// <summary>Only used by <see cref="CorpusMergeFormat.Text"/>.</summary>
@@ -41,7 +54,8 @@ public sealed record CorpusMergeResult(
     int Dropped,
     long OutputBytes,
     string OutputPath,
-    CorpusMergeFormat Format);
+    CorpusMergeFormat Format,
+    CorpusDocumentLayout Layout);
 
 /// <summary>
 /// Merges a folder of text/HTML files into one corpus. This is a convenience
@@ -51,6 +65,21 @@ public sealed record CorpusMergeResult(
 /// </summary>
 public static class CorpusMerger
 {
+    private static readonly Regex QuestionMarker = new(
+        @"(?im)^[ \t]*(?:Q|Question)\s*#?\s*\d*\s*[:.)-]\s*",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(2));
+
+    private static readonly Regex AnswerMarker = new(
+        @"(?im)^[ \t]*(?:A|Answer)\s*#?\s*\d*\s*[:.)-]\s*",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(2));
+
+    private static readonly Regex BlankLine = new(
+        @"(?:\r?\n)[ \t]*(?:\r?\n)+",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(2));
+
     public static async Task<CorpusMergeResult> MergeAsync(
         string sourceFolder,
         string outputFile,
@@ -110,31 +139,31 @@ public static class CorpusMerger
                 filesRead++;
 
                 string text = await File.ReadAllTextAsync(file, cancellationToken).ConfigureAwait(false);
-                string cleaned = Clean(text, Path.GetExtension(file), options);
-                if (cleaned.Length == 0) continue;
-
-                if (dropPattern is not null && dropPattern.IsMatch(cleaned))
+                foreach (string cleaned in ExtractDocuments(text, Path.GetExtension(file), options))
                 {
-                    dropped++;
-                    continue;
+                    if (dropPattern is not null && dropPattern.IsMatch(cleaned))
+                    {
+                        dropped++;
+                        continue;
+                    }
+
+                    if (options.Deduplicate && !seen.Add(cleaned))
+                    {
+                        duplicates++;
+                        continue;
+                    }
+
+                    if (documents > 0 && options.Format == CorpusMergeFormat.Text)
+                        await writer.WriteAsync(options.TextSeparator).ConfigureAwait(false);
+
+                    if (options.Format == CorpusMergeFormat.Jsonl)
+                        await writer.WriteLineAsync(JsonSerializer.Serialize(new { text = cleaned }))
+                            .ConfigureAwait(false);
+                    else
+                        await writer.WriteAsync(cleaned).ConfigureAwait(false);
+
+                    documents++;
                 }
-
-                if (options.Deduplicate && !seen.Add(cleaned))
-                {
-                    duplicates++;
-                    continue;
-                }
-
-                if (documents > 0 && options.Format == CorpusMergeFormat.Text)
-                    await writer.WriteAsync(options.TextSeparator).ConfigureAwait(false);
-
-                if (options.Format == CorpusMergeFormat.Jsonl)
-                    await writer.WriteLineAsync(JsonSerializer.Serialize(new { text = cleaned }))
-                        .ConfigureAwait(false);
-                else
-                    await writer.WriteAsync(cleaned).ConfigureAwait(false);
-
-                documents++;
             }
 
             await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -142,20 +171,68 @@ public static class CorpusMerger
 
         long bytes = new FileInfo(destination).Length;
         return new CorpusMergeResult(
-            filesRead, documents, duplicates, dropped, bytes, destination, options.Format);
+            filesRead, documents, duplicates, dropped, bytes, destination,
+            options.Format, options.DocumentLayout);
     }
 
-    private static string Clean(string text, string extension, CorpusMergeOptions options)
+    private static List<string> ExtractDocuments(
+        string text, string extension, CorpusMergeOptions options)
     {
-        string cleaned = text;
-        if (options.StripHtml
-            && (extension.Equals(".html", StringComparison.OrdinalIgnoreCase)
-                || extension.Equals(".htm", StringComparison.OrdinalIgnoreCase)))
+        string content = text;
+        bool isHtml = extension.Equals(".html", StringComparison.OrdinalIgnoreCase)
+                      || extension.Equals(".htm", StringComparison.OrdinalIgnoreCase);
+        if (options.StripHtml && isHtml)
+            content = StripHtml(content);
+
+        CorpusDocumentLayout layout = options.DocumentLayout;
+        if (layout == CorpusDocumentLayout.Auto)
         {
-            cleaned = StripHtml(cleaned);
+            layout = QuestionMarker.Matches(content).Count >= 2
+                ? CorpusDocumentLayout.QaPairs
+                : CorpusDocumentLayout.WholeFile;
         }
 
-        return options.NormalizeText ? NormalizeParagraphs(cleaned) : cleaned.Trim();
+        IEnumerable<string> parts = layout switch
+        {
+            CorpusDocumentLayout.BlankLine => SplitBlankLines(content),
+            CorpusDocumentLayout.QaPairs => SplitQaPairs(content),
+            CorpusDocumentLayout.HtmlBlocks => SplitBlankLines(content),
+            _ => [content],
+        };
+
+        bool preserveQaMarkers = layout == CorpusDocumentLayout.QaPairs;
+        return [.. parts
+            .Select(part => options.NormalizeText
+                ? NormalizeParagraphs(part, preserveQaMarkers)
+                : part.Trim())
+            .Where(part => part.Length > 0)];
+    }
+
+    private static IEnumerable<string> SplitBlankLines(string text)
+        => BlankLine.Split(text).Select(part => part.Trim()).Where(part => part.Length > 0);
+
+    private static IEnumerable<string> SplitQaPairs(string text)
+    {
+        MatchCollection matches = QuestionMarker.Matches(text);
+        if (matches.Count < 2) return [text.Trim()];
+
+        var documents = new List<string>();
+        int first = matches[0].Index;
+        if (first > 0)
+        {
+            string preamble = text[..first].Trim();
+            if (preamble.Length > 0) documents.Add(preamble);
+        }
+
+        for (int i = 0; i < matches.Count; i++)
+        {
+            int start = matches[i].Index;
+            int end = i + 1 < matches.Count ? matches[i + 1].Index : text.Length;
+            string pair = text[start..end].Trim();
+            if (pair.Length > 0) documents.Add(pair);
+        }
+
+        return documents;
     }
 
     private static string NormalizeExtension(string extension)
@@ -169,9 +246,8 @@ public static class CorpusMerger
         string stripped = Regex.Replace(text, @"<!--.*?-->", string.Empty, RegexOptions.Singleline);
         stripped = Regex.Replace(stripped, @"<script[^>]*>.*?</script>", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase);
         stripped = Regex.Replace(stripped, @"<style[^>]*>.*?</style>", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        // Block-level tags become paragraph breaks (not spaces) so HTML keeps
-        // its structure; everything else collapses to a space.
-        stripped = Regex.Replace(stripped, @"</?(?:p|div|br|hr|li|ul|ol|tr|td|th|table|h[1-6]|blockquote|section|article|pre|header|footer)\b[^>]*>", "\n", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        // Block-level tags become paragraph breaks so HTML keeps its structure.
+        stripped = Regex.Replace(stripped, @"</?(?:p|div|br|hr|li|ul|ol|tr|td|th|table|h[1-6]|blockquote|section|article|pre|header|footer)\b[^>]*>", "\n\n", RegexOptions.Singleline | RegexOptions.IgnoreCase);
         stripped = Regex.Replace(stripped, @"<[^>]+>", " ", RegexOptions.Singleline);
         stripped = Regex.Replace(stripped, @"&nbsp;", " ", RegexOptions.IgnoreCase);
         stripped = Regex.Replace(stripped, @"&amp;", "&", RegexOptions.IgnoreCase);
@@ -190,7 +266,7 @@ public static class CorpusMerger
     /// paragraphs with one newline. This is generic prose cleanup, not a
     /// corpus-specific rule.
     /// </summary>
-    private static string NormalizeParagraphs(string text)
+    private static string NormalizeParagraphs(string text, bool preserveQaMarkers)
     {
         text = NormalizePunctuation(text);
 
@@ -210,6 +286,13 @@ public static class CorpusMerger
             line = NormalizeLine(line);
             if (line.Length == 0)
                 continue;
+
+            if (preserveQaMarkers
+                && current.Length > 0
+                && (QuestionMarker.IsMatch(line) || AnswerMarker.IsMatch(line)))
+            {
+                Flush(paragraphs, current);
+            }
 
             if (current.Length > 0)
                 current.Append(' ');

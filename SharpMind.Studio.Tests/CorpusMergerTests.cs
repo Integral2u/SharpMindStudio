@@ -1,5 +1,6 @@
 using SharpMind.Data.Sources;
 using SharpMind.Studio.Core.Training;
+using System.Text.Json;
 using Xunit;
 
 namespace SharpMind.Studio.Tests;
@@ -101,6 +102,138 @@ public sealed class CorpusMergerTests
         string[] lines = await File.ReadAllLinesAsync(output);
         Assert.Single(lines);
         Assert.Contains("Keep this document", lines[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Merge_QaPairsKeepEachAnswerWithItsQuestion()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("qa");
+        Directory.CreateDirectory(source);
+        await File.WriteAllTextAsync(temp.Combine("qa", "faq.txt"),
+            "Q: What is A?\nA: First answer.\n\n" +
+            "Q: What is B?\nA: Second answer.\n");
+
+        string output = temp.Combine("merged.jsonl");
+        CorpusMergeResult result = await CorpusMerger.MergeAsync(source, output, new CorpusMergeOptions
+        {
+            Extensions = [".txt"],
+            DocumentLayout = CorpusDocumentLayout.QaPairs,
+        });
+
+        Assert.Equal(2, result.Documents);
+        string[] lines = await File.ReadAllLinesAsync(output);
+        Assert.Equal(2, lines.Length);
+
+        using var first = JsonDocument.Parse(lines[0]);
+        string firstText = first.RootElement.GetProperty("text").GetString()!;
+        Assert.Contains("Q: What is A?\nA: First answer.", firstText, StringComparison.Ordinal);
+
+        using var second = JsonDocument.Parse(lines[1]);
+        string secondText = second.RootElement.GetProperty("text").GetString()!;
+        Assert.Contains("Q: What is B?\nA: Second answer.", secondText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Merge_NumberedQaMarkersAreDetected()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("qa");
+        Directory.CreateDirectory(source);
+        await File.WriteAllTextAsync(temp.Combine("qa", "numbered.txt"),
+            "Q1: First?\nA1: One.\nQ2: Second?\nA2: Two.");
+
+        string output = temp.Combine("merged.jsonl");
+        CorpusMergeResult result = await CorpusMerger.MergeAsync(source, output, new CorpusMergeOptions
+        {
+            Extensions = [".txt"],
+        });
+
+        Assert.Equal(2, result.Documents);
+    }
+
+    [Fact]
+    public async Task Merge_BlankLineSplitsClearEntries()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("entries");
+        Directory.CreateDirectory(source);
+        await File.WriteAllTextAsync(temp.Combine("entries", "entries.txt"),
+            "First entry.\n\nSecond entry.\n\n\nThird entry.");
+
+        string output = temp.Combine("merged.jsonl");
+        CorpusMergeResult result = await CorpusMerger.MergeAsync(source, output, new CorpusMergeOptions
+        {
+            Extensions = [".txt"],
+            DocumentLayout = CorpusDocumentLayout.BlankLine,
+        });
+
+        Assert.Equal(3, result.Documents);
+        string[] lines = await File.ReadAllLinesAsync(output);
+        Assert.Equal(3, lines.Length);
+        Assert.Contains("First entry", lines[0], StringComparison.Ordinal);
+        Assert.Contains("Second entry", lines[1], StringComparison.Ordinal);
+        Assert.Contains("Third entry", lines[2], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Merge_AutoDetectsQaPairs()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("qa");
+        Directory.CreateDirectory(source);
+        await File.WriteAllTextAsync(temp.Combine("qa", "faq.txt"),
+            "Question: First?\nAnswer: One.\nQuestion: Second?\nAnswer: Two.");
+
+        string output = temp.Combine("merged.jsonl");
+        CorpusMergeResult result = await CorpusMerger.MergeAsync(source, output, new CorpusMergeOptions
+        {
+            Extensions = [".txt"],
+        });
+
+        Assert.Equal(CorpusDocumentLayout.Auto, result.Layout);
+        Assert.Equal(2, result.Documents);
+    }
+
+    [Fact]
+    public async Task Merge_HtmlBlocksSplitsParagraphs()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("html");
+        Directory.CreateDirectory(source);
+        await File.WriteAllTextAsync(temp.Combine("html", "page.html"),
+            "<html><body><p>First paragraph.</p><p>Second paragraph.</p></body></html>");
+
+        string output = temp.Combine("merged.jsonl");
+        CorpusMergeResult result = await CorpusMerger.MergeAsync(source, output, new CorpusMergeOptions
+        {
+            Extensions = [".html"],
+            DocumentLayout = CorpusDocumentLayout.HtmlBlocks,
+        });
+
+        Assert.Equal(2, result.Documents);
+        string[] lines = await File.ReadAllLinesAsync(output);
+        Assert.Contains("First paragraph", lines[0], StringComparison.Ordinal);
+        Assert.Contains("Second paragraph", lines[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Merge_WholeFileKeepsAQaFileTogether()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("qa");
+        Directory.CreateDirectory(source);
+        await File.WriteAllTextAsync(temp.Combine("qa", "faq.txt"),
+            "Q: First?\nA: One.\nQ: Second?\nA: Two.");
+
+        string output = temp.Combine("merged.jsonl");
+        CorpusMergeResult result = await CorpusMerger.MergeAsync(source, output, new CorpusMergeOptions
+        {
+            Extensions = [".txt"],
+            DocumentLayout = CorpusDocumentLayout.WholeFile,
+        });
+
+        Assert.Equal(1, result.Documents);
     }
 
     [Fact]

@@ -489,6 +489,20 @@ else if (_tab == "data")
                         <option value="text">Plain text - one generated file</option>
                     </select>
                 </div>
+                <div class="field">
+                    <label class="field-label" for="merge-layout">Document layout</label>
+                    <select id="merge-layout" class="input" @bind="_mergeLayout">
+                        <option value="auto">Auto - detect Q&amp;A, otherwise whole file</option>
+                        <option value="whole">Whole file - one document per file</option>
+                        <option value="blank">Blank-line separated</option>
+                        <option value="qa">Q&amp;A pairs (Q:/Question:)</option>
+                        <option value="html">HTML blocks - one per paragraph</option>
+                    </select>
+                    <div class="small faint">
+                        Blank-line works for files where a clear double newline separates entries.
+                        Q&amp;A keeps each question and its answer together.
+                    </div>
+                </div>
                 <div class="field training-form-wide">
                     <label class="field-label" for="merge-drop">Drop documents matching regex (optional)</label>
                     <input id="merge-drop" class="input mono" @bind="_mergeDropPattern"
@@ -1014,6 +1028,7 @@ else if (_tab == "models")
     private string _mergeSource = "";
     private string _mergeOutput = "";
     private string _mergeFormat = "jsonl";
+    private string _mergeLayout = "auto";
     private string _mergeDropPattern = "";
     private bool _mergeStripHtml = true;
     private bool _mergeNormalizeText = true;
@@ -1853,6 +1868,14 @@ else if (_tab == "models")
             var options = new CorpusMergeOptions
             {
                 Format = _mergeFormat == "text" ? CorpusMergeFormat.Text : CorpusMergeFormat.Jsonl,
+                DocumentLayout = _mergeLayout switch
+                {
+                    "whole" => CorpusDocumentLayout.WholeFile,
+                    "blank" => CorpusDocumentLayout.BlankLine,
+                    "qa" => CorpusDocumentLayout.QaPairs,
+                    "html" => CorpusDocumentLayout.HtmlBlocks,
+                    _ => CorpusDocumentLayout.Auto,
+                },
                 StripHtml = _mergeStripHtml,
                 NormalizeText = _mergeNormalizeText,
                 Deduplicate = _mergeDeduplicate,
@@ -1864,8 +1887,8 @@ else if (_tab == "models")
                 _mergeSource.Trim(), _mergeOutput.Trim(), options);
             _mergeStatus =
                 $"Merged {result.FilesRead} file(s) into {result.Documents} document(s) as " +
-                $"{result.Format}; {result.DuplicatesRemoved} duplicate(s), {result.Dropped} dropped; " +
-                $"{Megabytes(result.OutputBytes)} MB written to {result.OutputPath}.";
+                $"{result.Format} ({result.Layout}); {result.DuplicatesRemoved} duplicate(s), " +
+                $"{result.Dropped} dropped; {Megabytes(result.OutputBytes)} MB written to {result.OutputPath}.";
         }
         catch (Exception ex)
         {
