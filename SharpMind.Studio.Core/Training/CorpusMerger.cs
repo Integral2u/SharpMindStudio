@@ -1,90 +1,171 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace SharpMind.Studio.Core.Training;
+
+public enum CorpusMergeFormat
+{
+    Jsonl,
+    Text,
+}
+
+/// <summary>
+/// What a merge run should do. The defaults are deliberately generic: text and
+/// HTML files become one JSONL document per line, which the library's
+/// <c>JsonlSource</c> reads without a tokenizer-specific boundary. Boilerplate
+/// belongs to a user-supplied regex or a cleaning stage, not to this tool.
+/// </summary>
+public sealed record CorpusMergeOptions
+{
+    public CorpusMergeFormat Format { get; init; } = CorpusMergeFormat.Jsonl;
+
+    /// <summary>File extensions to read. Comparison is case-insensitive.</summary>
+    public IReadOnlyList<string> Extensions { get; init; } = [".txt", ".html", ".htm"];
+
+    public bool StripHtml { get; init; } = true;
+    public bool NormalizeText { get; init; } = true;
+    public bool Deduplicate { get; init; } = true;
+
+    /// <summary>Drops a cleaned document when it matches this regex, if supplied.</summary>
+    public string? DropDocumentPattern { get; init; }
+
+    /// <summary>Only used by <see cref="CorpusMergeFormat.Text"/>.</summary>
+    public string TextSeparator { get; init; } = "\n\n";
+}
 
 public sealed record CorpusMergeResult(
     int FilesRead,
     int Documents,
     int DuplicatesRemoved,
+    int Dropped,
     long OutputBytes,
-    string OutputPath);
+    string OutputPath,
+    CorpusMergeFormat Format);
 
 /// <summary>
-/// Merges a folder of text/HTML files into one clean corpus. Ported from the
-/// SharpMind sandbox helper: Gutenberg headers are dropped, HTML is stripped,
-/// paragraphs are normalised, and exact duplicates are removed before the
-/// documents are joined with an end-of-text marker.
+/// Merges a folder of text/HTML files into one corpus. This is a convenience
+/// tool, not a dataset pipeline: document boundaries are preserved as JSONL
+/// records (or a caller-supplied text separator), and corpus-specific cleanup
+/// is a stage or a regex supplied by the user.
 /// </summary>
 public static class CorpusMerger
 {
-    private static readonly string[] Extensions = [".txt", ".html", ".htm"];
-
-    /// <summary>A rare marker reads as a real boundary to a tokenizer.</summary>
-    public const string DocumentSeparator = "\n<|endoftext|>\n";
-
     public static async Task<CorpusMergeResult> MergeAsync(
         string sourceFolder,
         string outputFile,
+        CorpusMergeOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceFolder);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFile);
 
+        options ??= new CorpusMergeOptions();
         string root = Path.GetFullPath(sourceFolder);
         if (!Directory.Exists(root))
             throw new DirectoryNotFoundException($"Source folder not found: {root}");
 
+        Regex? dropPattern = null;
+        if (!string.IsNullOrWhiteSpace(options.DropDocumentPattern))
+        {
+            try
+            {
+                dropPattern = new Regex(
+                    options.DropDocumentPattern,
+                    RegexOptions.Compiled | RegexOptions.CultureInvariant,
+                    TimeSpan.FromSeconds(2));
+            }
+            catch (ArgumentException ex)
+            {
+                throw new ArgumentException($"Invalid drop regex: {ex.Message}", ex);
+            }
+        }
+
+        HashSet<string> extensions = new(
+            options.Extensions.Select(NormalizeExtension), StringComparer.OrdinalIgnoreCase);
         List<string> files = [.. Directory
             .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
-            .Where(file => Extensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase))
+            .Where(file => extensions.Count == 0 || extensions.Contains(Path.GetExtension(file)))
             .OrderBy(file => file, StringComparer.Ordinal)];
-
-        var contents = new List<string>();
-        foreach (string file in files)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            string text = await File.ReadAllTextAsync(file, cancellationToken).ConfigureAwait(false);
-            string cleaned = NormalizeParagraphs(StripMarkup(text));
-            if (cleaned.Length != 0)
-                contents.Add(cleaned);
-        }
-
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var unique = new List<string>();
-        int duplicates = 0;
-        foreach (string item in contents)
-        {
-            if (seen.Add(item)) unique.Add(item);
-            else duplicates++;
-        }
 
         string destination = Path.GetFullPath(outputFile);
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        string merged = string.Join(DocumentSeparator, unique);
-        await File.WriteAllTextAsync(destination, merged, new UTF8Encoding(false), cancellationToken)
-            .ConfigureAwait(false);
 
+        int filesRead = 0;
+        int documents = 0;
+        int duplicates = 0;
+        int dropped = 0;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        await using (var stream = new FileStream(
+            destination, FileMode.Create, FileAccess.Write, FileShare.None,
+            bufferSize: 65_536, useAsync: true))
+        await using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
+        {
+            writer.NewLine = "\n";
+
+            foreach (string file in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                filesRead++;
+
+                string text = await File.ReadAllTextAsync(file, cancellationToken).ConfigureAwait(false);
+                string cleaned = Clean(text, Path.GetExtension(file), options);
+                if (cleaned.Length == 0) continue;
+
+                if (dropPattern is not null && dropPattern.IsMatch(cleaned))
+                {
+                    dropped++;
+                    continue;
+                }
+
+                if (options.Deduplicate && !seen.Add(cleaned))
+                {
+                    duplicates++;
+                    continue;
+                }
+
+                if (documents > 0 && options.Format == CorpusMergeFormat.Text)
+                    await writer.WriteAsync(options.TextSeparator).ConfigureAwait(false);
+
+                if (options.Format == CorpusMergeFormat.Jsonl)
+                    await writer.WriteLineAsync(JsonSerializer.Serialize(new { text = cleaned }))
+                        .ConfigureAwait(false);
+                else
+                    await writer.WriteAsync(cleaned).ConfigureAwait(false);
+
+                documents++;
+            }
+
+            await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        long bytes = new FileInfo(destination).Length;
         return new CorpusMergeResult(
-            files.Count,
-            unique.Count,
-            duplicates,
-            Encoding.UTF8.GetByteCount(merged),
-            destination);
+            filesRead, documents, duplicates, dropped, bytes, destination, options.Format);
     }
 
-    private static string StripMarkup(string text)
+    private static string Clean(string text, string extension, CorpusMergeOptions options)
     {
-        // Project Gutenberg wraps every book in a license header/footer. Drop
-        // everything outside the START/END markers so the model is not trained
-        // on the boilerplate that would otherwise repeat once per book.
-        Match start = Regex.Match(text, @"\*\*\*\s*START OF (?:THE|THIS) PROJECT GUTENBERG EBOOK[^\r\n]*\*\*\*", RegexOptions.IgnoreCase);
-        if (start.Success)
-            text = text[(start.Index + start.Length)..];
-        Match end = Regex.Match(text, @"\*\*\*\s*END OF (?:THE|THIS) PROJECT GUTENBERG EBOOK[^\r\n]*\*\*\*", RegexOptions.IgnoreCase);
-        if (end.Success)
-            text = text[..end.Index];
+        string cleaned = text;
+        if (options.StripHtml
+            && (extension.Equals(".html", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".htm", StringComparison.OrdinalIgnoreCase)))
+        {
+            cleaned = StripHtml(cleaned);
+        }
 
+        return options.NormalizeText ? NormalizeParagraphs(cleaned) : cleaned.Trim();
+    }
+
+    private static string NormalizeExtension(string extension)
+    {
+        string value = extension.Trim();
+        return value.StartsWith('.') ? value : "." + value;
+    }
+
+    private static string StripHtml(string text)
+    {
         string stripped = Regex.Replace(text, @"<!--.*?-->", string.Empty, RegexOptions.Singleline);
         stripped = Regex.Replace(stripped, @"<script[^>]*>.*?</script>", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase);
         stripped = Regex.Replace(stripped, @"<style[^>]*>.*?</style>", string.Empty, RegexOptions.Singleline | RegexOptions.IgnoreCase);
@@ -106,7 +187,8 @@ public static class CorpusMerger
     /// <summary>
     /// Turns a document into paragraph-structured text: normalizes Unicode
     /// punctuation, unwraps hard-wrapped lines inside a paragraph, and joins
-    /// paragraphs with one newline.
+    /// paragraphs with one newline. This is generic prose cleanup, not a
+    /// corpus-specific rule.
     /// </summary>
     private static string NormalizeParagraphs(string text)
     {
@@ -148,7 +230,7 @@ public static class CorpusMerger
 
     private static string NormalizeLine(string line)
     {
-        // Collapse internal whitespace runs (Gutenberg pads with spaces).
+        // Collapse internal whitespace runs.
         line = Regex.Replace(line, @"\s+", " ");
         // Keep only printable text: strip control characters but preserve every
         // visible glyph, including letters above ASCII.

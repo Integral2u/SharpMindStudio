@@ -453,13 +453,15 @@ else if (_tab == "data")
                 <div class="eyebrow">Corpus tools</div>
                 <h2>Merge text files</h2>
             </div>
-            <span class="faint small mono">.txt / .html to one clean corpus</span>
+            <span class="faint small mono">one JSONL document per line</span>
         </div>
         <div class="panel-body stack">
             <p class="small faint">
-                Walks a folder, drops Project Gutenberg headers, strips HTML, normalises
-                paragraphs, removes exact duplicates, and joins the documents with an
-                end-of-text marker. The output is a plain text file the editor can use.
+                Walks a folder, optionally strips HTML, normalises paragraphs, removes exact
+                duplicates, and writes one document per line as JSONL. JSONL preserves document
+                boundaries without assuming a tokenizer or an end-of-text token. Add the output
+                as a <span class="mono">JSONL</span> source with text field <span class="mono">text</span>.
+                Use the optional regex for corpus-specific boilerplate, or a cleaning stage.
             </p>
             <div class="training-form">
                 <div class="field training-form-wide">
@@ -474,9 +476,35 @@ else if (_tab == "data")
                     <label class="field-label" for="merge-output">Output file</label>
                     <div class="row">
                         <input id="merge-output" class="input" @bind="_mergeOutput"
-                               placeholder="C:\path\to\merged.txt" />
+                               placeholder="C:\path\to\merged.jsonl" />
                         <button type="button" class="button" @onclick="BrowseMergeOutputAsync">Browse</button>
                     </div>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="merge-format">Output format</label>
+                    <select id="merge-format" class="input" @bind="_mergeFormat" @bind:after="OnMergeFormatChanged">
+                        <option value="jsonl">JSONL - one document per line</option>
+                        <option value="text">Plain text - one generated file</option>
+                    </select>
+                </div>
+                <div class="field training-form-wide">
+                    <label class="field-label" for="merge-drop">Drop documents matching regex (optional)</label>
+                    <input id="merge-drop" class="input mono" @bind="_mergeDropPattern"
+                           placeholder="Leave blank to keep every cleaned document" />
+                </div>
+                <div class="row training-form-wide">
+                    <label class="tool-toggle">
+                        <input type="checkbox" @bind="_mergeStripHtml" />
+                        <span>Strip HTML from .html/.htm</span>
+                    </label>
+                    <label class="tool-toggle">
+                        <input type="checkbox" @bind="_mergeNormalizeText" />
+                        <span>Normalise text</span>
+                    </label>
+                    <label class="tool-toggle">
+                        <input type="checkbox" @bind="_mergeDeduplicate" />
+                        <span>Remove exact duplicates</span>
+                    </label>
                 </div>
             </div>
             <div class="training-actions">
@@ -983,6 +1011,11 @@ else if (_tab == "models")
     private string _playbookStatus = "";
     private string _mergeSource = "";
     private string _mergeOutput = "";
+    private string _mergeFormat = "jsonl";
+    private string _mergeDropPattern = "";
+    private bool _mergeStripHtml = true;
+    private bool _mergeNormalizeText = true;
+    private bool _mergeDeduplicate = true;
     private string _mergeStatus = "";
     private string? _mergeError;
     private bool _merging;
@@ -1069,7 +1102,7 @@ else if (_tab == "models")
     {
         _job = Lab.Draft ?? CreateDefaultJob();
         Lab.Draft = _job;
-        _mergeOutput = Path.Combine(StudioPaths.Corpus, "merged.txt");
+        _mergeOutput = Path.Combine(StudioPaths.Corpus, "merged.jsonl");
         _mergeSource = _job.Sources
             .Select(source => source.Component.Args.GetValueOrDefault("path"))
             .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path)) ?? "";
@@ -1783,13 +1816,28 @@ else if (_tab == "models")
 
     private async Task BrowseMergeOutputAsync()
     {
+        string extension = _mergeFormat == "text" ? ".txt" : ".jsonl";
         PathPickerSelection? selection = await Picker.PickAsync(
             PathPickerMode.SaveFile,
             string.IsNullOrWhiteSpace(_mergeOutput)
-                ? Path.Combine(StudioPaths.Corpus, "merged.txt")
+                ? Path.Combine(StudioPaths.Corpus, "merged" + extension)
                 : _mergeOutput,
             "Save the merged corpus as");
         if (selection?.Path is { Length: > 0 } path) _mergeOutput = path;
+    }
+
+    private void OnMergeFormatChanged()
+    {
+        string extension = _mergeFormat == "text" ? ".txt" : ".jsonl";
+        if (string.IsNullOrWhiteSpace(_mergeOutput)) return;
+        try
+        {
+            _mergeOutput = Path.ChangeExtension(_mergeOutput, extension);
+        }
+        catch
+        {
+            // A malformed path should not block the format switch.
+        }
     }
 
     private async Task MergeCorpusAsync()
@@ -1800,11 +1848,21 @@ else if (_tab == "models")
         _mergeStatus = "";
         try
         {
+            var options = new CorpusMergeOptions
+            {
+                Format = _mergeFormat == "text" ? CorpusMergeFormat.Text : CorpusMergeFormat.Jsonl,
+                StripHtml = _mergeStripHtml,
+                NormalizeText = _mergeNormalizeText,
+                Deduplicate = _mergeDeduplicate,
+                DropDocumentPattern = string.IsNullOrWhiteSpace(_mergeDropPattern)
+                    ? null
+                    : _mergeDropPattern.Trim(),
+            };
             CorpusMergeResult result = await CorpusMerger.MergeAsync(
-                _mergeSource.Trim(), _mergeOutput.Trim());
+                _mergeSource.Trim(), _mergeOutput.Trim(), options);
             _mergeStatus =
-                $"Merged {result.FilesRead} file(s) into {result.Documents} document(s); " +
-                $"{result.DuplicatesRemoved} duplicate(s) removed; " +
+                $"Merged {result.FilesRead} file(s) into {result.Documents} document(s) as " +
+                $"{result.Format}; {result.DuplicatesRemoved} duplicate(s), {result.Dropped} dropped; " +
                 $"{Megabytes(result.OutputBytes)} MB written to {result.OutputPath}.";
         }
         catch (Exception ex)
