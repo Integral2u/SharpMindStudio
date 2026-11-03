@@ -178,6 +178,20 @@
                             Allow through Windows Firewall
                         </button>
                     </div>
+                    <div class="small @(_networkPrivate == false ? "status failed" : "faint")">
+                        Network: @_networkProfile
+                        @if (_networkPrivate == false)
+                        {
+                            <span>
+                                - the rule is Private-only. Set this Wi-Fi profile to Private
+                                or connect through a Private network before pairing.
+                            </span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_firewallDetail))
+                    {
+                        <div class="small faint">@_firewallDetail</div>
+                    }
                     <div class="small faint">This asks Windows for administrator approval. Manual command if you prefer:</div>
                     <div class="mono gateway-command">New-NetFirewallRule -DisplayName "SharpMind Studio phone" -Direction Inbound -Protocol TCP -LocalPort @Gateway.LanPort -Profile Private -Action Allow</div>
                 </li>
@@ -305,6 +319,9 @@
     private string? _publicIp;
     private bool? _firewallAllowed;
     private bool _firewallBusy;
+    private string _firewallDetail = "";
+    private string _networkProfile = "";
+    private bool? _networkPrivate;
     private string? _deviceQrId;
     private string _deviceLoginToken = "";
     private string _deviceQrUrl = "";
@@ -380,7 +397,12 @@
         LoadAddresses();
         RefreshLists();
         if (_addresses.Count > 0) await CreatePairingAsync();
-        _firewallAllowed = await GatewayFirewall.RuleExistsAsync(Gateway.LanPort, _cts.Token);
+        FirewallRuleStatus firewall = await GatewayFirewall.RuleStatusAsync(Gateway.LanPort, _cts.Token);
+        _firewallAllowed = firewall.Matches;
+        _firewallDetail = firewall.Detail;
+        NetworkProfileStatus network = await GatewayFirewall.NetworkProfileAsync(_cts.Token);
+        _networkProfile = network.Detail;
+        _networkPrivate = network.HasProfile ? network.IsPrivate : null;
         if (IsProxySelected) await RefreshHealthAsync(_cts.Token);
         _ = PollAsync(_cts.Token);
         StateHasChanged();
@@ -589,7 +611,12 @@
         _firewallBusy = true;
         try
         {
-            _firewallAllowed = await GatewayFirewall.RuleExistsAsync(Gateway.LanPort);
+            FirewallRuleStatus firewall = await GatewayFirewall.RuleStatusAsync(Gateway.LanPort);
+            _firewallAllowed = firewall.Matches;
+            _firewallDetail = firewall.Detail;
+            NetworkProfileStatus network = await GatewayFirewall.NetworkProfileAsync();
+            _networkProfile = network.Detail;
+            _networkPrivate = network.HasProfile ? network.IsPrivate : null;
         }
         finally
         {
@@ -603,9 +630,12 @@
         try
         {
             FirewallAttempt attempt = await GatewayFirewall.AllowAsync(Gateway.LanPort);
-            _firewallAllowed = attempt.Ok
-                ? true
-                : attempt.Cancelled ? false : await GatewayFirewall.RuleExistsAsync(Gateway.LanPort);
+            FirewallRuleStatus firewall = await GatewayFirewall.RuleStatusAsync(Gateway.LanPort);
+            _firewallAllowed = firewall.Matches;
+            _firewallDetail = firewall.Detail;
+            NetworkProfileStatus network = await GatewayFirewall.NetworkProfileAsync();
+            _networkProfile = network.Detail;
+            _networkPrivate = network.HasProfile ? network.IsPrivate : null;
             _status = attempt.Ok
                 ? $"Windows Firewall now allows TCP {Gateway.LanPort}."
                 : attempt.Cancelled

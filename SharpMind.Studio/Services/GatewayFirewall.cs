@@ -6,6 +6,12 @@ namespace SharpMind.Studio.Services;
 
 public sealed record FirewallAttempt(bool Ok, bool Cancelled, string Detail);
 
+/// <summary>Result of checking the inbound rule for the LAN listener.</summary>
+public sealed record FirewallRuleStatus(bool Exists, bool Matches, string Detail);
+
+/// <summary>The active internet network profile, for the Private-only firewall rule.</summary>
+public sealed record NetworkProfileStatus(string Detail, bool IsPrivate, bool HasProfile);
+
 /// <summary>
 /// Reads and creates the inbound rule that lets a phone reach the LAN listener.
 /// Creating it needs administrator rights, so Studio asks Windows for elevation
@@ -30,14 +36,93 @@ public static class GatewayFirewall
     public static async Task<bool> RuleExistsAsync(
         int port,
         CancellationToken cancellationToken = default)
-    {
-        if (!IsWindows) return false;
+        => (await RuleStatusAsync(port, cancellationToken).ConfigureAwait(false)).Matches;
 
-        string script =
-            $"$rule = Get-NetFirewallRule -DisplayName '{RuleName}' -ErrorAction SilentlyContinue; " +
-            "if ($rule) { 'yes' } else { 'no' }";
+    /// <summary>
+    /// Checks the named rule, not just its presence: a stale rule with another
+    /// port, a Public-only profile or a disabled state must not report "open".
+    /// </summary>
+    public static async Task<FirewallRuleStatus> RuleStatusAsync(
+        int port,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsWindows)
+            return new FirewallRuleStatus(false, false, "Firewall rules only apply on Windows.");
+
+        string script = $$"""
+            $ErrorActionPreference = 'Stop'
+            try {
+                $rule = Get-NetFirewallRule -DisplayName '{{RuleName}}' -ErrorAction SilentlyContinue | Select-Object -First 1
+                if (-not $rule) {
+                    'missing'
+                } else {
+                    $pf = $rule | Get-NetFirewallPortFilter
+                    $ports = @($pf.LocalPort)
+                    $profile = [string]$rule.Profile
+                    $portOk = (@($ports) -contains 'Any') -or (@($ports) -contains '{{port}}')
+                    $protoOk = @($pf.Protocol) -contains 'TCP'
+                    $ok = ("$($rule.Enabled)" -eq 'True') -and
+                          ("$($rule.Direction)" -eq 'Inbound') -and
+                          ("$($rule.Action)" -eq 'Allow') -and
+                          $protoOk -and
+                          ($profile -match 'Private|Any') -and
+                          $portOk
+                    if ($ok) { 'ok' } else {
+                        'stale|' + $profile + '|' + ($ports -join ',') + '|' + $pf.Protocol + '|' +
+                        "$($rule.Enabled)" + '|' + "$($rule.Direction)" + '|' + "$($rule.Action)"
+                    }
+                }
+            } catch {
+                'error|' + $_.Exception.Message
+            }
+            """;
+
+        string output = (await RunPowerShellAsync(script, cancellationToken).ConfigureAwait(false)).Trim();
+        if (output.StartsWith("ok", StringComparison.OrdinalIgnoreCase))
+            return new FirewallRuleStatus(true, true, $"Enabled for TCP {port} on the Private profile.");
+
+        if (output.StartsWith("missing", StringComparison.OrdinalIgnoreCase))
+            return new FirewallRuleStatus(false, false,
+                $"No rule named '{RuleName}'. Use Allow through Windows Firewall.");
+
+        if (output.StartsWith("stale|", StringComparison.OrdinalIgnoreCase))
+        {
+            string[] parts = output.Split('|');
+            string detail = parts.Length >= 7
+                ? $"Rule exists but does not match: profile={parts[1]}, port={parts[2]}, "
+                  + $"protocol={parts[3]}, enabled={parts[4]}, direction={parts[5]}, action={parts[6]}."
+                : "Rule exists but does not match the expected TCP/Private/Inbound/Allow shape.";
+            return new FirewallRuleStatus(true, false, detail);
+        }
+
+        if (output.StartsWith("error|", StringComparison.OrdinalIgnoreCase))
+            return new FirewallRuleStatus(false, false, "Could not read the firewall rule: " + output[6..]);
+
+        return new FirewallRuleStatus(false, false, "Windows did not return a firewall status.");
+    }
+
+    /// <summary>The active internet profile, so a Public Wi-Fi can be called out.</summary>
+    public static async Task<NetworkProfileStatus> NetworkProfileAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsWindows)
+            return new NetworkProfileStatus("Network profiles only apply on Windows.", false, false);
+
+        const string script = """
+            Get-NetConnectionProfile -ErrorAction SilentlyContinue |
+                Where-Object { $_.IPv4Connectivity -eq 'Internet' } |
+                ForEach-Object { "$($_.Name)|$($_.NetworkCategory)" }
+            """;
+
         string output = await RunPowerShellAsync(script, cancellationToken).ConfigureAwait(false);
-        return output.Trim().Contains("yes", StringComparison.OrdinalIgnoreCase);
+        string[] lines = output.Split(
+            ['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (lines.Length == 0)
+            return new NetworkProfileStatus("No active internet network profile found.", false, false);
+
+        string detail = string.Join("; ", lines.Select(line => line.Replace('|', ':')));
+        bool allPrivate = lines.All(line => line.EndsWith("|Private", StringComparison.OrdinalIgnoreCase));
+        return new NetworkProfileStatus(detail, allPrivate, true);
     }
 
     /// <summary>Adds the rule, raising a UAC prompt when Studio is not already elevated.</summary>
@@ -56,10 +141,12 @@ public static class GatewayFirewall
         string script = $$"""
             $ErrorActionPreference = 'Stop'
             try {
-                if (-not (Get-NetFirewallRule -DisplayName '{{RuleName}}' -ErrorAction SilentlyContinue)) {
-                    New-NetFirewallRule -DisplayName '{{RuleName}}' -Direction Inbound -Protocol TCP -LocalPort {{port}} -Profile Private -Action Allow | Out-Null
+                $existing = Get-NetFirewallRule -DisplayName '{{RuleName}}' -ErrorAction SilentlyContinue
+                if ($existing) {
+                    Remove-NetFirewallRule -DisplayName '{{RuleName}}'
                 }
-                'ok' | Set-Content -LiteralPath '{{marker}}'
+                New-NetFirewallRule -DisplayName '{{RuleName}}' -Direction Inbound -Protocol TCP -LocalPort {{port}} -Profile Private -Action Allow | Out-Null
+                'ok: TCP {{port}} allowed on the Private profile.' | Set-Content -LiteralPath '{{marker}}'
             } catch {
                 "error: $_" | Set-Content -LiteralPath '{{marker}}'
             }
