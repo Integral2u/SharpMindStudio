@@ -193,6 +193,7 @@ The Work MVP is project-scoped:
 - Skills live in `%USERPROFILE%\SharpMind\Skills`; defaults are stored in `Studio\work-skills.json` and maintained under Settings > System. Projects pick from that repository, add project-only skills, or copy `.md` files in by hand.
 - File tools list, read, search, write, append, create and delete across the configured contexts; a separate Web permission governs URL fetches. Tools run in Work only, never Chat.
 - Tool defaults live in Settings > System; the catalog includes built-ins plus [ToolDesc] plugin tools discovered from the plugins folder. Projects override individual tools, and Chat never receives them.
+- Tool-call parsing uses the layered `ToolCallRecoveryMode` (`Strict` / `Lenient` / `Loose`); Work defaults to `Lenient`, while a model or family profile can override it.
 - `Ask` posts a permission card in the Work chat with Deny, Allow once and Always allow. Always persists to `work.json`.
 - Project tools are grouped by category with All/None; the project list sits on top of the system defaults, and changes apply when the project settings are saved.
 - Context locations are validated before saving: two contexts cannot resolve to the same folder, missing folders are flagged, and overlapping roots are called out (the most specific root wins).
@@ -209,6 +210,7 @@ Model Tune keeps separate Chat and Work tuning:
 - Tune builds all three presets in one measured run; each preset records generator/cache/load mode and benchmark results.
 - New Chat and Work sessions show the three presets; they are disabled until the selected model and target have been tuned. A Tune/Re-tune button opens the modal panel.
 - The chosen preset is snapshotted into the chat session; re-tuning affects new sessions.
+- Tool-call recovery is a layered inference option (`Strict`, `Lenient`, `Loose`) with system/family/model/session inheritance and the session applying the resolved value. Tune sets Chat to `Strict`; Work uses `Lenient`, or `Loose` for the Accuracy preset. `Loose` is opt-in and never guesses a filesystem path.
 - Work presets default to `StandardGeneratorBuilder`, but other and plugin generators can be selected; the measured Work run also checks tool calling.
 - Work tuning first establishes or reuses the measured Chat baseline, derives Work presets from it, then tests tool calling and retries with Standard + low temperature if the probe fails.
 - Temperature, Top-K, Top-P, Min-P, repetition, generator, KV cache, context, max-new-tokens and load mode are editable.

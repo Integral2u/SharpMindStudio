@@ -82,6 +82,14 @@ public static class TunePlanner
         };
         if (target == TuneTarget.Work)
             notes.Add("Work presets default to StandardGeneratorBuilder; other and plugin generators can be selected, but verify tool calls after changing it.");
+
+        // Tool calls need structure; Chat has no tools, so it can stay strict.
+        // Work keeps Lenient by default and opts into Loose only for Accuracy.
+        string toolCallRecovery = target == TuneTarget.Work
+            ? preset == TunePreset.Accuracy ? "Loose" : "Lenient"
+            : "Strict";
+        if (target == TuneTarget.Work)
+            notes.Add($"Tool-call recovery: {toolCallRecovery} (Loose never guesses filesystem paths).");
         if (!fitsFull && kvBytes > budget)
             notes.Add("The KV cache alone exceeds the budget; lower context or use an Int8 cache.");
         if (context < wantedContext)
@@ -101,6 +109,7 @@ public static class TunePlanner
             Cache = cache,
             Formatter = "Auto",
             LoadMode = loadMode,
+            ToolCallRecovery = toolCallRecovery,
             HardwareTier = "Auto",
             MaxParallelLoadDegree = 0,
             UseParallelKernels = true,

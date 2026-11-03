@@ -64,6 +64,25 @@ public sealed class TunePlannerTests
     }
 
     [Fact]
+    public void ToolCallRecovery_ChatIsStrictAndWorkUsesLenientOrLoose()
+    {
+        foreach (TunePreset preset in Enum.GetValues<TunePreset>())
+        {
+            TuneRecommendation chat = TunePlanner.Recommend(
+                Model(), TuneTarget.Chat, preset, ["KVCacherBuilder"],
+                totalMemoryOverride: 16L * 1024 * 1024 * 1024);
+            TuneRecommendation work = TunePlanner.Recommend(
+                Model(), TuneTarget.Work, preset, ["KVCacherBuilder"],
+                totalMemoryOverride: 16L * 1024 * 1024 * 1024);
+
+            Assert.Equal("Strict", chat.Overrides.ToolCallRecovery);
+            Assert.Equal(
+                preset == TunePreset.Accuracy ? "Loose" : "Lenient",
+                work.Overrides.ToolCallRecovery);
+        }
+    }
+
+    [Fact]
     public void AccuracyPreset_UsesLowerTemperatureAndF32Cache()
     {
         TuneRecommendation tune = TunePlanner.Recommend(

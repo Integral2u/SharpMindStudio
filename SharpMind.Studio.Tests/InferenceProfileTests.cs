@@ -37,6 +37,27 @@ public sealed class InferenceProfileTests
     }
 
     [Fact]
+    public void Resolver_ParsesToolCallRecoveryThroughTheLayers()
+    {
+        var system = InferenceOverrides.SystemDefaults();
+        var family = new InferenceOverrides { ToolCallRecovery = "Loose" };
+        var model = new InferenceOverrides { ToolCallRecovery = "Strict" };
+
+        ResolvedInference value = InferenceResolver.Resolve(system, family, model, null);
+        Assert.Equal(ToolCallRecoveryMode.Strict, value.ToolCallRecovery);
+        Assert.Equal("Model", value.Sources["ToolCallRecovery"]);
+
+        ResolvedInference session = InferenceResolver.Resolve(
+            system, family, model, new InferenceOverrides { ToolCallRecovery = "Lenient" });
+        Assert.Equal(ToolCallRecoveryMode.Lenient, session.ToolCallRecovery);
+        Assert.Equal("Session", session.Sources["ToolCallRecovery"]);
+
+        ResolvedInference unknown = InferenceResolver.Resolve(
+            system, null, new InferenceOverrides { ToolCallRecovery = "nonsense" }, null);
+        Assert.Equal(ToolCallRecoveryMode.Lenient, unknown.ToolCallRecovery);
+    }
+
+    [Fact]
     public void FamilyDetector_UsesArchitectureAndFallsBackToHints()
     {
         Assert.Equal("qwen2", FamilyDetector.Detect("qwen2", "Qwen2 0.5B").Id);

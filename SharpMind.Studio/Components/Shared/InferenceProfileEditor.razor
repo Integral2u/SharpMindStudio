@@ -49,6 +49,18 @@
         </div>
 
         <div class="field">
+            <label class="field-label">Tool-call recovery</label>
+            <select class="input" value="@Value.ToolCallRecovery"
+                    @onchange="e => Update(v => v with { ToolCallRecovery = Text(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                <option value="Strict">Strict</option>
+                <option value="Lenient">Lenient</option>
+                <option value="Loose">Loose</option>
+            </select>
+            <div class="small faint editor-source">@SourceLabel("ToolCallRecovery")</div>
+        </div>
+
+        <div class="field">
             <label class="field-label">CPU tier</label>
             <select class="input" value="@Value.HardwareTier" @onchange="e => Update(v => v with { HardwareTier = Text(e) })">
                 @if (AllowInherit) { <option value="">Inherit</option> }
@@ -221,6 +233,7 @@
         "Cache" => Effective?.Cache,
         "Formatter" => Effective?.Formatter,
         "LoadMode" => Effective?.LoadMode,
+        "ToolCallRecovery" => Effective?.ToolCallRecovery.ToString(),
         "HardwareTier" => Effective?.HardwareTier,
         "MaxParallelLoadDegree" => Effective?.MaxParallelLoadDegree.ToString(),
         "UseParallelKernels" => Effective is null ? null : (Effective.UseParallelKernels ? "On" : "Off"),

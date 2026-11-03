@@ -684,6 +684,7 @@ public sealed class StudioChatService : IAsyncDisposable
         session.RepetitionWindow = profile.RepetitionWindow;
         session.ShowThinking = profile.ShowThinking;
         session.EnableThinking = profile.EnableThinking;
+        session.ToolCallRecovery = profile.ToolCallRecovery;
     }
 
     private static bool LoadAffectingChanged(ResolvedInference a, ResolvedInference b) =>

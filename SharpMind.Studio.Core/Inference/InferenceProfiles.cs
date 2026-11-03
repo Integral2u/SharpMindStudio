@@ -1,4 +1,6 @@
-﻿namespace SharpMind.Studio.Core.Inference;
+﻿using SharpMind.Inference.Chat;
+
+namespace SharpMind.Studio.Core.Inference;
 
 public sealed record InferenceOverrides
 {
@@ -6,6 +8,7 @@ public sealed record InferenceOverrides
     public string? Cache { get; init; }
     public string? Formatter { get; init; }
     public string? LoadMode { get; init; }
+    public string? ToolCallRecovery { get; init; }
     public string? HardwareTier { get; init; }
     public int? MaxParallelLoadDegree { get; init; }
     public bool? UseParallelKernels { get; init; }
@@ -29,6 +32,7 @@ public sealed record InferenceOverrides
         Cache = "KVCacherBuilder",
         Formatter = "Auto",
         LoadMode = "Full",
+        ToolCallRecovery = "Lenient",
         HardwareTier = "Auto",
         MaxParallelLoadDegree = 0,
         UseParallelKernels = true,
@@ -51,6 +55,7 @@ public sealed record ResolvedInference
     public required string Cache { get; init; }
     public required string Formatter { get; init; }
     public required string LoadMode { get; init; }
+    public required ToolCallRecoveryMode ToolCallRecovery { get; init; }
     public required string HardwareTier { get; init; }
     public required int MaxParallelLoadDegree { get; init; }
     public required bool UseParallelKernels { get; init; }
@@ -110,12 +115,25 @@ public static class InferenceResolver
             return null;
         }
 
+        string recoveryText = String(
+            "ToolCallRecovery",
+            session?.ToolCallRecovery,
+            model?.ToolCallRecovery,
+            family?.ToolCallRecovery,
+            system.ToolCallRecovery,
+            "Lenient");
+        ToolCallRecoveryMode recovery = Enum.TryParse(
+            recoveryText, ignoreCase: true, out ToolCallRecoveryMode parsedRecovery)
+            ? parsedRecovery
+            : ToolCallRecoveryMode.Lenient;
+
         return new ResolvedInference
         {
             Generator = String("Generator", session?.Generator, model?.Generator, family?.Generator, system.Generator, "StandardGeneratorBuilder"),
             Cache = String("Cache", session?.Cache, model?.Cache, family?.Cache, system.Cache, "KVCacherBuilder"),
             Formatter = String("Formatter", session?.Formatter, model?.Formatter, family?.Formatter, system.Formatter, "Auto"),
             LoadMode = String("LoadMode", session?.LoadMode, model?.LoadMode, family?.LoadMode, system.LoadMode, "Full"),
+            ToolCallRecovery = recovery,
             HardwareTier = String("HardwareTier", session?.HardwareTier, model?.HardwareTier, family?.HardwareTier, system.HardwareTier, "Auto"),
             MaxParallelLoadDegree = Value("MaxParallelLoadDegree", session?.MaxParallelLoadDegree, model?.MaxParallelLoadDegree, family?.MaxParallelLoadDegree, system.MaxParallelLoadDegree, 0),
             UseParallelKernels = Value("UseParallelKernels", session?.UseParallelKernels, model?.UseParallelKernels, family?.UseParallelKernels, system.UseParallelKernels, true),
