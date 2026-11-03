@@ -461,7 +461,9 @@ else if (_tab == "data")
                 duplicates, and writes one document per line as JSONL. JSONL preserves document
                 boundaries without assuming a tokenizer or an end-of-text token. Add the output
                 as a <span class="mono">JSONL</span> source with text field <span class="mono">text</span>.
-                Use the optional regex for corpus-specific boilerplate, or a cleaning stage.
+                Training inserts the tokenizer's EOS between documents, so do not add an
+                end-of-text marker to the text. Use the optional regex for corpus-specific
+                boilerplate, or a cleaning stage.
             </p>
             <div class="training-form">
                 <div class="field training-form-wide">

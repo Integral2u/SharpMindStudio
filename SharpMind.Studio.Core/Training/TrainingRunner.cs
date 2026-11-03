@@ -405,6 +405,12 @@ public static class TrainingRunner
             // The tokenizer still trains over the full corpus: it learns the token
             // inventory, not the loss being measured.
             List<TrainingBatch> validationBatches = [];
+            // RandomWindowBatcher concatenates documents; PackingBatcher inserts
+            // EOS itself. Give the concatenating batcher the tokenizer's boundary
+            // so JSONL/text sources never need a literal <|endoftext|> marker.
+            bool appendDocumentBoundary = job.UsesRandomWindowBatching;
+            Func<string, int[]> tokenise = text =>
+                TrainingTokenization.EncodeDocument(tokenizer, text, appendDocumentBoundary);
             double testFraction = Math.Clamp(job.TestPercent, 0, 90) / 100.0;
             double valFraction = Math.Clamp(job.ValidationPercent, 0, 90) / 100.0;
 
@@ -434,7 +440,7 @@ public static class TrainingRunner
                         maxSeqLen: job.SeqLen,
                         eosTokenId: tokenizer.EosId,
                         padTokenId: tokenizer.PadId);
-                var valLoader = new DataLoader(valNode, s => tokenizer.Encode(s), valBatcher, prefetchBuffer: 1);
+                var valLoader = new DataLoader(valNode, tokenise, valBatcher, prefetchBuffer: 1);
                 try
                 {
                     await foreach (TrainingBatch held in valLoader.LoadAsync(cancellationToken: cancellationToken))
@@ -476,7 +482,7 @@ public static class TrainingRunner
                     maxSeqLen: job.SeqLen,
                     eosTokenId: tokenizer.EosId,
                     padTokenId: tokenizer.PadId);
-            var loader = new DataLoader(pipeline, s => tokenizer.Encode(s), batcher, prefetchBuffer: 4,
+            var loader = new DataLoader(pipeline, tokenise, batcher, prefetchBuffer: 4,
                 maxBatches: job.TotalSteps * job.GradAccumSteps,
                 skipProgress: (done, total) =>
                     Log($"Data cursor: replayed {done:N0}/{total:N0} batchesâ€¦"));
