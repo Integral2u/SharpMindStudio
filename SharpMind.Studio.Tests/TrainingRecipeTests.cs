@@ -41,6 +41,48 @@ public sealed class TrainingRecipeTests
     }
 
     [Fact]
+    public void TrainBase_IgnoresTheHorizonAndPackageButKeepsOptimizerInputs()
+    {
+        TrainingJobSettings job = Job("model", @"C:\data\corpus.txt", learningRate: 3e-4f);
+        string data = TrainingRecipeHash.Data(job);
+        string tokenizer = TrainingRecipeHash.Tokenizer(job, data);
+        string baseHash = TrainingRecipeHash.TrainBase(job, data, tokenizer);
+
+        TrainingJobSettings longer = Job("another-name", @"C:\data\corpus.txt", learningRate: 3e-4f);
+        longer.TotalSteps = 50;
+        longer.LogInterval = 1;
+        longer.CheckpointInterval = 1;
+        longer.ExportPath = @"C:\models\other.smm";
+        longer.SystemPromptPath = @"C:\prompts\other.txt";
+        Assert.Equal(baseHash, TrainingRecipeHash.TrainBase(
+            longer, TrainingRecipeHash.Data(longer), TrainingRecipeHash.Tokenizer(longer, data)));
+
+        TrainingJobSettings faster = Job("model", @"C:\data\corpus.txt", learningRate: 9e-4f);
+        Assert.NotEqual(baseHash, TrainingRecipeHash.TrainBase(
+            faster, data, TrainingRecipeHash.Tokenizer(faster, data)));
+    }
+
+    [Fact]
+    public void Train_HashesPackageContentsButTrainBaseDoesNot()
+    {
+        using var temp = new TempDirectory();
+        string prompt = temp.Combine("prompt.txt");
+        File.WriteAllText(prompt, "first prompt");
+
+        TrainingJobSettings job = Job("model", @"C:\data\corpus.txt", learningRate: 3e-4f);
+        job.SystemPromptPath = prompt;
+        string data = TrainingRecipeHash.Data(job);
+        string tokenizer = TrainingRecipeHash.Tokenizer(job, data);
+        string train = TrainingRecipeHash.Train(job, data, tokenizer);
+        string baseHash = TrainingRecipeHash.TrainBase(job, data, tokenizer);
+
+        File.WriteAllText(prompt, "second prompt");
+
+        Assert.NotEqual(train, TrainingRecipeHash.Train(job, data, tokenizer));
+        Assert.Equal(baseHash, TrainingRecipeHash.TrainBase(job, data, tokenizer));
+    }
+
+    [Fact]
     public void Store_RoundTripsAndRejectsAMissingArtifact()
     {
         using var temp = new TempDirectory();
@@ -98,6 +140,88 @@ public sealed class TrainingRecipeTests
         {
             try { Directory.Delete(dir, recursive: true); } catch { }
         }
+    }
+
+    [Fact]
+    public async Task Runner_CopiesACachedModelToANewExportPath()
+    {
+        using var temp = new TempDirectory();
+        string corpus = temp.Combine("corpus.txt");
+        await File.WriteAllTextAsync(
+            corpus,
+            string.Join('\n', Enumerable.Repeat(
+                "the quick brown fox jumps over the lazy dog and keeps running", 150)));
+        string plugins = temp.Combine("plugins");
+        Directory.CreateDirectory(plugins);
+        string recipes = temp.Combine("recipes");
+
+        TrainingJobSettings firstJob = SmallJob("recipe-one", corpus, temp.Combine("one.smm"));
+        TrainingRunResult first = await TrainingRunner.RunAsync(
+            firstJob, plugins, new ListProgress<string>([]), new ListProgress<float>([]),
+            recipeFolder: recipes);
+        Assert.True(first.Success, first.Error);
+
+        TrainingJobSettings movedJob = SmallJob("recipe-two", corpus, temp.Combine("two.smm"));
+        TrainingRunResult moved = await TrainingRunner.RunAsync(
+            movedJob, plugins, new ListProgress<string>([]), new ListProgress<float>([]),
+            recipeFolder: recipes);
+
+        Assert.True(moved.Success, moved.Error);
+        Assert.True(moved.Cached);
+        Assert.Equal("package", moved.CachedPhase);
+        Assert.Equal(System.IO.Path.GetFullPath(temp.Combine("two.smm")),
+            System.IO.Path.GetFullPath(moved.ExportPath!));
+        Assert.True(File.Exists(moved.ExportPath));
+        Assert.True(File.Exists(first.ExportPath));
+    }
+
+    [Fact]
+    public async Task Runner_ReusesCheckpointsForLongerAndAlreadyCoveredRuns()
+    {
+        using var temp = new TempDirectory();
+        string corpus = temp.Combine("corpus.txt");
+        await File.WriteAllTextAsync(
+            corpus,
+            string.Join('\n', Enumerable.Repeat(
+                "the quick brown fox jumps over the lazy dog and keeps running", 150)));
+        string plugins = temp.Combine("plugins");
+        Directory.CreateDirectory(plugins);
+        string recipes = temp.Combine("recipes");
+
+        TrainingJobSettings firstJob = SmallJob("recipe-step-one", corpus, temp.Combine("step-one.smm"));
+        firstJob.TotalSteps = 1;
+        firstJob.CheckpointInterval = 1;
+        firstJob.StartFresh = false;
+        TrainingRunResult first = await TrainingRunner.RunAsync(
+            firstJob, plugins, new ListProgress<string>([]), new ListProgress<float>([]),
+            recipeFolder: recipes);
+        Assert.True(first.Success, first.Error);
+        Assert.Equal(1, first.FinalStep);
+
+        TrainingJobSettings secondJob = SmallJob("recipe-step-two", corpus, temp.Combine("step-two.smm"));
+        secondJob.TotalSteps = 3;
+        secondJob.CheckpointInterval = 1;
+        secondJob.StartFresh = false;
+        TrainingRunResult second = await TrainingRunner.RunAsync(
+            secondJob, plugins, new ListProgress<string>([]), new ListProgress<float>([]),
+            recipeFolder: recipes);
+        Assert.True(second.Success, second.Error);
+        Assert.True(second.Cached, "a cached checkpoint should continue the longer run");
+        Assert.Equal("checkpoint", second.CachedPhase);
+        Assert.Equal(3, second.FinalStep);
+
+        TrainingJobSettings thirdJob = SmallJob("recipe-step-three", corpus, temp.Combine("step-three.smm"));
+        thirdJob.TotalSteps = 2;
+        thirdJob.CheckpointInterval = 1;
+        thirdJob.StartFresh = false;
+        TrainingRunResult third = await TrainingRunner.RunAsync(
+            thirdJob, plugins, new ListProgress<string>([]), new ListProgress<float>([]),
+            recipeFolder: recipes);
+        Assert.True(third.Success, third.Error);
+        Assert.True(third.Cached, "a checkpoint at or past the horizon should be exported as-is");
+        Assert.Equal("checkpoint", third.CachedPhase);
+        Assert.Equal(3, third.FinalStep);
+        Assert.True(File.Exists(third.ExportPath));
     }
 
     private static TrainingJobSettings Job(string name, string corpus, float learningRate) => new()

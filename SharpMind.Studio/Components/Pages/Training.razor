@@ -630,7 +630,9 @@ else if (_tab == "runs")
                                 </span>
                                 @if (run.Record.Cached)
                                 {
-                                    <span class="training-chip live">cached</span>
+                                    <span class="training-chip live">
+                                        cached@(run.Record.CachedPhase is { Length: > 0 } phase ? $" ({phase})" : "")
+                                    </span>
                                 }
                                 @if (run.Record.RecipeHash is { } recipeHash)
                                 {

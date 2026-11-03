@@ -15,9 +15,10 @@ public sealed record TrainingRecipeArtifact(
     DateTime CreatedUtc);
 
 /// <summary>
-/// A tiny content-addressed recipe cache. Tokenizers and exported models are
-/// stored by hash under <c>Training/recipes</c>; a rerun with identical inputs
-/// can skip the tokenizer or the whole training loop.
+/// A tiny content-addressed recipe cache. Tokenizers, checkpoint pointers and
+/// exported models are stored by hash under <c>Training/recipes</c>; a rerun
+/// with identical inputs can skip the tokenizer, continue a checkpoint or reuse
+/// the whole packaged model.
 /// </summary>
 public static class TrainingRecipeStore
 {
@@ -40,7 +41,7 @@ public static class TrainingRecipeStore
             TrainingRecipeArtifact? saved = JsonSerializer.Deserialize<TrainingRecipeArtifact>(
                 File.ReadAllText(path), TrainingRuleSet.Json);
             if (saved is null || string.IsNullOrWhiteSpace(saved.ArtifactPath)) return false;
-            if (!File.Exists(saved.ArtifactPath)) return false;
+            if (!File.Exists(saved.ArtifactPath) && !Directory.Exists(saved.ArtifactPath)) return false;
 
             artifact = saved;
             return true;
@@ -72,9 +73,10 @@ public static class TrainingRecipeStore
 }
 
 /// <summary>
-/// Stable hashes for the three reusable recipe steps: data, tokenizer and the
-/// full training run. Volatile fields (names, export paths, fork labels) are
-/// excluded; the base model and resume checkpoints are hashed by content.
+/// Stable hashes for the reusable recipe phases: data, tokenizer, the train
+/// base (before the schedule horizon) and the exact full run including package
+/// metadata. Volatile fields (names, export paths, fork labels) are excluded;
+/// the base model and resume checkpoints are hashed by content.
 /// </summary>
 public static class TrainingRecipeHash
 {
@@ -152,6 +154,69 @@ public static class TrainingRecipeHash
             job.QuantAwareTraining,
             job.MergeOnExport,
             job.SaveAdapterFile,
+            // Package metadata belongs to the export phase, not the weights, but a
+            // full cache hit must still match it or the cached .smm would carry the
+            // wrong prompt, skills or tool DLLs. Hash by content, not by path.
+            Package = PackageInputs(job),
+            LoRA = job.IsFineTune
+                ? new
+                {
+                    job.LoRARank,
+                    job.LoRAAlpha,
+                    Targets = job.LoRATargetModules
+                        .OrderBy(target => target, StringComparer.OrdinalIgnoreCase)
+                        .ToList(),
+                }
+                : null,
+        });
+    }
+
+    /// <summary>
+    /// The train phase before its schedule horizon and package settings. Two jobs
+    /// with the same base, data, tokenizer, model shape and optimizer share this
+    /// hash, so a longer run can continue a cached checkpoint instead of starting
+    /// over. Steps, logging cadence, checkpoint retention and export metadata are
+    /// deliberately excluded.
+    /// </summary>
+    public static string TrainBase(TrainingJobSettings job, string dataHash, string tokenizerHash)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+
+        return HashOf(new
+        {
+            Data = dataHash,
+            Tokenizer = tokenizerHash,
+            Base = job.BaseModelPath is { Length: > 0 } basePath ? FileFingerprint(basePath) : "none",
+            job.HiddenDim,
+            job.NumLayers,
+            job.NumHeads,
+            job.NumKvHeads,
+            job.FfnDim,
+            job.MaxSeqLen,
+            job.NormEps,
+            job.ArchitecturePreset,
+            job.Activation,
+            job.Gate,
+            job.Ffn,
+            job.Attention,
+            job.Norm,
+            job.Arch,
+            job.PositionalEncoding,
+            job.NumExperts,
+            job.TopKExperts,
+            job.BatchSize,
+            job.SeqLen,
+            job.GradAccumSteps,
+            job.BatchingKind,
+            job.Optimizer,
+            job.SgdMomentum,
+            job.LearningRate,
+            job.MinLr,
+            job.WarmupSteps,
+            job.WeightDecay,
+            job.GradClipNorm,
+            job.LabelSmoothing,
+            job.QuantAwareTraining,
             LoRA = job.IsFineTune
                 ? new
                 {
@@ -171,6 +236,33 @@ public static class TrainingRecipeHash
     private static string HashOf(object value)
         => Convert.ToHexString(SHA256.HashData(
             JsonSerializer.SerializeToUtf8Bytes(value, TrainingRuleSet.Json)));
+
+    private static object PackageInputs(TrainingJobSettings job) => new
+    {
+        Prompt = job.SystemPromptPath is { Length: > 0 } prompt ? FileFingerprint(prompt) : null,
+        Skills = SkillsFingerprint(job.SkillsFolder),
+        Plugins = job.PluginDllPaths
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .Select(path => $"{path}:{FileFingerprint(path)}")
+            .ToList(),
+    };
+
+    private static List<string>? SkillsFingerprint(string? folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder)) return null;
+        if (!Directory.Exists(folder)) return [$"missing:{folder}"];
+
+        try
+        {
+            return [.. Directory.EnumerateFiles(folder, "*.md", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+                .Select(path => $"{Path.GetFileName(path)}:{FileFingerprint(path)}")];
+        }
+        catch
+        {
+            return [$"unreadable:{folder}"];
+        }
+    }
 
     private static object Canonical(JobComponent component) => new
     {

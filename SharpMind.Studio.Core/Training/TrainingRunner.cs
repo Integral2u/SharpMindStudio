@@ -33,6 +33,13 @@ public sealed class TrainingRunResult
     /// <summary>True when the content-addressed recipe cache supplied the export.</summary>
     public bool Cached { get; init; }
 
+    /// <summary>
+    /// Which phase was reused: <c>train</c> for an identical run, <c>package</c>
+    /// when a cached model was copied to a new export path, or <c>checkpoint</c>
+    /// when a cached checkpoint continued (or supplied) the trained weights.
+    /// </summary>
+    public string? CachedPhase { get; init; }
+
     /// <summary>Training recipe hash, when caching was active for this run.</summary>
     public string? RecipeHash { get; init; }
     public int FinalStep { get; init; }
@@ -223,24 +230,50 @@ public static class TrainingRunner
             string? baseChatTemplate = null;
 
             // Content-addressed recipe check before loading a base or tokenizer:
-            // identical data + settings return the existing packaged model.
+            // identical data + settings return the existing packaged model. The
+            // package phase is separate: if only the destination moved, copy the
+            // cached .smm instead of training again.
             string recipeDataHash = TrainingRecipeHash.Data(job);
             string recipeTokenizerHash = TrainingRecipeHash.Tokenizer(job, recipeDataHash);
+            string recipeTrainBaseHash = !job.Rehearsal && !job.IncrementalMode && !job.IsFineTune
+                ? TrainingRecipeHash.TrainBase(job, recipeDataHash, recipeTokenizerHash)
+                : "";
             string? recipeTrainHash = null;
             if (!job.IncrementalMode && !job.Rehearsal && job.MergeOnExport && !job.SaveAdapterFile)
             {
                 recipeTrainHash = TrainingRecipeHash.Train(job, recipeDataHash, recipeTokenizerHash);
                 if (TrainingRecipeStore.TryGet("train", recipeTrainHash, out TrainingRecipeArtifact cached, recipeFolder))
                 {
+                    string requestedExport = Path.GetFullPath(job.ExportFilePath);
+                    string cachedExport = Path.GetFullPath(cached.ArtifactPath);
+                    if (!string.Equals(requestedExport, cachedExport, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(requestedExport)!);
+                        File.Copy(cachedExport, requestedExport, overwrite: true);
+                        Log($"Recipe: cache hit {TrainingRecipeHash.Short(recipeTrainHash)} - "
+                            + $"package phase copied {Path.GetFileName(cachedExport)} to {requestedExport}.");
+                        progress.Report(1f);
+                        return new TrainingRunResult
+                        {
+                            Success = true,
+                            ExportPath = requestedExport,
+                            FinalStep = job.TotalSteps,
+                            Cached = true,
+                            CachedPhase = "package",
+                            RecipeHash = recipeTrainHash,
+                        };
+                    }
+
                     Log($"Recipe: cache hit {TrainingRecipeHash.Short(recipeTrainHash)} - "
-                        + $"reusing {Path.GetFileName(cached.ArtifactPath)}.");
+                        + $"reusing {Path.GetFileName(cachedExport)}.");
                     progress.Report(1f);
                     return new TrainingRunResult
                     {
                         Success = true,
-                        ExportPath = cached.ArtifactPath,
+                        ExportPath = cachedExport,
                         FinalStep = job.TotalSteps,
                         Cached = true,
+                        CachedPhase = "train",
                         RecipeHash = recipeTrainHash,
                     };
                 }
@@ -466,6 +499,25 @@ public static class TrainingRunner
             string checkpointDir = job.Rehearsal
                 ? Path.Combine(Path.GetTempPath(), "sharpmind-rehearsal-" + Guid.NewGuid().ToString("N"))
                 : job.CheckpointDir;
+
+            // A cached checkpoint carries the train phase. Prefer a job-local
+            // checkpoint when one exists; otherwise fall through to the recipe
+            // checkpoint so a different job name or export folder can still
+            // continue the same weights.
+            string? recipeCheckpointDir = null;
+            if (!job.IsFineTune
+                && !job.IncrementalMode
+                && !job.Rehearsal
+                && !job.StartFresh
+                && string.IsNullOrWhiteSpace(job.ResumeFrom)
+                && string.IsNullOrWhiteSpace(job.WarmRestartFrom)
+                && TrainingRecipeStore.TryGet(
+                    "checkpoint", recipeTrainBaseHash, out TrainingRecipeArtifact recipeCheckpoint, recipeFolder)
+                && Directory.Exists(recipeCheckpoint.ArtifactPath))
+            {
+                recipeCheckpointDir = recipeCheckpoint.ArtifactPath;
+            }
+
             string? resumeDir;
             string? warmRestartDir = null;
             int? warmRestartPriorVocab = null;
@@ -524,6 +576,16 @@ public static class TrainingRunner
                     : Checkpoint.FindLatest(checkpointDir);
             }
 
+            bool recipeCheckpointReused = false;
+            if (resumeDir is null && warmRestartDir is null && recipeCheckpointDir is not null)
+            {
+                resumeDir = recipeCheckpointDir;
+                recipeCheckpointReused = true;
+                int reusedStep = Checkpoint.ReadMeta(resumeDir).Step;
+                Log($"Recipe: reusing checkpoint at step {reusedStep} for "
+                    + $"{TrainingRecipeHash.Short(recipeTrainBaseHash)}; requested {job.TotalSteps} steps.");
+            }
+
             // A grown tokenizer widens the embedding, so a strict resume cannot load
             // a checkpoint built at the old size. Reuse those weights as a warm
             // restart instead (fresh optimizer, step 0). Deliberately not persisted
@@ -571,10 +633,21 @@ public static class TrainingRunner
                 }
             }
 
+            int resumeStep = 0;
+            double? resumeValLoss = null;
             if (resumeDir is not null)
             {
-                job.ResumeFrom = resumeDir;
+                // A recipe checkpoint is a cache pointer, not a job setting; do not
+                // persist it into the .smmt, where a later cleanup could break it.
+                if (!recipeCheckpointReused) job.ResumeFrom = resumeDir;
                 var resumeMeta = Checkpoint.ReadMeta(resumeDir);
+                resumeStep = resumeMeta.Step;
+                if (resumeMeta.Extra.TryGetValue("valLoss", out string? valText)
+                    && double.TryParse(valText, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double parsedValLoss))
+                {
+                    resumeValLoss = parsedValLoss;
+                }
                 Log($"Resuming from checkpoint {Path.GetFileName(resumeDir)} (step {resumeMeta.Step})");
                 onResume?.Invoke(resumeMeta.Step);
             }
@@ -582,6 +655,10 @@ public static class TrainingRunner
             {
                 onResume?.Invoke(warmRestartStartStep);
             }
+
+            bool reuseCompletedCheckpoint = recipeCheckpointReused
+                && resumeDir is not null
+                && resumeStep >= job.TotalSteps;
 
             using TransformerWeights? pretrainWeights = job.IsFineTune
                 ? null
@@ -707,22 +784,28 @@ public static class TrainingRunner
                 }
             }
 
-            var resolved = ResolveEngine();
-            if (resolved.Refusal is not null)
-                return new TrainingRunResult { Success = false, AcceleratorRequested = resolved.Name, AcceleratorReason = resolved.Refusal };
-
-            using var engine = resolved.Engine;
-            if (engine is not null)
+            ITrainingEngine? engine = null;
+            if (!reuseCompletedCheckpoint)
             {
-                // Re-derived from the same name Resolve just matched â€” FirstOrDefault
-                // rather than First so a future drift between the two lookups logs
-                // nothing instead of throwing "Sequence contains no matching element"
-                // into the generic catch around this run.
-                var chosen = accelerators.FirstOrDefault(p => string.Equals(p.Name, resolved.Name, StringComparison.OrdinalIgnoreCase));
-                if (chosen is not null)
-                    Log($"Accelerator: {chosen.Name} â€” {chosen.Description}");
-                Log($"Engine: {engine.Description}");
+                var resolved = ResolveEngine();
+                if (resolved.Refusal is not null)
+                    return new TrainingRunResult { Success = false, AcceleratorRequested = resolved.Name, AcceleratorReason = resolved.Refusal };
+
+                engine = resolved.Engine;
+                if (engine is not null)
+                {
+                    // Re-derived from the same name Resolve just matched — FirstOrDefault
+                    // rather than First so a future drift between the two lookups logs
+                    // nothing instead of throwing "Sequence contains no matching element"
+                    // into the generic catch around this run.
+                    var chosen = accelerators.FirstOrDefault(p => string.Equals(p.Name, resolved.Name, StringComparison.OrdinalIgnoreCase));
+                    if (chosen is not null)
+                        Log($"Accelerator: {chosen.Name} — {chosen.Description}");
+                    Log($"Engine: {engine.Description}");
+                }
             }
+
+            using var engineOwner = engine;
 
             // 5. Scheduler + loop (the optimizer was created before the warm restart).
             var scheduler = new CosineWithWarmup(
@@ -809,50 +892,72 @@ public static class TrainingRunner
                     ExpectedVocabSize = warmRestartDir is null ? modelConfig.VocabSize : 0,
                 });
 
-            string stepPlan = warmRestartStartStep > 0
-                ? $"Continuing to step {job.TotalSteps} (from {warmRestartStartStep})"
-                : $"Training {job.TotalSteps} steps";
-            Log(qat is { } q
-                ? $"{stepPlan} with QAT [{q}] â€” full backprop (loss â†’ gradients â†’ AdamW)â€¦"
-                : $"{stepPlan} (float32) â€” full backprop (loss â†’ gradients â†’ AdamW)â€¦");
-            progress.Report(0.12f);
-
             int lastStep = warmRestartStartStep;
+            if (reuseCompletedCheckpoint)
+            {
+                // The cached checkpoint already covers the requested horizon. Load
+                // its weights and optimizer state, then go straight to export; the
+                // train phase is fully reused.
+                Checkpoint.Load(resumeDir!, parameters, optimizer);
+                lastStep = resumeStep;
+                if (resumeValLoss is { } reusedValLoss)
+                {
+                    bestValLoss = reusedValLoss;
+                    bestValStep = resumeStep;
+                }
+                progress.Report(0.9f);
+                Log($"Recipe: train phase reused at step {resumeStep}; "
+                    + $"requested {job.TotalSteps} step(s), exporting without more training.");
+            }
+            else
+            {
+                string stepPlan = warmRestartStartStep > 0
+                    ? $"Continuing to step {job.TotalSteps} (from {warmRestartStartStep})"
+                    : $"Training {job.TotalSteps} steps";
+                Log(qat is { } q
+                    ? $"{stepPlan} with QAT [{q}] — full backprop (loss → gradients → AdamW)…"
+                    : $"{stepPlan} (float32) — full backprop (loss → gradients → AdamW)…");
+                progress.Report(0.12f);
+            }
+
             try
             {
-                await loop.RunAsync(
-                    onStep: r =>
-                    {
-                        lastStep = r.Step;
-                        onStep?.Invoke(r);
-                    },
-                    progress: new Progress<float>(p => progress.Report(0.12f + 0.78f * p)),
-                    cancellationToken: cancellationToken,
-                    onCheckpoint: dir =>
-                    {
-                        if (job.Rehearsal) return;
-                        if (job.IsFineTune)
+                if (!reuseCompletedCheckpoint)
+                {
+                    await loop.RunAsync(
+                        onStep: r =>
                         {
-                            // The generic checkpoint holds the adapter parameters and
-                            // optimizer state; the sidecar .smlora is the portable,
-                            // base-fingerprinted form a later run can load.
-                            if (lora is not null)
+                            lastStep = r.Step;
+                            onStep?.Invoke(r);
+                        },
+                        progress: new Progress<float>(p => progress.Report(0.12f + 0.78f * p)),
+                        cancellationToken: cancellationToken,
+                        onCheckpoint: dir =>
+                        {
+                            if (job.Rehearsal) return;
+                            if (job.IsFineTune)
                             {
-                                try
+                                // The generic checkpoint holds the adapter parameters and
+                                // optimizer state; the sidecar .smlora is the portable,
+                                // base-fingerprinted form a later run can load.
+                                if (lora is not null)
                                 {
-                                    lora.SaveAdapter(Path.Combine(dir, "adapters.smlora"));
+                                    try
+                                    {
+                                        lora.SaveAdapter(Path.Combine(dir, "adapters.smlora"));
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Log($"Fine-tune: could not save the adapter checkpoint ({ex.Message}).");
+                                    }
                                 }
-                                catch (Exception ex)
-                                {
-                                    Log($"Fine-tune: could not save the adapter checkpoint ({ex.Message}).");
-                                }
+                                Log($"Fine-tune: checkpoint {Path.GetFileName(dir)} saved (adapters only).");
+                                return;
                             }
-                            Log($"Fine-tune: checkpoint {Path.GetFileName(dir)} saved (adapters only).");
-                            return;
-                        }
-                        ExportCheckpoint(dir, job, modelConfig, sharpConfig, tokenizer, Log);
-                    },
-                    evaluate: evaluator is null ? null : Evaluate);
+                            ExportCheckpoint(dir, job, modelConfig, sharpConfig, tokenizer, Log);
+                        },
+                        evaluate: evaluator is null ? null : Evaluate);
+                }
             }
             finally
             {
@@ -860,6 +965,28 @@ public static class TrainingRunner
                 // evaluation, so they outlive the loop and must be freed here.
                 foreach (TrainingBatch held in validationBatches) held.Dispose();
                 if (job.Rehearsal) DeleteDirectoryQuietly(checkpointDir);
+            }
+
+            if (!reuseCompletedCheckpoint && lastStep <= warmRestartStartStep)
+            {
+                string? latestCheckpoint = Checkpoint.FindLatest(checkpointDir);
+                if (latestCheckpoint is not null)
+                {
+                    int checkpointStep = Checkpoint.ReadMeta(latestCheckpoint).Step;
+                    if (checkpointStep > lastStep) lastStep = checkpointStep;
+                }
+            }
+
+            if (!job.Rehearsal && !job.IsFineTune && !job.IncrementalMode && !grewTokenizer)
+            {
+                string? checkpointPath = Checkpoint.FindLatest(checkpointDir);
+                if (checkpointPath is not null)
+                {
+                    TrainingRecipeStore.Save(new TrainingRecipeArtifact(
+                        "checkpoint", recipeTrainBaseHash, checkpointPath, job.Name, DateTime.UtcNow), recipeFolder);
+                    Log($"Recipe: checkpoint phase {TrainingRecipeHash.Short(recipeTrainBaseHash)} "
+                        + $"saved from step {lastStep}.");
+                }
             }
 
             if (job.Rehearsal)
@@ -914,7 +1041,7 @@ public static class TrainingRunner
                 // field when this live job is shown again), matching how the tokenizer
                 // path is anchored to the job rather than a shared folder.
                 job.ExportPath = exportPath;
-                if (recipeTrainHash is not null)
+                if (recipeTrainHash is not null && !grewTokenizer)
                 {
                     TrainingRecipeStore.Save(new TrainingRecipeArtifact(
                         "train", recipeTrainHash, exportPath, job.Name, DateTime.UtcNow), recipeFolder);
@@ -944,7 +1071,9 @@ public static class TrainingRunner
                 FinalStep = lastStep,
                 BestValLoss = bestValLoss,
                 BestValStep = bestValStep > 0 ? bestValStep : null,
-                RecipeHash = recipeTrainHash,
+                Cached = recipeCheckpointReused,
+                CachedPhase = recipeCheckpointReused ? "checkpoint" : null,
+                RecipeHash = recipeTrainHash ?? recipeTrainBaseHash,
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

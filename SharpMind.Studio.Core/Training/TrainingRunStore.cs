@@ -72,6 +72,9 @@ public sealed class TrainingRunRecord
     /// <summary>True when the content-addressed recipe cache supplied the export.</summary>
     public bool Cached { get; set; }
 
+    /// <summary>Phase reused by the recipe cache: train, package or checkpoint.</summary>
+    public string? CachedPhase { get; set; }
+
     /// <summary>Training recipe hash when caching participated in the run.</summary>
     public string? RecipeHash { get; set; }
 
@@ -129,6 +132,7 @@ public sealed class TrainingRunRecord
             SeqLen = job.SeqLen,
             ElapsedSeconds = elapsed.TotalSeconds,
             Cached = result.Cached,
+            CachedPhase = result.CachedPhase,
             RecipeHash = result.RecipeHash,
             ExportBytes = bytes,
             Curve = [.. curve],
