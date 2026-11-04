@@ -102,4 +102,35 @@ public sealed class OpenRouterMessageBuilderTests
         Assert.Equal("a", calls[0]!["id"]!.GetValue<string>());
         Assert.Equal("b", calls[1]!["id"]!.GetValue<string>());
     }
+
+    [Fact]
+    public void FormatToolResult_NamesTheToolAndChoice()
+    {
+        var result = new JsonObject
+        {
+            ["status"] = "success",
+            ["data"] = "Red",
+        };
+
+        string text = OpenRouterMessageBuilder.FormatToolResult(
+            "UIShowOptionSelection", new JsonObject(), result);
+
+        Assert.Equal("[UIShowOptionSelection] Red", text);
+    }
+
+    [Fact]
+    public void FormatToolResult_PrefixesErrors()
+    {
+        var result = new JsonObject
+        {
+            ["status"] = "error",
+            ["message"] = "not found",
+        };
+
+        string text = OpenRouterMessageBuilder.FormatToolResult(
+            "ReadFile", new JsonObject { ["path"] = "x.txt" }, result);
+
+        Assert.Contains("[ReadFile", text);
+        Assert.Contains("ERROR: not found", text);
+    }
 }

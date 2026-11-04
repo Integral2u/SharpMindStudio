@@ -28,7 +28,7 @@
     <a class="settings-tab @(_tab == "system" ? "selected" : "")" href="/settings?tab=system" data-enhance-nav="false">System</a>
     <a class="settings-tab @(_tab == "families" ? "selected" : "")" href="/settings?tab=families" data-enhance-nav="false">Families</a>
     <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/settings?tab=models" data-enhance-nav="false">Models</a>
-    <a class="settings-tab @(_tab == "openrouter" ? "selected" : "")" href="/settings?tab=openrouter" data-enhance-nav="false">OpenRouter Providers</a>
+    <a class="settings-tab @(_tab == "openrouter" ? "selected" : "")" href="/settings?tab=openrouter" data-enhance-nav="false">Providers</a>
     <a class="settings-tab @(_tab == "pair" ? "selected" : "")" href="/settings?tab=pair" data-enhance-nav="false">Pair</a>
 </div>
 
@@ -144,8 +144,8 @@ else if (_tab == "openrouter")
     <section class="panel">
         <div class="panel-head">
             <div>
-                <div class="eyebrow">Providers</div>
-                <h2>OpenRouter Providers</h2>
+                <div class="eyebrow">OpenRouter</div>
+                <h2>Providers</h2>
             </div>
             <div class="row" style="align-items:center; gap:.45rem;">
                 <span class="provider-dot @(OpenRouter.HasApiKey ? "on" : "off")"></span>
@@ -239,7 +239,7 @@ else if (_tab == "openrouter")
                             .Take(400))
                         {
                             <option value="@model.Id">
-                                @model.Id@(model.IsFree ? " (Free)" : "")@(model.ContextLength is { } context ? $" - {context:N0} ctx" : "")
+                                @model.Id@(model.IsFree ? " (Free)" : "")@(model.SupportsTools ? " (tools)" : "")@(model.ContextLength is { } context ? $" - {context:N0} ctx" : "")
                             </option>
                         }
                     </select>

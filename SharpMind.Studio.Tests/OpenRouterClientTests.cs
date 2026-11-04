@@ -130,9 +130,11 @@ public sealed class OpenRouterClientTests
                 """
                 {"data":[
                   {"id":"openai/gpt-4o-mini","name":"GPT-4o mini","context_length":128000,
-                   "pricing":{"prompt":"0.00000015","completion":"0.0000006"}},
+                   "pricing":{"prompt":"0.00000015","completion":"0.0000006"},
+                   "supported_parameters":["tools","temperature"]},
                   {"id":"meta/llama-3.3-70b:free","name":"Llama Free","context_length":131072,
-                   "pricing":{"prompt":"0","completion":"0"}}
+                   "pricing":{"prompt":"0","completion":"0"},
+                   "supported_parameters":["tools"]}
                 ]}
                 """,
                 Encoding.UTF8,
@@ -147,8 +149,10 @@ public sealed class OpenRouterClientTests
         OpenRouterModel free = models[0];
         Assert.Equal("meta/llama-3.3-70b:free", free.Id);
         Assert.True(free.IsFree);
+        Assert.True(free.SupportsTools);
         Assert.Equal(131072, free.ContextLength);
         Assert.False(models[1].IsFree);
+        Assert.True(models[1].SupportsTools);
     }
 
     private sealed class StubHandler(

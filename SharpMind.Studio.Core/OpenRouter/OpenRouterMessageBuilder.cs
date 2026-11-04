@@ -137,6 +137,44 @@ public static class OpenRouterMessageBuilder
         ["content"] = content,
     };
 
+    /// <summary>
+    /// Formats a tool result the way the local chat session does: a header naming
+    /// the tool and key arguments, then the data as plain text. OpenAI-style tool
+    /// messages otherwise carry raw JSON, which some models misread as a new
+    /// instruction (for example re-listing UI choices instead of using the picked
+    /// value).
+    /// </summary>
+    public static string FormatToolResult(
+        string toolName,
+        JsonObject arguments,
+        JsonObject result,
+        int maxChars = 16_000)
+    {
+        string status = result["status"]?.GetValue<string>() ?? "success";
+        string body = result["data"]?.GetValue<string>()
+            ?? result["message"]?.GetValue<string>()
+            ?? result.ToJsonString();
+        if (result["notes"] is JsonNode notes)
+            body += "\n(" + notes.GetValue<string>() + ")";
+
+        string header = $"[{toolName}{KeyArguments(arguments)}]";
+        string text = status == "success"
+            ? $"{header} {body}"
+            : $"{header} ERROR: {body}";
+
+        return text.Length <= maxChars
+            ? text
+            : text[..maxChars] + "\n... [tool result truncated]";
+    }
+
+    private static string KeyArguments(JsonObject arguments)
+    {
+        if (arguments.Count == 0) return "";
+        string preview = arguments.ToJsonString();
+        if (preview.Length > 160) preview = preview[..160] + "...";
+        return $" {preview}";
+    }
+
     private static void AddSystem(List<JsonObject> messages, string content)
     {
         if (!string.IsNullOrWhiteSpace(content))

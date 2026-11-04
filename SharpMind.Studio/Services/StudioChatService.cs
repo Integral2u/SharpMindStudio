@@ -65,10 +65,13 @@ public sealed class StudioChatService : IAsyncDisposable
     public ResolvedInference? Resolved => _resolved;
     public bool IsStreaming => _streaming;
     public bool IsLoading => _loading;
+    public bool IsRemote => string.Equals(_document?.Provider, "openrouter", StringComparison.OrdinalIgnoreCase);
+    public bool IsWorkMode => string.Equals(_document?.Mode, "work", StringComparison.OrdinalIgnoreCase);
+    public bool IsChatActive => (_loading || _streaming) && !IsWorkMode;
+    public bool IsWorkActive => (_loading || _streaming) && IsWorkMode;
     public double? LoadProgress => _loadProgress;
     public string? LoadDetail => _loadDetail;
     public bool IsOpen => _document is not null;
-    public bool IsRemote => string.Equals(_document?.Provider, "openrouter", StringComparison.OrdinalIgnoreCase);
     public string? RemoteModel => _document?.RemoteModel;
     public bool OpenRouterConfigured => _openRouter.IsConfigured;
     public string Status => _status;
@@ -348,6 +351,9 @@ public sealed class StudioChatService : IAsyncDisposable
             // OpenAI tool calling is native here; do not also teach a JSON call shape.
             agent.CallFormat = ToolCallFormat.None;
             agent.ToolListInPrompt = false;
+            agent.WithCustomRule(
+                "When a UI tool returns a choice, treat it as the person's answer and continue "
+                + "from it. Do not repeat the option list unless they ask.");
         }
 
         IReadOnlyList<JsonObject>? tools = agent is null
@@ -480,12 +486,13 @@ public sealed class StudioChatService : IAsyncDisposable
                                 _streamCts.Token),
                             _streamCts.Token).ConfigureAwait(false);
 
-                    string resultJson = result.ToJsonString();
-                    messages.Add(OpenRouterMessageBuilder.ToolResult(call.Id, resultJson));
+                    string resultText = OpenRouterMessageBuilder.FormatToolResult(
+                        call.Name, arguments, result);
+                    messages.Add(OpenRouterMessageBuilder.ToolResult(call.Id, resultText));
                     _document.Messages.Add(new ChatMessage
                     {
                         Role = ChatRole.Tool,
-                        Content = resultJson,
+                        Content = resultText,
                         Metadata = new Dictionary<string, string>
                         {
                             [OpenRouterMetadata.ToolCallId] = call.Id,

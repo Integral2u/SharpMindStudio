@@ -4,6 +4,9 @@
 @inject SharpMind.Studio.Services.ThemeService Theme
 @inject SharpMind.Studio.Services.StudioActivityService Activity
 @inject SharpMind.Studio.Services.StudioChatService ChatService
+@inject SharpMind.Studio.Services.StudioTrainingService Training
+@inject SharpMind.Studio.Services.StudioRehearsalService Rehearsal
+@inject SharpMind.Studio.Services.StudioExamService Exam
 @inject Microsoft.AspNetCore.Components.NavigationManager Nav
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthState
@@ -32,10 +35,6 @@
             {
                 <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
                     <span class="nav-index">01</span> Home
-                    @if (Activity.IsBusy)
-                    {
-                        <span class="spinner-ring" title="Canary running"></span>
-                    }
                 </NavLink>
             }
 
@@ -43,13 +42,17 @@
             {
                 <NavLink class="nav-link" href="test">
                     <span class="nav-index">02</span> Tests
+                    @if (Activity.IsBusy)
+                    {
+                        <span class="spinner-ring" title="Canary running"></span>
+                    }
                 </NavLink>
             }
 
             <div class="nav-chat-row">
                 <NavLink class="nav-link" href="chat">
                     <span class="nav-index">03</span> Chat
-                    @if (ChatService.IsLoading || ChatService.IsStreaming)
+                    @if (ChatService.IsChatActive)
                     {
                         <span class="spinner-ring" title="Chat active"></span>
                     }
@@ -64,13 +67,13 @@
             @if (_chatsExpanded)
             {
                 <div class="nav-chats">
-                    @if (_chats.Count == 0)
+                    @if (ChatOnly.Count == 0)
                     {
                         <div class="nav-chat-empty">No chats yet</div>
                     }
                     else
                     {
-                        @foreach (var chat in _chats)
+                        @foreach (var chat in ChatOnly)
                         {
                             <div class="nav-chat-item">
                                 <a href="@ChatHref(chat)" class="nav-chat-link" title="@chat.Name">@chat.Name@(chat.Mode == "work" ? " / work" : "")@(chat.Provider == "openrouter" ? " / remote" : "")</a>
@@ -87,14 +90,55 @@
                 </div>
             }
 
-            <NavLink class="nav-link" href="work">
-                <span class="nav-index">04</span> Work
-            </NavLink>
+            <div class="nav-chat-row">
+                <NavLink class="nav-link" href="work">
+                    <span class="nav-index">04</span> Work
+                    @if (ChatService.IsWorkActive)
+                    {
+                        <span class="spinner-ring" title="Work active"></span>
+                    }
+                </NavLink>
+                <button type="button" class="nav-expand" @onclick="ToggleWorkChats"
+                        title="@(_workChatsExpanded ? "Hide work sessions" : "Show work sessions")"
+                        aria-label="@(_workChatsExpanded ? "Hide work sessions" : "Show work sessions")">
+                    @(_workChatsExpanded ? "-" : "+")
+                </button>
+            </div>
+
+            @if (_workChatsExpanded)
+            {
+                <div class="nav-chats">
+                    @if (WorkOnly.Count == 0)
+                    {
+                        <div class="nav-chat-empty">No work sessions yet</div>
+                    }
+                    else
+                    {
+                        @foreach (var chat in WorkOnly)
+                        {
+                            <div class="nav-chat-item">
+                                <a href="@ChatHref(chat)" class="nav-chat-link" title="@chat.Name">@chat.Name@(chat.Provider == "openrouter" ? " / remote" : "")</a>
+                                <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
+                                        title="Rename work session" aria-label="Rename work session">&#9998;</button>
+                                <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"
+                                        title="Delete work session" aria-label="Delete work session">&times;</button>
+                            </div>
+                        }
+                    }
+                    <button type="button" class="nav-chat-clear" @onclick="ClearChatsAsync">
+                        Clear all chats
+                    </button>
+                </div>
+            }
 
             @if (!DeviceAccess.IsMobile)
             {
                 <NavLink class="nav-link" href="training">
                     <span class="nav-index">05</span> Training
+                    @if (Training.IsRunning || Rehearsal.IsRunning || Exam.IsRunning)
+                    {
+                        <span class="spinner-ring" title="Training active"></span>
+                    }
                 </NavLink>
                 <NavLink class="nav-link" href="settings">
                     <span class="nav-index">06</span> Settings
@@ -157,6 +201,9 @@
         Theme.Changed += OnThemeChanged;
         Activity.Changed += OnActivityChanged;
         ChatService.Changed += OnChatServiceChanged;
+        Training.Changed += OnBackgroundChanged;
+        Rehearsal.Changed += OnBackgroundChanged;
+        Exam.Changed += OnBackgroundChanged;
         Workspace.ProjectChanged += OnWorkspaceChanged;
         Nav.LocationChanged += OnLocationChanged;
         LoadChats();
@@ -167,12 +214,22 @@
         Theme.Changed -= OnThemeChanged;
         Activity.Changed -= OnActivityChanged;
         ChatService.Changed -= OnChatServiceChanged;
+        Training.Changed -= OnBackgroundChanged;
+        Rehearsal.Changed -= OnBackgroundChanged;
+        Exam.Changed -= OnBackgroundChanged;
         Workspace.ProjectChanged -= OnWorkspaceChanged;
         Nav.LocationChanged -= OnLocationChanged;
     }
 
     private bool _chatsExpanded;
+    private bool _workChatsExpanded;
     private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> _chats = [];
+
+    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> ChatOnly =>
+        [.. _chats.Where(chat => !string.Equals(chat.Mode, "work", StringComparison.OrdinalIgnoreCase))];
+
+    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> WorkOnly =>
+        [.. _chats.Where(chat => string.Equals(chat.Mode, "work", StringComparison.OrdinalIgnoreCase))];
 
     private void ToggleChats()
     {
@@ -180,12 +237,18 @@
         if (_chatsExpanded) LoadChats();
     }
 
+    private void ToggleWorkChats()
+    {
+        _workChatsExpanded = !_workChatsExpanded;
+        if (_workChatsExpanded) LoadChats();
+    }
+
     private void LoadChats() => _chats = ChatService.Sessions;
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs args) =>
         _ = InvokeAsync(() =>
         {
-            if (_chatsExpanded) LoadChats();
+            if (_chatsExpanded || _workChatsExpanded) LoadChats();
             StateHasChanged();
         });
 
@@ -223,15 +286,17 @@
 
     private void OnActivityChanged() => _ = InvokeAsync(StateHasChanged);
 
+    private void OnBackgroundChanged() => _ = InvokeAsync(StateHasChanged);
+
     private void OnWorkspaceChanged() => _ = InvokeAsync(() =>
     {
-        if (_chatsExpanded) LoadChats();
+        if (_chatsExpanded || _workChatsExpanded) LoadChats();
         StateHasChanged();
     });
 
     private void OnChatServiceChanged() => _ = InvokeAsync(() =>
     {
-        if (_chatsExpanded) LoadChats();
+        if (_chatsExpanded || _workChatsExpanded) LoadChats();
         StateHasChanged();
     });
 

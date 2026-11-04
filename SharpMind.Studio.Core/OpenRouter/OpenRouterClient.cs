@@ -32,7 +32,8 @@ public sealed record OpenRouterModel(
     string Id,
     string? Name,
     int? ContextLength,
-    bool IsFree = false);
+    bool IsFree = false,
+    bool SupportsTools = false);
 
 /// <summary>Everything needed for one chat-completions request.</summary>
 public sealed class OpenRouterRequest
@@ -113,7 +114,8 @@ public sealed class OpenRouterClient
                 string modelId = id.GetString()!;
                 bool isFree = modelId.EndsWith(":free", StringComparison.OrdinalIgnoreCase)
                     || IsZeroPricing(item);
-                models.Add(new OpenRouterModel(modelId, name, context, isFree));
+                bool supportsTools = SupportsTools(item);
+                models.Add(new OpenRouterModel(modelId, name, context, isFree, supportsTools));
             }
         }
 
@@ -399,6 +401,21 @@ public sealed class OpenRouterClient
             || pricing.ValueKind != JsonValueKind.Object)
             return false;
         return IsZero(pricing, "prompt") && IsZero(pricing, "completion");
+    }
+
+    private static bool SupportsTools(JsonElement item)
+    {
+        if (!item.TryGetProperty("supported_parameters", out JsonElement parameters)
+            || parameters.ValueKind != JsonValueKind.Array)
+            return false;
+
+        foreach (JsonElement parameter in parameters.EnumerateArray())
+        {
+            if (parameter.ValueKind == JsonValueKind.String
+                && string.Equals(parameter.GetString(), "tools", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 
     private static bool IsZero(JsonElement pricing, string name)
