@@ -1434,14 +1434,23 @@ public static class TrainingRunner
     /// Exposed so the held-out exam can rebuild exactly the same records.
     /// </summary>
     public static IRecordSource BuildSftRecordSource(TrainingJobSettings job, string pluginsFolder)
+        => BuildSftRecordSourceSet(job, pluginsFolder).Records;
+
+    /// <inheritdoc cref="BuildSftRecordSource(TrainingJobSettings, string)"/>
+    public static SftRecordSourceSet BuildSftRecordSourceSet(
+        TrainingJobSettings job, string pluginsFolder)
     {
         ArgumentNullException.ThrowIfNull(job);
         var registry = ComponentRegistry.ScanFolder(pluginsFolder, out _);
-        return BuildSftRecordSource(job, registry);
+        return BuildSftRecordSourceSet(job, registry);
     }
 
-    /// <inheritdoc cref="BuildSftRecordSource(TrainingJobSettings, string)"/>
-    public static IRecordSource BuildSftRecordSource(
+    /// <summary>
+    /// The record source plus its JSONL readers. Callers that only need the
+    /// stream use <see cref="BuildSftRecordSource(TrainingJobSettings, IReadOnlyList{ComponentDescriptor})"/>;
+    /// the preflight uses the readers' file and skip counts.
+    /// </summary>
+    public static SftRecordSourceSet BuildSftRecordSourceSet(
         TrainingJobSettings job, IReadOnlyList<ComponentDescriptor> components)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -1449,6 +1458,7 @@ public static class TrainingRunner
             throw new InvalidOperationException("No data sources configured for this job.");
 
         var sources = new List<IRecordSource>();
+        var jsonlSources = new List<SftJsonlSource>();
         foreach (JobSource source in job.Sources)
         {
             if (!source.Component.Args.TryGetValue("path", out string? path)
@@ -1458,7 +1468,9 @@ public static class TrainingRunner
                     "An SFT source has no path. Add a JSONL file or glob to each source.");
             }
 
-            IRecordSource records = new SftJsonlSource(path);
+            var jsonl = new SftJsonlSource(path);
+            jsonlSources.Add(jsonl);
+            IRecordSource records = jsonl;
             foreach (JobComponent stage in source.Stages)
             {
                 var descriptor = ComponentRegistry.Find(stage.TypeName, components)
@@ -1478,8 +1490,13 @@ public static class TrainingRunner
             merged = ApplySftStage(merged, cleaning);
         }
 
-        return merged;
+        return new SftRecordSourceSet(merged, jsonlSources);
     }
+
+    /// <inheritdoc cref="BuildSftRecordSourceSet(TrainingJobSettings, IReadOnlyList{ComponentDescriptor})"/>
+    public static IRecordSource BuildSftRecordSource(
+        TrainingJobSettings job, IReadOnlyList<ComponentDescriptor> components)
+        => BuildSftRecordSourceSet(job, components).Records;
 
     /// <summary>
     /// Runs a string cleaning stage over every conversation turn, then rebuilds

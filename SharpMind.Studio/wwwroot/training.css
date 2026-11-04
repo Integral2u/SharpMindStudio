@@ -133,6 +133,22 @@
     font-size: .68rem;
 }
 
+.sft-preview-text {
+    margin: 0;
+    padding: .6rem .7rem;
+    max-height: 16rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--mono);
+    font-size: .68rem;
+    line-height: 1.5;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: .45rem;
+    background: rgba(4, 8, 12, .45);
+}
+
 .training-plans {
     align-items: start;
 }

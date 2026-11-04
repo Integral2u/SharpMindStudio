@@ -64,6 +64,12 @@ public sealed class SftJsonlSource : IRecordSource
 
     public long? EstimatedCount => null;
 
+    /// <summary>Number of files matched by the configured path or glob.</summary>
+    public int FileCount => _paths.Length;
+
+    /// <summary>The resolved file paths, in read order.</summary>
+    public IReadOnlyList<string> Paths => _paths;
+
     public string Description =>
         _paths.Length == 1
             ? $"SftJsonl({Path.GetFileName(_paths[0])}, {_layout})"
@@ -119,17 +125,48 @@ public sealed class SftJsonlSource : IRecordSource
             JsonElement root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return null;
 
-            List<ConversationTurn>? turns = _layout switch
+            List<ConversationTurn>? turns;
+            SftJsonlLayout usedLayout = _layout;
+            if (_layout == SftJsonlLayout.Auto)
             {
-                SftJsonlLayout.Messages => ReadMessages(root),
-                SftJsonlLayout.Conversations => ReadConversations(root),
-                SftJsonlLayout.PromptResponse => ReadPromptResponse(root),
-                SftJsonlLayout.InstructionOutput => ReadInstructionOutput(root),
-                _ => ReadMessages(root)
-                     ?? ReadConversations(root)
-                     ?? ReadPromptResponse(root)
-                     ?? ReadInstructionOutput(root),
-            };
+                turns = ReadMessages(root);
+                if (turns is not null)
+                {
+                    usedLayout = SftJsonlLayout.Messages;
+                }
+                else
+                {
+                    turns = ReadConversations(root);
+                    if (turns is not null)
+                    {
+                        usedLayout = SftJsonlLayout.Conversations;
+                    }
+                    else
+                    {
+                        turns = ReadPromptResponse(root);
+                        if (turns is not null)
+                        {
+                            usedLayout = SftJsonlLayout.PromptResponse;
+                        }
+                        else
+                        {
+                            turns = ReadInstructionOutput(root);
+                            if (turns is not null) usedLayout = SftJsonlLayout.InstructionOutput;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                turns = _layout switch
+                {
+                    SftJsonlLayout.Messages => ReadMessages(root),
+                    SftJsonlLayout.Conversations => ReadConversations(root),
+                    SftJsonlLayout.PromptResponse => ReadPromptResponse(root),
+                    SftJsonlLayout.InstructionOutput => ReadInstructionOutput(root),
+                    _ => null,
+                };
+            }
 
             if (turns is null || turns.Count == 0) return null;
             if (!turns.Any(turn => IsAssistant(turn.Role) && !string.IsNullOrWhiteSpace(turn.Content)))
@@ -141,6 +178,7 @@ public sealed class SftJsonlSource : IRecordSource
             {
                 Text = text,
                 Turns = turns,
+                Tags = [$"layout:{LayoutName(usedLayout)}"],
                 Source = path,
             };
         }
@@ -284,6 +322,15 @@ public sealed class SftJsonlSource : IRecordSource
         "instruction-output" or "instructionoutput" or "instruction" or "alpaca" => SftJsonlLayout.InstructionOutput,
         _ => SftJsonlLayout.Auto,
     };
+
+    private static string LayoutName(SftJsonlLayout layout) => layout switch
+    {
+        SftJsonlLayout.Messages => "messages",
+        SftJsonlLayout.Conversations => "conversations",
+        SftJsonlLayout.PromptResponse => "prompt/response",
+        SftJsonlLayout.InstructionOutput => "instruction/output",
+        _ => "auto",
+    };
 }
 
 /// <summary>Filters a record source with a predicate (used for the deterministic splits).</summary>
@@ -338,3 +385,12 @@ public sealed class CompositeRecordSource(IEnumerable<IRecordSource> sources) : 
             await source.DisposeAsync();
     }
 }
+
+/// <summary>
+/// The merged SFT record source plus the underlying JSONL readers, so a preflight
+/// can report resolved files and skipped lines after reading the stream.
+/// </summary>
+public sealed record SftRecordSourceSet(
+    IRecordSource Records,
+    IReadOnlyList<SftJsonlSource> JsonlSources);
+

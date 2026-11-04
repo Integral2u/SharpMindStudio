@@ -197,6 +197,108 @@ else if (_tab == "improve")
                             <span class="mono">instruction/output</span>. Loss is masked to the assistant reply.
                         </span>
                     </div>
+                    <div class="field training-form-wide">
+                        <div class="training-subsection-head">
+                            <label class="field-label">SFT data preflight</label>
+                            <div class="row">
+                                <button type="button" class="button" @onclick="PreviewSftData"
+                                        disabled="@(_sftPreviewing || Lab.IsRunning || Rehearsal.IsRunning)">
+                                    @(_sftPreviewing ? "Analyzing..." : "Preview data")
+                                </button>
+                                @if (_sftPreviewing)
+                                {
+                                    <button type="button" class="button danger" @onclick="CancelSftPreview">Cancel</button>
+                                }
+                            </div>
+                        </div>
+                        @if (_sftPreviewStatus is { Length: > 0 })
+                        {
+                            <span class="small faint">@_sftPreviewStatus</span>
+                        }
+                        @if (_sftPreviewError is not null)
+                        {
+                            <div class="error-line">@_sftPreviewError</div>
+                        }
+                        @if (_sftPreview is { } preview)
+                        {
+                            <div class="training-source-card">
+                                <div class="small faint">
+                                    Snapshot of the current fields. Re-run after changing the corpus,
+                                    formatter or split percentages.
+                                </div>
+                                <div class="training-metrics">
+                                    <div>
+                                        <span class="faint small">Records</span>
+                                        <strong>@preview.Records.ToString("N0")</strong>
+                                    </div>
+                                    <div>
+                                        <span class="faint small">Skipped</span>
+                                        <strong>@preview.Skipped.ToString("N0")</strong>
+                                    </div>
+                                    <div>
+                                        <span class="faint small">Files</span>
+                                        <strong>@preview.Files.ToString("N0")</strong>
+                                    </div>
+                                    <div>
+                                        <span class="faint small">Train / Val / Exam</span>
+                                        <strong>@preview.TrainRecords / @preview.ValidationRecords / @preview.ExamRecords</strong>
+                                    </div>
+                                    <div>
+                                        <span class="faint small">Avg @(preview.Tokenized ? "tokens" : "chars") / reply</span>
+                                        <strong>@preview.AverageTokens.ToString("0.#") / @preview.AverageAssistantTokens.ToString("0.#")</strong>
+                                    </div>
+                                    <div>
+                                        <span class="faint small">Max @(preview.Tokenized ? "tokens" : "chars")</span>
+                                        <strong>@preview.MaxTokens.ToString("N0")</strong>
+                                    </div>
+                                    <div>
+                                        <span class="faint small">Over @preview.SeqLen</span>
+                                        <strong>@preview.TruncatedRecords.ToString("N0")</strong>
+                                    </div>
+                                    <div>
+                                        <span class="faint small">Formatter</span>
+                                        <strong>@preview.Formatter</strong>
+                                    </div>
+                                </div>
+                                @if (preview.Layouts.Count > 0)
+                                {
+                                    <div class="small faint">
+                                        Layouts:
+                                        @foreach (var pair in preview.Layouts)
+                                        {
+                                            <span class="mono">@pair.Key</span> @pair.Value.ToString("N0")<text>&nbsp; </text>
+                                        }
+                                    </div>
+                                }
+                                @if (preview.LimitedScan)
+                                {
+                                    <div class="small faint">
+                                        Sampled the first @preview.Records.ToString("N0") records.
+                                    </div>
+                                }
+                                @foreach (string warning in preview.Warnings)
+                                {
+                                    <div class="small" style="color: var(--warn);">@warning</div>
+                                }
+                                @foreach (SftPreviewExample example in preview.Examples)
+                                {
+                                    <div class="training-source-card">
+                                        <div class="small faint">
+                                            <span class="mono">@example.Layout</span> &middot;
+                                            @example.Turns turn(s) &middot;
+                                            @example.Tokens @(preview.Tokenized ? "tokens" : "chars") &middot;
+                                            @example.AssistantTokens reply
+                                            @if (example.Truncated)
+                                            {
+                                                <text> &middot; truncated</text>
+                                            }
+                                        </div>
+                                        <pre class="sft-preview-text">@example.Rendered</pre>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
                 }
                 <div class="field">
                     <label class="field-label" for="tune-rank">LoRA rank</label>
@@ -1044,6 +1146,11 @@ else if (_tab == "models")
     private string _tuneCorpusPath = "";
     private bool _tuneSft;
     private string _tuneSftFormatter = "auto";
+    private bool _sftPreviewing;
+    private CancellationTokenSource? _sftPreviewCancel;
+    private SftDatasetPreview? _sftPreview;
+    private string? _sftPreviewError;
+    private string _sftPreviewStatus = "";
     private string _tuneName = "";
     private string _tuneExport = "";
     private int _tuneRank = 8;
@@ -1184,6 +1291,8 @@ else if (_tab == "models")
         Lab.Changed -= OnTrainingChanged;
         Convert.Changed -= OnTrainingChanged;
         Exam.Changed -= OnExamChanged;
+        _sftPreviewCancel?.Cancel();
+        _sftPreviewCancel?.Dispose();
     }
 
     private void OnTrainingChanged() => _ = InvokeAsync(() =>
@@ -1461,6 +1570,58 @@ else if (_tab == "models")
         if (!Rehearsal.Start(job, Workspace.PluginsFolder))
             _tuneError = "A training run, exam or rehearsal is already active.";
     }
+
+    private async Task PreviewSftData()
+    {
+        _sftPreviewError = null;
+        _sftPreview = null;
+        _sftPreviewStatus = "";
+        if (!_tuneSft || _sftPreviewing || Lab.IsRunning || Rehearsal.IsRunning) return;
+
+        TrainingJobSettings? job = BuildFineTuneJob(out string? error);
+        if (job is null)
+        {
+            _sftPreviewError = error;
+            return;
+        }
+
+        _sftPreviewing = true;
+        _sftPreviewCancel = new CancellationTokenSource();
+        _sftPreviewStatus = "Reading chat records...";
+        try
+        {
+            var progress = new Progress<long>(count =>
+            {
+                _sftPreviewStatus = $"Analyzed {count:N0} conversation(s)...";
+                StateHasChanged();
+            });
+
+            _sftPreview = await Task.Run(() => SftDatasetAnalyzer.AnalyzeAsync(
+                job,
+                Workspace.PluginsFolder,
+                progress: progress,
+                cancellationToken: _sftPreviewCancel.Token));
+
+            _sftPreviewStatus = "";
+        }
+        catch (OperationCanceledException)
+        {
+            _sftPreviewStatus = "Preview cancelled.";
+        }
+        catch (Exception ex)
+        {
+            _sftPreviewError = $"{ex.GetType().Name}: {ex.Message}";
+            _sftPreviewStatus = "";
+        }
+        finally
+        {
+            _sftPreviewing = false;
+            _sftPreviewCancel?.Dispose();
+            _sftPreviewCancel = null;
+        }
+    }
+
+    private void CancelSftPreview() => _sftPreviewCancel?.Cancel();
 
     private async Task StartTraining()
     {
