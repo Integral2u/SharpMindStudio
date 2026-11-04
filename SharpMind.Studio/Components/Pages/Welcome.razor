@@ -63,6 +63,7 @@
             <div class="field welcome-model">
                 <label class="field-label" for="welcome-remote-model">OpenRouter model</label>
                 <select id="welcome-remote-model" class="input" @bind="_remoteModel"
+                        @bind:after="SaveRemoteModelChoice"
                         @onfocus="EnsureActiveModels">
                     @if (OpenRouter.ActiveModels.Count == 0)
                     {
@@ -276,6 +277,12 @@
         await Theme.SetLastChatModelAsync(_selectedModelPath);
         UpdateLatestRun();
         RefreshTuneSelection();
+    }
+
+    private void SaveRemoteModelChoice()
+    {
+        if (!string.IsNullOrWhiteSpace(_remoteModel))
+            OpenRouter.SetDefaultModel(_remoteModel);
     }
 
     private void UpdateLatestRun()

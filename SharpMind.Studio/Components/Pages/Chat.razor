@@ -99,6 +99,7 @@
                         <div class="field">
                             <label class="field-label" for="chat-remote-model">Model</label>
                             <select id="chat-remote-model" class="input" @bind="_remoteModel"
+                                    @bind:after="SaveRemoteModelChoice"
                                     @onfocus="EnsureActiveModels">
                                 @if (OpenRouter.ActiveModels.Count == 0)
                                 {
@@ -689,6 +690,12 @@ else
         _allowFailedTools = false;
         UpdateLatestModelRun();
         RefreshTuneSelection();
+    }
+
+    private void SaveRemoteModelChoice()
+    {
+        if (!string.IsNullOrWhiteSpace(_remoteModel))
+            OpenRouter.SetDefaultModel(_remoteModel);
     }
 
     private void UpdateLatestModelRun()

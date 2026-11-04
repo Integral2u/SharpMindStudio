@@ -144,6 +144,7 @@ public sealed class StudioChatService : IAsyncDisposable
             _status = "Ready (OpenRouter).";
             _cacheWarning = null;
             _openRouter.RememberModel(modelId);
+            _openRouter.SetDefaultModel(modelId.Trim());
             Notify();
         }
         finally
