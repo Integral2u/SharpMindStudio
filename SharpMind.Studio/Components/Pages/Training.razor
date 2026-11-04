@@ -145,9 +145,10 @@ else if (_tab == "improve")
                 Pick a packaged <span class="mono">.smm</span> and a corpus of new or corrective text.
                 Only small LoRA adapters train. Export a merged <span class="mono">.smm</span> that
                 loads like any other model, save the adapters as a <span class="mono">.smlora</span>
-                file, or both. A run can resume the weights from an adapter checkpoint and continue
-                with a fresh optimizer. A <span class="mono">.gguf</span> base can be converted first
-                on Models.
+                file, or both. Tick <span class="mono">SFT</span> to train on chat JSONL with
+                assistant-only loss masks. A run can resume the weights from an adapter checkpoint
+                and continue with a fresh optimizer. A <span class="mono">.gguf</span> base can be
+                converted first on Models.
             </p>
 
             <div class="training-form">
@@ -167,10 +168,36 @@ else if (_tab == "improve")
                            placeholder="C:\path\to\base.smm" />
                 </div>
                 <div class="field training-form-wide">
-                    <label class="field-label" for="tune-corpus">New corpus</label>
+                    <label class="field-label" for="tune-corpus">@(_tuneSft ? "Chat JSONL corpus" : "New corpus")</label>
                     <input id="tune-corpus" class="input" @bind="_tuneCorpusPath"
-                           placeholder="C:\path\to\new-text or C:\path\**\*.txt" />
+                           placeholder="@(_tuneSft ? "C:\\path\\to\\chats.jsonl or C:\\path\\**\\*.jsonl" : "C:\\path\\to\\new-text or C:\\path\\**\\*.txt")" />
+                    <label class="small faint training-check">
+                        <input type="checkbox" @bind="_tuneSft" />
+                        Instruction tuning (SFT) - train only on assistant tokens from chat JSONL
+                    </label>
                 </div>
+                @if (_tuneSft)
+                {
+                    <div class="field training-form-wide">
+                        <label class="field-label" for="tune-sft-formatter">Chat formatter</label>
+                        <select id="tune-sft-formatter" class="input" @bind="_tuneSftFormatter">
+                            <option value="auto">Auto - the base model's chat template</option>
+                            <option value="chatml">ChatML</option>
+                            <option value="jinja">Jinja template</option>
+                            <option value="simple">Simple (user:/assistant:)</option>
+                            <option value="llama3">Llama 3 headers</option>
+                            <option value="alpaca">Alpaca</option>
+                            <option value="questionanswer">Question / answer</option>
+                            <option value="raw">Raw text</option>
+                        </select>
+                        <span class="small faint">
+                            Each line may use <span class="mono">messages</span>,
+                            <span class="mono">conversations</span>,
+                            <span class="mono">prompt/response</span> or
+                            <span class="mono">instruction/output</span>. Loss is masked to the assistant reply.
+                        </span>
+                    </div>
+                }
                 <div class="field">
                     <label class="field-label" for="tune-rank">LoRA rank</label>
                     <input id="tune-rank" class="input" type="number" min="1" max="256" @bind="_tuneRank" />
@@ -260,7 +287,7 @@ else if (_tab == "improve")
             <div class="training-actions">
                 <button type="button" class="button primary" @onclick="StartFineTune"
                         disabled="@(Lab.IsRunning || Rehearsal.IsRunning || _tuning)">
-                    @(Lab.IsRunning ? "Training..." : "Start fine-tune")
+                    @(Lab.IsRunning ? "Training..." : _tuneSft ? "Start SFT" : "Start fine-tune")
                 </button>
                 <button type="button" class="button" @onclick="RehearseFineTune"
                         disabled="@(Lab.IsRunning || Rehearsal.IsRunning || _tuning)">
@@ -1015,6 +1042,8 @@ else if (_tab == "models")
 
     private string _tuneBase = "";
     private string _tuneCorpusPath = "";
+    private bool _tuneSft;
+    private string _tuneSftFormatter = "auto";
     private string _tuneName = "";
     private string _tuneExport = "";
     private int _tuneRank = 8;
@@ -1290,7 +1319,7 @@ else if (_tab == "models")
             return null;
         }
         if (Directory.Exists(corpus))
-            corpus = Path.Combine(corpus, "**", "*.txt");
+            corpus = Path.Combine(corpus, "**", _tuneSft ? "*.jsonl" : "*.txt");
         else if (!corpus.Contains('*') && !corpus.Contains('?') && !File.Exists(corpus))
         {
             error = $"Corpus not found: {corpus}";
@@ -1337,6 +1366,8 @@ else if (_tab == "models")
         {
             Name = name,
             BaseModelPath = basePath,
+            SftMode = _tuneSft,
+            SftFormatter = _tuneSft ? (_tuneSftFormatter == "auto" ? null : _tuneSftFormatter) : null,
             PlanId = _planId,
             RuleSetVersion = _ruleSetVersion,
             Sources =
@@ -1345,13 +1376,18 @@ else if (_tab == "models")
                 {
                     Component = new JobComponent
                     {
-                        DisplayName = "Text File",
-                        TypeName = typeof(TextFileSource).FullName!,
-                        Args = new Dictionary<string, string>
-                        {
-                            ["path"] = corpus,
-                            ["mode"] = "FilePerDoc",
-                        },
+                        DisplayName = _tuneSft ? "Chat JSONL" : "Text File",
+                        TypeName = _tuneSft ? typeof(JsonlSource).FullName! : typeof(TextFileSource).FullName!,
+                        Args = _tuneSft
+                            ? new Dictionary<string, string>
+                            {
+                                ["path"] = corpus,
+                            }
+                            : new Dictionary<string, string>
+                            {
+                                ["path"] = corpus,
+                                ["mode"] = "FilePerDoc",
+                            },
                     },
                 },
             ],
@@ -1368,7 +1404,7 @@ else if (_tab == "models")
             LogInterval = Math.Max(1, steps / 20),
             BatchSize = 2,
             SeqLen = Math.Max(1, seqLen),
-            BatchingKind = "RandomWindow",
+            BatchingKind = _tuneSft ? null : "RandomWindow",
             LearningRate = lr,
             MinLr = lr / 10f,
             WarmupSteps = Math.Max(1, steps / 20),
@@ -1484,6 +1520,8 @@ else if (_tab == "models")
         _tuneCorpusPath = job.Sources.FirstOrDefault()?.Component.Args.TryGetValue("path", out string? tuneCorpus) == true
             ? tuneCorpus
             : "";
+        _tuneSft = job.SftMode;
+        _tuneSftFormatter = string.IsNullOrWhiteSpace(job.SftFormatter) ? "auto" : job.SftFormatter;
         _tuneName = job.Name;
         _tuneSteps = Math.Max(1, job.TotalSteps);
         _tuneValidationPercent = job.ValidationPercent;

@@ -41,6 +41,20 @@ public sealed class TrainingRecipeTests
     }
 
     [Fact]
+    public void Data_ChangesWhenSftModeOrFormatterChanges()
+    {
+        TrainingJobSettings job = Job("model", @"C:\data\corpus.txt", learningRate: 3e-4f);
+        string data = TrainingRecipeHash.Data(job);
+
+        job.SftMode = true;
+        string sftData = TrainingRecipeHash.Data(job);
+        Assert.NotEqual(data, sftData);
+
+        job.SftFormatter = "chatml";
+        Assert.NotEqual(sftData, TrainingRecipeHash.Data(job));
+    }
+
+    [Fact]
     public void TrainBase_IgnoresTheHorizonAndPackageButKeepsOptimizerInputs()
     {
         TrainingJobSettings job = Job("model", @"C:\data\corpus.txt", learningRate: 3e-4f);

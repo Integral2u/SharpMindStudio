@@ -108,6 +108,21 @@ It is comparable to the 128/4 model on the exam but much slower to train and
 generate, so the 128/4 + 20 MB corpus is the current practical sweet spot on
 this machine.
 
+### Supervised fine-tuning
+
+Tick **SFT** in the Improve panel and point at a chat JSONL file (or a
+`*.jsonl` glob). Each line can be `messages`, `conversations` (ShareGPT),
+`prompt`/`response` or `instruction`/`output`; the layout is auto-detected. The
+base model's embedded chat template is used by default, with a formatter
+override for data in another skeleton. Loss is computed only on assistant
+tokens, and the held-out exam uses the same conversation slice and mask.
+
+A short smoke on the 128/4 TinyStories base (20 synthetic conversations, 5
+steps, rank 4) trained 8 adapters, merged a 4.3 MB `.smm`, and scored the 25%
+held-out exam at loss 4.34 / ppl 76.5 on 97 assistant tokens. That run proves
+the SFT data, batching, validation, export and exam paths; it is not a quality
+benchmark.
+
 The optional **SharpMind.GPU** plugin was also probed. ILGPU sees the Vega 3
 through OpenCL (`gfx902`), but the GPU training engine is **LoRA-only**: it
 refuses full pretraining because `EmbeddingTable.weight` is not trainable in

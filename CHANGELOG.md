@@ -21,6 +21,10 @@ First public repository release.
   and promotion reports.
 - **LoRA fine-tuning** — merged `.smm` and adapter-only `.smlora` output,
   adapter/checkpoint resume, and a real-model smoke on SmolLM2-135M.
+- **Supervised fine-tuning (SFT)** — chat JSONL in `messages`, `conversations`,
+  `prompt/response` or `instruction/output` shape, assistant-only loss masks,
+  the base model's chat template (or a formatter override), and the same
+  validation/exam/recipe-cache path as the other training modes.
 - **Planner** — six-question intake, three plans (Fast/Balanced/Ambitious),
   heuristic estimates, and a ~30-step rehearsal.
 - **Versioned rules** — planner rules as versioned JSON under `Training/rules`.

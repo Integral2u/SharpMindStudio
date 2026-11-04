@@ -96,6 +96,8 @@ public static class TrainingRecipeHash
             GlobalStages = job.GlobalStages.Select(Canonical).ToList(),
             job.ValidationPercent,
             job.TestPercent,
+            job.SftMode,
+            SftFormatter = SftFormatterKey(job),
         });
     }
 
@@ -158,6 +160,8 @@ public static class TrainingRecipeHash
             job.SeqLen,
             job.GradAccumSteps,
             job.BatchingKind,
+            job.SftMode,
+            SftFormatter = SftFormatterKey(job),
             job.Optimizer,
             job.SgdMomentum,
             job.LearningRate,
@@ -223,6 +227,8 @@ public static class TrainingRecipeHash
             job.SeqLen,
             job.GradAccumSteps,
             job.BatchingKind,
+            job.SftMode,
+            SftFormatter = SftFormatterKey(job),
             job.Optimizer,
             job.SgdMomentum,
             job.LearningRate,
@@ -278,6 +284,11 @@ public static class TrainingRecipeHash
             return [$"unreadable:{folder}"];
         }
     }
+
+    private static string? SftFormatterKey(TrainingJobSettings job)
+        => string.IsNullOrWhiteSpace(job.SftFormatter)
+            ? null
+            : job.SftFormatter.Trim().ToLowerInvariant();
 
     private static object Canonical(JobComponent component) => new
     {

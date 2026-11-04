@@ -7,12 +7,12 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="HtmlSanitizer" Version="9.2.1039" />
     <PackageVersion Include="Markdig" Version="1.5.0" />
-    <PackageVersion Include="SharpMind.Core" Version="1.0.9" />
-    <PackageVersion Include="SharpMind.Data" Version="1.0.9" />
-    <PackageVersion Include="SharpMind.Inference" Version="1.0.9" />
-    <PackageVersion Include="SharpMind.Model" Version="1.0.9" />
-    <PackageVersion Include="SharpMind.Tokenization" Version="1.0.9" />
-    <PackageVersion Include="SharpMind.Training" Version="1.0.9" />
+    <PackageVersion Include="SharpMind.Core" Version="1.1.0" />
+    <PackageVersion Include="SharpMind.Data" Version="1.1.0" />
+    <PackageVersion Include="SharpMind.Inference" Version="1.1.0" />
+    <PackageVersion Include="SharpMind.Model" Version="1.1.0" />
+    <PackageVersion Include="SharpMind.Tokenization" Version="1.1.0" />
+    <PackageVersion Include="SharpMind.Training" Version="1.1.0" />
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <PackageVersion Include="QRCoder" Version="1.8.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

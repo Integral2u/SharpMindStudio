@@ -395,7 +395,7 @@ public static class TrainingPlanner
 
         var risks = new List<string>
         {
-            "SFT and post-training quantisation are not connected in this build; the plan marks them blocked.",
+            "SFT and post-training quantisation need the right data and targets; the plan marks missing inputs.",
             fromBase
                 ? "Long continued runs can drift; compare against the base before promoting."
                 : "From-scratch runs at this size cost hours; rehearse before committing.",
@@ -502,15 +502,18 @@ public static class TrainingPlanner
                 PlannerMoveStatus.Ready, null, null);
 
     private static PlannerMove SftMove(PlannerInput input)
-        => Move(PlannerAction.Sft, "SFT",
-            "Instruction tuning with assistant-only loss masks.",
+    {
+        bool ready = input.EffectiveHasData;
+        return Move(PlannerAction.Sft, "SFT",
+            "Instruction tuning over chat JSONL with assistant-only loss masks.",
             input.HasFormatter
-                ? "The base has a formatter; SFT would refine instruction following."
-                : "Behaviour changes usually need instruction data and a formatter with role tokens.",
-            PlannerMoveStatus.Blocked,
-            "The SFT data path, formatter designer and record batcher are not connected in this build.",
-            "Use LoRA on curated chat text and evaluate on the held-out exam until SFT lands.",
-            PlannerBlockKind.NotSupported);
+                ? "The base has a formatter; SFT refines instruction following on assistant tokens only."
+                : "SFT renders chat records with the base template, or with an explicit formatter override.",
+            ready ? PlannerMoveStatus.Ready : PlannerMoveStatus.Blocked,
+            ready ? null : "Add instruction JSONL data first.",
+            ready ? null : "Open Improve, tick SFT and point at a chat JSONL file.",
+            PlannerBlockKind.NeedsInput);
+    }
 
     private static PlannerMove EvaluateMove()
         => Move(PlannerAction.Evaluate, "Evaluate",

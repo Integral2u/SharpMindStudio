@@ -61,7 +61,7 @@
         "data": [ "InstructionData" ]
       },
       "then": {
-        "addRisk": "Instruction data needs SFT, which is not connected; LoRA on curated chat text is the supported route until it lands."
+        "addRisk": "Instruction data is best handled by SFT on chat JSONL; LoRA on curated chat text is the fallback."
       }
     },
     {

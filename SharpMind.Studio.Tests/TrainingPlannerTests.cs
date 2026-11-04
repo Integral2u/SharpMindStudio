@@ -41,12 +41,32 @@ public sealed class TrainingPlannerTests
 
         TrainingPlan ambitious = plans[2];
         PlannerMove sft = Assert.Single(ambitious.Moves.Where(move => move.Action == PlannerAction.Sft));
-        Assert.Equal(PlannerMoveStatus.Blocked, sft.Status);
-        Assert.Equal(PlannerBlockKind.NotSupported, sft.BlockKind);
-        Assert.False(string.IsNullOrWhiteSpace(sft.BlockedReason));
-        Assert.False(string.IsNullOrWhiteSpace(sft.Alternative));
+        Assert.Equal(PlannerMoveStatus.Ready, sft.Status);
+        Assert.Equal(PlannerBlockKind.None, sft.BlockKind);
+        Assert.Null(sft.BlockedReason);
+        Assert.Null(sft.Alternative);
 
         AssertAllBlockedMovesAreExplained(plans);
+    }
+
+    [Fact]
+    public void Sft_WithoutData_IsBlockedWithTheMissingInput()
+    {
+        IReadOnlyList<TrainingPlan> plans = TrainingPlanner.Plan(new PlannerInput
+        {
+            Start = PlannerStart.BaseModel,
+            HasData = false,
+            Goals = new HashSet<PlannerGoal> { PlannerGoal.Behaviour },
+        });
+
+        foreach (PlannerMove sft in plans.SelectMany(plan => plan.Moves)
+                                         .Where(move => move.Action == PlannerAction.Sft))
+        {
+            Assert.Equal(PlannerMoveStatus.Blocked, sft.Status);
+            Assert.Equal(PlannerBlockKind.NeedsInput, sft.BlockKind);
+            Assert.False(string.IsNullOrWhiteSpace(sft.BlockedReason));
+            Assert.False(string.IsNullOrWhiteSpace(sft.Alternative));
+        }
     }
 
     [Fact]

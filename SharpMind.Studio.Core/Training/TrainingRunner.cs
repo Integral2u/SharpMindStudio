@@ -8,7 +8,9 @@ using SharpMind.Data;
 using SharpMind.Data.Batching;
 using SharpMind.Data.Metadata;
 using SharpMind.Data.Pipeline;
+using SharpMind.Data.Records;
 using SharpMind.Data.Sources;
+using SharpMind.Inference.Chat.PromptFormatters;
 using SharpMind.Model;
 using SharpMind.Model.Config;
 using SharpMind.Model.Format;
@@ -19,6 +21,7 @@ using SharpMind.Training.LoRA;
 using SharpMind.Training.Loss;
 using SharpMind.Training.Optimizers;
 using SharpMind.Training.Schedulers;
+using SharpMind.Training.Sft;
 
 namespace SharpMind.Studio.Core.Training;
 
@@ -156,7 +159,11 @@ public static class TrainingRunner
             }
 
             var compositeSource = sources.Count == 1 ? sources[0] : new CompositeSource(sources);
-            Log($"Sources: {string.Join(", ", sources.Select(s => s.Description))}");
+            Log(job.IsSft
+                ? $"Sources: {sources.Count} chat JSONL source(s): "
+                  + string.Join(", ", job.Sources.Select(source =>
+                      source.Component.Args.TryGetValue("path", out string? sourcePath) ? sourcePath : "?"))
+                : $"Sources: {string.Join(", ", sources.Select(s => s.Description))}");
 
             // Source fingerprints: record what this job trains on, warn when it
             // has changed since the last run (the tokenizer cache is reused on
@@ -212,6 +219,15 @@ public static class TrainingRunner
                 {
                     Success = false,
                     Error = "A fine-tune must export a merged .smm, an adapter .smlora, or both.",
+                };
+
+            // SFT is a fine-tune mode: the base supplies the tokenizer, chat
+            // template and frozen weights the assistant-only loss trains against.
+            if (job.SftMode && !job.IsFineTune)
+                return new TrainingRunResult
+                {
+                    Success = false,
+                    Error = "Instruction tuning (SFT) needs a fine-tune base. Pick a packaged .smm first.",
                 };
 
             if (!job.Rehearsal && job.IsFineTune && job.MergeOnExport && job.SaveAdapterFile
@@ -398,9 +414,16 @@ public static class TrainingRunner
             // The data phase is cached separately from the tokenizer/train phases:
             // the cleaned corpus only changes when the sources, stages or splits
             // change. A hit skips re-reading and re-cleaning the source files.
-            pipeline = await CacheOrReuseDataAsync(
-                job, pipeline, recipeDataHash, recipeFolder, Log, cancellationToken)
-                .ConfigureAwait(false);
+            if (!job.IsSft)
+            {
+                pipeline = await CacheOrReuseDataAsync(
+                    job, pipeline, recipeDataHash, recipeFolder, Log, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                Log("SFT: reading conversation records directly; the packed-text data cache is skipped.");
+            }
 
             // 3. Data pipeline â€” clean â†’ tokenise â†’ TrainingBatches. Random-window
             // batching samples contiguous windows from one flat corpus stream
@@ -414,14 +437,145 @@ public static class TrainingRunner
             // The tokenizer still trains over the full corpus: it learns the token
             // inventory, not the loss being measured.
             List<TrainingBatch> validationBatches = [];
+            ITrainingBatchSource? sftLoader = null;
+            DataLoader? stringLoader = null;
+            string? loaderDescription = null;
+            double testFraction = Math.Clamp(job.TestPercent, 0, 90) / 100.0;
+            double valFraction = Math.Clamp(job.ValidationPercent, 0, 90) / 100.0;
+            if (job.IsSft)
+            {
+                int sftSeqLen = Math.Max(1, job.SeqLen);
+                if (modelConfig.MaxSeqLen > 0)
+                    sftSeqLen = Math.Min(sftSeqLen, modelConfig.MaxSeqLen);
+
+                IRecordSource records = BuildSftRecordSource(job, components);
+                IRecordSource trainRecords = records;
+                int examThreshold = (int)Math.Round(testFraction * DeterministicSplit.Buckets);
+                int valThreshold = (int)Math.Round((testFraction + valFraction) * DeterministicSplit.Buckets);
+
+                if (testFraction > 0)
+                {
+                    Log($"Exam: {job.TestPercent:0.#}% of conversations held out for the promotion exam "
+                        + "(excluded from training and validation).");
+                }
+
+                var conversation = new ConversationTokenizer(
+                    ResolveSftFormatter(job.SftFormatter, baseChatTemplate), tokenizer);
+
+                if (valFraction > 0)
+                {
+                    IRecordSource valRecords = new WhereRecordSource(
+                        records,
+                        record =>
+                        {
+                            int bucket = DeterministicSplit.Bucket(record.Text, Seed);
+                            return bucket >= examThreshold && bucket < valThreshold;
+                        },
+                        "val");
+
+                    var valBatcher = new SftBatcher(
+                        batchSize: Math.Max(1, job.BatchSize),
+                        maxSeqLen: sftSeqLen,
+                        padTokenId: tokenizer.PadId);
+                    var valLoader = new RecordDataLoader(valRecords, valBatcher, conversation.Encode);
+                    try
+                    {
+                        await foreach (TrainingBatch held in valLoader.LoadAsync(cancellationToken: cancellationToken))
+                        {
+                            validationBatches.Add(held);
+                            if (validationBatches.Count >= 4) break;
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Validation: could not read the held-out split ({ex.Message}) - "
+                            + "training will run without a val curve.");
+                        foreach (TrainingBatch held in validationBatches) held.Dispose();
+                        validationBatches.Clear();
+                    }
+
+                    if (validationBatches.Count == 0)
+                    {
+                        Log($"Validation: {job.ValidationPercent:0.#}% requested but the split produced no held-out "
+                            + "conversations - training will run without a val curve.");
+                    }
+                    else
+                    {
+                        Log($"Validation: {job.ValidationPercent:0.#}% of conversations held out, "
+                            + $"{validationBatches.Count} batch(es) fixed for every evaluation.");
+                    }
+                }
+
+                if (examThreshold > 0 || valThreshold > 0)
+                {
+                    trainRecords = new WhereRecordSource(
+                        records,
+                        record => DeterministicSplit.Bucket(record.Text, Seed) >= valThreshold,
+                        "train");
+                }
+
+                // Fail early with a clear message instead of running zero steps
+                // and exporting an untrained adapter when the JSONL has no usable
+                // assistant turns.
+                int probeAll = 0;
+                await foreach (DataRecord _ in records.ReadRecordsAsync(cancellationToken))
+                {
+                    probeAll++;
+                    break;
+                }
+                if (probeAll == 0)
+                {
+                    return new TrainingRunResult
+                    {
+                        Success = false,
+                        Error = "The SFT corpus produced no conversation records. Each JSONL line needs an "
+                            + "assistant turn (messages, conversations, prompt/response or instruction/output).",
+                    };
+                }
+
+                int probe = 0;
+                await foreach (DataRecord _ in trainRecords.ReadRecordsAsync(cancellationToken))
+                {
+                    probe++;
+                    break;
+                }
+                if (probe == 0)
+                {
+                    return new TrainingRunResult
+                    {
+                        Success = false,
+                        Error = "Every usable conversation landed in the validation or exam split. "
+                            + "Lower the held-out percentages or add more chat records.",
+                    };
+                }
+
+                var sftBatcher = new SftBatcher(
+                    batchSize: Math.Max(1, job.BatchSize),
+                    maxSeqLen: sftSeqLen,
+                    padTokenId: tokenizer.PadId);
+                sftLoader = new RecordDataLoader(
+                    trainRecords,
+                    sftBatcher,
+                    conversation.Encode,
+                    maxBatches: job.TotalSteps * job.GradAccumSteps,
+                    skipProgress: (done, total) =>
+                        Log($"Data cursor: replayed {done:N0}/{total:N0} batches..."));
+                loaderDescription = $"{trainRecords.Description} -> {sftBatcher.GetType().Name} "
+                    + $"(batch {job.BatchSize} x {sftSeqLen}, assistant-only loss)";
+                Log($"SFT: assistant-only loss over {sftSeqLen}-token conversations.");
+            }
+            else
+            {
             // RandomWindowBatcher concatenates documents; PackingBatcher inserts
             // EOS itself. Give the concatenating batcher the tokenizer's boundary
             // so JSONL/text sources never need a literal <|endoftext|> marker.
             bool appendDocumentBoundary = job.UsesRandomWindowBatching;
             Func<string, int[]> tokenise = text =>
                 TrainingTokenization.EncodeDocument(tokenizer, text, appendDocumentBoundary);
-            double testFraction = Math.Clamp(job.TestPercent, 0, 90) / 100.0;
-            double valFraction = Math.Clamp(job.ValidationPercent, 0, 90) / 100.0;
 
             if (testFraction > 0)
             {
@@ -491,11 +645,16 @@ public static class TrainingRunner
                     maxSeqLen: job.SeqLen,
                     eosTokenId: tokenizer.EosId,
                     padTokenId: tokenizer.PadId);
-            var loader = new DataLoader(pipeline, tokenise, batcher, prefetchBuffer: 4,
+            var dataLoader = new DataLoader(pipeline, tokenise, batcher, prefetchBuffer: 4,
                 maxBatches: job.TotalSteps * job.GradAccumSteps,
                 skipProgress: (done, total) =>
                     Log($"Data cursor: replayed {done:N0}/{total:N0} batchesâ€¦"));
-            Log($"Data pipeline: {loader.Describe()}");
+            stringLoader = dataLoader;
+            loaderDescription = dataLoader.Describe();
+            }
+
+            ITrainingBatchSource loader = sftLoader ?? stringLoader!;
+            Log($"Data pipeline: {loaderDescription}");
 
             // 4. Model â€” empty float weights, randomised unless resuming.
             var sharpConfig = job.IsFineTune
@@ -1049,7 +1208,7 @@ public static class TrainingRunner
                     weights,
                     tokenizer,
                     exportPath,
-                    BuildEmbedOptions(job, job.IsFineTune ? "fine-tune" : "training", SourceHasher.Combined(job.Sources)),
+                    BuildEmbedOptions(job, job.IsSft ? "sft" : job.IsFineTune ? "fine-tune" : "training", SourceHasher.Combined(job.Sources)),
                     chatTemplate: baseChatTemplate,
                     model: model);
                 // Keep the resolved location on the job (and therefore in the wizard
@@ -1269,6 +1428,113 @@ public static class TrainingRunner
     }
 
     /// <summary>
+    /// Builds the record source an SFT run trains on: each configured job source
+    /// is read as chat JSONL, its per-source cleaning stages run over the turn
+    /// text, and the resulting streams are concatenated before the global stages.
+    /// Exposed so the held-out exam can rebuild exactly the same records.
+    /// </summary>
+    public static IRecordSource BuildSftRecordSource(TrainingJobSettings job, string pluginsFolder)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        var registry = ComponentRegistry.ScanFolder(pluginsFolder, out _);
+        return BuildSftRecordSource(job, registry);
+    }
+
+    /// <inheritdoc cref="BuildSftRecordSource(TrainingJobSettings, string)"/>
+    public static IRecordSource BuildSftRecordSource(
+        TrainingJobSettings job, IReadOnlyList<ComponentDescriptor> components)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        if (job.Sources.Count == 0)
+            throw new InvalidOperationException("No data sources configured for this job.");
+
+        var sources = new List<IRecordSource>();
+        foreach (JobSource source in job.Sources)
+        {
+            if (!source.Component.Args.TryGetValue("path", out string? path)
+                || string.IsNullOrWhiteSpace(path))
+            {
+                throw new InvalidOperationException(
+                    "An SFT source has no path. Add a JSONL file or glob to each source.");
+            }
+
+            IRecordSource records = new SftJsonlSource(path);
+            foreach (JobComponent stage in source.Stages)
+            {
+                var descriptor = ComponentRegistry.Find(stage.TypeName, components)
+                    ?? throw new InvalidOperationException($"Unknown stage '{stage.TypeName}'.");
+                var cleaning = (ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, stage.Args);
+                records = ApplySftStage(records, cleaning);
+            }
+            sources.Add(records);
+        }
+
+        IRecordSource merged = sources.Count == 1 ? sources[0] : new CompositeRecordSource(sources);
+        foreach (JobComponent stage in job.GlobalStages)
+        {
+            var descriptor = ComponentRegistry.Find(stage.TypeName, components)
+                ?? throw new InvalidOperationException($"Unknown stage '{stage.TypeName}'.");
+            var cleaning = (ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, stage.Args);
+            merged = ApplySftStage(merged, cleaning);
+        }
+
+        return merged;
+    }
+
+    /// <summary>
+    /// Runs a string cleaning stage over every conversation turn, then rebuilds
+    /// the transcript. A record is dropped when the stage drops any turn.
+    /// </summary>
+    private static IRecordSource ApplySftStage(IRecordSource source, ICleaningStage stage)
+    {
+        return source.Pipe(stage.Name, record =>
+        {
+            if (record.Turns is { Count: > 0 })
+            {
+                var turns = new List<ConversationTurn>(record.Turns.Count);
+                foreach (ConversationTurn turn in record.Turns)
+                {
+                    string? cleaned = stage.Process(turn.Content);
+                    if (string.IsNullOrWhiteSpace(cleaned)) return null;
+                    turns.Add(turn with { Content = cleaned });
+                }
+
+                return record with
+                {
+                    Turns = turns,
+                    Text = string.Join('\n', turns.Select(turn => $"{turn.Role}: {turn.Content}")),
+                };
+            }
+
+            string? text = stage.Process(record.Text);
+            return text is null ? null : record with { Text = text };
+        });
+    }
+
+    /// <summary>
+    /// Resolves the SFT chat formatter. "auto" (and null/blank) uses the base
+    /// model's embedded chat template; a named format can override it for data
+    /// in a different skeleton. Falls back to the plain formatter when no
+    /// template is available.
+    /// </summary>
+    public static IChatPromptFormatter ResolveSftFormatter(string? strategy, string? chatTemplate)
+    {
+        string key = strategy?.Trim().ToLowerInvariant() ?? "";
+        return key switch
+        {
+            "chatml" => string.IsNullOrWhiteSpace(chatTemplate)
+                ? new SimpleFormatter()
+                : new ChatMLFormatter(chatTemplate),
+            "simple" => new SimpleFormatter(),
+            "llama3" or "llama-3" => new Llama3Formatter(),
+            "alpaca" => new AlpacaFormatter(),
+            "questionanswer" or "question-answer" or "qa" => new QuestionAnswerFormatter(),
+            "raw" => new RawTemplateFormatter(),
+            _ => ChatPromptFormatterFactory.Create(chatTemplate),
+        };
+    }
+
+    /// <summary>
     /// A composite over every configured source, unrestricted â€” used to train the
     /// tokenizer over the complete corpus even when the training pipeline of an
     /// incremental run is restricted to the delta files.
@@ -1464,9 +1730,16 @@ public static class TrainingRunner
         if (job.IsFineTune)
         {
             lineage["base"] = job.BaseModelPath!;
-            lineage["method"] = "lora";
+            lineage["method"] = job.IsSft ? "sft" : "lora";
             lineage["lora_rank"] = job.LoRARank.ToString(System.Globalization.CultureInfo.InvariantCulture);
             lineage["lora_alpha"] = job.LoRAAlpha.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (job.IsSft)
+            {
+                lineage["sft"] = "true";
+                lineage["sft_formatter"] = string.IsNullOrWhiteSpace(job.SftFormatter)
+                    ? "auto"
+                    : job.SftFormatter!;
+            }
         }
         return lineage;
     }

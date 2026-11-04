@@ -47,6 +47,30 @@ public static class TrainingJobValidation
                 warnings.Add("A text source has no path.");
         }
 
+        if (job.SftMode && !job.IsFineTune)
+            warnings.Add("Instruction tuning (SFT) needs a fine-tune base model; pick a packaged .smm first.");
+
+        if (job.IsSft)
+        {
+            foreach (JobSource source in job.Sources)
+            {
+                if (!source.Component.Args.TryGetValue("path", out string? path)
+                    || string.IsNullOrWhiteSpace(path))
+                {
+                    warnings.Add("SFT reads chat JSONL; a source has no path.");
+                    continue;
+                }
+
+                string trimmed = path.Trim();
+                if (!trimmed.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)
+                    && !trimmed.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                    && !trimmed.Contains("*.json", StringComparison.OrdinalIgnoreCase))
+                {
+                    warnings.Add($"SFT expects chat JSONL records, but '{trimmed}' does not look like a JSONL path.");
+                }
+            }
+        }
+
         if (TrainingModelOptions.ValidateQat(job.QuantAwareTraining, job.HiddenDim) is { } qatProblem)
             warnings.Add(qatProblem);
 

@@ -1,9 +1,11 @@
 using SharpMind.Data;
 using SharpMind.Data.Batching;
 using SharpMind.Data.Pipeline;
+using SharpMind.Data.Records;
 using SharpMind.Model;
 using SharpMind.Training;
 using SharpMind.Training.Loss;
+using SharpMind.Training.Sft;
 
 namespace SharpMind.Studio.Core.Training;
 
@@ -52,6 +54,9 @@ public static class TrainingExamRunner
         if (job.Sources.Count == 0)
             throw new InvalidOperationException("No data sources configured for this job.");
 
+        if (job.IsSft)
+            return await RunSftAsync(job, modelPath, pluginsFolder, log, cancellationToken);
+
         log?.Invoke($"Exam: loading {Path.GetFileName(modelPath)}...");
         using Transformer model = SmmTrainingPipeline.LoadForInference(modelPath, out var tokenizer, out var config);
         log?.Invoke($"Exam: tokenizer {tokenizer.VocabSize}, context {config.MaxSeqLen}.");
@@ -83,6 +88,78 @@ public static class TrainingExamRunner
             if (batches.Count == 0)
                 throw new InvalidOperationException(
                     "The held-out exam produced no documents. The corpus is too small for the "
+                    + "requested exam percentage, or the split filtered everything out.");
+
+            var evaluator = new Evaluator(model, new CrossEntropyLoss());
+            (float loss, float perplexity) = evaluator.Evaluate(batches);
+            long tokens = batches.Sum(batch => (long)batch.RealTokenCount);
+
+            log?.Invoke($"Exam: loss {loss:0.0000}, ppl {perplexity:0.00} "
+                + $"on {batches.Count} batch(es), {tokens:N0} tokens.");
+
+            return new TrainingExamResult
+            {
+                ModelPath = modelPath,
+                Loss = loss,
+                Perplexity = perplexity,
+                Batches = batches.Count,
+                Tokens = tokens,
+            };
+        }
+        finally
+        {
+            foreach (TrainingBatch batch in batches) batch.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// SFT exam: the same deterministic conversation slice the run excluded,
+    /// rendered with the same formatter and scored on assistant tokens only.
+    /// </summary>
+    private static async Task<TrainingExamResult> RunSftAsync(
+        TrainingJobSettings job,
+        string modelPath,
+        string pluginsFolder,
+        Action<string>? log,
+        CancellationToken cancellationToken)
+    {
+        log?.Invoke($"Exam: loading {Path.GetFileName(modelPath)}...");
+        using Transformer model = SmmTrainingPipeline.LoadForInference(modelPath, out var tokenizer, out var config);
+        string? chatTemplate = SmmTrainingPipeline.LoadChatTemplate(modelPath);
+        log?.Invoke($"Exam: SFT tokenizer {tokenizer.VocabSize}, context {config.MaxSeqLen}.");
+
+        IRecordSource source = TrainingRunner.BuildSftRecordSource(job, pluginsFolder);
+        double fraction = Math.Clamp(job.TestPercent, 0, 90) / 100.0;
+        int threshold = (int)Math.Round(fraction * DeterministicSplit.Buckets);
+        IRecordSource examSource = new WhereRecordSource(
+            source,
+            record => DeterministicSplit.Bucket(record.Text, TrainingRunner.Seed) < threshold,
+            "exam");
+
+        int seqLen = job.SeqLen > 0 ? job.SeqLen : 64;
+        if (config.MaxSeqLen > 0) seqLen = Math.Min(seqLen, config.MaxSeqLen);
+        seqLen = Math.Max(1, seqLen);
+
+        var conversation = new ConversationTokenizer(
+            TrainingRunner.ResolveSftFormatter(job.SftFormatter, chatTemplate), tokenizer);
+        var batcher = new SftBatcher(
+            batchSize: Math.Max(1, job.BatchSize),
+            maxSeqLen: seqLen,
+            padTokenId: tokenizer.PadId);
+        var loader = new RecordDataLoader(examSource, batcher, conversation.Encode);
+
+        var batches = new List<TrainingBatch>();
+        try
+        {
+            await foreach (TrainingBatch batch in loader.LoadAsync(cancellationToken: cancellationToken))
+            {
+                batches.Add(batch);
+                if (batches.Count >= MaxBatches) break;
+            }
+
+            if (batches.Count == 0)
+                throw new InvalidOperationException(
+                    "The held-out exam produced no conversations. The corpus is too small for the "
                     + "requested exam percentage, or the split filtered everything out.");
 
             var evaluator = new Evaluator(model, new CrossEntropyLoss());

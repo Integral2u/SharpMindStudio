@@ -146,6 +146,56 @@ public sealed class FineTuneRunnerSmokeTests
             var generated = SmmTrainingPipeline.GenerateGreedy(reloaded, [1, 4, 5], tunedConfig.VocabSize, steps: 3);
             Assert.Equal(6, generated.Count);
             Assert.All(generated, id => Assert.InRange(id, 0, tokenizer.VocabSize - 1));
+
+            // 3. SFT over chat JSONL, on top of the same base. Loss is masked to
+            // the assistant turns, and the export records the SFT method.
+            string chats = Path.Combine(dir, "chats.jsonl");
+            await File.WriteAllLinesAsync(chats,
+            [
+                """{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]}""",
+                """{"prompt":"say hi","response":"hi there"}""",
+                """{"instruction":"repeat","input":"the fox","output":"the fox runs"}""",
+            ]);
+
+            var sftJob = new TrainingJobSettings
+            {
+                Name = "sft",
+                BaseModelPath = basePath,
+                SftMode = true,
+                SftFormatter = "simple",
+                Sources = [ChatSource(chats)],
+                LoRARank = 2,
+                LoRAAlpha = 4f,
+                LoRATargetModules = ["q_proj", "v_proj", "up_proj", "down_proj"],
+                TotalSteps = 2,
+                LogInterval = 1,
+                BatchSize = 1,
+                SeqLen = 16,
+                LearningRate = 1e-3f,
+                MinLr = 1e-5f,
+                WarmupSteps = 1,
+                CheckpointInterval = 0,
+                KeepRecent = -1,
+                ExportPath = Path.Combine(dir, "sft.smm"),
+                StartFresh = true,
+            };
+
+            var sftLog = new List<string>();
+            TrainingRunResult sftRun = await TrainingRunner.RunAsync(
+                sftJob,
+                plugins,
+                new ListProgress<string>(sftLog),
+                new ListProgress<float>([]));
+
+            Assert.True(
+                sftRun.Success,
+                sftRun.Error + Environment.NewLine + string.Join(Environment.NewLine, sftLog.TakeLast(30)));
+            Assert.True(File.Exists(sftRun.ExportPath));
+            Assert.Contains(sftLog, line => line.Contains("SFT:", StringComparison.Ordinal));
+            Assert.Contains(sftLog, line => line.Contains("assistant-only loss", StringComparison.Ordinal));
+            Assert.Equal("sft", SmmLoader.LoadLineage(sftRun.ExportPath!)["method"]);
+            Assert.Equal("simple", SmmLoader.LoadLineage(sftRun.ExportPath!)["sft_formatter"]);
+            Assert.Equal(baseHash, Hash(basePath));
         }
         finally
         {
@@ -163,6 +213,19 @@ public sealed class FineTuneRunnerSmokeTests
             {
                 ["path"] = corpus,
                 ["mode"] = "FilePerDoc",
+            },
+        },
+    };
+
+    private static JobSource ChatSource(string corpus) => new()
+    {
+        Component = new JobComponent
+        {
+            DisplayName = "Chat JSONL",
+            TypeName = typeof(JsonlSource).FullName!,
+            Args = new Dictionary<string, string>
+            {
+                ["path"] = corpus,
             },
         },
     };

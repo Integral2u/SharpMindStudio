@@ -378,6 +378,25 @@ public sealed class TrainingJobSettings
     /// <summary>True when this job fine-tunes <see cref="BaseModelPath"/> instead of pretraining.</summary>
     public bool IsFineTune => !string.IsNullOrWhiteSpace(BaseModelPath);
 
+    /// <summary>
+    /// Train the fine-tune as supervised instruction tuning over chat JSONL
+    /// records. The runner then emits record batches whose loss is computed only
+    /// on assistant tokens (see <c>SftBatcher</c> and
+    /// <c>ConversationTokenizer</c>) instead of packing raw text. Additive: false
+    /// keeps the existing LoRA/pretrain behaviour exactly.
+    /// </summary>
+    public bool SftMode { get; set; }
+
+    /// <summary>
+    /// Chat formatter used to render SFT records: "auto" (the base model's
+    /// embedded chat template), "chatml", "jinja", "simple", "llama3",
+    /// "alpaca", "questionanswer" or "raw". Null/blank behaves like "auto".
+    /// </summary>
+    public string? SftFormatter { get; set; }
+
+    /// <summary>True when this job is a supervised fine-tune.</summary>
+    public bool IsSft => SftMode && IsFineTune;
+
     /// <summary>File extension for an adapter-only export (<c>*.smlora</c>).</summary>
     public const string AdapterExtension = ".smlora";
 

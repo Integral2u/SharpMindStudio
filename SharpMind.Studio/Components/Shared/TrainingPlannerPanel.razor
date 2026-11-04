@@ -214,9 +214,9 @@
         HasData = Job.Sources.Any(source =>
             source.Component.Args.TryGetValue("path", out string? path)
             && !string.IsNullOrWhiteSpace(path)),
-        // The formatter designer and quantized-only intake are not connected yet;
-        // the planner marks their moves blocked rather than assuming they exist.
-        HasFormatter = false,
+        // A packaged base can supply its own chat template; SFT also falls back
+        // to a built-in formatter when the base has none.
+        HasFormatter = Job.IsFineTune,
         IsQuantizedOnly = false,
         ParameterCount = Lab.PlannerStart == PlannerStart.Nothing
             ? TrainingJobValidation.ParameterCount(Job)
