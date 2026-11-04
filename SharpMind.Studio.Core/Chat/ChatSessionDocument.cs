@@ -26,6 +26,10 @@ public sealed record ChatSessionDocument
     public List<ChatMessage> Messages { get; set; } = [];
     public InferenceOverrides Overrides { get; set; } = new();
     public double? LastTokensPerSecond { get; set; }
+    public decimal? LastCost { get; set; }
+    public int? LastPromptTokens { get; set; }
+    public int? LastCompletionTokens { get; set; }
+    public int? LastToolCalls { get; set; }
 }
 
 public sealed record ChatSessionSummary

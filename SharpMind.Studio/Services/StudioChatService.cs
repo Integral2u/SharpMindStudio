@@ -75,6 +75,10 @@ public sealed class StudioChatService : IAsyncDisposable
     public string? Error => _error;
     public string? CacheWarning => _cacheWarning;
     public double? LastTokensPerSecond => _document?.LastTokensPerSecond;
+    public decimal? LastCost => _document?.LastCost;
+    public int? LastPromptTokens => _document?.LastPromptTokens;
+    public int? LastCompletionTokens => _document?.LastCompletionTokens;
+    public int? LastToolCalls => _document?.LastToolCalls;
     public string? PendingPrompt { get; set; }
     public IReadOnlyList<ChatSessionSummary> Sessions => _store.List();
 
@@ -507,6 +511,10 @@ public sealed class StudioChatService : IAsyncDisposable
             }
 
             _document.LastTokensPerSecond = lastTps;
+            _document.LastCost = cost;
+            _document.LastPromptTokens = promptTokens;
+            _document.LastCompletionTokens = completionTokens;
+            _document.LastToolCalls = toolCallsUsed;
             _status = cost is { } spent
                 ? $"Ready. OpenRouter cost {spent:0.000000}."
                 : promptTokens is int promptUsed && completionTokens is int completionUsed

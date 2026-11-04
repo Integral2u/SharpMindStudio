@@ -66,9 +66,9 @@
                 <div class="welcome-controls chat-welcome-controls">
                     <div class="field">
                         <label class="field-label" for="chat-provider">Provider</label>
-                        <select id="chat-provider" class="input" @bind="_remoteChat">
-                            <option value="false">Local model</option>
-                            <option value="true">OpenRouter</option>
+                        <select id="chat-provider" class="input" @onchange="SetProvider">
+                            <option value="local" selected="@(!_remoteChat)">Local model</option>
+                            <option value="openrouter" selected="@_remoteChat">OpenRouter</option>
                         </select>
                     </div>
                     @if (!_remoteChat)
@@ -97,15 +97,18 @@
                     else
                     {
                         <div class="field">
-                            <label class="field-label" for="chat-remote-model">Model id</label>
-                            <input id="chat-remote-model" class="input" @bind="_remoteModel"
-                                   list="remote-model-options" placeholder="openai/gpt-4o-mini" />
-                            <datalist id="remote-model-options">
-                                @foreach (string model in OpenRouter.RecentModels)
+                            <label class="field-label" for="chat-remote-model">Model</label>
+                            <select id="chat-remote-model" class="input" @bind="_remoteModel"
+                                    @onfocus="EnsureActiveModels">
+                                @if (OpenRouter.ActiveModels.Count == 0)
                                 {
-                                    <option value="@model"></option>
+                                    <option value="">@(OpenRouter.HasApiKey ? "Loading models..." : "No active models")</option>
                                 }
-                            </datalist>
+                                @foreach (string model in OpenRouter.ActiveModels)
+                                {
+                                    <option value="@model">@model</option>
+                                }
+                            </select>
                         </div>
                     }
                 </div>
@@ -133,7 +136,8 @@
                     {
                         <div class="small faint">
                             Chat uses the selected remote model. Work keeps the local project tools;
-                            only the model runs remotely.
+                            only the model runs remotely. OpenRouter models are inference-only, so
+                            local tuning is unavailable.
                         </div>
                     }
                 }
@@ -204,6 +208,25 @@ else
                     {
                         <div class="row" style="margin-top: .35rem;">
                             <ModelToolStatus ModelPath="_selectedModelPath" FileName="@SelectedFileName" Runs="_runs" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="row" style="margin-top: .35rem; gap: .5rem; align-items: center;">
+                            <span class="provider-dot @(ChatService.OpenRouterConfigured ? "on" : "off")"></span>
+                            <span class="small faint mono">@ChatService.RemoteModel</span>
+                            @if (ChatService.LastTokensPerSecond is { } tps)
+                            {
+                                <span class="small faint">@tps.ToString("F1") tok/s</span>
+                            }
+                            @if (ChatService.LastToolCalls is > 0 and var toolCalls)
+                            {
+                                <span class="small faint">@toolCalls tool call(s)</span>
+                            }
+                            @if (ChatService.LastCost is { } cost)
+                            {
+                                <span class="small faint">$@cost.ToString("0.000000")</span>
+                            }
                         </div>
                     }
                 </div>
@@ -442,7 +465,9 @@ else
     private bool RemoteReady =>
         _remoteChat &&
         !string.IsNullOrWhiteSpace(_remoteModel) &&
-        OpenRouter.HasApiKey;
+        OpenRouter.HasApiKey &&
+        OpenRouter.ActiveModels.Any(model =>
+            model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase));
 
     private string? SelectedFileName =>
         _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.FileName;
@@ -490,6 +515,7 @@ else
             _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
                 ? Theme.LastChatModel
                 : _models.FirstOrDefault()?.Path;
+            _remoteModel = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
             UpdateLatestModelRun();
         }
 
@@ -581,7 +607,15 @@ else
         {
             _remoteChat = ChatService.IsRemote;
             if (_remoteChat)
+            {
                 _remoteModel = ChatService.RemoteModel ?? _remoteModel;
+                if (!string.IsNullOrWhiteSpace(_remoteModel)
+                    && !OpenRouter.ActiveModels.Any(model =>
+                        model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)))
+                {
+                    OpenRouter.AddActiveModel(_remoteModel);
+                }
+            }
             else
                 _selectedModelPath = ChatService.Document.ModelPath;
             _sessionDraft = ChatService.Document.Overrides;
@@ -718,9 +752,50 @@ else
 
     private void OpenRouterSettings() => Nav.NavigateTo("/settings?tab=openrouter");
 
+    private async Task SetProvider(ChangeEventArgs args)
+    {
+        _remoteChat = string.Equals(
+            args.Value?.ToString(), "openrouter", StringComparison.OrdinalIgnoreCase);
+        await InvokeAsync(StateHasChanged);
+        if (_remoteChat)
+            await EnsureActiveModels();
+    }
+
+    private async Task EnsureActiveModels()
+    {
+        if (!_remoteChat || !OpenRouter.HasApiKey) return;
+
+        if (OpenRouter.ActiveModels.Count == 0 || !OpenRouter.FreeModelsSeeded)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+                await OpenRouter.SeedDefaultModelsAsync(timeout.Token);
+            }
+            catch
+            {
+                // The status/error area below explains an empty or failed fetch.
+            }
+        }
+
+        if (!OpenRouter.ActiveModels.Any(model =>
+                model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)))
+        {
+            _remoteModel = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
 
     private void RefreshTuneSelection()
     {
+        if (_remoteChat)
+        {
+            _selectedTunePreset = null;
+            return;
+        }
+
         TuneTarget target = _workMode ? TuneTarget.Work : TuneTarget.Chat;
         if (string.IsNullOrWhiteSpace(_selectedModelPath) || !Inference.HasTune(_selectedModelPath, target))
         {
@@ -735,6 +810,7 @@ else
 
     private void OpenTune()
     {
+        if (_remoteChat) return;
         _tuneModel = _models.FirstOrDefault(model => model.Path == _selectedModelPath);
         if (_tuneModel is null) return;
         _tuneTarget = _workMode ? TuneTarget.Work : TuneTarget.Chat;

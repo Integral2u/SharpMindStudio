@@ -88,12 +88,53 @@ public sealed class OpenRouterClientTests
     }
 
     [Fact]
+    public async Task Stream_SendsAppAttributionHeaders()
+    {
+        HttpRequestMessage? captured = null;
+        var handler = new StubHandler(request =>
+        {
+            captured = request;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+            };
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        await foreach (OpenRouterStreamEvent _ in client.StreamAsync(
+            new OpenRouterRequest
+            {
+                Model = "openai/gpt-4o-mini",
+                Messages = [OpenRouterMessageBuilder.User("hi")],
+            },
+            Connection))
+        {
+        }
+
+        Assert.NotNull(captured);
+        Assert.Equal(
+            "https://integral2u.github.io/SharpMindStudio/",
+            captured!.Headers.GetValues("HTTP-Referer").Single());
+        Assert.Equal(
+            "SharpMind Studio",
+            captured.Headers.GetValues("X-OpenRouter-Title").Single());
+    }
+
+    [Fact]
     public async Task ListModels_ParsesCatalogEntries()
     {
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(
-                """{"data":[{"id":"openai/gpt-4o-mini","name":"GPT-4o mini","context_length":128000}]}""",
+                """
+                {"data":[
+                  {"id":"openai/gpt-4o-mini","name":"GPT-4o mini","context_length":128000,
+                   "pricing":{"prompt":"0.00000015","completion":"0.0000006"}},
+                  {"id":"meta/llama-3.3-70b:free","name":"Llama Free","context_length":131072,
+                   "pricing":{"prompt":"0","completion":"0"}}
+                ]}
+                """,
                 Encoding.UTF8,
                 "application/json"),
         });
@@ -102,10 +143,12 @@ public sealed class OpenRouterClientTests
 
         IReadOnlyList<OpenRouterModel> models = await client.ListModelsAsync(Connection);
 
-        OpenRouterModel model = Assert.Single(models);
-        Assert.Equal("openai/gpt-4o-mini", model.Id);
-        Assert.Equal("GPT-4o mini", model.Name);
-        Assert.Equal(128000, model.ContextLength);
+        Assert.Equal(2, models.Count);
+        OpenRouterModel free = models[0];
+        Assert.Equal("meta/llama-3.3-70b:free", free.Id);
+        Assert.True(free.IsFree);
+        Assert.Equal(131072, free.ContextLength);
+        Assert.False(models[1].IsFree);
     }
 
     private sealed class StubHandler(

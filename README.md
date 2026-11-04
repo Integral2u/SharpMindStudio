@@ -26,12 +26,14 @@ libraries and shares their model, tokenizer and run formats.
 ## OpenRouter
 
 Chat and Work can use OpenRouter models as well as local weights. Add an API key
-under **Settings > OpenRouter**; it is encrypted with a local key file, and the
-base URL and default model id live beside it. In Chat or Work, switch the
-provider to **OpenRouter** and enter a model id such as `openai/gpt-4o-mini`.
+under **Settings > OpenRouter Providers**; it is encrypted with a local key file,
+and the provider URL and active model list live beside it. Fetch the catalog,
+add models to the active list, and pick a default. On first use the active list
+starts with `openai/gpt-4o-mini` and the free models.
 
-Work mode keeps its project tools, permissions, skills and memory local. Only
-the model conversation and the tool results the model asks for are sent to
+OpenRouter is inference-only: local tuning remains unavailable for remote
+models. Work mode keeps its project tools, permissions, skills and memory local.
+Only the model conversation and the tool results the model asks for are sent to
 OpenRouter. OpenAI-style tool calling is supported, including the provider's
 native streaming tool-call deltas.
 

@@ -2,6 +2,24 @@
     align-items: center;
 }
 
+.provider-dot {
+    width: .55rem;
+    height: .55rem;
+    border-radius: 50%;
+    display: inline-block;
+    background: var(--line);
+    flex: none;
+}
+
+.provider-dot.on {
+    background: #4ea1ff;
+    box-shadow: 0 0 8px rgba(78, 161, 255, .75);
+}
+
+.provider-dot.off {
+    background: #4a5564;
+}
+
 .training-shell {
     margin-left: auto;
     padding: .18rem .5rem;

@@ -28,7 +28,11 @@ public sealed record OpenRouterStreamEvent
 }
 
 /// <summary>A catalog entry returned by OpenRouter's <c>/models</c> endpoint.</summary>
-public sealed record OpenRouterModel(string Id, string? Name, int? ContextLength);
+public sealed record OpenRouterModel(
+    string Id,
+    string? Name,
+    int? ContextLength,
+    bool IsFree = false);
 
 /// <summary>Everything needed for one chat-completions request.</summary>
 public sealed class OpenRouterRequest
@@ -66,7 +70,7 @@ public sealed class OpenRouterException : Exception
 /// </summary>
 public sealed class OpenRouterClient
 {
-    public const string DefaultModel = "openai/gpt-4o-mini";
+    public const string DefaultModel = OpenRouterSettingsDocument.DefaultModelId;
 
     private readonly HttpClient _http;
 
@@ -106,11 +110,16 @@ public sealed class OpenRouterClient
                 int? context = item.TryGetProperty("context_length", out JsonElement contextElement)
                     && contextElement.ValueKind == JsonValueKind.Number
                     && contextElement.TryGetInt32(out int parsed) ? parsed : null;
-                models.Add(new OpenRouterModel(id.GetString()!, name, context));
+                string modelId = id.GetString()!;
+                bool isFree = modelId.EndsWith(":free", StringComparison.OrdinalIgnoreCase)
+                    || IsZeroPricing(item);
+                models.Add(new OpenRouterModel(modelId, name, context, isFree));
             }
         }
 
-        return [.. models.OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase)];
+        return [.. models
+            .OrderByDescending(model => model.IsFree)
+            .ThenBy(model => model.Id, StringComparer.OrdinalIgnoreCase)];
     }
 
     public async IAsyncEnumerable<OpenRouterStreamEvent> StreamAsync(
@@ -383,4 +392,28 @@ public sealed class OpenRouterClient
            && value.TryGetInt32(out int parsed)
             ? parsed
             : null;
+
+    private static bool IsZeroPricing(JsonElement item)
+    {
+        if (!item.TryGetProperty("pricing", out JsonElement pricing)
+            || pricing.ValueKind != JsonValueKind.Object)
+            return false;
+        return IsZero(pricing, "prompt") && IsZero(pricing, "completion");
+    }
+
+    private static bool IsZero(JsonElement pricing, string name)
+    {
+        if (!pricing.TryGetProperty(name, out JsonElement value)) return false;
+        if (value.ValueKind == JsonValueKind.Number)
+            return value.TryGetDecimal(out decimal number) && number == 0;
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            return decimal.TryParse(
+                value.GetString(),
+                System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out decimal parsed) && parsed == 0;
+        }
+        return false;
+    }
 }

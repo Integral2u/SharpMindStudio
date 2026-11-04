@@ -14,7 +14,7 @@ public sealed class OpenRouterSettingsStoreTests
         var store = new OpenRouterSettingsStore(settings, key);
 
         store.SetApiKey("sk-or-secret");
-        store.SetDefaults("https://openrouter.ai/api/v1/", "openai/gpt-4o-mini", "https://example.test", "Test");
+        store.SetDefaults("https://openrouter.ai/api/v1/", "openai/gpt-4o-mini");
 
         Assert.True(File.Exists(settings));
         Assert.DoesNotContain("sk-or-secret", File.ReadAllText(settings));
@@ -25,6 +25,7 @@ public sealed class OpenRouterSettingsStoreTests
         Assert.Equal("sk-or-secret", reopened.ApiKey);
         Assert.Equal("openai/gpt-4o-mini", reopened.Document.DefaultModel);
         Assert.Equal("https://openrouter.ai/api/v1", reopened.Document.BaseUrl);
+        Assert.Contains("openai/gpt-4o-mini", reopened.Document.ActiveModels);
     }
 
     [Fact]
@@ -40,22 +41,45 @@ public sealed class OpenRouterSettingsStoreTests
         Assert.Null(store.ApiKey);
         Assert.False(store.IsConfigured);
 
-        store.SetDefaults(null, null, null, null);
+        store.SetDefaults(null, null);
         Assert.Equal(OpenRouterSettingsDocument.DefaultBaseUrl, store.Document.BaseUrl);
-        Assert.Null(store.Document.DefaultModel);
+        Assert.Equal(OpenRouterSettingsDocument.DefaultModelId, store.Document.DefaultModel);
 
-        store.SetDefaults("https://openrouter.ai", null, null, null);
+        store.SetDefaults("https://openrouter.ai", null);
         Assert.Equal("https://openrouter.ai/api/v1", store.Document.BaseUrl);
 
-        store.SetDefaults("http://localhost:1234/v1", null, null, null);
+        store.SetDefaults("http://localhost:1234/v1", null);
         Assert.Equal("http://localhost:1234/v1", store.Document.BaseUrl);
 
-        store.SetDefaults("https://openrouter.ai/api", null, null, null);
+        store.SetDefaults("https://openrouter.ai/api", null);
         Assert.Equal("https://openrouter.ai/api/v1", store.Document.BaseUrl);
     }
 
     [Fact]
-    public void RememberModel_KeepsRecentModelsUnique()
+    public void ActiveModels_AddRemoveAndDefaultFollowTheList()
+    {
+        using var temp = new TempDirectory();
+        var store = new OpenRouterSettingsStore(
+            temp.Combine("openrouter.json"),
+            temp.Combine("openrouter.key"));
+
+        Assert.Equal(
+            [OpenRouterSettingsDocument.DefaultModelId],
+            store.Document.ActiveModels);
+
+        Assert.True(store.AddActiveModel("anthropic/claude-sonnet-4"));
+        Assert.False(store.AddActiveModel("anthropic/claude-sonnet-4"));
+        Assert.Equal(2, store.Document.ActiveModels.Count);
+
+        store.SetDefaultModel("anthropic/claude-sonnet-4");
+        Assert.Equal("anthropic/claude-sonnet-4", store.Document.DefaultModel);
+
+        Assert.True(store.RemoveActiveModel("anthropic/claude-sonnet-4"));
+        Assert.Equal(OpenRouterSettingsDocument.DefaultModelId, store.Document.DefaultModel);
+    }
+
+    [Fact]
+    public void RememberModel_KeepsRecentModelsUniqueAndActive()
     {
         using var temp = new TempDirectory();
         var store = new OpenRouterSettingsStore(
@@ -69,5 +93,6 @@ public sealed class OpenRouterSettingsStoreTests
         Assert.Equal(
             ["openai/gpt-4o-mini", "anthropic/claude-sonnet-4"],
             store.Document.RecentModels);
+        Assert.Contains("anthropic/claude-sonnet-4", store.Document.ActiveModels);
     }
 }

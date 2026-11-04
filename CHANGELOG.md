@@ -40,8 +40,10 @@ First public repository release.
 - **Layered inference settings** — System → Family → Model → Session, with each
   value showing the layer that supplied it.
 - **OpenRouter** — remote Chat and Work models alongside local weights, with an
-  encrypted API key under Settings, streaming chat completions, OpenAI-style
-  tool calls, and the local project tools/permissions still enforced for Work.
+  encrypted API key under Settings, fixed app attribution, an active-model list
+  with free-model helpers, streaming chat completions, OpenAI-style tool calls,
+  and the local project tools/permissions still enforced for Work. Remote models
+  are inference-only; local tuning is unavailable for them.
 
 ### Changed
 

@@ -8,9 +8,9 @@
 @inject StudioWorkspaceService Workspace
 @inject InferenceSettingsService Inference
 @inject OpenRouterSettingsService OpenRouter
-@inject OpenRouterClient OpenRouterClient
 @inject ModelCatalogService Catalog
 @inject GatewayService Gateway
+@inject IJSRuntime JS
 
 <PageTitle>Settings - SharpMind Studio</PageTitle>
 
@@ -28,7 +28,7 @@
     <a class="settings-tab @(_tab == "system" ? "selected" : "")" href="/settings?tab=system" data-enhance-nav="false">System</a>
     <a class="settings-tab @(_tab == "families" ? "selected" : "")" href="/settings?tab=families" data-enhance-nav="false">Families</a>
     <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/settings?tab=models" data-enhance-nav="false">Models</a>
-    <a class="settings-tab @(_tab == "openrouter" ? "selected" : "")" href="/settings?tab=openrouter" data-enhance-nav="false">OpenRouter</a>
+    <a class="settings-tab @(_tab == "openrouter" ? "selected" : "")" href="/settings?tab=openrouter" data-enhance-nav="false">OpenRouter Providers</a>
     <a class="settings-tab @(_tab == "pair" ? "selected" : "")" href="/settings?tab=pair" data-enhance-nav="false">Pair</a>
 </div>
 
@@ -144,10 +144,13 @@ else if (_tab == "openrouter")
     <section class="panel">
         <div class="panel-head">
             <div>
-                <div class="eyebrow">Remote models</div>
-                <h2>OpenRouter</h2>
+                <div class="eyebrow">Providers</div>
+                <h2>OpenRouter Providers</h2>
             </div>
-            <span class="faint small mono">@(OpenRouter.HasApiKey ? "key configured" : "no key")</span>
+            <div class="row" style="align-items:center; gap:.45rem;">
+                <span class="provider-dot @(OpenRouter.HasApiKey ? "on" : "off")"></span>
+                <span class="faint small mono">@(OpenRouter.HasApiKey ? "key configured" : "no key")</span>
+            </div>
         </div>
         <div class="panel-body stack">
             <p class="small faint">
@@ -166,34 +169,14 @@ else if (_tab == "openrouter")
                     <label class="field-label" for="openrouter-base">Base URL</label>
                     <input id="openrouter-base" class="input" @bind="_openRouterBaseUrl" />
                 </div>
-                <div class="field">
-                    <label class="field-label" for="openrouter-model">Default model</label>
-                    <input id="openrouter-model" class="input" @bind="_openRouterModel"
-                           placeholder="openai/gpt-4o-mini" list="openrouter-models" />
-                    <datalist id="openrouter-models">
-                        @foreach (string model in OpenRouter.RecentModels)
-                        {
-                            <option value="@model"></option>
-                        }
-                    </datalist>
-                </div>
-                <div class="field">
-                    <label class="field-label" for="openrouter-referer">Referer (optional)</label>
-                    <input id="openrouter-referer" class="input" @bind="_openRouterReferer"
-                           placeholder="https://your-site.example" />
-                </div>
-                <div class="field">
-                    <label class="field-label" for="openrouter-title">App title (optional)</label>
-                    <input id="openrouter-title" class="input" @bind="_openRouterTitle" />
-                </div>
             </div>
             <div class="row">
                 <button type="button" class="button primary" @onclick="SaveOpenRouter">Save</button>
-                <button type="button" class="button" @onclick="TestOpenRouter"
+                <button type="button" class="button" @onclick="FetchOpenRouterModels"
                         disabled="@_openRouterTesting">
-                    @(_openRouterTesting ? "Testing..." : "Save and fetch models")
+                    @(_openRouterTesting ? "Fetching..." : "Fetch models")
                 </button>
-                <button type="button" class="button danger" @onclick="ClearOpenRouterKey">Clear key</button>
+                <button type="button" class="button danger" @onclick="DeleteOpenRouterKey">Delete key</button>
             </div>
             @if (_openRouterStatus is { Length: > 0 })
             {
@@ -203,19 +186,68 @@ else if (_tab == "openrouter")
             {
                 <div class="error-line">@_openRouterError</div>
             }
-            @if (_openRouterModels.Count > 0)
-            {
+
+            <div class="training-subsection">
+                <div class="training-subsection-head">
+                    <label class="field-label">Active models</label>
+                    <span class="faint small">@OpenRouter.ActiveModels.Count model(s)</span>
+                </div>
+                @if (OpenRouter.ActiveModels.Count == 0)
+                {
+                    <div class="small faint">No active models yet. Fetch models and add some below.</div>
+                }
+                else
+                {
+                    @foreach (string model in OpenRouter.ActiveModels)
+                    {
+                        <div class="spread">
+                            <span class="mono small">@model</span>
+                            <button type="button" class="button danger"
+                                    @onclick="() => RemoveActiveModel(model)">Remove</button>
+                        </div>
+                    }
+                }
                 <div class="field">
-                    <label class="field-label" for="openrouter-fetched">Fetched models</label>
-                    <select id="openrouter-fetched" class="input" @bind="_openRouterModel">
-                        @foreach (OpenRouterModel model in _openRouterModels.Take(300))
+                    <label class="field-label" for="openrouter-default">Default model</label>
+                    <select id="openrouter-default" class="input" @bind="_openRouterModel"
+                            @bind:after="SaveOpenRouterDefaultModel">
+                        @foreach (string model in OpenRouter.ActiveModels)
                         {
-                            <option value="@model.Id">@model.Id@(model.ContextLength is { } context ? $" ({context:N0} ctx)" : "")</option>
+                            <option value="@model">@model</option>
                         }
                     </select>
-                    <span class="small faint">Selecting a model fills the default model field; click Save to keep it.</span>
                 </div>
-            }
+            </div>
+
+            <div class="training-subsection">
+                <div class="training-subsection-head">
+                    <label class="field-label">Fetched models</label>
+                    <div class="row">
+                        <button type="button" class="button" @onclick="FetchOpenRouterModels"
+                                disabled="@_openRouterTesting">Fetch</button>
+                        <button type="button" class="button" @onclick="AddAllFreeModels"
+                                disabled="@_openRouterTesting">Add All Free</button>
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="openrouter-fetched">Add a fetched model</label>
+                    <select id="openrouter-fetched" class="input" @bind="_fetchedModelChoice"
+                            @bind:after="AddFetchedModel" @onfocus="EnsureFetchedModels">
+                        <option value="">@(_openRouterModels.Count == 0 ? "Open to load models..." : "Choose a model...")</option>
+                        @foreach (OpenRouterModel model in _openRouterModels
+                            .Where(model => !IsActiveModel(model.Id))
+                            .Take(400))
+                        {
+                            <option value="@model.Id">
+                                @model.Id@(model.IsFree ? " (Free)" : "")@(model.ContextLength is { } context ? $" - {context:N0} ctx" : "")
+                            </option>
+                        }
+                    </select>
+                    <span class="small faint">
+                        Free models are listed first. Choosing one adds it to Active models.
+                    </span>
+                </div>
+            </div>
         </div>
     </section>
 }
@@ -393,8 +425,7 @@ else
     private string _openRouterKey = "";
     private string _openRouterBaseUrl = "";
     private string _openRouterModel = "";
-    private string _openRouterReferer = "";
-    private string _openRouterTitle = "";
+    private string _fetchedModelChoice = "";
     private string? _openRouterStatus;
     private string? _openRouterError;
     private bool _openRouterTesting;
@@ -460,9 +491,7 @@ else
     private void LoadOpenRouterFields()
     {
         _openRouterBaseUrl = OpenRouter.BaseUrl;
-        _openRouterModel = OpenRouter.DefaultModel ?? "";
-        _openRouterReferer = OpenRouter.Referer ?? "";
-        _openRouterTitle = OpenRouter.Title ?? "";
+        _openRouterModel = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
     }
 
     private void SaveOpenRouter()
@@ -472,9 +501,7 @@ else
             OpenRouter.Save(
                 string.IsNullOrWhiteSpace(_openRouterKey) ? null : _openRouterKey,
                 _openRouterBaseUrl,
-                _openRouterModel,
-                _openRouterReferer,
-                _openRouterTitle);
+                _openRouterModel);
             _openRouterKey = "";
             _openRouterStatus = "OpenRouter settings saved.";
             _openRouterError = null;
@@ -485,24 +512,27 @@ else
         }
     }
 
-    private async Task TestOpenRouter()
+    private void SaveOpenRouterDefaultModel()
+    {
+        OpenRouter.SetDefaultModel(_openRouterModel);
+        _openRouterStatus = $"Default model set to {_openRouterModel}.";
+    }
+
+    private bool IsActiveModel(string modelId) =>
+        OpenRouter.ActiveModels.Any(value =>
+            value.Equals(modelId, StringComparison.OrdinalIgnoreCase));
+
+    private async Task FetchOpenRouterModels()
     {
         _openRouterError = null;
         _openRouterStatus = "";
         _openRouterTesting = true;
         try
         {
-            SaveOpenRouter();
-            OpenRouterConnection connection = OpenRouter.Connection;
-            if (!connection.IsUsable)
-            {
-                _openRouterError = "Enter and save an API key first.";
-                return;
-            }
-
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            _openRouterModels = await OpenRouterClient.ListModelsAsync(connection, timeout.Token);
-            _openRouterStatus = $"OpenRouter reachable: {_openRouterModels.Count:N0} model(s).";
+            _openRouterModels = await OpenRouter.FetchModelsAsync(timeout.Token);
+            int free = _openRouterModels.Count(model => model.IsFree);
+            _openRouterStatus = $"Fetched {_openRouterModels.Count:N0} model(s), {free:N0} free.";
         }
         catch (Exception ex)
         {
@@ -514,11 +544,67 @@ else
         }
     }
 
-    private void ClearOpenRouterKey()
+    private async Task EnsureFetchedModels()
     {
+        if (_openRouterModels.Count > 0 || _openRouterTesting) return;
+        await FetchOpenRouterModels();
+    }
+
+    private void AddFetchedModel()
+    {
+        if (string.IsNullOrWhiteSpace(_fetchedModelChoice)) return;
+        string model = _fetchedModelChoice;
+        _fetchedModelChoice = "";
+        if (OpenRouter.AddActiveModel(model))
+            _openRouterStatus = $"Added {model} to active models.";
+        else
+            _openRouterStatus = $"{model} is already active.";
+        if (string.IsNullOrWhiteSpace(_openRouterModel))
+            _openRouterModel = model;
+    }
+
+    private async Task AddAllFreeModels()
+    {
+        _openRouterError = null;
+        _openRouterTesting = true;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            _openRouterModels = await OpenRouter.FetchModelsAsync(timeout.Token);
+            int added = OpenRouter.AddActiveModels(
+                _openRouterModels.Where(model => model.IsFree).Select(model => model.Id));
+            OpenRouter.MarkFreeModelsSeeded();
+            _openRouterStatus = added == 0
+                ? "All free models are already active."
+                : $"Added {added:N0} free model(s) to active models.";
+        }
+        catch (Exception ex)
+        {
+            _openRouterError = ex.Message;
+        }
+        finally
+        {
+            _openRouterTesting = false;
+        }
+    }
+
+    private void RemoveActiveModel(string model)
+    {
+        if (!OpenRouter.RemoveActiveModel(model)) return;
+        if (string.Equals(_openRouterModel, model, StringComparison.OrdinalIgnoreCase))
+            _openRouterModel = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
+        _openRouterStatus = $"Removed {model} from active models.";
+    }
+
+    private async Task DeleteOpenRouterKey()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", "Delete the saved OpenRouter API key?");
+        if (!confirmed) return;
+
         OpenRouter.ClearApiKey();
         _openRouterKey = "";
-        _openRouterStatus = "OpenRouter API key cleared.";
+        _openRouterStatus = "OpenRouter API key deleted.";
         _openRouterError = null;
     }
 
