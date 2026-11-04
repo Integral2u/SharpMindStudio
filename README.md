@@ -20,7 +20,20 @@ libraries and shares their model, tokenizer and run formats.
 
 - Windows 10/11 (the optional WPF/WebView2 shell is Windows-only).
 - [.NET 10 SDK](https://dotnet.microsoft.com/) (pinned by `global.json`).
-- A GGUF or `.smm` model for Chat and Work.
+- A GGUF or `.smm` model for local Chat and Work, or an OpenRouter API key for
+  remote models.
+
+## OpenRouter
+
+Chat and Work can use OpenRouter models as well as local weights. Add an API key
+under **Settings > OpenRouter**; it is encrypted with a local key file, and the
+base URL and default model id live beside it. In Chat or Work, switch the
+provider to **OpenRouter** and enter a model id such as `openai/gpt-4o-mini`.
+
+Work mode keeps its project tools, permissions, skills and memory local. Only
+the model conversation and the tool results the model asks for are sent to
+OpenRouter. OpenAI-style tool calling is supported, including the provider's
+native streaming tool-call deltas.
 
 ## Build and run
 

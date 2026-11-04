@@ -1,11 +1,14 @@
 ﻿@page "/settings"
 @using Microsoft.AspNetCore.Components
 @using SharpMind.Studio.Core.Inference
+@using SharpMind.Studio.Core.OpenRouter
 @using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Services
 @inject ThemeService Theme
 @inject StudioWorkspaceService Workspace
 @inject InferenceSettingsService Inference
+@inject OpenRouterSettingsService OpenRouter
+@inject OpenRouterClient OpenRouterClient
 @inject ModelCatalogService Catalog
 @inject GatewayService Gateway
 
@@ -17,7 +20,7 @@
         <h1>Make it yours.</h1>
         <p>System defaults flow through model families and models into each chat session. Empty overrides inherit.</p>
     </div>
-    <div class="hero-mark">local preferences<br />no cloud, no account</div>
+    <div class="hero-mark">local by default<br />OpenRouter optional</div>
 </div>
 
 <div class="settings-tabs">
@@ -25,6 +28,7 @@
     <a class="settings-tab @(_tab == "system" ? "selected" : "")" href="/settings?tab=system" data-enhance-nav="false">System</a>
     <a class="settings-tab @(_tab == "families" ? "selected" : "")" href="/settings?tab=families" data-enhance-nav="false">Families</a>
     <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/settings?tab=models" data-enhance-nav="false">Models</a>
+    <a class="settings-tab @(_tab == "openrouter" ? "selected" : "")" href="/settings?tab=openrouter" data-enhance-nav="false">OpenRouter</a>
     <a class="settings-tab @(_tab == "pair" ? "selected" : "")" href="/settings?tab=pair" data-enhance-nav="false">Pair</a>
 </div>
 
@@ -133,6 +137,87 @@
         </div>
     </section>
 
+}
+
+else if (_tab == "openrouter")
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Remote models</div>
+                <h2>OpenRouter</h2>
+            </div>
+            <span class="faint small mono">@(OpenRouter.HasApiKey ? "key configured" : "no key")</span>
+        </div>
+        <div class="panel-body stack">
+            <p class="small faint">
+                Chat and Work can use OpenRouter models. The API key is encrypted with a local
+                key file and never written to the chat documents. Leave the key field blank to
+                keep the existing key.
+            </p>
+            <div class="training-form">
+                <div class="field training-form-wide">
+                    <label class="field-label" for="openrouter-key">API key</label>
+                    <input id="openrouter-key" class="input" type="password" @bind="_openRouterKey"
+                           placeholder="sk-or-... (leave blank to keep)" autocomplete="off" />
+                    <span class="small faint">Stored encrypted under <span class="mono">@StudioPaths.OpenRouterFile</span>.</span>
+                </div>
+                <div class="field training-form-wide">
+                    <label class="field-label" for="openrouter-base">Base URL</label>
+                    <input id="openrouter-base" class="input" @bind="_openRouterBaseUrl" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="openrouter-model">Default model</label>
+                    <input id="openrouter-model" class="input" @bind="_openRouterModel"
+                           placeholder="openai/gpt-4o-mini" list="openrouter-models" />
+                    <datalist id="openrouter-models">
+                        @foreach (string model in OpenRouter.RecentModels)
+                        {
+                            <option value="@model"></option>
+                        }
+                    </datalist>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="openrouter-referer">Referer (optional)</label>
+                    <input id="openrouter-referer" class="input" @bind="_openRouterReferer"
+                           placeholder="https://your-site.example" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="openrouter-title">App title (optional)</label>
+                    <input id="openrouter-title" class="input" @bind="_openRouterTitle" />
+                </div>
+            </div>
+            <div class="row">
+                <button type="button" class="button primary" @onclick="SaveOpenRouter">Save</button>
+                <button type="button" class="button" @onclick="TestOpenRouter"
+                        disabled="@_openRouterTesting">
+                    @(_openRouterTesting ? "Testing..." : "Save and fetch models")
+                </button>
+                <button type="button" class="button danger" @onclick="ClearOpenRouterKey">Clear key</button>
+            </div>
+            @if (_openRouterStatus is { Length: > 0 })
+            {
+                <div class="status-line">@_openRouterStatus</div>
+            }
+            @if (_openRouterError is not null)
+            {
+                <div class="error-line">@_openRouterError</div>
+            }
+            @if (_openRouterModels.Count > 0)
+            {
+                <div class="field">
+                    <label class="field-label" for="openrouter-fetched">Fetched models</label>
+                    <select id="openrouter-fetched" class="input" @bind="_openRouterModel">
+                        @foreach (OpenRouterModel model in _openRouterModels.Take(300))
+                        {
+                            <option value="@model.Id">@model.Id@(model.ContextLength is { } context ? $" ({context:N0} ctx)" : "")</option>
+                        }
+                    </select>
+                    <span class="small faint">Selecting a model fills the default model field; click Save to keep it.</span>
+                </div>
+            }
+        </div>
+    </section>
 }
 else if (_tab == "pair")
 {
@@ -305,6 +390,15 @@ else
     private string _serverStatus = "";
     private bool _lanEnabled;
     private string _lanStatus = "";
+    private string _openRouterKey = "";
+    private string _openRouterBaseUrl = "";
+    private string _openRouterModel = "";
+    private string _openRouterReferer = "";
+    private string _openRouterTitle = "";
+    private string? _openRouterStatus;
+    private string? _openRouterError;
+    private bool _openRouterTesting;
+    private IReadOnlyList<OpenRouterModel> _openRouterModels = [];
     private InferenceOverrides _system = new();
     private IReadOnlyList<ModelFamily> _families = [];
     private IReadOnlyList<ModelDescriptor> _models = [];
@@ -319,12 +413,13 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        _tab = TabQuery is "system" or "families" or "models" or "pair" ? TabQuery : "appearance";
+        _tab = TabQuery is "system" or "families" or "models" or "openrouter" or "pair" ? TabQuery : "appearance";
         _system = Inference.System;
         _studioHost = Theme.StudioHost;
         _studioPort = Theme.StudioPort;
         _closeToTray = Theme.CloseToTray;
         _lanEnabled = Gateway.Config.LanEnabled;
+        if (_tab == "openrouter") LoadOpenRouterFields();
         if (_tab is "system" or "families" or "models") await LoadCatalogAsync();
 
         if (!string.IsNullOrWhiteSpace(ThemeQuery))
@@ -360,6 +455,71 @@ else
             _selectedModelPath = _models.FirstOrDefault()?.Path;
             LoadModelDraft();
         }
+    }
+
+    private void LoadOpenRouterFields()
+    {
+        _openRouterBaseUrl = OpenRouter.BaseUrl;
+        _openRouterModel = OpenRouter.DefaultModel ?? "";
+        _openRouterReferer = OpenRouter.Referer ?? "";
+        _openRouterTitle = OpenRouter.Title ?? "";
+    }
+
+    private void SaveOpenRouter()
+    {
+        try
+        {
+            OpenRouter.Save(
+                string.IsNullOrWhiteSpace(_openRouterKey) ? null : _openRouterKey,
+                _openRouterBaseUrl,
+                _openRouterModel,
+                _openRouterReferer,
+                _openRouterTitle);
+            _openRouterKey = "";
+            _openRouterStatus = "OpenRouter settings saved.";
+            _openRouterError = null;
+        }
+        catch (Exception ex)
+        {
+            _openRouterError = ex.Message;
+        }
+    }
+
+    private async Task TestOpenRouter()
+    {
+        _openRouterError = null;
+        _openRouterStatus = "";
+        _openRouterTesting = true;
+        try
+        {
+            SaveOpenRouter();
+            OpenRouterConnection connection = OpenRouter.Connection;
+            if (!connection.IsUsable)
+            {
+                _openRouterError = "Enter and save an API key first.";
+                return;
+            }
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            _openRouterModels = await OpenRouterClient.ListModelsAsync(connection, timeout.Token);
+            _openRouterStatus = $"OpenRouter reachable: {_openRouterModels.Count:N0} model(s).";
+        }
+        catch (Exception ex)
+        {
+            _openRouterError = ex.Message;
+        }
+        finally
+        {
+            _openRouterTesting = false;
+        }
+    }
+
+    private void ClearOpenRouterKey()
+    {
+        OpenRouter.ClearApiKey();
+        _openRouterKey = "";
+        _openRouterStatus = "OpenRouter API key cleared.";
+        _openRouterError = null;
     }
 
     private async Task LoadCatalogAsync()

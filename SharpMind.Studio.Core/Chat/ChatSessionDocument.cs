@@ -11,6 +11,8 @@ public sealed record ChatSessionDocument
     public required string Id { get; init; }
     public string Name { get; set; } = "New chat";
     public required string ModelPath { get; init; }
+    public string Provider { get; set; } = "local";
+    public string? RemoteModel { get; set; }
     public string? ModelFingerprint { get; init; }
     public string? FamilyId { get; init; }
     public string? FamilyName { get; init; }
@@ -31,6 +33,8 @@ public sealed record ChatSessionSummary
     public required string Id { get; init; }
     public required string Name { get; init; }
     public required string ModelPath { get; init; }
+    public string Provider { get; init; } = "local";
+    public string? RemoteModel { get; init; }
     public string Mode { get; init; } = "chat";
     public string? TunePreset { get; init; }
     public DateTimeOffset UpdatedUtc { get; init; }

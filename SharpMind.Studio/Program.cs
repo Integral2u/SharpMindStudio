@@ -3,6 +3,7 @@ using SharpMind.Studio.Components;
 using SharpMind.Studio.Services;
 using SharpMind.Studio.Core.Storage;
 using SharpMind.Studio.Core.Gateway;
+using SharpMind.Studio.Core.OpenRouter;
 using Yarp.ReverseProxy.Forwarder;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,6 +24,11 @@ builder.Services.AddSingleton<StudioActivityService>();
 builder.Services.AddSingleton<StudioCanaryService>();
 builder.Services.AddSingleton<ModelCatalogService>();
 builder.Services.AddSingleton<InferenceSettingsService>();
+builder.Services.AddSingleton<OpenRouterSettingsService>();
+builder.Services.AddHttpClient<OpenRouterClient>(client =>
+{
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
 builder.Services.AddSingleton<SharpMind.Studio.Core.Chat.StudioModelHost>();
 builder.Services.AddSingleton<MarkdownService>();
 builder.Services.AddSingleton<SystemWorkSkillsService>();

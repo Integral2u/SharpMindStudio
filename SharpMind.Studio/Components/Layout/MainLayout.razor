@@ -73,7 +73,7 @@
                         @foreach (var chat in _chats)
                         {
                             <div class="nav-chat-item">
-                                <a href="@ChatHref(chat)" class="nav-chat-link" title="@chat.Name">@chat.Name@(chat.Mode == "work" ? " / work" : "")</a>
+                                <a href="@ChatHref(chat)" class="nav-chat-link" title="@chat.Name">@chat.Name@(chat.Mode == "work" ? " / work" : "")@(chat.Provider == "openrouter" ? " / remote" : "")</a>
                                 <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
                                         title="Rename chat" aria-label="Rename chat">&#9998;</button>
                                 <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"

@@ -2,11 +2,13 @@
 @page "/chat/{ChatId}"
 @implements IDisposable
 @using SharpMind.Inference.Chat
-@using SharpMind.Studio.Core.Runs
 @using SharpMind.Studio.Core.Inference
+@using SharpMind.Studio.Core.OpenRouter
+@using SharpMind.Studio.Core.Runs
 @using SharpMind.Studio.Services
 @inject StudioChatService ChatService
 @inject InferenceSettingsService Inference
+@inject OpenRouterSettingsService OpenRouter
 @inject ModelCatalogService Catalog
 @inject MarkdownService Markdown
 @inject StudioWorkspaceService Workspace
@@ -44,7 +46,7 @@
                     <div class="eyebrow">@(_workMode ? "New work conversation" : "New conversation")</div>
                     <h2>@(_workMode ? "What should we work on?" : "What do you want to ask?")</h2>
                 </div>
-                <span class="faint small mono">local weights only</span>
+                <span class="faint small mono">local or OpenRouter</span>
             </div>
             <div class="panel-body stack">
                 <div class="welcome-compose">
@@ -54,39 +56,95 @@
                               placeholder="@(_workMode ? "Describe the task, or leave this empty to start a blank Work chat." : "Ask something, or leave this empty to start a blank chat.")"></textarea>
                     <button id="chat-start" type="button" class="button primary welcome-send"
                             @onclick="StartNewChatAsync"
-                            disabled="@(ChatService.IsStreaming || ChatService.IsLoading || string.IsNullOrWhiteSpace(_selectedModelPath) ||
-                                        (_workMode && _toolState.Capability != ToolCapability.Passed && !_allowUnverifiedTools))">
+                            disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
+                                        (_remoteChat ? !RemoteReady : string.IsNullOrWhiteSpace(_selectedModelPath)) ||
+                                        (_workMode && !_remoteChat && _toolState.Capability != ToolCapability.Passed && !_allowUnverifiedTools))">
                         Send
                     </button>
                 </div>
 
-                @if (_loadingModels)
-                {
-                    <div class="row"><span class="spinner-ring"></span><span class="status-line">Scanning model folder...</span></div>
-                }
-                else if (_models.Count == 0)
-                {
-                    <div class="empty">No models found under @Workspace.ModelsFolder.</div>
-                }
-                else
-                {
-                    <div class="welcome-controls chat-welcome-controls">
+                <div class="welcome-controls chat-welcome-controls">
+                    <div class="field">
+                        <label class="field-label" for="chat-provider">Provider</label>
+                        <select id="chat-provider" class="input" @bind="_remoteChat">
+                            <option value="false">Local model</option>
+                            <option value="true">OpenRouter</option>
+                        </select>
+                    </div>
+                    @if (!_remoteChat)
+                    {
+                        @if (_loadingModels)
+                        {
+                            <div class="field"><span class="status-line">Scanning model folder...</span></div>
+                        }
+                        else if (_models.Count == 0)
+                        {
+                            <div class="field"><span class="status-line">No models found under @Workspace.ModelsFolder.</span></div>
+                        }
+                        else
+                        {
+                            <div class="field">
+                                <label class="field-label" for="chat-model">Model</label>
+                                <select id="chat-model" class="input" @bind="_selectedModelPath" @bind:after="SaveModelChoiceAsync">
+                                    @foreach (var model in _models)
+                                    {
+                                        <option value="@model.Path" title="@model.Path">@model.DisplayName (@model.FileName) - @model.Family.DisplayName (@FileSize(model.SizeBytes))</option>
+                                    }
+                                </select>
+                            </div>
+                        }
+                    }
+                    else
+                    {
                         <div class="field">
-                            <label class="field-label" for="chat-model">Model</label>
-                            <select id="chat-model" class="input" @bind="_selectedModelPath" @bind:after="SaveModelChoiceAsync">
-                                @foreach (var model in _models)
+                            <label class="field-label" for="chat-remote-model">Model id</label>
+                            <input id="chat-remote-model" class="input" @bind="_remoteModel"
+                                   list="remote-model-options" placeholder="openai/gpt-4o-mini" />
+                            <datalist id="remote-model-options">
+                                @foreach (string model in OpenRouter.RecentModels)
                                 {
-                                    <option value="@model.Path" title="@model.Path">@model.DisplayName (@model.FileName) - @model.Family.DisplayName (@FileSize(model.SizeBytes))</option>
+                                    <option value="@model"></option>
                                 }
-                            </select>
+                            </datalist>
                         </div>
-                        <div class="welcome-model-status">
-                            @if (_latestModelRun is not null)
-                            {
-                                <span class="status @StatusClass(_latestModelRun.Status)">@_latestModelRun.Status</span>
-                            }
-                            <ModelToolStatus ModelPath="_selectedModelPath" FileName="@SelectedFileName" Runs="_runs" />
+                    }
+                </div>
+
+                @if (_remoteChat)
+                {
+                    <div class="welcome-model-status">
+                        <span class="small faint">
+                            @(OpenRouter.HasApiKey ? "OpenRouter key configured" : "No OpenRouter key")
+                        </span>
+                    </div>
+                    @if (!OpenRouter.HasApiKey)
+                    {
+                        <div class="tool-warning">
+                            <div>
+                                <strong>OpenRouter needs an API key.</strong>
+                                <span class="small faint">Add it in Settings, then return here.</span>
+                            </div>
+                            <div class="row">
+                                <button type="button" class="button" @onclick="OpenRouterSettings">Open Settings</button>
+                            </div>
                         </div>
+                    }
+                    else
+                    {
+                        <div class="small faint">
+                            Chat uses the selected remote model. Work keeps the local project tools;
+                            only the model runs remotely.
+                        </div>
+                    }
+                }
+                else if (!_loadingModels && _models.Count > 0)
+                {
+                    <div class="welcome-model-status">
+                        @if (_latestModelRun is not null)
+                        {
+                            <span class="status @StatusClass(_latestModelRun.Status)">@_latestModelRun.Status</span>
+                        }
+                        <ModelToolStatus ModelPath="_selectedModelPath" FileName="@SelectedFileName" Runs="_runs" />
                     </div>
                     <div class="status-line">@ChatService.Status</div>
                     @if (!string.IsNullOrWhiteSpace(_selectedModelPath))
@@ -113,17 +171,26 @@
                             </div>
                         </div>
                     }
-                    @if (ChatService.Error is not null)
-                    {
-                        <div class="error-line">@ChatService.Error</div>
-                    }
+                }
+                @if (ChatService.Error is not null)
+                {
+                    <div class="error-line">@ChatService.Error</div>
                 }
             </div>
         }        else
         {
             <div class="panel-head chat-head">
                 <div>
-                    <div class="eyebrow">@ChatService.Model?.Family.DisplayName | @ChatService.Model?.FileName</div>
+                    <div class="eyebrow">
+                        @if (ChatService.IsRemote)
+                        {
+                            <text>OpenRouter | @ChatService.RemoteModel</text>
+                        }
+                        else
+                        {
+                            <text>@ChatService.Model?.Family.DisplayName | @ChatService.Model?.FileName</text>
+                        }
+                    </div>
                     <h2>@if (DeviceAccess.IsMobile)
 {
     @ChatService.Document.Name
@@ -133,16 +200,22 @@ else
     <button type="button" class="chat-title-button" @onclick="RenameCurrentChatAsync"
             title="Rename chat">@ChatService.Document.Name <span class="faint">&#9998;</span></button>
 }</h2>
-                    <div class="row" style="margin-top: .35rem;">
-                        <ModelToolStatus ModelPath="_selectedModelPath" FileName="@SelectedFileName" Runs="_runs" />
-                    </div>
+                    @if (!ChatService.IsRemote)
+                    {
+                        <div class="row" style="margin-top: .35rem;">
+                            <ModelToolStatus ModelPath="_selectedModelPath" FileName="@SelectedFileName" Runs="_runs" />
+                        </div>
+                    }
                 </div>
                 @if (!DeviceAccess.IsMobile)
                 {
                     <div class="row">
-                        <button type="button" class="button" @onclick="ToggleOptions">
-                            @(_showOptions ? "Hide options" : "Options")
-                        </button>
+                        @if (!ChatService.IsRemote)
+                        {
+                            <button type="button" class="button" @onclick="ToggleOptions">
+                                @(_showOptions ? "Hide options" : "Options")
+                            </button>
+                        }
                         <button type="button" class="button" @onclick="BeginNewChat">New chat</button>
                     </div>
                 }
@@ -151,7 +224,11 @@ else
             <div id="chat-transcript" class="chat-transcript">
                 @if (_messages.Count == 0)
                 {
-                    <div class="empty">Send the first message. The model stays on this machine.</div>
+                    <div class="empty">
+                        @(ChatService.IsRemote
+                            ? "Send the first message. Only the model runs remotely."
+                            : "Send the first message. The model stays on this machine.")
+                    </div>
                 }
                 else
                 {
@@ -188,7 +265,7 @@ else
                 }
             </div>
 
-            @if (_showOptions && !DeviceAccess.IsMobile)
+            @if (_showOptions && !DeviceAccess.IsMobile && !ChatService.IsRemote)
             {
                 <div class="chat-options">
                     <div class="panel-head">
@@ -314,7 +391,7 @@ else
                     }
                     <button id="chat-send" type="button" class="button primary" @onclick="SendAsync"
                             disabled="@(ChatService.IsStreaming || ChatService.IsLoading || string.IsNullOrWhiteSpace(_input) ||
-                                        (_workMode && _toolState.Capability == ToolCapability.Failed && !_allowFailedTools))">
+                                        (_workMode && !_remoteChat && _toolState.Capability == ToolCapability.Failed && !_allowFailedTools))">
                         Send
                     </button>
                 </div>
@@ -357,8 +434,15 @@ else
     private ToolCapabilityState _toolState = new(ToolCapability.Untested, null, null);
     private bool _allowUnverifiedTools;
     private bool _allowFailedTools;
+    private bool _remoteChat;
+    private string _remoteModel = "";
     private string? _selectedModelPath;
     private string _input = "";
+
+    private bool RemoteReady =>
+        _remoteChat &&
+        !string.IsNullOrWhiteSpace(_remoteModel) &&
+        OpenRouter.HasApiKey;
 
     private string? SelectedFileName =>
         _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.FileName;
@@ -495,7 +579,11 @@ else
         _startingNew = ChatService.Document is null;
         if (ChatService.Document is not null)
         {
-            _selectedModelPath = ChatService.Document.ModelPath;
+            _remoteChat = ChatService.IsRemote;
+            if (_remoteChat)
+                _remoteModel = ChatService.RemoteModel ?? _remoteModel;
+            else
+                _selectedModelPath = ChatService.Document.ModelPath;
             _sessionDraft = ChatService.Document.Overrides;
             _selectedTunePreset = Enum.TryParse(ChatService.Document.TunePreset, out TunePreset preset)
                 ? preset
@@ -506,6 +594,31 @@ else
 
     private async Task StartNewChatAsync()
     {
+        if (_remoteChat)
+        {
+            if (!RemoteReady) return;
+
+            string remotePrompt = _input.Trim();
+            _input = "";
+            StateHasChanged();
+            await ChatService.NewRemoteChatAsync(
+                _remoteModel.Trim(),
+                systemPrompt: null,
+                mode: _workMode ? "work" : "chat");
+
+            if (ChatService.Document is not null)
+            {
+                ChatService.PendingPrompt = remotePrompt.Length > 0 ? remotePrompt : null;
+                _startingNew = false;
+                _focusPending = true;
+                Nav.NavigateTo(_workMode ? $"/work/{ChatService.Document.Id}" : $"/chat/{ChatService.Document.Id}");
+                TrySendPendingPrompt();
+            }
+
+            SyncFromChat();
+            return;
+        }
+
         ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
         if (model is null) return;
 
@@ -546,6 +659,13 @@ else
 
     private void UpdateLatestModelRun()
     {
+        if (_remoteChat)
+        {
+            _latestModelRun = null;
+            _toolState = new ToolCapabilityState(ToolCapability.Untested, null, null);
+            return;
+        }
+
         string? fileName = SelectedFileName;
         _latestModelRun = fileName is null
             ? null
@@ -576,12 +696,27 @@ else
         _focusPending = true;
         _showOptions = false;
         _input = "";
-        _selectedModelPath = ChatService.Document?.ModelPath ??
-            (_models.Any(model => model.Path == Theme.LastChatModel)
+        _remoteChat = ChatService.Document is { } current &&
+                      string.Equals(current.Provider, "openrouter", StringComparison.OrdinalIgnoreCase);
+        if (_remoteChat)
+        {
+            _remoteModel = ChatService.Document?.RemoteModel ?? _remoteModel;
+        }
+        else if (ChatService.Document is { } local)
+        {
+            _selectedModelPath = local.ModelPath;
+        }
+
+        if (string.IsNullOrWhiteSpace(_selectedModelPath) || _selectedModelPath == "openrouter")
+        {
+            _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
                 ? Theme.LastChatModel
-                : _models.FirstOrDefault()?.Path);
+                : _models.FirstOrDefault()?.Path;
+        }
         UpdateLatestModelRun();
     }
+
+    private void OpenRouterSettings() => Nav.NavigateTo("/settings?tab=openrouter");
 
 
     private void RefreshTuneSelection()

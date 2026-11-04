@@ -39,6 +39,8 @@ public sealed class ChatSessionStore
                     Id = document.Id,
                     Name = document.Name,
                     ModelPath = document.ModelPath,
+                    Provider = document.Provider ?? "local",
+                    RemoteModel = document.RemoteModel,
                     Mode = document.Mode,
                     TunePreset = document.TunePreset,
                     UpdatedUtc = document.UpdatedUtc,
@@ -70,6 +72,40 @@ public sealed class ChatSessionStore
             Mode = mode,
             TunePreset = tunePreset,
             TuneTarget = tuneTarget,
+            SystemPrompt = systemPrompt,
+            Messages = [],
+        };
+
+        Save(document);
+        return document;
+    }
+
+    /// <summary>
+    /// Creates a chat backed by an OpenRouter model. Remote chats keep the same
+    /// document/history shape as local ones, so the transcript, rename, delete
+    /// and session list all work unchanged. <see cref="ModelPath"/> is only a
+    /// stable label; <see cref="ChatSessionDocument.RemoteModel"/> is the model
+    /// id sent to OpenRouter.
+    /// </summary>
+    public ChatSessionDocument CreateRemote(
+        string modelId,
+        string? systemPrompt,
+        string mode = "chat")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
+        string id = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("n")[..8]}";
+        string cleanModel = modelId.Trim();
+        var document = new ChatSessionDocument
+        {
+            Id = id,
+            Name = $"{cleanModel} chat",
+            ModelPath = "openrouter",
+            Provider = "openrouter",
+            RemoteModel = cleanModel,
+            FamilyId = "openrouter",
+            FamilyName = "OpenRouter",
+            InferenceVersion = typeof(IChatSession).Assembly.GetName().Version?.ToString(),
+            Mode = mode,
             SystemPrompt = systemPrompt,
             Messages = [],
         };

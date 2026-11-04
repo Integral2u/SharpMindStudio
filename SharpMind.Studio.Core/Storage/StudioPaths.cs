@@ -35,6 +35,8 @@ public static class StudioPaths
     public static string InferenceFile => Path.Combine(Projects, "inference.json");
     public static string WorkSkillsFile => Path.Combine(Projects, "work-skills.json");
     public static string WorkToolsFile => Path.Combine(Projects, "work-tools.json");
+    public static string OpenRouterFile => Path.Combine(Projects, "openrouter.json");
+    public static string OpenRouterKeyFile => Path.Combine(Projects, "openrouter.key");
     public static string Gateway => Path.Combine(Projects, "Gateway");
 
     public static void EnsureCreated()

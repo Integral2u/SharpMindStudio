@@ -2,10 +2,12 @@
 @implements IDisposable
 @using SharpMind.Studio.Core.Runs
 @using SharpMind.Studio.Core.Inference
+@using SharpMind.Studio.Core.OpenRouter
 @using SharpMind.Studio.Services
 @inject ThemeService Theme
 @inject ModelCatalogService Catalog
 @inject InferenceSettingsService Inference
+@inject OpenRouterSettingsService OpenRouter
 @inject StudioChatService ChatService
 @inject StudioWorkspaceService Workspace
 @inject NavigationManager Nav
@@ -15,15 +17,16 @@
 <div class="welcome">
     <div class="welcome-head">
         <h1>@(_mode == "work" ? "What do you want to work on?" : "What do you want to ask?")</h1>
-        <p>@(_mode == "work" ? "Start a project-backed session with tools. Nothing leaves this machine." : "Start a chat with a local model. Nothing leaves this machine.")</p>
+        <p>@(_mode == "work" ? "Start a project-backed session with tools. Choose local weights or OpenRouter." : "Start a chat with a local model or OpenRouter.")</p>
     </div>
 
     <div class="welcome-compose">
         <textarea class="welcome-prompt" data-enter-send="welcome-send" onkeydown="studioChat.enterSend(event, 'welcome-send')" @bind="_prompt" @bind:event="oninput"
                   placeholder="@(_mode == "work" ? "Describe the task, or leave this empty and press Send to start a new Work session." : "Ask something, or leave this empty and press Send to start a new chat.")"></textarea>
         <button id="welcome-send" type="button" class="button primary welcome-send" @onclick="SendAsync"
-                disabled="@(_busy || ChatService.IsLoading || string.IsNullOrWhiteSpace(_selectedModelPath) ||
-                            (_mode == "work" && _toolState.Capability != ToolCapability.Passed && !_allowUnverifiedTools))">
+                disabled="@(_busy || ChatService.IsLoading ||
+                            (_remoteChat ? !RemoteReady : string.IsNullOrWhiteSpace(_selectedModelPath)) ||
+                            (_mode == "work" && !_remoteChat && _toolState.Capability != ToolCapability.Passed && !_allowUnverifiedTools))">
             @(_busy ? "Starting..." : "Send")
         </button>
     </div>
@@ -48,19 +51,43 @@
     </div>
 
     <div class="welcome-controls">
-        <div class="field welcome-model">
-            <label class="field-label" for="welcome-model">Model</label>
-            <select id="welcome-model" class="input" @bind="_selectedModelPath" @bind:after="SaveDefaultModelAsync">
-                @if (_models.Count == 0)
-                {
-                    <option value="">Scanning models...</option>
-                }
-                @foreach (var model in _models)
-                {
-                    <option value="@model.Path">@model.FileName - @model.Family.DisplayName</option>
-                }
+        <div class="field">
+            <label class="field-label" for="welcome-provider">Provider</label>
+            <select id="welcome-provider" class="input" @bind="_remoteChat">
+                <option value="false">Local model</option>
+                <option value="true">OpenRouter</option>
             </select>
         </div>
+        @if (_remoteChat)
+        {
+            <div class="field welcome-model">
+                <label class="field-label" for="welcome-remote-model">OpenRouter model</label>
+                <input id="welcome-remote-model" class="input" @bind="_remoteModel"
+                       list="welcome-remote-models" placeholder="openai/gpt-4o-mini" />
+                <datalist id="welcome-remote-models">
+                    @foreach (string model in OpenRouter.RecentModels)
+                    {
+                        <option value="@model"></option>
+                    }
+                </datalist>
+            </div>
+        }
+        else
+        {
+            <div class="field welcome-model">
+                <label class="field-label" for="welcome-model">Model</label>
+                <select id="welcome-model" class="input" @bind="_selectedModelPath" @bind:after="SaveDefaultModelAsync">
+                    @if (_models.Count == 0)
+                    {
+                        <option value="">Scanning models...</option>
+                    }
+                    @foreach (var model in _models)
+                    {
+                        <option value="@model.Path">@model.FileName - @model.Family.DisplayName</option>
+                    }
+                </select>
+            </div>
+        }
 
         <div class="field welcome-session">
             <label class="field-label" for="welcome-session">Session</label>
@@ -68,19 +95,34 @@
                 <option value="">New</option>
                 @foreach (var session in _sessions)
                 {
-                    <option value="@session.Id">@session.Name@(session.Mode == "work" ? " / work" : "")</option>
+                    <option value="@session.Id">@session.Name@(session.Mode == "work" ? " / work" : "")@(session.Provider == "openrouter" ? " / remote" : "")</option>
                 }
             </select>
         </div>
 
-        <div class="welcome-model-status">
-            @if (_latestRun is not null)
-            {
-                <span class="status @StatusClass(_latestRun.Status)">@_latestRun.Status</span>
-            }
-            <ModelToolStatus ModelPath="_selectedModelPath" FileName="@SelectedFileName" Runs="_runs" />
-        </div>
+        @if (!_remoteChat)
+        {
+            <div class="welcome-model-status">
+                @if (_latestRun is not null)
+                {
+                    <span class="status @StatusClass(_latestRun.Status)">@_latestRun.Status</span>
+                }
+                <ModelToolStatus ModelPath="_selectedModelPath" FileName="@SelectedFileName" Runs="_runs" />
+            </div>
+        }
     </div>
+    @if (_remoteChat && !OpenRouter.HasApiKey)
+    {
+        <div class="tool-warning">
+            <div>
+                <strong>OpenRouter needs an API key.</strong>
+                <span class="small faint">Add it in Settings, then return here.</span>
+            </div>
+            <div class="row">
+                <button type="button" class="button" @onclick="OpenRouterSettings">Open Settings</button>
+            </div>
+        </div>
+    }
     <div class="status-line">@(ChatService.IsLoading || _busy ? ChatService.Status : "Ready.")</div>
 
     @if (ChatService.IsLoading)
@@ -98,7 +140,7 @@
         </div>
     }
 
-    @if (!string.IsNullOrWhiteSpace(_selectedModelPath))
+    @if (!_remoteChat && !string.IsNullOrWhiteSpace(_selectedModelPath))
     {
         <TunePresetPicker ModelPath="_selectedModelPath"
                           Target="@(_mode == "work" ? TuneTarget.Work : TuneTarget.Chat)"
@@ -107,7 +149,7 @@
                           OnTune="OpenTune" />
     }
 
-    @if (_mode == "work" && _toolState.Capability != ToolCapability.Passed)
+    @if (!_remoteChat && _mode == "work" && _toolState.Capability != ToolCapability.Passed)
     {
         <div class="tool-warning">
             <div>
@@ -156,6 +198,8 @@
     private ModelDescriptor? _tuneModel;
     private TuneTarget _tuneTarget = TuneTarget.Chat;
     private string? _selectedModelPath;
+    private bool _remoteChat;
+    private string _remoteModel = "";
     private string _prompt = "";
     private string _mode = "chat";
     private RunSummary? _latestRun;
@@ -163,6 +207,11 @@
     private bool _allowUnverifiedTools;
     private bool _busy;
     private string? _error;
+
+    private bool RemoteReady =>
+        _remoteChat &&
+        !string.IsNullOrWhiteSpace(_remoteModel) &&
+        OpenRouter.HasApiKey;
 
     private string? SelectedFileName =>
         _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.FileName;
@@ -219,6 +268,13 @@
 
     private void UpdateLatestRun()
     {
+        if (_remoteChat)
+        {
+            _latestRun = null;
+            _toolState = new ToolCapabilityState(ToolCapability.Untested, null, null);
+            return;
+        }
+
         string? fileName = SelectedFileName;
         _latestRun = fileName is null
             ? null
@@ -233,6 +289,39 @@
     private async Task SendAsync()
     {
         if (_busy) return;
+
+        if (_remoteChat)
+        {
+            if (!RemoteReady)
+            {
+                _error = "Choose an OpenRouter model and add an API key first.";
+                return;
+            }
+
+            _busy = true;
+            _error = null;
+            try
+            {
+                await ChatService.NewRemoteChatAsync(_remoteModel.Trim(), systemPrompt: null, mode: _mode);
+                if (ChatService.Document is null)
+                {
+                    _error = ChatService.Error ?? ChatService.Status;
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(_prompt))
+                    ChatService.PendingPrompt = _prompt.Trim();
+                Nav.NavigateTo(_mode == "work"
+                    ? $"/work/{ChatService.Document.Id}"
+                    : $"/chat/{ChatService.Document.Id}");
+            }
+            finally
+            {
+                _busy = false;
+            }
+            return;
+        }
+
         ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
         if (model is null)
         {
@@ -304,6 +393,8 @@
     private void OpenTest() => Nav.NavigateTo("/test");
 
     private void OpenTraining() => Nav.NavigateTo("/training");
+
+    private void OpenRouterSettings() => Nav.NavigateTo("/settings?tab=openrouter");
 
     private static string StatusClass(string status) => status switch
     {

@@ -39,10 +39,13 @@ First public repository release.
   one-time login QR, and a server-enforced mobile scope.
 - **Layered inference settings** — System → Family → Model → Session, with each
   value showing the layer that supplied it.
+- **OpenRouter** — remote Chat and Work models alongside local weights, with an
+  encrypted API key under Settings, streaming chat completions, OpenAI-style
+  tool calls, and the local project tools/permissions still enforced for Work.
 
 ### Changed
 
-- References the published **SharpMind 1.0.9** NuGet packages by default.
+- References the published **SharpMind 1.1.0** NuGet packages by default.
   The local project-reference block is kept but commented out and can be
   re-enabled with `-p:SharpMindSource=project`.
 - **Tool-call recovery** (`Strict` / `Lenient` / `Loose`) is a layered inference
