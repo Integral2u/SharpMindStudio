@@ -197,6 +197,12 @@ else if (_tab == "improve")
                             <span class="mono">instruction/output</span>. Loss is masked to the assistant reply.
                         </span>
                     </div>
+                    <div class="field">
+                        <label class="field-label" for="tune-sft-seq">SFT sequence length</label>
+                        <input id="tune-sft-seq" class="input" type="number" min="16" max="8192" step="16"
+                               @bind="_tuneSftSeqLen" />
+                        <span class="small faint">Longer conversations are truncated.</span>
+                    </div>
                     <div class="field training-form-wide">
                         <div class="training-subsection-head">
                             <label class="field-label">SFT data preflight</label>
@@ -1146,6 +1152,7 @@ else if (_tab == "models")
     private string _tuneCorpusPath = "";
     private bool _tuneSft;
     private string _tuneSftFormatter = "auto";
+    private int _tuneSftSeqLen = 512;
     private bool _sftPreviewing;
     private CancellationTokenSource? _sftPreviewCancel;
     private SftDatasetPreview? _sftPreview;
@@ -1456,7 +1463,7 @@ else if (_tab == "models")
             ? Path.GetFileNameWithoutExtension(basePath) + "-lora-" + DateTime.Now.ToString("yyyyMMdd-HHmm")
             : _tuneName.Trim();
 
-        int seqLen = 64;
+        int seqLen = _tuneSft ? Math.Clamp(_tuneSftSeqLen, 16, 8192) : 64;
         try
         {
             var config = SmmLoader.LoadConfig(SmmLoader.LoadMeta(basePath));
@@ -1683,6 +1690,7 @@ else if (_tab == "models")
             : "";
         _tuneSft = job.SftMode;
         _tuneSftFormatter = string.IsNullOrWhiteSpace(job.SftFormatter) ? "auto" : job.SftFormatter;
+        _tuneSftSeqLen = job.SftMode ? Math.Max(16, job.SeqLen) : 512;
         _tuneName = job.Name;
         _tuneSteps = Math.Max(1, job.TotalSteps);
         _tuneValidationPercent = job.ValidationPercent;
