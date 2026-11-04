@@ -192,6 +192,10 @@
                     {
                         <div class="small faint">@_firewallDetail</div>
                     }
+                    <div class="small faint">
+                        If the phone reaches the public address but not this LAN address, the phone may be on a
+                        guest network or the router may have client/AP isolation enabled.
+                    </div>
                     <div class="small faint">This asks Windows for administrator approval. Manual command if you prefer:</div>
                     <div class="mono gateway-command">New-NetFirewallRule -DisplayName "SharpMind Studio phone" -Direction Inbound -Protocol TCP -LocalPort @Gateway.LanPort -Profile Private -Action Allow</div>
                 </li>
