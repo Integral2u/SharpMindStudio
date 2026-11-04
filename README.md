@@ -115,6 +115,12 @@ M1. These pretraining runs therefore use the CPU engine. A GPU LoRA fine-tune
 is the only GPU training path worth testing on this hardware, and the
 integrated Vega 3 is likely slower than the existing CPU path.
 
+The recipe cache now keeps the cleaned corpus as
+`Training/recipes/data/<hash>.jsonl`. A run that changes only the tokenizer or
+training settings reuses that data phase; changing the source files or stages
+invalidates it. Tokenizer, checkpoint and package phases follow the same
+content-addressed pattern.
+
 ## SharpMind reference mode
 
 Studio defaults to the published **SharpMind 1.0.9** NuGet packages.

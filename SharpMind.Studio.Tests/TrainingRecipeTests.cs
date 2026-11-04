@@ -83,6 +83,53 @@ public sealed class TrainingRecipeTests
     }
 
     [Fact]
+    public void Data_ChangesWhenSourceContentChanges()
+    {
+        using var temp = new TempDirectory();
+        string corpus = temp.Combine("corpus.txt");
+        File.WriteAllText(corpus, "first version of the corpus");
+        TrainingJobSettings job = Job("model", corpus, learningRate: 3e-4f);
+
+        string first = TrainingRecipeHash.Data(job);
+        File.WriteAllText(corpus, "second version of the corpus");
+
+        Assert.NotEqual(first, TrainingRecipeHash.Data(job));
+    }
+
+    [Fact]
+    public async Task Runner_ReusesTheDataPhaseWhenOnlyTrainingChanges()
+    {
+        using var temp = new TempDirectory();
+        string corpus = temp.Combine("corpus.txt");
+        await File.WriteAllTextAsync(
+            corpus,
+            string.Join('\n', Enumerable.Repeat(
+                "the quick brown fox jumps over the lazy dog and keeps running", 150)));
+        string plugins = temp.Combine("plugins");
+        Directory.CreateDirectory(plugins);
+        string recipes = temp.Combine("recipes");
+
+        TrainingJobSettings firstJob = SmallJob("data-one", corpus, temp.Combine("data-one.smm"));
+        var firstLog = new List<string>();
+        TrainingRunResult first = await TrainingRunner.RunAsync(
+            firstJob, plugins, new ListProgress<string>(firstLog), new ListProgress<float>([]),
+            recipeFolder: recipes);
+        Assert.True(first.Success, first.Error);
+        Assert.NotEmpty(Directory.GetFiles(Path.Combine(recipes, "data"), "*.jsonl"));
+
+        TrainingJobSettings secondJob = SmallJob("data-two", corpus, temp.Combine("data-two.smm"));
+        secondJob.LearningRate = 9e-4f;
+        var secondLog = new List<string>();
+        TrainingRunResult second = await TrainingRunner.RunAsync(
+            secondJob, plugins, new ListProgress<string>(secondLog), new ListProgress<float>([]),
+            recipeFolder: recipes);
+
+        Assert.True(second.Success, second.Error);
+        Assert.Contains(secondLog,
+            line => line.Contains("reused data phase", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Store_RoundTripsAndRejectsAMissingArtifact()
     {
         using var temp = new TempDirectory();

@@ -80,11 +80,14 @@ public static class TrainingRecipeStore
 /// </summary>
 public static class TrainingRecipeHash
 {
-    public static string Data(TrainingJobSettings job)
+    public static string Data(TrainingJobSettings job, string? sourceFingerprint = null)
     {
         ArgumentNullException.ThrowIfNull(job);
+
+        string source = sourceFingerprint ?? TrySourceFingerprint(job);
         return HashOf(new
         {
+            Source = source,
             Sources = job.Sources.Select(source => new
             {
                 Component = Canonical(source.Component),
@@ -94,6 +97,18 @@ public static class TrainingRecipeHash
             job.ValidationPercent,
             job.TestPercent,
         });
+    }
+
+    private static string TrySourceFingerprint(TrainingJobSettings job)
+    {
+        try
+        {
+            return SourceHasher.Combined(job.Sources) ?? "none";
+        }
+        catch
+        {
+            return "unreadable";
+        }
     }
 
     public static string Tokenizer(TrainingJobSettings job, string dataHash)

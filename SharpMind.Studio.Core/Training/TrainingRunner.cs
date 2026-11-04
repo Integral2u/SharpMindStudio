@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using SharpMind.Core;
 using SharpMind.Core.Plugins;
 using SharpMind.Core.Quantization;
@@ -233,7 +235,7 @@ public static class TrainingRunner
             // identical data + settings return the existing packaged model. The
             // package phase is separate: if only the destination moved, copy the
             // cached .smm instead of training again.
-            string recipeDataHash = TrainingRecipeHash.Data(job);
+            string recipeDataHash = TrainingRecipeHash.Data(job, dataFingerprint ?? "none");
             string recipeTokenizerHash = TrainingRecipeHash.Tokenizer(job, recipeDataHash);
             string recipeTrainBaseHash = !job.Rehearsal && !job.IncrementalMode && !job.IsFineTune
                 ? TrainingRecipeHash.TrainBase(job, recipeDataHash, recipeTokenizerHash)
@@ -392,6 +394,13 @@ public static class TrainingRunner
 
             using var fineTuneOwner = fineTuneModel;
             progress.Report(0.1f);
+
+            // The data phase is cached separately from the tokenizer/train phases:
+            // the cleaned corpus only changes when the sources, stages or splits
+            // change. A hit skips re-reading and re-cleaning the source files.
+            pipeline = await CacheOrReuseDataAsync(
+                job, pipeline, recipeDataHash, recipeFolder, Log, cancellationToken)
+                .ConfigureAwait(false);
 
             // 3. Data pipeline â€” clean â†’ tokenise â†’ TrainingBatches. Random-window
             // batching samples contiguous windows from one flat corpus stream
@@ -1101,6 +1110,78 @@ public static class TrainingRunner
         {
             Log($"Training failed: {ex.Message}");
             return new TrainingRunResult { Success = false, Error = ex.Message };
+        }
+    }
+
+    private static async Task<PipelineNode> CacheOrReuseDataAsync(
+        TrainingJobSettings job,
+        PipelineNode pipeline,
+        string dataHash,
+        string? recipeFolder,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        // A rehearsal must not leave a large artifact behind, and an incremental
+        // run's pipeline is the delta only, not the full cleaned corpus.
+        if (job.Rehearsal || job.IncrementalMode) return pipeline;
+
+        if (TrainingRecipeStore.TryGet(
+                "data", dataHash, out TrainingRecipeArtifact cached, recipeFolder)
+            && File.Exists(cached.ArtifactPath))
+        {
+            log($"Recipe: reused data phase {TrainingRecipeHash.Short(dataHash)} - "
+                + $"{Path.GetFileName(cached.ArtifactPath)}.");
+            return PipelineNode.From(new JsonlSource(cached.ArtifactPath));
+        }
+
+        string folder = Path.Combine(recipeFolder ?? TrainingRecipeStore.Folder, "data");
+        Directory.CreateDirectory(folder);
+        string path = Path.Combine(folder, dataHash + ".jsonl");
+        string temp = path + ".tmp";
+        int documents = 0;
+
+        try
+        {
+            await using (var stream = new FileStream(
+                temp, FileMode.Create, FileAccess.Write, FileShare.None,
+                bufferSize: 65_536, useAsync: true))
+            await using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
+            {
+                writer.NewLine = "\n";
+                await foreach (string document in pipeline.ReadAsync(cancellationToken)
+                                   .ConfigureAwait(false))
+                {
+                    await writer.WriteLineAsync(JsonSerializer.Serialize(new { text = document }))
+                        .ConfigureAwait(false);
+                    documents++;
+                    if (documents % 10_000 == 0)
+                        log($"Recipe: data phase prepared {documents:N0} document(s)...");
+                }
+            }
+
+            File.Move(temp, path, overwrite: true);
+            TrainingRecipeStore.Save(new TrainingRecipeArtifact(
+                "data", dataHash, path, job.Name, DateTime.UtcNow), recipeFolder);
+            log($"Recipe: data phase {TrainingRecipeHash.Short(dataHash)} cached "
+                + $"{documents:N0} document(s).");
+            return PipelineNode.From(new JsonlSource(path));
+        }
+        catch (Exception ex)
+        {
+            TryDeleteData(temp);
+            log($"Recipe: could not cache data ({ex.Message}); using the source pipeline.");
+            return pipeline;
+        }
+    }
+
+    private static void TryDeleteData(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (IOException)
+        {
         }
     }
 
