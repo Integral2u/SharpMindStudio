@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Principal;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace SharpMind.Studio.Services;
 
@@ -41,6 +42,8 @@ public static class GatewayFirewall
     /// <summary>
     /// Checks the named rule, not just its presence: a stale rule with another
     /// port, a Public-only profile or a disabled state must not report "open".
+    /// Uses netsh because Get-NetFirewallRule can return an empty set on some
+    /// machines even when rules exist.
     /// </summary>
     public static async Task<FirewallRuleStatus> RuleStatusAsync(
         int port,
@@ -49,57 +52,41 @@ public static class GatewayFirewall
         if (!IsWindows)
             return new FirewallRuleStatus(false, false, "Firewall rules only apply on Windows.");
 
-        string script = $$"""
-            $ErrorActionPreference = 'Stop'
-            try {
-                $rule = Get-NetFirewallRule -DisplayName '{{RuleName}}' -ErrorAction SilentlyContinue | Select-Object -First 1
-                if (-not $rule) {
-                    'missing'
-                } else {
-                    $pf = $rule | Get-NetFirewallPortFilter
-                    $ports = @($pf.LocalPort)
-                    $profile = [string]$rule.Profile
-                    $portOk = (@($ports) -contains 'Any') -or (@($ports) -contains '{{port}}')
-                    $protoOk = @($pf.Protocol) -contains 'TCP'
-                    $ok = ("$($rule.Enabled)" -eq 'True') -and
-                          ("$($rule.Direction)" -eq 'Inbound') -and
-                          ("$($rule.Action)" -eq 'Allow') -and
-                          $protoOk -and
-                          ($profile -match 'Private|Any') -and
-                          $portOk
-                    if ($ok) { 'ok' } else {
-                        'stale|' + $profile + '|' + ($ports -join ',') + '|' + $pf.Protocol + '|' +
-                        "$($rule.Enabled)" + '|' + "$($rule.Direction)" + '|' + "$($rule.Action)"
-                    }
-                }
-            } catch {
-                'error|' + $_.Exception.Message
-            }
-            """;
+        string output = await RunNetshAsync(
+            $"advfirewall firewall show rule name=\"{RuleName}\" verbose",
+            cancellationToken).ConfigureAwait(false);
+        string text = output.Trim();
 
-        string output = (await RunPowerShellAsync(script, cancellationToken).ConfigureAwait(false)).Trim();
-        if (output.StartsWith("ok", StringComparison.OrdinalIgnoreCase))
-            return new FirewallRuleStatus(true, true, $"Enabled for TCP {port} on the Private profile.");
-
-        if (output.StartsWith("missing", StringComparison.OrdinalIgnoreCase))
+        if (text.Length == 0
+            || text.Contains("No rules match", StringComparison.OrdinalIgnoreCase)
+            || !text.Contains("Rule Name:", StringComparison.OrdinalIgnoreCase))
+        {
             return new FirewallRuleStatus(false, false,
                 $"No rule named '{RuleName}'. Use Allow through Windows Firewall.");
-
-        if (output.StartsWith("stale|", StringComparison.OrdinalIgnoreCase))
-        {
-            string[] parts = output.Split('|');
-            string detail = parts.Length >= 7
-                ? $"Rule exists but does not match: profile={parts[1]}, port={parts[2]}, "
-                  + $"protocol={parts[3]}, enabled={parts[4]}, direction={parts[5]}, action={parts[6]}."
-                : "Rule exists but does not match the expected TCP/Private/Inbound/Allow shape.";
-            return new FirewallRuleStatus(true, false, detail);
         }
 
-        if (output.StartsWith("error|", StringComparison.OrdinalIgnoreCase))
-            return new FirewallRuleStatus(false, false, "Could not read the firewall rule: " + output[6..]);
+        bool enabled = Regex.IsMatch(text, @"Enabled:\s+Yes", RegexOptions.IgnoreCase);
+        bool inbound = Regex.IsMatch(text, @"Direction:\s+In\b", RegexOptions.IgnoreCase);
+        bool privateProfile = Regex.IsMatch(
+            text, @"Profiles:\s+(?:.*\bPrivate\b|Any)", RegexOptions.IgnoreCase);
+        bool tcp = Regex.IsMatch(text, @"Protocol:\s+TCP\b", RegexOptions.IgnoreCase);
+        bool portMatch = Regex.IsMatch(
+            text, $@"LocalPort:\s+(?:Any|{Regex.Escape(port.ToString())})\b", RegexOptions.IgnoreCase);
+        bool allow = Regex.IsMatch(text, @"Action:\s+Allow\b", RegexOptions.IgnoreCase);
 
-        return new FirewallRuleStatus(false, false, "Windows did not return a firewall status.");
+        if (enabled && inbound && privateProfile && tcp && portMatch && allow)
+        {
+            return new FirewallRuleStatus(true, true,
+                $"Enabled for TCP {port} on the Private profile.");
+        }
+
+        string detail = $"Rule exists but does not match the expected TCP/{port}/Private/Inbound/Allow shape "
+            + $"(enabled={YesNo(enabled)}, inbound={YesNo(inbound)}, private={YesNo(privateProfile)}, "
+            + $"tcp={YesNo(tcp)}, port={YesNo(portMatch)}, allow={YesNo(allow)}).";
+        return new FirewallRuleStatus(true, false, detail);
     }
+
+    private static string YesNo(bool value) => value ? "yes" : "no";
 
     /// <summary>The active internet profile, so a Public Wi-Fi can be called out.</summary>
     public static async Task<NetworkProfileStatus> NetworkProfileAsync(
@@ -141,11 +128,9 @@ public static class GatewayFirewall
         string script = $$"""
             $ErrorActionPreference = 'Stop'
             try {
-                $existing = Get-NetFirewallRule -DisplayName '{{RuleName}}' -ErrorAction SilentlyContinue
-                if ($existing) {
-                    Remove-NetFirewallRule -DisplayName '{{RuleName}}'
-                }
-                New-NetFirewallRule -DisplayName '{{RuleName}}' -Direction Inbound -Protocol TCP -LocalPort {{port}} -Profile Private -Action Allow | Out-Null
+                netsh advfirewall firewall delete rule name="{{RuleName}}" 2>$null | Out-Null
+                netsh advfirewall firewall add rule name="{{RuleName}}" dir=in action=allow protocol=TCP localport={{port}} profile=private | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "netsh add rule failed with exit code $LASTEXITCODE" }
                 'ok: TCP {{port}} allowed on the Private profile.' | Set-Content -LiteralPath '{{marker}}'
             } catch {
                 "error: $_" | Set-Content -LiteralPath '{{marker}}'
@@ -197,6 +182,36 @@ public static class GatewayFirewall
         {
             TryDelete(marker);
             TryDelete(scriptPath);
+        }
+    }
+
+    private static async Task<string> RunNetshAsync(
+        string arguments,
+        CancellationToken cancellationToken)
+    {
+        var startInfo = new ProcessStartInfo("netsh.exe")
+        {
+            Arguments = arguments,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+
+        try
+        {
+            using Process? process = Process.Start(startInfo);
+            if (process is null) return "";
+            string output = await process.StandardOutput.ReadToEndAsync(cancellationToken)
+                .ConfigureAwait(false);
+            string error = await process.StandardError.ReadToEndAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            return output + error;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return "";
         }
     }
 
