@@ -684,33 +684,16 @@ else if (_tab == "data")
         </div>
     </section>
 
-    <div class="grid-2">
-        <section class="panel">
-            <div class="panel-head">
-                <div>
-                    <div class="eyebrow">Pretraining and continued</div>
-                    <h2>Corpus triage</h2>
-                </div>
+    <section class="panel training-section">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Dataset pipeline</div>
+                <h2>Data Factory</h2>
             </div>
-            <div class="panel-body stack">
-                <div class="empty">No corpus sources yet.</div>
-                <p class="small faint">Quality, near-duplicates, language, licence, PII, length and domain tags. The corpus path on New model feeds the run directly today; triage stages arrive next.</p>
-            </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel-head">
-                <div>
-                    <div class="eyebrow">SFT</div>
-                    <h2>Instruction triage</h2>
-                </div>
-            </div>
-            <div class="panel-body stack">
-                <div class="empty">No instruction sets yet.</div>
-                <p class="small faint">Each example is rendered through the model's formatter and checked for roles, length, loss mask and eval contamination.</p>
-            </div>
-        </section>
-    </div>
+            <span class="faint small mono">source · clean · provider · review · export</span>
+        </div>
+        <DataFactoryPanel />
+    </section>
 }
 else if (_tab == "runs")
 {

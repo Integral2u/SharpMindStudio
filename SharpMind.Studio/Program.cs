@@ -53,6 +53,7 @@ builder.Services.AddScoped<StudioDeviceAccess>();
 builder.Services.AddScoped<PathPickerService>();
 builder.Services.AddScoped<StudioWorkService>();
 builder.Services.AddScoped<StudioChatService>();
+builder.Services.AddScoped<DataFactoryService>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()

@@ -26,6 +26,7 @@ public static class StudioPaths
     public static string Models => Path.Combine(Root, "Models");
     public static string Corpus => Path.Combine(Root, "Corpus");
     public static string Training => Path.Combine(Root, "Training");
+    public static string DataFactory => Path.Combine(Training, "DataFactory");
     public static string ChatSessions => Path.Combine(Root, "Chat Sessions");
     public static string Projects => Path.Combine(Root, "Studio");
     public static string Workspaces => Path.Combine(Root, "Workspaces");
@@ -48,6 +49,7 @@ public static class StudioPaths
         Directory.CreateDirectory(ChatSessions);
         Directory.CreateDirectory(Projects);
         Directory.CreateDirectory(Gateway);
+        Directory.CreateDirectory(DataFactory);
         Directory.CreateDirectory(Workspaces);
         Directory.CreateDirectory(Skills);
     }

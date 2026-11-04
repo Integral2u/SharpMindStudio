@@ -44,6 +44,9 @@ First public repository release.
   with free-model helpers, streaming chat completions, OpenAI-style tool calls,
   and the local project tools/permissions still enforced for Work. Remote models
   are inference-only; local tuning is unavailable for them.
+- **Data Factory** — a saved pipeline under **Training > Data**: source files or
+  JSONL, cleaning and filters, a local or OpenRouter provider transform, preview
+  and sample review, then chat or text JSONL export ready for SFT or pretraining.
 
 ### Changed
 

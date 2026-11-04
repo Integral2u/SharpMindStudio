@@ -1,0 +1,334 @@
+@using SharpMind.Studio.Core.DataFactory
+@using SharpMind.Studio.Core.Storage
+@using SharpMind.Studio.Services
+@inject DataFactoryService Factory
+@inject OpenRouterSettingsService OpenRouter
+@inject PathPickerService Picker
+@inject IJSRuntime JS
+
+<div class="panel-body stack">
+    <div class="row" style="align-items:flex-end; gap:.6rem; flex-wrap:wrap;">
+        <div class="field" style="min-width:16rem;">
+            <label class="field-label" for="factory-recipe">Recipe</label>
+            <select id="factory-recipe" class="input" value="@Factory.CurrentRecipePath"
+                    @onchange="LoadRecipe">
+                <option value="">New recipe</option>
+                @foreach (string path in Factory.SavedRecipes)
+                {
+                    <option value="@path">@Path.GetFileNameWithoutExtension(path)</option>
+                }
+            </select>
+        </div>
+        <div class="field" style="min-width:16rem;">
+            <label class="field-label" for="factory-name">Name</label>
+            <input id="factory-name" class="input" @bind="Factory.Recipe.Name" />
+        </div>
+        <div class="row">
+            <button type="button" class="button primary" @onclick="Factory.SaveRecipe"
+                    disabled="@Factory.IsRunning">Save</button>
+            <button type="button" class="button" @onclick="Factory.NewRecipe"
+                    disabled="@Factory.IsRunning">New</button>
+            <button type="button" class="button danger" @onclick="DeleteRecipe"
+                    disabled="@Factory.IsRunning || string.IsNullOrWhiteSpace(Factory.CurrentRecipePath)">
+                Delete
+            </button>
+        </div>
+    </div>
+
+    <div class="training-subsection">
+        <div class="training-subsection-head">
+            <label class="field-label">Source</label>
+            <span class="faint small">text files or JSONL</span>
+        </div>
+        <div class="training-form">
+            <div class="field training-form-wide">
+                <label class="field-label" for="factory-source">Source path</label>
+                <div class="row">
+                    <input id="factory-source" class="input" @bind="Factory.Recipe.SourcePath"
+                           placeholder="C:\path\to\documents or C:\path\**\*.jsonl" />
+                    <button type="button" class="button" @onclick="BrowseSourceAsync">Browse</button>
+                </div>
+            </div>
+            <div class="field">
+                <label class="field-label" for="factory-source-format">Format</label>
+                <select id="factory-source-format" class="input" @bind="Factory.Recipe.SourceFormat"
+                        @bind:after="Factory.EnsureRecipeDefaults">
+                    <option value="Text">Text files</option>
+                    <option value="Jsonl">JSONL</option>
+                </select>
+            </div>
+            @if (Factory.Recipe.SourceFormat == DataFactorySourceFormat.Jsonl)
+            {
+                <div class="field">
+                    <label class="field-label" for="factory-text-field">Text field</label>
+                    <input id="factory-text-field" class="input mono" @bind="Factory.Recipe.TextField" />
+                </div>
+            }
+            <div class="field">
+                <label class="field-label" for="factory-min-chars">Minimum characters</label>
+                <input id="factory-min-chars" class="input" type="number" min="0" @bind="Factory.Recipe.MinChars" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="factory-max-chars">Maximum characters</label>
+                <input id="factory-max-chars" class="input" type="number" min="0" @bind="Factory.Recipe.MaxChars" />
+            </div>
+            <div class="field training-form-wide">
+                <label class="field-label" for="factory-drop">Drop documents matching regex (optional)</label>
+                <input id="factory-drop" class="input mono" @bind="Factory.Recipe.DropPattern"
+                       placeholder="Leave blank to keep every cleaned document" />
+            </div>
+            <div class="row training-form-wide">
+                <label class="tool-toggle">
+                    <input type="checkbox" @bind="Factory.Recipe.StripHtml" />
+                    <span>Strip HTML</span>
+                </label>
+                <label class="tool-toggle">
+                    <input type="checkbox" @bind="Factory.Recipe.NormalizeText" />
+                    <span>Normalise text</span>
+                </label>
+                <label class="tool-toggle">
+                    <input type="checkbox" @bind="Factory.Recipe.Deduplicate" />
+                    <span>Remove exact duplicates</span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="training-subsection">
+        <div class="training-subsection-head">
+            <label class="field-label">Provider transform</label>
+            <span class="faint small">one response per source document</span>
+        </div>
+        <div class="training-form">
+            <div class="field">
+                <label class="field-label" for="factory-provider">Provider</label>
+                <select id="factory-provider" class="input" @bind="Factory.Recipe.Provider"
+                        @bind:after="Factory.EnsureRecipeDefaults">
+                    <option value="OpenRouter">OpenRouter</option>
+                    <option value="Local">Local model</option>
+                </select>
+            </div>
+            @if (Factory.Recipe.Provider == DataFactoryProviderKind.Local)
+            {
+                <div class="field training-form-wide">
+                    <label class="field-label" for="factory-local-model">Local model</label>
+                    <select id="factory-local-model" class="input" @onchange="OnLocalModelChanged">
+                        @foreach (var model in Factory.LocalModels)
+                        {
+                            <option value="@model.Path"
+                                    selected="@(string.Equals(Factory.Recipe.LocalModelPath, model.Path, StringComparison.OrdinalIgnoreCase))">
+                                @model.FileName - @model.Family.DisplayName
+                            </option>
+                        }
+                    </select>
+                </div>
+            }
+            else
+            {
+                <div class="field training-form-wide">
+                    <label class="field-label" for="factory-remote-model">OpenRouter model</label>
+                    <select id="factory-remote-model" class="input" @onchange="OnRemoteModelChanged">
+                        @if (Factory.RemoteModels.Count == 0)
+                        {
+                            <option value="">@(OpenRouter.HasApiKey ? "No active models" : "Add an API key in Settings")</option>
+                        }
+                        @foreach (string model in Factory.RemoteModels)
+                        {
+                            <option value="@model"
+                                    selected="@(string.Equals(Factory.Recipe.RemoteModel, model, StringComparison.OrdinalIgnoreCase))">
+                                @model
+                            </option>
+                        }
+                    </select>
+                    @if (!OpenRouter.HasApiKey)
+                    {
+                        <a class="small" href="/settings?tab=openrouter">Open Providers settings</a>
+                    }
+                </div>
+            }
+            <div class="field training-form-wide">
+                <label class="field-label" for="factory-system">Generator system prompt</label>
+                <textarea id="factory-system" class="textarea" rows="3" @bind="Factory.Recipe.SystemPrompt"></textarea>
+            </div>
+            <div class="field training-form-wide">
+                <label class="field-label" for="factory-template">User prompt template</label>
+                <textarea id="factory-template" class="textarea mono" rows="7" @bind="Factory.Recipe.UserPromptTemplate"></textarea>
+                <span class="small faint">
+                    Placeholders: <span class="mono">{text}</span>, <span class="mono">{source}</span>,
+                    <span class="mono">{name}</span>, <span class="mono">{id}</span>.
+                    If <span class="mono">{text}</span> is missing it is appended.
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="training-subsection">
+        <div class="training-subsection-head">
+            <label class="field-label">Export</label>
+            <span class="faint small">ready for SFT or pretraining</span>
+        </div>
+        <div class="training-form">
+            <div class="field">
+                <label class="field-label" for="factory-output-format">Output format</label>
+                <select id="factory-output-format" class="input" @bind="Factory.Recipe.OutputFormat"
+                        @bind:after="OnOutputFormatChanged">
+                    <option value="ChatJsonl">Chat JSONL - messages</option>
+                    <option value="TextJsonl">Text JSONL - text field</option>
+                </select>
+            </div>
+            @if (Factory.Recipe.OutputFormat == DataFactoryOutputFormat.ChatJsonl)
+            {
+                <div class="field">
+                    <label class="field-label" for="factory-chat-system">Chat system prompt</label>
+                    <input id="factory-chat-system" class="input" @bind="Factory.Recipe.ChatSystemPrompt" />
+                </div>
+            }
+            <div class="field training-form-wide">
+                <label class="field-label" for="factory-output">Output file</label>
+                <div class="row">
+                    <input id="factory-output" class="input" @bind="Factory.Recipe.OutputPath"
+                           placeholder="C:\path\to\factory-output.jsonl" />
+                    <button type="button" class="button" @onclick="BrowseOutputAsync">Browse</button>
+                </div>
+            </div>
+            <div class="field">
+                <label class="field-label" for="factory-max-records">Max records</label>
+                <input id="factory-max-records" class="input" type="number" min="1" @bind="Factory.Recipe.MaxRecords" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="factory-variants">Variants per document</label>
+                <input id="factory-variants" class="input" type="number" min="1" max="10" @bind="Factory.Recipe.Variants" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="factory-temperature">Temperature</label>
+                <input id="factory-temperature" class="input" type="number" min="0" max="2" step="0.05"
+                       @bind="Factory.Recipe.Temperature" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="factory-max-tokens">Max new tokens</label>
+                <input id="factory-max-tokens" class="input" type="number" min="1" @bind="Factory.Recipe.MaxTokens" />
+            </div>
+        </div>
+    </div>
+
+    <div class="training-actions">
+        <button type="button" class="button" @onclick="PreviewAsync"
+                disabled="@Factory.IsRunning">Preview source</button>
+        <button type="button" class="button" @onclick="SampleAsync"
+                disabled="@Factory.IsRunning">Generate sample</button>
+        <button type="button" class="button primary" @onclick="RunAsync"
+                disabled="@Factory.IsRunning">Run factory</button>
+        @if (Factory.IsRunning)
+        {
+            <button type="button" class="button danger" @onclick="Factory.Cancel">Cancel</button>
+        }
+        <span class="status-line">@Factory.Status</span>
+    </div>
+
+    @if (Factory.Error is not null)
+    {
+        <div class="error-line">@Factory.Error</div>
+    }
+
+    @if (Factory.Result is { } result)
+    {
+        <div class="small faint">
+            Processed @result.Processed.ToString("N0") ·
+            wrote @result.Written.ToString("N0") ·
+            skipped @result.Skipped.ToString("N0") ·
+            parse failures @result.ParseFailures.ToString("N0") ·
+            @result.OutputPath
+        </div>
+        @if (result.Samples.Count > 0)
+        {
+            <pre class="data-preview">@string.Join("\n", result.Samples)</pre>
+        }
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Factory.InputPreview))
+    {
+        <div class="small faint">Source preview</div>
+        <pre class="data-preview">@Factory.InputPreview</pre>
+    }
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Factory.Changed += OnFactoryChanged;
+        await Factory.InitializeAsync();
+    }
+
+    public void Dispose() => Factory.Changed -= OnFactoryChanged;
+
+    private void OnFactoryChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void LoadRecipe(ChangeEventArgs args)
+    {
+        string? path = args.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(path)) Factory.NewRecipe();
+        else Factory.LoadRecipe(path);
+    }
+
+    private void OnLocalModelChanged(ChangeEventArgs args) =>
+        Factory.Recipe.LocalModelPath = args.Value?.ToString();
+
+    private void OnRemoteModelChanged(ChangeEventArgs args) =>
+        Factory.Recipe.RemoteModel = args.Value?.ToString();
+
+    private async Task DeleteRecipe()
+    {
+        string? path = Factory.CurrentRecipePath;
+        if (string.IsNullOrWhiteSpace(path)) return;
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "Delete this Data Factory recipe?");
+        if (confirmed) Factory.DeleteRecipe(path);
+    }
+
+    private async Task BrowseSourceAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            Factory.Recipe.SourceFormat == DataFactorySourceFormat.Jsonl
+                ? PathPickerMode.File
+                : PathPickerMode.Folder,
+            Directory.Exists(Factory.Recipe.SourcePath)
+                ? Factory.Recipe.SourcePath
+                : StudioPaths.Corpus,
+            Factory.Recipe.SourceFormat == DataFactorySourceFormat.Jsonl
+                ? "Choose a JSONL source"
+                : "Choose a source folder");
+        if (selection?.Path is { Length: > 0 } path)
+            Factory.Recipe.SourcePath = path;
+    }
+
+    private async Task BrowseOutputAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.SaveFile,
+            string.IsNullOrWhiteSpace(Factory.Recipe.OutputPath)
+                ? Path.Combine(StudioPaths.Corpus, "factory-output.jsonl")
+                : Factory.Recipe.OutputPath,
+            "Save the factory output as");
+        if (selection?.Path is { Length: > 0 } path)
+            Factory.Recipe.OutputPath = path;
+    }
+
+    private void OnOutputFormatChanged()
+    {
+        if (Factory.Recipe.OutputFormat == DataFactoryOutputFormat.ChatJsonl
+            && Factory.Recipe.UserPromptTemplate == DataFactoryRecipe.DefaultTextTemplate)
+        {
+            Factory.Recipe.UserPromptTemplate = DataFactoryRecipe.DefaultChatTemplate;
+        }
+        else if (Factory.Recipe.OutputFormat == DataFactoryOutputFormat.TextJsonl
+                 && Factory.Recipe.UserPromptTemplate == DataFactoryRecipe.DefaultChatTemplate)
+        {
+            Factory.Recipe.UserPromptTemplate = DataFactoryRecipe.DefaultTextTemplate;
+        }
+    }
+
+    private Task PreviewAsync() => Factory.PreviewAsync();
+
+    private Task SampleAsync() => Factory.SampleAsync();
+
+    private Task RunAsync() => Factory.RunAsync();
+}

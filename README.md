@@ -37,6 +37,22 @@ Only the model conversation and the tool results the model asks for are sent to
 OpenRouter. OpenAI-style tool calling is supported, including the provider's
 native streaming tool-call deltas.
 
+## Data Factory
+
+Open **Training > Data** to build a dataset as a saved recipe (`.smmdf`):
+
+1. Pick a text folder or JSONL source.
+2. Apply HTML stripping, text normalisation, length limits, deduplication and an
+   optional drop regex.
+3. Choose a local model or an active OpenRouter model and edit the system/user
+   prompt template. `{text}`, `{source}`, `{name}` and `{id}` are available.
+4. Preview the source or generate a small sample before committing to a run.
+5. Export chat JSONL (`messages`) for SFT or text JSONL (`text`) for
+   pretraining.
+
+Recipes are stored under `Training/DataFactory`, so a dataset can be regenerated
+or adjusted later.
+
 ## Build and run
 
 ```powershell
