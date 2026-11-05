@@ -59,7 +59,26 @@ curl.exe -X PUT "http://127.0.0.1:8080/v1/models/tinystories.smm?activate=true" 
 | `SHARPMIND_MODELS_DIR` | Models folder (default `$SHARPMIND_DATA/Models`) |
 | `SHARPMIND_DATA` | Root for models, uploads, recipes and run history (default `/data/SharpMind`) |
 | `SHARPMIND_PLUGINS` | Plugin/accelerator folder (default `/app/plugins`) |
+| `SHARPMIND_ACCELERATOR` | Default training accelerator: `auto`, `ilgpu`, or `CPU`/blank |
+| `SHARPMIND_INFERENCE_ACCELERATOR` | Inference accelerator: `auto`/blank tries plugins, `CPU` disables them |
 | `ASPNETCORE_URLS` | Bind address; the image uses `http://0.0.0.0:8080` |
+
+## GPU plugin
+
+The GPU server image publishes `SharpMind.GPU` into `/app/plugins`. `/health`
+reports what loaded and why inference may have stayed on the CPU:
+
+```json
+"accelerators": [{ "name": "ilgpu", "inference": true, "backend": "CUDA · cuBLAS" }],
+"acceleratorReason": "Inference on ilgpu (CUDA · cuBLAS)."
+```
+
+- An unsupported model (LayerNorm, dense FFN) stays on the CPU and the reason is
+  reported; it does not fail the chat.
+- `SHARPMIND_ACCELERATOR=auto` applies `ilgpu` to training jobs that do not name
+  an accelerator. A job that names one is never overridden.
+- The driver (`libcuda.so.1`) is injected by the container runtime; the image
+  carries cuBLAS/cudart only.
 
 ## Build and test locally
 

@@ -19,6 +19,10 @@ public sealed class LoadedStudioModel : IDisposable
     public required Tokenizer Tokenizer { get; init; }
     public required ModelMetaData Meta { get; init; }
     public required ModelConfig Config { get; init; }
+
+    /// <summary>The resolved kernel/architecture config the transformer was built with.</summary>
+    public required SharpMindConfig SharpConfig { get; init; }
+
     internal int RefCount { get; set; }
 
     public void Dispose()
@@ -185,6 +189,7 @@ public sealed class StudioModelHost : IDisposable
                 Tokenizer = tokenizer,
                 Meta = meta,
                 Config = config,
+                SharpConfig = sharpConfig,
             };
         }
         catch

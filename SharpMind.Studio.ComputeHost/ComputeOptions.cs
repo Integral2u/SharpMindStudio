@@ -12,6 +12,18 @@ public sealed class ComputeOptions
     public string ModelsFolder { get; init; } = Path.Combine(StudioPaths.Root, "Models");
     public string PluginsFolder { get; init; } = Path.Combine(AppContext.BaseDirectory, "plugins");
 
+    /// <summary>
+    /// Accelerator plugin applied to training jobs that do not name one. "auto"
+    /// picks the first loaded plugin; blank keeps the CPU default.
+    /// </summary>
+    public string? Accelerator { get; init; }
+
+    /// <summary>
+    /// Accelerator plugin used for inference. Blank tries every loaded plugin and
+    /// falls back to the CPU when none can run the model; "CPU" disables the GPU path.
+    /// </summary>
+    public string? InferenceAccelerator { get; init; }
+
     /// <summary>Uploaded datasets and other job inputs live here.</summary>
     public string FilesFolder => Path.Combine(DataRoot, "Files");
 
@@ -48,6 +60,8 @@ public sealed class ComputeOptions
             ModelPath = string.IsNullOrWhiteSpace(model) ? null : Path.GetFullPath(model),
             ModelsFolder = Path.GetFullPath(models),
             PluginsFolder = Path.GetFullPath(plugins),
+            Accelerator = Env("SHARPMIND_ACCELERATOR"),
+            InferenceAccelerator = Env("SHARPMIND_INFERENCE_ACCELERATOR"),
         };
     }
 

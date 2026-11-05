@@ -115,6 +115,11 @@ public sealed class ComputeProviderService
         Changed?.Invoke();
     }
 
+    public void SetStudioUrl(string id, string? url)
+    {
+        if (_store.SetStudioUrl(id, url)) Changed?.Invoke();
+    }
+
     /// <summary>Cheap reachability check used by the provider dot and the Test button.</summary>
     public async Task<ComputeHealth> TestAsync(
         string id,

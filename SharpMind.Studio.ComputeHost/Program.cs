@@ -18,6 +18,7 @@ builder.Services.ConfigureHttpJsonOptions(json =>
         System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
 });
 builder.Services.AddSingleton(options);
+builder.Services.AddSingleton<ComputeAccelerators>();
 builder.Services.AddSingleton<StudioModelHost>();
 builder.Services.AddSingleton<ModelRuntime>();
 builder.Services.AddSingleton<TrainingJobManager>();
@@ -69,7 +70,10 @@ app.MapGet("/", () => Results.Json(new
     docs = "/health, /v1/models, /v1/files, /v1/chat/completions, /v1/training/jobs",
 }));
 
-app.MapGet("/health", (ModelRuntime runtime, TrainingJobManager jobs) => Results.Json(new
+app.MapGet("/health", (
+    ModelRuntime runtime,
+    TrainingJobManager jobs,
+    ComputeAccelerators accelerators) => Results.Json(new
 {
     status = "ok",
     model = runtime.ModelId,
@@ -80,6 +84,19 @@ app.MapGet("/health", (ModelRuntime runtime, TrainingJobManager jobs) => Results
     modelsFolder = options.ModelsFolder,
     filesFolder = options.FilesFolder,
     runningJobs = jobs.List().Count(job => job.Status == "running"),
+    accelerators = accelerators.Plugins.Select(plugin => new
+    {
+        name = plugin.Name,
+        description = plugin.Description,
+        inference = plugin.Capabilities.Any(
+            capability => capability is SharpMind.Inference.IInferenceEngineFactory),
+        backend = plugin.Capabilities
+            .OfType<SharpMind.Core.Plugins.IBackendHintProvider>()
+            .Select(hint => hint.BackendHint())
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
+    }),
+    acceleratorWarnings = accelerators.Warnings,
+    acceleratorReason = runtime.AcceleratorReason,
 }));
 
 app.MapGet("/v1/models", (ModelRuntime runtime) => Results.Json(new

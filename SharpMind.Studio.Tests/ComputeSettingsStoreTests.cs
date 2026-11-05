@@ -42,6 +42,7 @@ public sealed class ComputeSettingsStoreTests
         Assert.Equal("super-secret-token", resolved.Token);
         Assert.Equal("https://abc-8080.proxy.runpod.net", resolved.BaseUrl);
         Assert.True(resolved.IsUsable);
+        Assert.Equal("https://abc-5117.proxy.runpod.net", reopened.Find(provider.Id)!.StudioUrl);
     }
 
     [Fact]

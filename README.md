@@ -150,11 +150,29 @@ See `docker/studio/README.md` for compose, volumes and the data directory.
 
 ### Compute host
 
-`SharpMind.Studio.ComputeHost` is the first Cloud/Compute service: one model per
+`SharpMind.Studio.ComputeHost` is the Cloud/Compute service: one model per
 process, OpenAI-style chat completions, and background training jobs. Build it
 with `docker/compute/Dockerfile.local` or the package Dockerfile, then run it on
 local Docker or a GPU host such as Runpod. See `docker/compute/README.md` for
 the API, environment variables, local test commands and Runpod steps.
+
+### Combined server
+
+`docker/server` runs Studio (5117) and the Compute API (8080) in one container
+over the same `/data/SharpMind` volume. This is the deployable SharpMind Server:
+download a model once, chat from Studio or any OpenAI client, and run training
+on the same host.
+
+```powershell
+cd C:\Integral2u\source\repos
+Copy-Item SharpMind.Studio\docker\local-context.dockerignore .dockerignore
+docker build -f SharpMind.Studio/docker/server/Dockerfile.local -t sharpmind-server:local .
+docker build -f SharpMind.Studio/docker/server/Dockerfile.gpu.local -t sharpmind-server:gpu .
+```
+
+The GPU edition publishes the ILGPU plugin and CUDA libraries; `/health` reports
+the plugin, its backend and any CPU fallback reason. See
+`docker/server/README.md` for ports, pairing, Runpod and the GPU notes.
 
 ## Training smoke test (working notes)
 

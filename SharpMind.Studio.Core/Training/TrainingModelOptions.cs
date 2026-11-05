@@ -123,6 +123,14 @@ public static class TrainingModelOptions
     {
         return new ModelConfig
         {
+            // Stamp the preset so reloading the .smm selects the same kernels.
+            // Without this every corpus-trained model reloaded as GPT-2, which
+            // changed a LLaMA preset's RMSNorm back to LayerNorm.
+            Architecture = job.ArchitecturePreset ?? "gpt2",
+            NormTypeOverride = job.Norm is not null
+                && Enum.TryParse<NormKind>(job.Norm, ignoreCase: true, out NormKind norm)
+                    ? (norm == NormKind.RMSNorm ? 1 : 0)
+                    : null,
             // Pad the model's vocab (never the tokenizer's) up to the QAT target's
             // embedding block alignment, so a QAT run can't fail on the vocab axis.
             // The tokenizer keeps emitting ids below its own vocab, which stay valid

@@ -292,6 +292,34 @@ public sealed class TrainingJobOptionsTests
         Assert.Empty(TrainingJobValidation.Warnings(job));
     }
 
+    [Fact]
+    public void ResolveModelConfig_StampsArchitectureAndNormForReload()
+    {
+        var job = new TrainingJobSettings
+        {
+            ArchitecturePreset = "llama",
+            Norm = "RMSNorm",
+            HiddenDim = 64,
+            NumLayers = 1,
+            NumHeads = 4,
+            NumKvHeads = 2,
+            FfnDim = 128,
+            MaxSeqLen = 64,
+        };
+
+        ModelConfig config = TrainingModelOptions.ResolveModelConfig(job, 32);
+        Assert.Equal("llama", config.Architecture);
+        Assert.Equal(1, config.NormTypeOverride);
+
+        job.Norm = "LayerNorm";
+        config = TrainingModelOptions.ResolveModelConfig(job, 32);
+        Assert.Equal(0, config.NormTypeOverride);
+
+        job.Norm = null;
+        config = TrainingModelOptions.ResolveModelConfig(job, 32);
+        Assert.Null(config.NormTypeOverride);
+    }
+
     private sealed class ListProgress<T>(List<T> items) : IProgress<T>
     {
         public void Report(T value) => items.Add(value);

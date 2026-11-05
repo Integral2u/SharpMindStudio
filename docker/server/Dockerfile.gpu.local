@@ -1,0 +1,62 @@
+# syntax=docker/dockerfile:1.7
+# Combined SharpMind Server with the ILGPU accelerator plugin (CUDA/OpenCL).
+# Context is the parent folder that contains SharpMind/ and SharpMind.Studio/:
+#   docker build -f SharpMind.Studio/docker/server/Dockerfile.gpu.local -t sharpmind-server:gpu ..
+#
+# The NVIDIA driver (libcuda.so.1) is injected by the container runtime; this
+# image only carries the CUDA user-space libraries cuBLAS needs.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY SharpMind.Studio/Directory.Build.props \
+     SharpMind.Studio/Directory.Packages.props \
+     SharpMind.Studio/SharpMind.References.props \
+     /src/SharpMind.Studio/
+
+COPY SharpMind/ /src/SharpMind/
+COPY SharpMind.Studio/SharpMind.Studio.Core/ /src/SharpMind.Studio/SharpMind.Studio.Core/
+COPY SharpMind.Studio/SharpMind.Studio/ /src/SharpMind.Studio/SharpMind.Studio/
+COPY SharpMind.Studio/SharpMind.Studio.ComputeHost/ /src/SharpMind.Studio/SharpMind.Studio.ComputeHost/
+
+RUN dotnet publish /src/SharpMind.Studio/SharpMind.Studio/SharpMind.Studio.csproj \
+    -c Release -o /app/studio /p:UseAppHost=false
+RUN dotnet publish /src/SharpMind.Studio/SharpMind.Studio.ComputeHost/SharpMind.Studio.ComputeHost.csproj \
+    -c Release -o /app/compute /p:UseAppHost=false
+RUN dotnet publish /src/SharpMind/SharpMind.GPU/SharpMind.GPU.csproj \
+    -c Release -o /app/plugins /p:UseAppHost=false
+# The plugin resolves SharpMind.* from the host; keep only its own assembly and
+# its ILGPU/native neighbours so no second copy of Core is loaded.
+RUN find /app/plugins -maxdepth 1 -name 'SharpMind*.dll' ! -name 'SharpMind.GPU.dll' -delete
+
+FROM nvidia/cuda:12.6.3-runtime-ubuntu24.04 AS cuda
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+
+COPY --from=cuda /usr/local/cuda/lib64/ /usr/local/cuda/lib64/
+COPY --from=build /app/studio /app/studio
+COPY --from=build /app/compute /app/compute
+COPY --from=build /app/plugins /app/plugins
+COPY SharpMind.Studio/docker/server/entrypoint.sh /app/entrypoint.sh
+
+RUN sed -i 's/\r$//' /app/entrypoint.sh \
+    && chmod +x /app/entrypoint.sh \
+    && mkdir -p /data/SharpMind
+
+ENV ASPNETCORE_ENVIRONMENT=Production \
+    Studio__Root=/data/SharpMind \
+    Studio__Url=http://0.0.0.0:5117 \
+    Studio__LanUrl=http://0.0.0.0:5118 \
+    Studio__LanEnabled=true \
+    ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    SHARPMIND_DATA=/data/SharpMind \
+    SHARPMIND_MODELS_DIR=/data/SharpMind/Models \
+    SHARPMIND_PLUGINS=/app/plugins \
+    SHARPMIND_ACCELERATOR=auto \
+    SHARPMIND_INFERENCE_ACCELERATOR=auto \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/lib64/compat
+
+EXPOSE 5117 5118 8080
+VOLUME ["/data/SharpMind"]
+
+ENTRYPOINT ["/app/entrypoint.sh"]

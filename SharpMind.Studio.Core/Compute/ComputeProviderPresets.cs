@@ -73,6 +73,28 @@ public static class ComputeProviderPresets
         return $"{uri.Scheme}://{uri.Host}{(uri.IsDefaultPort ? "" : $":{uri.Port}")}";
     }
 
+    /// <summary>
+    /// Derives the Studio UI address of a combined SharpMind Server from its
+    /// Compute API address. Runpod pods use one proxy host per port, so the
+    /// <c>-8080</c> segment is swapped for <c>-5117</c>.
+    /// </summary>
+    public static string? DeriveStudioUrl(string? computeUrl, int studioPort = 5117)
+    {
+        if (string.IsNullOrWhiteSpace(computeUrl)) return null;
+        if (!Uri.TryCreate(NormalizeUrl(computeUrl), UriKind.Absolute, out Uri? uri)) return null;
+
+        if (uri.Host.EndsWith(".proxy.runpod.net", StringComparison.OrdinalIgnoreCase))
+        {
+            int dash = uri.Host.IndexOf('-');
+            string host = dash > 0
+                ? uri.Host[..dash] + $"-{studioPort}.proxy.runpod.net"
+                : uri.Host;
+            return $"{uri.Scheme}://{host}";
+        }
+
+        return $"{uri.Scheme}://{uri.Host}:{studioPort}";
+    }
+
     /// <summary>A copy/paste token with no ambiguous characters.</summary>
     public static string NewToken(int length = 40)
     {

@@ -10,8 +10,14 @@ namespace SharpMind.Studio.ComputeHost;
 /// </summary>
 public sealed class TrainingJobManager
 {
+    private readonly ComputeAccelerators _accelerators;
     private readonly ConcurrentDictionary<string, TrainingJobState> _jobs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellations = new(StringComparer.Ordinal);
+
+    public TrainingJobManager(ComputeAccelerators accelerators)
+    {
+        _accelerators = accelerators ?? throw new ArgumentNullException(nameof(accelerators));
+    }
 
     public TrainingJobState Start(TrainingJobRequest request, ComputeOptions options)
     {
@@ -49,6 +55,7 @@ public sealed class TrainingJobManager
         state.StartedUtc = DateTimeOffset.UtcNow;
 
         ResolveRelativePaths(request, options);
+        ApplyAccelerator(request, options);
 
         var status = new InlineProgress<string>(line =>
         {
@@ -126,6 +133,21 @@ public sealed class TrainingJobManager
             request.Job.TokenizerCachePath = Path.GetFullPath(
                 Path.Combine(options.TrainingFolder, tokenizer));
         }
+    }
+
+    /// <summary>
+    /// Applies the host's default accelerator to jobs that do not name one. A job
+    /// that explicitly asks for an accelerator is never overridden.
+    /// </summary>
+    private void ApplyAccelerator(TrainingJobRequest request, ComputeOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Job.Accelerator)) return;
+        string? configured = options.Accelerator?.Trim();
+        if (string.IsNullOrWhiteSpace(configured)) return;
+
+        request.Job.Accelerator = string.Equals(configured, "auto", StringComparison.OrdinalIgnoreCase)
+            ? _accelerators.DefaultName
+            : configured;
     }
 
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>

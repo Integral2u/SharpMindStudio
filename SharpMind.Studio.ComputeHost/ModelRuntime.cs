@@ -1,5 +1,8 @@
 using System.Runtime.CompilerServices;
+using SharpMind.Core.Plugins;
+using SharpMind.Inference;
 using SharpMind.Inference.Chat;
+using SharpMind.Model.Config;
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Inference;
 
@@ -13,17 +16,23 @@ namespace SharpMind.Studio.ComputeHost;
 public sealed class ModelRuntime : IAsyncDisposable
 {
     private readonly ComputeOptions _options;
+    private readonly ComputeAccelerators _accelerators;
     private readonly StudioModelHost _host = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
     private LoadedStudioModel? _loaded;
     private IChatSession? _session;
     private string? _modelPath;
+    private string? _acceleratorReason;
 
-    public ModelRuntime(ComputeOptions options)
+    public ModelRuntime(ComputeOptions options, ComputeAccelerators accelerators)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _accelerators = accelerators ?? throw new ArgumentNullException(nameof(accelerators));
         _modelPath = options.ModelPath;
     }
+
+    /// <summary>Why the GPU inference path was not used, when a plugin declined.</summary>
+    public string? AcceleratorReason => _acceleratorReason;
 
     public string ModelId =>
         string.IsNullOrWhiteSpace(_modelPath)
@@ -149,6 +158,7 @@ public sealed class ModelRuntime : IAsyncDisposable
             .ConfigureAwait(false);
 
         Type cacheType = generator.CacheType ?? cache.Type;
+        IInferenceEngine? engine = CreateInferenceEngine(_loaded);
         IChatSession session = ChatSessionFactory.CreateChatSession(
             generator.BuilderType,
             cacheType,
@@ -157,7 +167,8 @@ public sealed class ModelRuntime : IAsyncDisposable
             _loaded.Meta,
             agentBuilder: null,
             formatter: ChatFormatterFactory.Create(profile.Formatter, _loaded.Meta),
-            seed: profile.Seed);
+            seed: profile.Seed,
+            engine: engine);
 
         int maxContext = profile.MaxContextTokens is > 0
             ? profile.MaxContextTokens.Value
@@ -173,6 +184,60 @@ public sealed class ModelRuntime : IAsyncDisposable
 
         _session = session;
         return session;
+    }
+
+    /// <summary>
+    /// Builds a device engine when an accelerator plugin offers inference for
+    /// this model shape. A refusal is recorded rather than thrown so the host can
+    /// keep serving on the CPU and say why in <c>/health</c>.
+    /// </summary>
+    private IInferenceEngine? CreateInferenceEngine(LoadedStudioModel loaded)
+    {
+        _acceleratorReason = null;
+        if (string.Equals(_options.InferenceAccelerator, "CPU", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        int cacheLength = ModelConfig.ComputeMaxCacheLength(loaded.Config);
+        var plugins = _accelerators.Plugins.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_options.InferenceAccelerator)
+            && !string.Equals(_options.InferenceAccelerator, "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            plugins = plugins.Where(plugin => plugin.Name.Equals(
+                _options.InferenceAccelerator, StringComparison.OrdinalIgnoreCase));
+        }
+
+        foreach (IAcceleratorPlugin plugin in plugins)
+        {
+            foreach (object capability in plugin.Capabilities)
+            {
+                if (capability is not IInferenceEngineFactory factory) continue;
+                try
+                {
+                    IInferenceEngine? engine = factory.TryCreate(
+                        new InferenceEngineContext(loaded.Model, loaded.SharpConfig, cacheLength),
+                        out string? reason);
+                    if (engine is not null)
+                    {
+                        string? backend = plugin.Capabilities
+                            .OfType<IBackendHintProvider>()
+                            .Select(hint => hint.BackendHint())
+                            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+                        _acceleratorReason = backend is null
+                            ? $"Inference on {plugin.Name}."
+                            : $"Inference on {plugin.Name} ({backend}).";
+                        return engine;
+                    }
+
+                    _acceleratorReason = $"{plugin.Name} declined: {reason ?? "not supported"}";
+                }
+                catch (Exception ex)
+                {
+                    _acceleratorReason = $"{plugin.Name} failed: {ex.GetBaseException().Message}";
+                }
+            }
+        }
+
+        return null;
     }
 
     private static void AddMessage(IChatSession session, ChatCompletionMessage message)

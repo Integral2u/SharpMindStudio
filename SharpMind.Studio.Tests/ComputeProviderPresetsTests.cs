@@ -36,6 +36,15 @@ public sealed class ComputeProviderPresetsTests
         Assert.Equal(expected, ComputeProviderPresets.NormalizeUrl(input));
     }
 
+    [Theory]
+    [InlineData("http://127.0.0.1:8080", "http://127.0.0.1:5117")]
+    [InlineData("http://192.168.1.10:8080", "http://192.168.1.10:5117")]
+    [InlineData("https://abc123-8080.proxy.runpod.net", "https://abc123-5117.proxy.runpod.net")]
+    public void StudioUrl_IsDerivedFromTheComputeAddress(string compute, string expected)
+    {
+        Assert.Equal(expected, ComputeProviderPresets.DeriveStudioUrl(compute));
+    }
+
     [Fact]
     public void Token_HasRequestedLengthAndIsUrlSafe()
     {

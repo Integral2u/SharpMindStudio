@@ -101,6 +101,19 @@
             <span class="faint small mono">applies on next start</span>
         </div>
         <div class="panel-body stack">
+            <div class="field">
+                <label class="field-label" for="studio-provider">Use a Compute host</label>
+                <select id="studio-provider" class="input" @onchange="UseProviderStudioAsync">
+                    <option value="">Choose a combined server...</option>
+                    @foreach (ComputeProviderSettings host in Compute.Providers)
+                    {
+                        <option value="@host.Id">@host.Name — @(host.StudioUrl ?? "no Studio URL")</option>
+                    }
+                </select>
+                <span class="small faint">
+                    A combined SharpMind Server serves Studio on port 5117 and the Compute API on 8080.
+                </span>
+            </div>
             <div class="server-row">
                 <div class="field">
                     <label class="field-label" for="studio-host">Host</label>
@@ -302,7 +315,7 @@ else if (_tab == "openrouter")
                         </div>
                         <div class="field">
                             <label class="field-label" for="compute-kind">Kind</label>
-                            <select id="compute-kind" class="input" @bind="_computeKind">
+                            <select id="compute-kind" class="input" @bind="_computeKind" @bind:after="SyncComputeStudioUrl">
                                 <option value="@ComputeProviderKinds.Local">Local Docker</option>
                                 <option value="@ComputeProviderKinds.Remote">Remote host</option>
                             </select>
@@ -334,6 +347,16 @@ else if (_tab == "openrouter")
                             </span>
                         </div>
 
+                        <div class="field training-form-wide">
+                            <label class="field-label" for="compute-studio">Studio URL</label>
+                            <input id="compute-studio" class="input" @bind="_computeStudioUrl"
+                                   placeholder="http://127.0.0.1:5117" />
+                            <span class="small faint">
+                                Where the combined SharpMind Server serves the Studio UI
+                                (port 5117). System → Connection can use it.
+                            </span>
+                        </div>
+
                         @if (_computeKind == ComputeProviderKinds.Local)
                         {
                             <div class="field">
@@ -345,7 +368,7 @@ else if (_tab == "openrouter")
                             <div class="field">
                                 <label class="field-label" for="compute-port">Port</label>
                                 <input id="compute-port" class="input" type="number" min="1" max="65535"
-                                       @bind="_computePort" />
+                                       @bind="_computePort" @bind:after="SyncComputeStudioUrl" />
                                 <span class="small faint">Studio will connect to <span class="mono">http://127.0.0.1:@_computePort</span>.</span>
                             </div>
                             <div class="field">
@@ -409,6 +432,10 @@ else if (_tab == "openrouter")
                     </div>
 
                     <div class="spread small mono"><span>@provider.BaseUrl</span><span>@(Compute.HasToken(provider.Id) ? "token saved" : "no token")</span></div>
+                    @if (provider.StudioUrl is { Length: > 0 })
+                    {
+                        <div class="spread small mono"><span>Studio</span><span>@provider.StudioUrl</span></div>
+                    }
                     @if (provider.LastStatus is { Length: > 0 })
                     {
                         <div class="small faint">@provider.LastStatus</div>
@@ -727,6 +754,7 @@ else
     private string _computeKind = ComputeProviderKinds.Local;
     private string _computeBaseUrl = ComputeProviderSettings.DefaultLocalUrl;
     private string _computeToken = "";
+    private string _computeStudioUrl = "";
     private string _computeImage = ComputeProviderPresets.DefaultImage;
     private int _computePort = ComputeProviderPresets.DefaultPort;
     private bool _computeUseGpu;
@@ -1012,6 +1040,27 @@ else
         _serverStatus = $"Connection saved: {_studioHost}:{_studioPort}";
     }
 
+    private async Task UseProviderStudioAsync(ChangeEventArgs args)
+    {
+        string id = args.Value?.ToString() ?? "";
+        ComputeProviderSettings? provider = Compute.Find(id);
+        if (provider?.StudioUrl is not { Length: > 0 } url)
+        {
+            if (id.Length > 0) _serverStatus = "That host has no Studio URL yet.";
+            return;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri))
+        {
+            _serverStatus = "That Studio URL is not valid.";
+            return;
+        }
+
+        _studioHost = uri.Host;
+        _studioPort = uri.Port;
+        await SaveServerAsync();
+    }
+
     private async Task SaveCloseToTrayAsync()
     {
         await Theme.SetCloseToTrayAsync(_closeToTray);
@@ -1073,6 +1122,8 @@ else
         _computePort = ComputeProviderPresets.DefaultPort;
         _computeUseGpu = false;
         _computePodId = "";
+        _computeStudioUrl = ComputeProviderPresets.DeriveStudioUrl(
+            ComputeProviderPresets.LocalUrl(_computePort)) ?? "";
         _computeShowToken = false;
         _computeStatus = null;
         _computeError = null;
@@ -1090,6 +1141,9 @@ else
         _computePort = provider.DockerPort ?? ComputeProviderPresets.DefaultPort;
         _computeUseGpu = provider.UseGpu;
         _computePodId = "";
+        _computeStudioUrl = provider.StudioUrl
+            ?? ComputeProviderPresets.DeriveStudioUrl(provider.BaseUrl)
+            ?? "";
         _computeShowToken = false;
         _computeStatus = null;
         _computeError = null;
@@ -1122,6 +1176,7 @@ else
                 baseUrl,
                 string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken);
             ApplyDockerSettings(provider.Id);
+            Compute.SetStudioUrl(provider.Id, _computeStudioUrl);
             _computeStatus = local
                 ? "Host added. Press Start container below."
                 : "Host added. Press Test to read its models.";
@@ -1135,6 +1190,7 @@ else
                 baseUrl,
                 string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken);
             ApplyDockerSettings(_editingComputeId);
+            Compute.SetStudioUrl(_editingComputeId, _computeStudioUrl);
             _computeStatus = "Compute host saved.";
         }
 
@@ -1172,8 +1228,17 @@ else
 
         _computeBaseUrl = ComputeProviderPresets.TryRunpodUrl(_computePodId)
             ?? _computeBaseUrl;
+        _computeStudioUrl = ComputeProviderPresets.DeriveStudioUrl(_computeBaseUrl)
+            ?? _computeStudioUrl;
         _computeError = null;
         _computeStatus = $"URL set to {_computeBaseUrl}.";
+    }
+
+    private void SyncComputeStudioUrl()
+    {
+        if (_computeKind != ComputeProviderKinds.Local) return;
+        _computeStudioUrl = ComputeProviderPresets.DeriveStudioUrl(
+            ComputeProviderPresets.LocalUrl(_computePort)) ?? _computeStudioUrl;
     }
 
     private async Task CheckDockerAsync(string id)

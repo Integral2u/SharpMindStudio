@@ -21,6 +21,9 @@ public sealed class ComputeProviderSettings
 
     public string? TokenProtected { get; set; }
 
+    /// <summary>Where the combined SharpMind Server serves the Studio web UI.</summary>
+    public string? StudioUrl { get; set; }
+
     /// <summary>The model the host should serve by default.</summary>
     public string? DefaultModel { get; set; }
 
@@ -175,6 +178,7 @@ public sealed class ComputeSettingsStore
             DockerImage = ComputeProviderPresets.DefaultImage,
         };
         provider.ContainerName = ComputeProviderPresets.ContainerName(provider.Id);
+        provider.StudioUrl = ComputeProviderPresets.DeriveStudioUrl(provider.BaseUrl);
 
         lock (_gate)
         {
@@ -209,6 +213,7 @@ public sealed class ComputeSettingsStore
                 ? ComputeProviderKinds.Remote
                 : ComputeProviderKinds.Local;
             provider.BaseUrl = NormalizeBaseUrl(baseUrl);
+            provider.StudioUrl = ComputeProviderPresets.DeriveStudioUrl(provider.BaseUrl);
 
             if (token is not null)
             {
@@ -352,6 +357,23 @@ public sealed class ComputeSettingsStore
         }
     }
 
+    /// <summary>Overrides the derived Studio UI address for a combined server.</summary>
+    public bool SetStudioUrl(string id, string? url)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.StudioUrl = string.IsNullOrWhiteSpace(url)
+                ? ComputeProviderPresets.DeriveStudioUrl(provider.BaseUrl)
+                : ComputeProviderPresets.NormalizeUrl(url.Trim(), 5117);
+            SaveLocked();
+            return true;
+        }
+    }
+
     public void RecordProbe(string id, bool healthy, string? status)
     {
         lock (_gate)
@@ -425,6 +447,9 @@ public sealed class ComputeSettingsStore
             provider.Models ??= [];
             provider.UploadedModels ??= [];
             provider.BaseUrl = NormalizeBaseUrl(provider.BaseUrl);
+            provider.StudioUrl = string.IsNullOrWhiteSpace(provider.StudioUrl)
+                ? ComputeProviderPresets.DeriveStudioUrl(provider.BaseUrl)
+                : provider.StudioUrl;
             provider.DockerImage ??= ComputeProviderPresets.DefaultImage;
             provider.DockerPort ??= ComputeProviderPresets.DefaultPort;
             provider.ContainerName ??= ComputeProviderPresets.ContainerName(provider.Id);
