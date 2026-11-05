@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wiki — SharpMind Studio</title>
+    <meta name="description" content="How to build, run, train and extend SharpMind Studio: local models, OpenRouter, Data Factory, SFT, Work and planned Cloud compute." />
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="wiki.html"><span class="nav-index">02</span> WIKI</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> pre-release preview</span>
+        <span>Local-first.<br />Optional OpenRouter and cloud.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#quick-start">Quick start</a>
+            <a href="#requirements">Requirements</a>
+            <a href="#local-models">Local models</a>
+            <a href="#openrouter">OpenRouter</a>
+            <a href="#data-factory">Data Factory</a>
+            <a href="#training">Training and SFT</a>
+            <a href="#work">Work mode</a>
+            <a href="#cloud">Cloud compute</a>
+            <a href="#huggingface">HuggingFace</a>
+            <a href="#security">Security and privacy</a>
+            <a href="#faq">FAQ</a>
+            <a href="#roadmap">Roadmap</a>
+        </aside>
+
+        <article class="wiki-content">
+            <span class="eyebrow">Documentation</span>
+            <h1>SharpMind Studio Wiki</h1>
+            <p class="lead">
+                How to build the app, run models locally, connect providers, manufacture
+                datasets and train. This is a pre-release preview; the edges will move.
+            </p>
+
+            <div class="callout warn">
+                <strong>Preview status.</strong> No packaged release yet. The repository is
+                the source of truth, and APIs, screens and generated files may change
+                before the first release.
+            </div>
+
+            <h2 id="quick-start">Quick start</h2>
+            <p>
+                SharpMind Studio is a Blazor web app with an optional desktop shell. The web
+                app is the simplest way to try it:
+            </p>
+            <pre class="code"><span class="cmd">git clone</span> https://github.com/Integral2u/SharpMindStudio
+<span class="cmd">cd</span> SharpMindStudio
+<span class="cmd">dotnet build</span> SharpMind.Studio.slnx -c Debug
+<span class="cmd">dotnet test</span>  SharpMind.Studio.slnx -c Debug
+<span class="cmd">dotnet run</span> --project SharpMind.Studio</pre>
+            <p>
+                The web UI listens on <code>http://127.0.0.1:5117</code>. The optional desktop
+                shell is <code>SharpMind.Studio.UI</code> and reads the same host/port from
+                Studio settings.
+            </p>
+            <p>
+                Machine settings and project data live under
+                <code>%USERPROFILE%\SharpMind</code>. Models go in <code>Models\</code>,
+                corpora in <code>Corpus\</code>, training output in <code>Training\</code>,
+                and per-project chats/runs under <code>Workspaces\</code>.
+            </p>
+
+            <h2 id="requirements">Requirements</h2>
+            <ul>
+                <li>Windows 10/11 for the optional WebView2 desktop shell; the web UI is cross-platform with the .NET SDK.</li>
+                <li>.NET 10 SDK (pinned by <code>global.json</code>).</li>
+                <li>A <code>.smm</code> or <code>.gguf</code> model for local Chat and Work.</li>
+                <li>Optional: an OpenRouter API key for remote models.</li>
+                <li>Optional: Docker, later, for a SharpMind Cloud host.</li>
+            </ul>
+
+            <h2 id="local-models">Local models</h2>
+            <p>
+                Put models in <code>%USERPROFILE%\SharpMind\Models</code>. The Models tab
+                discovers <code>.gguf</code> and <code>.smm</code> files and can convert GGUF
+                to the packaged <code>.smm</code> format.
+            </p>
+            <ul>
+                <li><strong>.smm</strong> — SharpMind’s packaged model: weights, tokenizer, metadata, chat template.</li>
+                <li><strong>.gguf</strong> — the common local-model container; convert it to <code>.smm</code> for training or packaging.</li>
+                <li><strong>.smlora</strong> — a portable LoRA adapter with a base-model fingerprint.</li>
+            </ul>
+            <p>
+                Chat and Work use the same local engine. The model stays on this machine;
+                the status strip shows the latest run and tool probe when available.
+            </p>
+
+            <h2 id="openrouter">OpenRouter Providers</h2>
+            <p>
+                Open <strong>Settings → Providers</strong>. The API key is encrypted with a
+                local key file; the base URL and active model list live beside it.
+            </p>
+            <ol>
+                <li>Paste an OpenRouter key and save it. The blue dot means a key is configured.</li>
+                <li>Fetch models and add the ones you want to the active list.</li>
+                <li>Choose a default model. <code>openrouter/free</code> is the zero-cost default.</li>
+                <li>Use <strong>Add All Free</strong> to add the free catalog in one step.</li>
+            </ol>
+            <p>
+                Chat, Work and the Data Factory can then choose <strong>OpenRouter</strong>.
+                Remote models are inference-only: local tuning is unavailable for them.
+                Work keeps its project tools, permissions, skills and memory local; the
+                model conversation and the tool results it asks for go to OpenRouter.
+            </p>
+            <div class="callout">
+                <strong>App attribution.</strong> Requests identify the app with the
+                <code>HTTP-Referer</code> and <code>X-OpenRouter-Title</code> headers. No
+                prompt content is added to those headers.
+            </div>
+            <p>
+                OpenAI-style tool calling is supported. When a UI tool returns a choice, the
+                result is fed back as the person’s answer, so the model continues instead of
+                re-listing the options.
+            </p>
+
+            <h2 id="data-factory">Data Factory</h2>
+            <p>
+                Open <strong>Training → Data</strong>. A recipe is saved as a
+                <code>.smmdf</code> file under <code>Training\DataFactory</code>.
+            </p>
+            <ol>
+                <li><strong>Source.</strong> A text folder/file/glob, or JSONL with a configurable text field.</li>
+                <li><strong>Clean and filter.</strong> Strip HTML, normalise text, remove exact duplicates, set min/max characters, and add an optional drop regex.</li>
+                <li><strong>Provider transform.</strong> Choose a local model or an active OpenRouter model. Edit the system prompt and the user prompt template.</li>
+                <li><strong>Preview.</strong> Read the cleaned source or generate a small sample before a full run.</li>
+                <li><strong>Export.</strong> Chat JSONL (<code>messages</code>) for SFT, or text JSONL (<code>text</code>) for pretraining.</li>
+            </ol>
+            <p>Template placeholders:</p>
+            <table>
+                <tr><th>Placeholder</th><th>Value</th></tr>
+                <tr><td><code>{text}</code></td><td>The cleaned source document</td></tr>
+                <tr><td><code>{source}</code></td><td>The source file path</td></tr>
+                <tr><td><code>{name}</code></td><td>The source file name</td></tr>
+                <tr><td><code>{id}</code></td><td>The document index</td></tr>
+            </table>
+            <p>
+                For chat output the model is asked for a JSON object with
+                <code>instruction</code> and <code>answer</code>. Q/A lines are also accepted.
+                Responses that are neither are counted as parse failures and skipped.
+            </p>
+
+            <h2 id="training">Training and SFT</h2>
+            <p>
+                The Training lab is the corpus-to-export engine: data sources and cleaning
+                stages, BPE or character tokenizer, model presets, QAT, checkpoints,
+                validation, a held-out exam, and <code>.smm</code> export.
+            </p>
+            <h3>Pretrain or continue</h3>
+            <p>
+                A from-scratch run learns a tokenizer and model from your corpus. A continued
+                run resumes the latest checkpoint. The recipe cache reuses the cleaned data,
+                tokenizer, checkpoint and packaged model when the inputs are identical.
+            </p>
+            <h3>LoRA fine-tune</h3>
+            <p>
+                Pick a packaged base; the base stays frozen and only the adapters train. Export
+                a merged <code>.smm</code>, an adapter-only <code>.smlora</code>, or both.
+            </p>
+            <h3>SFT</h3>
+            <p>
+                Tick <strong>SFT</strong> in Improve and point at chat JSONL. The parser accepts
+                <code>messages</code>, <code>conversations</code>,
+                <code>prompt/response</code> and <code>instruction/output</code>. The base
+                model’s chat template is used by default, with a formatter override. Loss is
+                masked to assistant tokens, and the held-out exam uses the same conversation
+                slice and mask.
+            </p>
+            <p>
+                Use <strong>Preview data</strong> before starting: it reports valid/skipped
+                records, layouts, train/validation/exam counts, token lengths and rendered
+                examples.
+            </p>
+
+            <h2 id="work">Work mode</h2>
+            <p>
+                Work is a project-scoped session: a folder with its own system prompt, skills,
+                tool permissions, memory, runs and models. Tools are grouped by category and
+                gated by explicit permissions.
+            </p>
+            <ul>
+                <li>File tools are limited to configured context locations.</li>
+                <li>Web access is a separate permission.</li>
+                <li>A permission prompt appears when a tool needs access.</li>
+                <li>Skills are resolved from the system and project repositories.</li>
+            </ul>
+            <p>
+                With OpenRouter, the model runs remotely but the tools still run locally. The
+                tool definitions are sent to the model; the results it asks for are sent back.
+            </p>
+
+            <h2 id="cloud">Cloud compute <span style="color:var(--warn);font-family:var(--mono);font-size:.65rem;">PLANNED</span></h2>
+            <p>
+                The intended Cloud provider is a <strong>SharpMind Service</strong> in Docker:
+                one image, CPU or GPU, exposing inference and training endpoints.
+            </p>
+            <ul>
+                <li>Start the image locally or on a BYO remote Docker host.</li>
+                <li>Choose a model; the service loads it and exposes the host API.</li>
+                <li>Use it from Chat, Work or the Data Factory like any other provider.</li>
+                <li>Run inference and training jobs, stream progress, cancel cleanly.</li>
+            </ul>
+            <div class="callout warn">
+                <strong>Artifact rule.</strong> Temporary containers are scratch space. Before
+                a session stops, Studio must download the run record, tokenizer, checkpoints,
+                exports, datasets and logs. Local disk is the source of truth.
+            </div>
+            <p>
+                There is no free GPU Docker host in the current test setup, so this is parked
+                until we can validate the lifecycle and artifact download on a real host.
+            </p>
+
+            <h2 id="huggingface">HuggingFace <span style="color:var(--warn);font-family:var(--mono);font-size:.65rem;">NEXT</span></h2>
+            <p>
+                Planned model discovery: search HuggingFace for GGUF repos, show license,
+                gated status, files, quantisation and size, then download to
+                <code>Models\</code> with progress and resume. An optional encrypted HF token
+                covers gated models. Downloaded GGUF files convert to <code>.smm</code> with
+                the existing converter.
+            </p>
+
+            <h2 id="security">Security and privacy</h2>
+            <ul>
+                <li>Local models, chats, datasets and checkpoints stay on this machine.</li>
+                <li>OpenRouter requests go to the host you configure. The API key is encrypted at rest with a local key file.</li>
+                <li>Work tools are permission-gated; file access is limited to context roots.</li>
+                <li>The app does not ship with an API key. Each user brings their own provider key.</li>
+                <li>Do not commit personal settings, keys or model files to the repository.</li>
+            </ul>
+
+            <h2 id="faq">FAQ</h2>
+            <h3>Does it run without a GPU?</h3>
+            <p>Yes. CPU training and inference work; larger models are slower. The GPU plugin is optional.</p>
+            <h3>Does OpenRouter replace local models?</h3>
+            <p>No. It is an optional provider for when a remote model is a better fit. Local remains the default.</p>
+            <h3>Can I train on a remote model?</h3>
+            <p>No. OpenRouter models are inference-only. Fine-tuning targets a local packaged base; Cloud training is planned for the Docker host.</p>
+            <h3>Where are recipes stored?</h3>
+            <p>Training recipes live under <code>Training\recipes</code>; Data Factory recipes under <code>Training\DataFactory</code>.</p>
+            <h3>Why is the default OpenRouter model <code>openrouter/free</code>?</h3>
+            <p>It is the zero-cost entry point. Add paid models to the active list if your key has credit.</p>
+
+            <h2 id="roadmap">Roadmap</h2>
+            <ol>
+                <li>Static site and public preview.</li>
+                <li>HuggingFace GGUF discovery and download.</li>
+                <li>Cloud compute: Docker host, inference and training, artifact export.</li>
+                <li>Provider adapters for more GPU hosts.</li>
+                <li>First packaged release.</li>
+            </ol>
+
+            <p style="margin-top:2.5rem;color:var(--faint);font-size:.72rem;">
+                This wiki is versioned with the code. If a step changes, update it here in the
+                same change.
+            </p>
+        </article>
+    </div>
+</main>
+</body>
+</html>

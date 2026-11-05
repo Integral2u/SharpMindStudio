@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SharpMind Studio — local-first model workbench</title>
+    <meta name="description" content="Chat, build datasets, fine-tune and run models with SharpMind Studio. Local-first, with optional OpenRouter and SharpMind Cloud compute." />
+    <meta property="og:title" content="SharpMind Studio" />
+    <meta property="og:description" content="A local-first workbench for chatting, data, training and inference. Optional OpenRouter and cloud compute." />
+    <meta property="og:type" content="website" />
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a class="active" href="index.html"><span class="nav-index">01</span> Home</a>
+        <a href="wiki.html"><span class="nav-index">02</span> WIKI</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> pre-release preview</span>
+        <span>Local-first.<br />Optional OpenRouter and cloud.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <section class="hero">
+        <div class="orb a"></div>
+        <div class="orb b"></div>
+        <div class="wrap hero-grid">
+            <div>
+                <span class="eyebrow">SharpMind Studio</span>
+                <h1>Your models.<br /><span>Your machine. Or a cloud that behaves like it.</span></h1>
+                <p>
+                    One workbench for chatting, building datasets, fine-tuning, and running
+                    models. Start local, reach for OpenRouter when you want, and use a
+                    SharpMind Cloud host when your PC needs a hand.
+                </p>
+                <div class="hero-actions">
+                    <a class="button primary" href="wiki.html">Read the wiki →</a>
+                    <a class="button" href="https://github.com/Integral2u/SharpMindStudio">View source</a>
+                </div>
+                <div class="chips">
+                    <span class="chip"><b>Local</b> · your weights</span>
+                    <span class="chip"><b>OpenRouter</b> · remote models</span>
+                    <span class="chip"><b>Data Factory</b></span>
+                    <span class="chip soon"><b>Cloud</b> · planned</span>
+                </div>
+                <div class="hero-note">Pre-release preview. No packaged release yet. APIs and screens may change.</div>
+            </div>
+
+            <div class="stage" aria-hidden="true">
+                <div class="desktop">
+                    <div class="desktop-top">
+                        <span class="window-dot"></span><span class="window-dot"></span><span class="window-dot"></span>
+                    </div>
+                    <div class="desktop-body">
+                        <div class="desktop-side">
+                            <span></span><span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                        <div class="desktop-main">
+                            <div class="desktop-head"><strong>training / run 014</strong><i></i></div>
+                            <div class="desktop-grid">
+                                <div class="panel">
+                                    <div class="panel-title">validation loss</div>
+                                    <svg class="chart" viewBox="0 0 320 120" preserveAspectRatio="none">
+                                        <defs>
+                                            <linearGradient id="chartfill" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0" stop-color="#60a5fa" stop-opacity=".55" />
+                                                <stop offset="1" stop-color="#60a5fa" stop-opacity="0" />
+                                            </linearGradient>
+                                        </defs>
+                                        <path class="grid" d="M0 20H320M0 50H320M0 80H320M0 110H320" />
+                                        <path class="area" d="M0 92 C30 88 50 78 75 74 S120 60 150 58 S200 44 230 38 S280 30 320 24 V120 H0 Z" />
+                                        <path class="line" d="M0 92 C30 88 50 78 75 74 S120 60 150 58 S200 44 230 38 S280 30 320 24" />
+                                    </svg>
+                                    <div class="panel-line"></div>
+                                    <div class="panel-line short"></div>
+                                </div>
+                                <div class="panel">
+                                    <div class="panel-title">models</div>
+                                    <div class="desktop-cards">
+                                        <div class="mini-card"><i></i><span></span></div>
+                                        <div class="mini-card"><i></i><span></span></div>
+                                        <div class="mini-card"><i></i><span></span></div>
+                                    </div>
+                                    <div class="panel-title">active</div>
+                                    <div class="panel-line short"></div>
+                                </div>
+                            </div>
+                            <div class="panel">
+                                <div class="panel-title">data factory / source → clean → export</div>
+                                <div class="panel-line"></div>
+                                <div class="panel-line short"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="phone">
+                    <div class="phone-screen">
+                        <div class="phone-top"><strong>SharpMind</strong><span class="dot"></span></div>
+                        <div class="bubble user">Turn these docs into a fine-tuning set.</div>
+                        <div class="bubble agent">On it. Data Factory is cleaning 128 documents…<small>assistant-only loss ready</small></div>
+                        <div class="bubble user">Can we use the cloud for the bigger run?</div>
+                        <div class="bubble agent">Cloud session ready. GPU host connected.<small>checkpoints export locally</small></div>
+                        <div class="phone-chips">
+                            <span class="live">● Local</span>
+                            <span>OpenRouter</span>
+                            <span>Cloud (soon)</span>
+                        </div>
+                        <div class="phone-input">Message the model…</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">One workbench</span>
+                <h2>Chat, data, training and inference without the glue code.</h2>
+                <p>
+                    SharpMind Studio is the front end for the SharpMind libraries. It keeps
+                    the model formats, tokenizers, checkpoints and run records in one place.
+                </p>
+            </div>
+            <div class="features">
+                <article class="feature">
+                    <div class="icon">01</div>
+                    <h3>Local-first</h3>
+                    <p>Your models, tokenizer, chats, datasets and checkpoints stay on your machine. No account required.</p>
+                    <span class="tag">.smm · .gguf · .smlora</span>
+                </article>
+                <article class="feature">
+                    <div class="icon">02</div>
+                    <h3>OpenRouter</h3>
+                    <p>Switch a chat or Work session to a remote model when your hardware isn’t the right tool.</p>
+                    <span class="tag">active models · streaming · tools</span>
+                </article>
+                <article class="feature">
+                    <div class="icon">03</div>
+                    <h3>Data Factory</h3>
+                    <p>Source → clean/filter → provider transform → review → export as chat or text JSONL.</p>
+                    <span class="tag">saved .smmdf recipes</span>
+                </article>
+                <article class="feature">
+                    <div class="icon">04</div>
+                    <h3>Training and SFT</h3>
+                    <p>Pretrain, continue, LoRA fine-tune, or instruction-tune with assistant-only loss masks.</p>
+                    <span class="tag">validation · held-out exam · recipes</span>
+                </article>
+                <article class="feature">
+                    <div class="icon">05</div>
+                    <h3>Work mode</h3>
+                    <p>Project context, scoped file/web tools, skills and an explicit permission gate.</p>
+                    <span class="tag">local tools · project memory</span>
+                </article>
+                <article class="feature">
+                    <div class="icon">06</div>
+                    <h3>Cloud compute</h3>
+                    <p>A planned Docker-based SharpMind host for GPU inference and training. One day, not today.</p>
+                    <span class="tag">planned · artifacts download first</span>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">Three places to run</span>
+                <h2>Choose the host, keep the workflow.</h2>
+            </div>
+            <div class="split">
+                <article class="mode-card">
+                    <span class="badge">LOCAL</span>
+                    <h3>On this machine</h3>
+                    <p>Full privacy and zero token cost. Use a packaged model or convert a GGUF from the Models tab.</p>
+                </article>
+                <article class="mode-card">
+                    <span class="badge">OPENROUTER</span>
+                    <h3>Remote model marketplace</h3>
+                    <p>An encrypted API key, an active-model list, streaming replies and OpenAI-style tool calls.</p>
+                </article>
+                <article class="mode-card soon">
+                    <span class="badge">CLOUD · PLANNED</span>
+                    <h3>Your own SharpMind host</h3>
+                    <p>A SharpMind service in Docker, on your hardware or a BYO host. Inference and training, with local artifact export.</p>
+                </article>
+                <article class="mode-card">
+                    <span class="badge">DATA</span>
+                    <h3>Model-agnostic datasets</h3>
+                    <p>The Data Factory can use a local model or OpenRouter today, and a Cloud host when it lands.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="wrap quick">
+            <div>
+                <span class="eyebrow">Build from source</span>
+                <h2 style="margin:.6rem 0 .7rem;font-size:clamp(1.8rem,3vw,2.5rem);letter-spacing:-.035em;">Pre-release, but real.</h2>
+                <p style="color:var(--muted);margin:0 0 1rem;">
+                    The repository is a preview. Build and test locally, read the wiki,
+                    and expect the edges to move until the first release.
+                </p>
+                <div class="note">
+                    No packaged release yet. The repository is the source of truth.
+                </div>
+            </div>
+            <pre class="code"><span class="comment"># clone and build</span>
+<span class="cmd">git clone</span> https://github.com/Integral2u/SharpMindStudio
+<span class="cmd">cd</span> SharpMindStudio
+<span class="cmd">dotnet build</span> SharpMind.Studio.slnx -c Debug
+<span class="cmd">dotnet test</span>  SharpMind.Studio.slnx -c Debug
+<span class="cmd">dotnet run</span> --project SharpMind.Studio
+
+<span class="comment"># web UI</span>
+http://127.0.0.1:5117</pre>
+        </div>
+    </section>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · MIT licensed · pre-release preview</span>
+            <span><a href="wiki.html">Wiki</a> · <a href="https://github.com/Integral2u/SharpMindStudio">GitHub</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>

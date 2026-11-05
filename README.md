@@ -8,6 +8,9 @@ terminal UI (CUI) as the primary front end.
 Studio is built on the published [SharpMind](https://github.com/Integral2u/SharpMind)
 libraries and shares their model, tokenizer and run formats.
 
+The static preview site and wiki live under [`docs/`](docs/index.html) and publish
+to GitHub Pages. Open `docs/index.html` locally to preview it without a server.
+
 ## Modes
 
 | Mode | For | What it is |
@@ -29,7 +32,7 @@ Chat and Work can use OpenRouter models as well as local weights. Add an API key
 under **Settings > OpenRouter Providers**; it is encrypted with a local key file,
 and the provider URL and active model list live beside it. Fetch the catalog,
 add models to the active list, and pick a default. On first use the active list
-starts with `openai/gpt-4o-mini` and the free models.
+starts with `openrouter/free` and the free models.
 
 OpenRouter is inference-only: local tuning remains unavailable for remote
 models. Work mode keeps its project tools, permissions, skills and memory local.
