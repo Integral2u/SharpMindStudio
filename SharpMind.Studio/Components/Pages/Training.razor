@@ -102,25 +102,33 @@
                 resumes from its latest checkpoint unless you start fresh.
             </p>
 
-            <TrainingJobEditor Job="_job" />
+            <TrainingJobEditor Job="_job"
+                               IsRemoteTarget="_computeProviderId is not null"
+                               RemoteAccelerators="_remoteAccelerators" />
 
             <div class="training-actions">
                 <div class="field" style="min-width: 16rem;">
                     <label class="field-label" for="training-compute">Run on</label>
                     <select id="training-compute" class="input" @bind="_computeProviderId"
+                            @bind:after="LoadRunTargetAsync"
                             disabled="@(Lab.IsRunning || Rehearsal.IsRunning)">
                         <option value="">This PC</option>
                         @foreach (ComputeProviderSettings host in Compute.Providers)
                         {
-                            <option value="@host.Id">@host.Name (@ComputeProviderKinds.Display(host.Kind))</option>
+                            <option value="@host.Id">@host.Name (@ComputeProviderPrefabs.Find(host.Prefab).Name)</option>
                         }
                     </select>
                     @if (_computeProviderId is not null)
                     {
                         <span class="small faint">
+                            Saved jobs and <strong>Run selected</strong> use this target too.
                             Sources, base model and checkpoints are uploaded first, then the export is
                             downloaded back here.
                         </span>
+                        @if (_remoteAcceleratorError is not null)
+                        {
+                            <div class="error-line">@_remoteAcceleratorError</div>
+                        }
                     }
                 </div>
                 <button type="button" class="button primary" @onclick="StartTraining"
@@ -1157,6 +1165,8 @@ else if (_tab == "models")
     private string? _error;
     private bool _starting;
     private string? _computeProviderId;
+    private IReadOnlyList<ComputeAcceleratorInfo> _remoteAccelerators = [];
+    private string? _remoteAcceleratorError;
 
     private string _convertSource = "";
     private string _convertDestination = "";
@@ -2282,6 +2292,26 @@ else if (_tab == "models")
             return;
         }
         LoadJob(_selectedJobPath);
+    }
+
+    private async Task LoadRunTargetAsync()
+    {
+        _remoteAccelerators = [];
+        _remoteAcceleratorError = null;
+        if (_computeProviderId is null) return;
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            _remoteAccelerators = await Compute.GetAcceleratorsAsync(
+                _computeProviderId, timeout.Token);
+        }
+        catch (Exception ex)
+        {
+            _remoteAcceleratorError = $"Could not read the host's accelerators: {ex.Message}";
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task RunSelectedJob()

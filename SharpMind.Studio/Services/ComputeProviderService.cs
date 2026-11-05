@@ -270,6 +270,16 @@ public sealed class ComputeProviderService
         CancellationToken cancellationToken = default)
         => _client.GetHealthAsync(provider, cancellationToken);
 
+    /// <summary>The host's loaded accelerator names, for the training device picker.</summary>
+    public async Task<IReadOnlyList<ComputeAcceleratorInfo>> GetAcceleratorsAsync(
+        string id,
+        CancellationToken cancellationToken = default)
+    {
+        ComputeHealth health = await _client
+            .GetHealthAsync(ResolveOrThrow(id), cancellationToken);
+        return health.Accelerators;
+    }
+
     public ComputeClient Client => _client;
 
     private ComputeProvider ResolveOrThrow(string id)

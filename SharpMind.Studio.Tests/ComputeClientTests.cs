@@ -22,7 +22,7 @@ public sealed class ComputeClientTests
     public async Task Health_ParsesTheHostSnapshot()
     {
         var handler = new CaptureHandler(_ => Json(
-            """{"status":"ok","model":"tinystories","modelConfigured":true,"modelLoaded":true,"dataRoot":"/data/SharpMind","runningJobs":2}"""));
+            """{"status":"ok","model":"tinystories","modelConfigured":true,"modelLoaded":true,"dataRoot":"/data/SharpMind","runningJobs":2,"accelerators":[{"name":"ilgpu","backend":"CUDA · cuBLAS","inference":true}]}"""));
         using var http = new HttpClient(handler);
         var client = new ComputeClient(http);
 
@@ -33,6 +33,10 @@ public sealed class ComputeClientTests
         Assert.True(health.ModelConfigured);
         Assert.True(health.ModelLoaded);
         Assert.Equal(2, health.RunningJobs);
+        ComputeAcceleratorInfo accelerator = Assert.Single(health.Accelerators);
+        Assert.Equal("ilgpu", accelerator.Name);
+        Assert.Equal("CUDA · cuBLAS", accelerator.Backend);
+        Assert.True(accelerator.Inference);
     }
 
     [Fact]

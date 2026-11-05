@@ -7,13 +7,16 @@ using System.Text.Json.Nodes;
 
 namespace SharpMind.Studio.Core.Compute;
 
+public sealed record ComputeAcceleratorInfo(string Name, string? Backend, bool Inference);
+
 public sealed record ComputeHealth(
     string Status,
     string Model,
     bool ModelConfigured,
     bool ModelLoaded,
     string DataRoot,
-    int RunningJobs);
+    int RunningJobs,
+    IReadOnlyList<ComputeAcceleratorInfo> Accelerators);
 
 public sealed record ComputeModelInfo(string Id, long Bytes, bool Active);
 
@@ -79,13 +82,29 @@ public sealed class ComputeClient
             .ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
         JsonElement root = document.RootElement;
 
+        var accelerators = new List<ComputeAcceleratorInfo>();
+        if (root.TryGetProperty("accelerators", out JsonElement acceleratorArray)
+            && acceleratorArray.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in acceleratorArray.EnumerateArray())
+            {
+                string? name = ReadString(item, "name");
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                accelerators.Add(new ComputeAcceleratorInfo(
+                    name,
+                    ReadString(item, "backend"),
+                    ReadBool(item, "inference")));
+            }
+        }
+
         return new ComputeHealth(
             ReadString(root, "status") ?? "unknown",
             ReadString(root, "model") ?? "default",
             ReadBool(root, "modelConfigured"),
             ReadBool(root, "modelLoaded"),
             ReadString(root, "dataRoot") ?? "",
-            ReadInt(root, "runningJobs") ?? 0);
+            ReadInt(root, "runningJobs") ?? 0,
+            accelerators);
     }
 
     public async Task<IReadOnlyList<ComputeModelInfo>> ListModelsAsync(

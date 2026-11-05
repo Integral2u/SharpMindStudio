@@ -2,6 +2,7 @@
 @using SharpMind.Core
 @using SharpMind.Core.Plugins
 @using SharpMind.Model.Config
+@using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Services
@@ -195,7 +196,7 @@
         <div class="field">
             <label class="field-label" for="job-optimizer">Optimizer</label>
             <select id="job-optimizer" class="input" @bind="Job.Optimizer">
-                <option value="">AdamW</option>
+                <option value="AdamW">AdamW</option>
                 <option value="SGD">SGD</option>
             </select>
         </div>
@@ -241,18 +242,50 @@
 <section class="training-subsection">
     <div class="training-subsection-head">
         <div class="eyebrow">Precision &amp; device</div>
-        <span class="faint small mono">@(_accelerators.Count == 0 ? "CPU only" : $"{_accelerators.Count} accelerator plugin(s)")</span>
+        <span class="faint small mono">
+            @if (IsRemoteTarget)
+            {
+                @(RemoteAccelerators.Count == 0
+                    ? "remote host"
+                    : $"{RemoteAccelerators.Count} accelerator(s) on host")
+            }
+            else
+            {
+                @(_accelerators.Count == 0 ? "CPU only" : $"{_accelerators.Count} accelerator plugin(s)")
+            }
+        </span>
     </div>
     <div class="training-form">
         <div class="field">
             <label class="field-label" for="job-accelerator">Accelerator</label>
             <select id="job-accelerator" class="input" @bind="Job.Accelerator">
-                <option value="">CPU (built-in)</option>
-                @foreach (IAcceleratorPlugin plugin in _accelerators)
+                @if (IsRemoteTarget)
                 {
-                    <option value="@plugin.Name">@plugin.Name - @plugin.Description</option>
+                    <option value="">Host default (auto)</option>
+                    <option value="CPU">CPU (host)</option>
+                    @foreach (ComputeAcceleratorInfo accelerator in RemoteAccelerators)
+                    {
+                        <option value="@accelerator.Name">
+                            @accelerator.Name@(accelerator.Backend is { Length: > 0 } ? $" - {accelerator.Backend}" : "")
+                        </option>
+                    }
+                }
+                else
+                {
+                    <option value="">CPU (built-in)</option>
+                    @foreach (IAcceleratorPlugin plugin in _accelerators)
+                    {
+                        <option value="@plugin.Name">@plugin.Name - @plugin.Description</option>
+                    }
                 }
             </select>
+            @if (IsRemoteTarget)
+            {
+                <span class="small faint">
+                    <strong>Host default</strong> lets the GPU image pick its accelerator
+                    (<span class="mono">SHARPMIND_ACCELERATOR=auto</span>).
+                </span>
+            }
         </div>
         <div class="field">
             <label class="field-label" for="job-qat">Quantization-aware training</label>
@@ -391,7 +424,11 @@
     </div>
     <div>
         <span class="eyebrow">Device</span>
-        <strong>@TrainingJobValidation.DeviceLabel(Job)</strong>
+        <strong>
+            @(IsRemoteTarget
+                ? string.IsNullOrWhiteSpace(Job.Accelerator) ? "Host default" : Job.Accelerator
+                : TrainingJobValidation.DeviceLabel(Job))
+        </strong>
         <span class="small faint">@($"{Job.ValidationPercent:0.#}% val / {Job.TestPercent:0.#}% exam")</span>
     </div>
 </div>
@@ -404,7 +441,20 @@
 @code {
     [Parameter, EditorRequired] public TrainingJobSettings Job { get; set; } = new();
 
+    /// <summary>True when the job will run on a Compute host rather than this PC.</summary>
+    [Parameter] public bool IsRemoteTarget { get; set; }
+
+    /// <summary>Accelerator names reported by the selected Compute host.</summary>
+    [Parameter] public IReadOnlyList<ComputeAcceleratorInfo> RemoteAccelerators { get; set; } = [];
+
     private IReadOnlyList<IAcceleratorPlugin> _accelerators = [];
+
+    protected override void OnParametersSet()
+    {
+        // The runner treats a blank optimizer as AdamW; materialise it so the
+        // dropdown has a matching option instead of showing no selection.
+        if (string.IsNullOrWhiteSpace(Job.Optimizer)) Job.Optimizer = "AdamW";
+    }
 
     private bool IsMoe => string.Equals(Job.Ffn, nameof(FfnKind.MoE), StringComparison.OrdinalIgnoreCase);
     private bool UsesSgd => string.Equals(Job.Optimizer, "SGD", StringComparison.OrdinalIgnoreCase);
