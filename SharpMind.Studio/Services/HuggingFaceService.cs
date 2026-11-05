@@ -43,13 +43,19 @@ public sealed class HuggingFaceService : IDisposable
 
     public void SaveToken(string? token)
     {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            Status = "Token left unchanged.";
+            Error = null;
+            Notify();
+            return;
+        }
+
         try
         {
             _store.SetToken(token);
             Error = null;
-            Status = string.IsNullOrWhiteSpace(token)
-                ? "HuggingFace token cleared."
-                : "HuggingFace token saved.";
+            Status = "HuggingFace token saved.";
         }
         catch (Exception ex)
         {
