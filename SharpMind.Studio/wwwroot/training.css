@@ -460,9 +460,15 @@
 
 .training-actions {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: .8rem;
     flex-wrap: wrap;
+}
+
+/* The saved-jobs select has a label above it; align the buttons to the select's
+   bottom so the row does not look raised. */
+.training-saved .row {
+    align-items: flex-end;
 }
 
 .training-chips {

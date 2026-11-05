@@ -73,8 +73,9 @@
                             <option value="openrouter" selected="@(_remoteChat && _computeProviderId is null)">OpenRouter</option>
                             @foreach (ComputeProviderSettings host in Compute.Providers)
                             {
-                                <option value="@($"compute:{host.Id}")" selected="@(_computeProviderId == host.Id)">
-                                    @host.Name (@ComputeProviderKinds.Display(host.Kind))
+                                <option value="@($"compute:{host.Id}")" selected="@(_computeProviderId == host.Id)"
+                                        title="@ComputeProviderPrefabs.Find(host.Prefab).Description">
+                                    @host.Name
                                 </option>
                             }
                         </select>

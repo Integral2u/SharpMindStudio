@@ -233,8 +233,18 @@
 
             if (Mode != PathPickerMode.Folder && entries.Count < 750)
             {
-                foreach (FileInfo file in directory.EnumerateFiles(SearchPattern, SearchOption.TopDirectoryOnly)
-                             .OrderBy(value => value.Name, StringComparer.OrdinalIgnoreCase))
+                string[] patterns = SearchPattern.Split(
+                    ';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (patterns.Length == 0) patterns = ["*.*"];
+
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                IEnumerable<FileInfo> files = patterns
+                    .SelectMany(pattern => directory.EnumerateFiles(
+                        pattern, SearchOption.TopDirectoryOnly))
+                    .Where(file => seen.Add(file.FullName))
+                    .OrderBy(file => file.Name, StringComparer.OrdinalIgnoreCase);
+
+                foreach (FileInfo file in files)
                 {
                     entries.Add(new PathEntry(file.Name, file.FullName, false));
                     if (entries.Count >= 750) break;

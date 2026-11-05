@@ -397,7 +397,7 @@
     display: grid;
     grid-template-columns: minmax(14rem, 1.8fr) minmax(9rem, .7fr) minmax(13rem, 1fr);
     gap: .75rem;
-    align-items: end;
+    align-items: start;
 }
 
 .chat-welcome-controls {

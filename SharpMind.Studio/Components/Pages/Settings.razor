@@ -329,7 +329,8 @@ else if (_tab == "openrouter")
                 </div>
                 <div class="row">
                     <button type="button" class="button primary" @onclick="PublishImageAsync"
-                            disabled="@_registryBusy">
+                            disabled="@_registryBusy"
+                            title="Run docker login, tag and push for this image. The token is not stored.">
                         @(_registryBusy ? "Pushing..." : "Push image")
                     </button>
                     <span class="small faint">The first GPU push is about 2 GB.</span>
@@ -401,7 +402,8 @@ else if (_tab == "openrouter")
                                        type="@(_computeShowToken ? "text" : "password")" @bind="_computeToken"
                                        placeholder="@(_editingComputeId is null ? "Leave blank to generate" : "leave blank to keep")"
                                        autocomplete="off" />
-                                <button type="button" class="button" @onclick="GenerateComputeToken">Generate</button>
+                                <button type="button" class="button" @onclick="GenerateComputeToken"
+                                        title="Create a strong bearer token; it is saved with this host.">Generate</button>
                                 <button type="button" class="button" @onclick="() => _computeShowToken = !_computeShowToken">
                                     @(_computeShowToken ? "Hide" : "Show")
                                 </button>
@@ -479,7 +481,15 @@ else if (_tab == "openrouter")
                             </div>
                             <div class="field">
                                 <label class="field-label" for="runpod-gpu">GPU type</label>
-                                <input id="runpod-gpu" class="input" @bind="_runpodGpu" />
+                                <input id="runpod-gpu" class="input" list="runpod-gpu-options"
+                                       @bind="_runpodGpu" />
+                                <datalist id="runpod-gpu-options">
+                                    @foreach (string gpu in ComputeProviderPresets.RunpodGpuTypes)
+                                    {
+                                        <option value="@gpu"></option>
+                                    }
+                                </datalist>
+                                <span class="small faint">Pick a common card or type the exact Runpod GPU id.</span>
                             </div>
                             <div class="field">
                                 <label class="field-label" for="runpod-disk">Container disk (GB)</label>
@@ -511,13 +521,18 @@ else if (_tab == "openrouter")
                         <div class="row">
                             @if (!string.Equals(provider.Id, Compute.DefaultProviderId, StringComparison.OrdinalIgnoreCase))
                             {
-                                <button type="button" class="button" @onclick="() => SetDefaultCompute(provider.Id)">Make default</button>
+                                <button type="button" class="button" @onclick="() => SetDefaultCompute(provider.Id)"
+                                        title="Use this host by default for Chat and Training.">Make default</button>
                             }
                             <button type="button" class="button" @onclick="() => TestComputeAsync(provider.Id)"
-                                    disabled="@_computeBusy">Test</button>
-                            <button type="button" class="button" @onclick="() => EditCompute(provider)">Edit</button>
-                            <button type="button" class="button" @onclick="() => DuplicateCompute(provider)">Duplicate</button>
-                            <button type="button" class="button danger" @onclick="() => RemoveCompute(provider)">Delete</button>
+                                    disabled="@_computeBusy"
+                                    title="Check the host and load its model list.">Test</button>
+                            <button type="button" class="button" @onclick="() => EditCompute(provider)"
+                                    title="Change this host's prefab, URL, token and model settings.">Edit</button>
+                            <button type="button" class="button" @onclick="() => DuplicateCompute(provider)"
+                                    title="Create another host from this one's settings.">Duplicate</button>
+                            <button type="button" class="button danger" @onclick="() => RemoveCompute(provider)"
+                                    title="Remove this host from Studio. The remote pod or container is not affected.">Delete</button>
                         </div>
                     </div>
 
@@ -530,6 +545,21 @@ else if (_tab == "openrouter")
                     {
                         <div class="small faint">@provider.LastStatus</div>
                     }
+                    <div class="small faint">
+                        <strong>Setup:</strong>
+                        @if (provider.Prefab == ComputeProviderPrefabs.LocalDocker)
+                        {
+                            <text>1. Start container · 2. Upload a model · 3. Chat or Train</text>
+                        }
+                        else if (provider.Prefab == ComputeProviderPrefabs.Runpod)
+                        {
+                            <text>1. Deploy pod · 2. Upload a model · 3. Chat or Train</text>
+                        }
+                        else
+                        {
+                            <text>1. Test · 2. Upload a model · 3. Chat or Train</text>
+                        }
+                    </div>
 
                     <div class="training-form">
                         <div class="field">
@@ -547,7 +577,8 @@ else if (_tab == "openrouter")
                         <div class="field">
                             <label class="field-label">Refresh</label>
                             <button type="button" class="button" @onclick="() => RefreshComputeModelsAsync(provider.Id)"
-                                    disabled="@_computeBusy">Read models on host</button>
+                                    disabled="@_computeBusy"
+                                    title="Read the model folder from the host and update this list.">Read models on host</button>
                         </div>
                     </div>
 
@@ -556,18 +587,33 @@ else if (_tab == "openrouter")
                         <div class="row">
                             <input id="compute-upload-@provider.Id" class="input" @bind="_computeModelPath"
                                    placeholder="C:\Users\you\SharpMind\Models\model.gguf" />
-                            <button type="button" class="button" @onclick="BrowseComputeModel">Browse</button>
+                            <button type="button" class="button" @onclick="BrowseComputeModel"
+                                    title="Choose a local .smm or .gguf file.">Browse</button>
                             <button type="button" class="button primary"
                                     @onclick="() => UploadComputeModelAsync(provider.Id)"
-                                    disabled="@_computeBusy">Upload and use</button>
+                                    disabled="@_computeBusy"
+                                    title="Copy this model to the host and make it the active model.">
+                                @(_uploadingId == provider.Id ? "Uploading…" : "Upload and use")
+                            </button>
                         </div>
                         <span class="small faint">
                             HuggingFace downloads land in your Models folder; pick one here to copy it to the host.
                             Large models are better placed on the host's network volume.
                         </span>
-                        @if (_computeBusy && _computeUploadProgress > 0)
+                        @if (_uploadingId == provider.Id)
                         {
-                            <div class="status-line">Uploading @((_computeUploadProgress * 100).ToString("0"))%</div>
+                            <div class="row" style="align-items:center; gap:.5rem;">
+                                <span class="spinner-ring"></span>
+                                <div class="progress-track" style="flex:1;">
+                                    <div class="progress-fill" style="width:@(_computeUploadProgress * 100)%"></div>
+                                </div>
+                                <span class="mono small">@((_computeUploadProgress * 100).ToString("0"))%</span>
+                            </div>
+                            <div class="small faint">Uploading @Path.GetFileName(_computeModelPath)…</div>
+                        }
+                        @if (_computeError is not null)
+                        {
+                            <div class="error-line">@_computeError</div>
                         }
                     </div>
 
@@ -578,17 +624,22 @@ else if (_tab == "openrouter")
                                 <label class="field-label">Local Docker</label>
                                 <div class="row">
                                     <button type="button" class="button" @onclick="() => CheckDockerAsync(provider.Id)"
-                                            disabled="@_dockerBusy">Check</button>
+                                            disabled="@_dockerBusy"
+                                            title="Check that Docker is running and show the container state.">Check</button>
                                     <button type="button" class="button primary"
                                             @onclick="() => StartDockerContainerAsync(provider.Id)"
-                                            disabled="@_dockerBusy">Start container</button>
+                                            disabled="@_dockerBusy"
+                                            title="Run the image on this PC with the saved token, port and data folder.">Start container</button>
                                     <button type="button" class="button" @onclick="() => StopDockerContainerAsync(provider.Id)"
-                                            disabled="@_dockerBusy">Stop</button>
+                                            disabled="@_dockerBusy"
+                                            title="Stop the local container. Its data folder is kept.">Stop</button>
                                     <button type="button" class="button" @onclick="() => DockerLogsAsync(provider.Id)"
-                                            disabled="@_dockerBusy">Logs</button>
+                                            disabled="@_dockerBusy"
+                                            title="Show the last lines from the container log.">Logs</button>
                                     @if (Docker.CanStartDockerDesktop && _dockerEngine is { Available: false })
                                     {
-                                        <button type="button" class="button" @onclick="StartDockerDesktop">Start Docker Desktop</button>
+                                        <button type="button" class="button" @onclick="StartDockerDesktop"
+                                                title="Launch Docker Desktop, then press Check again.">Start Docker Desktop</button>
                                     }
                                 </div>
                             </div>
@@ -618,18 +669,34 @@ else if (_tab == "openrouter")
                                     <span class="small mono">@(provider.RunpodPodStatus ?? "no pod")</span>
                                     <button type="button" class="button primary"
                                             @onclick="() => DeployRunpodAsync(provider.Id)"
-                                            disabled="@_runpodBusy">Deploy pod</button>
+                                            disabled="@_runpodBusy"
+                                            title="Create a Runpod GPU pod from the server image and wire this host to it.">
+                                        @(_runpodBusy ? "Deploying…" : "Deploy pod")
+                                    </button>
                                     <button type="button" class="button"
                                             @onclick="() => RefreshRunpodAsync(provider.Id)"
-                                            disabled="@_runpodBusy">Refresh</button>
+                                            disabled="@_runpodBusy"
+                                            title="Read the pod's current status from Runpod.">Refresh</button>
                                     <button type="button" class="button danger"
                                             @onclick="() => TerminateRunpodAsync(provider.Id)"
-                                            disabled="@_runpodBusy">Terminate</button>
+                                            disabled="@_runpodBusy"
+                                            title="Terminate the Runpod pod and stop its billing.">Terminate</button>
                                 </div>
                             </div>
                             @if (_runpodStatus is { Length: > 0 })
                             {
                                 <div class="status-line">@_runpodStatus</div>
+                            }
+                            @if (_runpodError is { Length: > 0 })
+                            {
+                                <div class="error-line">@_runpodError</div>
+                            }
+                            @if (_runpodBusy)
+                            {
+                                <div class="row" style="align-items:center; gap:.5rem;">
+                                    <span class="spinner-ring"></span>
+                                    <span class="small faint">Talking to Runpod…</span>
+                                </div>
                             }
                             <div class="small faint">
                                 @(Runpod.HasApiKey(provider.Id)
@@ -641,8 +708,9 @@ else if (_tab == "openrouter")
                                 @(provider.RunpodDiskGb ?? ComputeProviderPresets.DefaultRunpodDiskGb) GB disk.
                             </div>
                             <div class="small faint">
-                                Deploy uses that image; push it once with <strong>Publish the server image</strong>.
-                                When the pod reports RUNNING, Studio fills the API and Studio URLs and tests the host.
+                                Deploy uses the saved API key and image; if you just typed them, press
+                                <strong>Edit → Save host</strong> first. When the pod reports RUNNING,
+                                Studio fills the API and Studio URLs and tests the host.
                             </div>
                         </div>
                     }
@@ -888,6 +956,7 @@ else
     private string _runpodGpu = ComputeProviderPresets.DefaultGpuType;
     private int _runpodDisk = ComputeProviderPresets.DefaultRunpodDiskGb;
     private string? _runpodStatus;
+    private string? _runpodError;
     private bool _runpodBusy;
     private string _registryUser = "";
     private string _registryToken = "";
@@ -909,6 +978,7 @@ else
     private DockerEngineStatus? _dockerEngine;
     private string _computeModelPath = "";
     private double _computeUploadProgress;
+    private string? _uploadingId;
     private string _hfToken = "";
     private string? _hfStatus;
     private string? _hfError;
@@ -1460,6 +1530,7 @@ else
     {
         _runpodBusy = true;
         _computeError = null;
+        _runpodError = null;
         _runpodStatus = "Creating the pod...";
         StateHasChanged();
         try
@@ -1501,12 +1572,15 @@ else
             }
             else
             {
-                _runpodStatus = $"Pod {pod.Id} ended in {pod.Status}.";
+                _runpodStatus = pod.Status == "RUNNING"
+                    ? $"Pod {pod.Id} is running."
+                    : $"Pod {pod.Id} is still {pod.Status}. Press Refresh to check again.";
             }
         }
         catch (Exception ex)
         {
             _computeError = ex.Message;
+            _runpodError = ex.Message;
             _runpodStatus = null;
         }
         finally
@@ -1519,6 +1593,7 @@ else
     {
         _runpodBusy = true;
         _computeError = null;
+        _runpodError = null;
         StateHasChanged();
         try
         {
@@ -1533,6 +1608,7 @@ else
         catch (Exception ex)
         {
             _computeError = ex.Message;
+            _runpodError = ex.Message;
         }
         finally
         {
@@ -1544,6 +1620,7 @@ else
     {
         _runpodBusy = true;
         _computeError = null;
+        _runpodError = null;
         _runpodStatus = "Terminating the pod...";
         StateHasChanged();
         try
@@ -1554,6 +1631,7 @@ else
         catch (Exception ex)
         {
             _computeError = ex.Message;
+            _runpodError = ex.Message;
             _runpodStatus = null;
         }
         finally
@@ -1838,7 +1916,7 @@ else
             PathPickerMode.File,
             StudioPaths.Models,
             "Choose a model to upload",
-            "*.smm");
+            "*.smm;*.gguf");
         if (selection?.Path is { Length: > 0 } path)
             _computeModelPath = path;
     }
@@ -1853,6 +1931,7 @@ else
 
         _computeBusy = true;
         _computeError = null;
+        _uploadingId = id;
         _computeUploadProgress = 0;
         _computeStatus = $"Uploading {Path.GetFileName(_computeModelPath)}...";
         StateHasChanged();
@@ -1868,7 +1947,8 @@ else
             _computeStatus = result.Active
                 ? $"{result.Name} uploaded and active ({FormatBytes(result.Bytes)})."
                 : $"{result.Name} uploaded ({FormatBytes(result.Bytes)}).";
-            _computeUploadProgress = 0;
+            _computeUploadProgress = 1;
+            await RefreshComputeModelsAsync(id);
         }
         catch (Exception ex)
         {
@@ -1877,6 +1957,7 @@ else
         }
         finally
         {
+            _uploadingId = null;
             _computeBusy = false;
         }
     }

@@ -224,7 +224,8 @@ public sealed class DockerHostService
 
         progress?.Report(new DockerPublishProgress(0, $"Pushing {request.TargetImage}…"));
 
-        var layers = new Dictionary<string, (double Current, double Total)>(StringComparer.Ordinal);
+        int totalLayers = await GetLayerCountAsync(request.TargetImage, cancellationToken);
+        var tracker = new PushTracker(totalLayers);
         string? lastLine = null;
 
         int pushExit = await RunStreamingAsync(
@@ -238,7 +239,7 @@ public sealed class DockerHostService
                         part, "\u001b\\[[0-9;?]*[A-Za-z]", "").Trim();
                     if (clean.Length == 0) continue;
                     lastLine = clean;
-                    double? fraction = UpdatePushProgress(clean, layers);
+                    double? fraction = tracker.Update(clean);
                     string message = fraction is { } value
                         ? $"Pushing… {value * 100:0}%"
                         : clean;
@@ -256,93 +257,118 @@ public sealed class DockerHostService
         progress?.Report(new DockerPublishProgress(1, "Image published."));
     }
 
+    private async Task<int> GetLayerCountAsync(string image, CancellationToken cancellationToken)
+    {
+        (int exit, string output, _) = await RunAsync(
+            ["image", "inspect", "--format", "{{len .RootFS.Layers}}", image],
+            cancellationToken);
+        return exit == 0 && int.TryParse(output.Trim(), out int count) && count > 0 ? count : 0;
+    }
+
     /// <summary>
-    /// Parses Docker's non-TTY layer lines (<c>id: Pushing 12.3MB/45.6MB</c>)
-    /// into an aggregate fraction across all layers that have reported sizes.
+    /// Tracks Docker's per-layer push lines. When the image's layer count is
+    /// known, progress is completed layers plus the current layer's byte
+    /// fraction; that works even when a re-push only reports "Pushed".
     /// </summary>
-    private static double? UpdatePushProgress(
-        string line,
-        Dictionary<string, (double Current, double Total)> layers)
+    private sealed class PushTracker(int totalLayers)
     {
-        int colon = line.IndexOf(':');
-        string key = colon > 0 ? line[..colon].Trim() : line.Trim();
-        if (key.Length == 0 || key.Length > 80) return Aggregate(layers);
+        private readonly HashSet<string> _done = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, (double Current, double Total)> _bytes =
+            new(StringComparer.Ordinal);
+        private string? _currentKey;
+        private double _currentFraction;
 
-        string payload = colon > 0 ? line[(colon + 1)..] : line;
-
-        int slash = payload.IndexOf('/');
-        if (slash > 0 && payload.Contains("Pushing", StringComparison.OrdinalIgnoreCase))
+        public double? Update(string line)
         {
-            string before = payload[..slash];
-            string after = payload[(slash + 1)..];
-            double? current = ParseBytes(before);
-            double? total = ParseBytes(after);
-            if (current is { } c && total is { } t && t > 0)
+            int colon = line.IndexOf(':');
+            string key = colon > 0 ? line[..colon].Trim() : line.Trim();
+            string payload = colon > 0 ? line[(colon + 1)..] : line;
+            if (key.Length == 0 || key.Length > 80) return Fraction();
+
+            if (payload.Contains("Layer already exists", StringComparison.OrdinalIgnoreCase)
+                || payload.Contains("Pushed", StringComparison.OrdinalIgnoreCase)
+                   && !payload.Contains("Pushing", StringComparison.OrdinalIgnoreCase))
             {
-                layers[key] = (Math.Min(c, t), t);
-                return Aggregate(layers);
+                _done.Add(key);
+                if (string.Equals(_currentKey, key, StringComparison.Ordinal)) _currentKey = null;
+                return Fraction();
             }
+
+            int slash = payload.IndexOf('/');
+            if (slash > 0 && payload.Contains("Pushing", StringComparison.OrdinalIgnoreCase))
+            {
+                double? current = ParseBytes(payload[..slash]);
+                double? total = ParseBytes(payload[(slash + 1)..]);
+                if (current is { } c && total is { } t && t > 0)
+                {
+                    _bytes[key] = (Math.Min(c, t), t);
+                    _currentKey = key;
+                    _currentFraction = Math.Clamp(c / t, 0, 1);
+                    return Fraction();
+                }
+            }
+
+            int percent = payload.IndexOf('%');
+            if (percent > 0)
+            {
+                int start = percent - 1;
+                while (start >= 0 && (char.IsDigit(payload[start]) || payload[start] == '.')) start--;
+                if (double.TryParse(payload[(start + 1)..percent], out double value)
+                    && value is >= 0 and <= 100)
+                {
+                    return Math.Clamp(value / 100.0, 0, 0.999);
+                }
+            }
+
+            return Fraction();
         }
 
-        if (payload.Contains("Pushed", StringComparison.OrdinalIgnoreCase)
-            && layers.TryGetValue(key, out (double Current, double Total) done))
+        private double? Fraction()
         {
-            layers[key] = (done.Total, done.Total);
-            return Aggregate(layers);
+            if (totalLayers > 0)
+            {
+                double partial = _currentKey is not null ? _currentFraction : 0;
+                return Math.Clamp((_done.Count + partial) / totalLayers, 0, 0.999);
+            }
+
+            if (_bytes.Count == 0) return null;
+            double current = _bytes.Values.Sum(layer => layer.Current);
+            double total = _bytes.Values.Sum(layer => layer.Total);
+            return total <= 0 ? null : Math.Clamp(current / total, 0, 0.999);
         }
 
-        int percent = payload.IndexOf('%');
-        if (percent > 0)
+        private static double? ParseBytes(string text)
         {
-            int start = percent - 1;
-            while (start >= 0 && (char.IsDigit(payload[start]) || payload[start] == '.')) start--;
-            string number = payload[(start + 1)..percent];
-            if (double.TryParse(number, out double value) && value is >= 0 and <= 100)
-                return value / 100.0;
+            string value = text.Trim();
+            int index = 0;
+            while (index < value.Length
+                   && (char.IsDigit(value[index]) || value[index] == '.' || value[index] == ','))
+            {
+                index++;
+            }
+
+            if (index == 0) return null;
+            string number = value[..index].Replace(',', '.');
+            if (!double.TryParse(
+                    number,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out double size))
+            {
+                return null;
+            }
+
+            string unit = value[index..].Trim().ToUpperInvariant();
+            double multiplier = unit switch
+            {
+                "B" => 1,
+                "KB" or "KIB" => 1024,
+                "MB" or "MIB" => 1024 * 1024,
+                "GB" or "GIB" => 1024L * 1024 * 1024,
+                _ => 0,
+            };
+            return multiplier == 0 ? null : size * multiplier;
         }
-
-        return Aggregate(layers);
-    }
-
-    private static double? Aggregate(Dictionary<string, (double Current, double Total)> layers)
-    {
-        if (layers.Count == 0) return null;
-        double current = layers.Values.Sum(layer => layer.Current);
-        double total = layers.Values.Sum(layer => layer.Total);
-        return total <= 0 ? null : Math.Clamp(current / total, 0, 1);
-    }
-
-    private static double? ParseBytes(string text)
-    {
-        string value = text.Trim();
-        int index = 0;
-        while (index < value.Length
-               && (char.IsDigit(value[index]) || value[index] == '.' || value[index] == ','))
-        {
-            index++;
-        }
-
-        if (index == 0) return null;
-        string number = value[..index].Replace(',', '.');
-        if (!double.TryParse(
-                number,
-                System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out double size))
-        {
-            return null;
-        }
-
-        string unit = value[index..].Trim().ToUpperInvariant();
-        double multiplier = unit switch
-        {
-            "B" => 1,
-            "KB" or "KIB" => 1024,
-            "MB" or "MIB" => 1024 * 1024,
-            "GB" or "GIB" => 1024L * 1024 * 1024,
-            _ => 0,
-        };
-        return multiplier == 0 ? null : size * multiplier;
     }
 
     private static string ExplainPushFailure(string raw)

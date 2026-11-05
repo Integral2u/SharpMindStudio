@@ -13,6 +13,21 @@ public static class ComputeProviderPresets
     public const string DefaultGpuType = "NVIDIA GeForce RTX 4090";
     public const int DefaultRunpodDiskGb = 30;
 
+    /// <summary>Common Runpod GPU ids. The field is editable, so others still work.</summary>
+    public static IReadOnlyList<string> RunpodGpuTypes { get; } =
+    [
+        "NVIDIA GeForce RTX 4090",
+        "NVIDIA GeForce RTX 3090",
+        "NVIDIA RTX A5000",
+        "NVIDIA RTX A6000",
+        "NVIDIA L4",
+        "NVIDIA L40S",
+        "NVIDIA A40",
+        "NVIDIA A100 80GB PCIe",
+        "NVIDIA H100 PCIe",
+        "NVIDIA H100 80GB HBM3",
+    ];
+
     public static string LocalUrl(int port = DefaultPort) => $"http://127.0.0.1:{port}";
 
     /// <summary>A stable Docker container name derived from the provider id.</summary>
