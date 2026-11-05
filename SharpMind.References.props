@@ -1,12 +1,12 @@
 <Project>
   <PropertyGroup>
-    <!-- Default to the published NuGet packages. Set SharpMindSource=project to build against the sibling source tree. -->
-    <SharpMindSource Condition="'$(SharpMindSource)' == ''">package</SharpMindSource>
+    <!-- Use the sibling source tree when it exists; fall back to the published packages. -->
     <SharpMindRoot Condition="'$(SharpMindRoot)' == ''">$(MSBuildThisFileDirectory)..\SharpMind\</SharpMindRoot>
+    <SharpMindSource Condition="'$(SharpMindSource)' == '' and Exists('$(SharpMindRoot)SharpMind.Core\SharpMind.Core.csproj')">project</SharpMindSource>
+    <SharpMindSource Condition="'$(SharpMindSource)' == ''">package</SharpMindSource>
   </PropertyGroup>
 
-  <!-- Local source-tree references. Uncomment this ItemGroup (and set SharpMindSource=project) for local library development. -->
-  <!--
+  <!-- Local source-tree references: used automatically when the sibling SharpMind checkout exists. -->
   <ItemGroup Condition="'$(SharpMindSource)' == 'project'">
     <ProjectReference Include="$(SharpMindRoot)SharpMind.Core\SharpMind.Core.csproj"
                       SetConfiguration="Configuration=$(Configuration)" />
@@ -21,7 +21,6 @@
     <ProjectReference Include="$(SharpMindRoot)SharpMind.Training\SharpMind.Training.csproj"
                       SetConfiguration="Configuration=$(Configuration)" />
   </ItemGroup>
-  -->
 
   <ItemGroup Condition="'$(SharpMindSource)' == 'package'">
     <PackageReference Include="SharpMind.Core" />

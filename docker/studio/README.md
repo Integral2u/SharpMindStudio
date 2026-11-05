@@ -13,6 +13,19 @@ packages (or point the build at a local feed) before building the image.
 docker build -f docker/studio/Dockerfile -t sharpmind-studio:preview .
 ```
 
+### Local source build (no NuGet)
+
+If the sibling `SharpMind` source tree exists, build from the parent `repos`
+folder with the local Dockerfile:
+
+```powershell
+docker build -f SharpMind.Studio/docker/studio/Dockerfile.local `
+  -t sharpmind-studio:local ..
+```
+
+This uses the project references automatically and does not need the packages
+published. The build context is larger because it includes the SharpMind source.
+
 ## Run
 
 ```powershell

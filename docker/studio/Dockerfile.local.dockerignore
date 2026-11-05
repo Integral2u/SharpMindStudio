@@ -1,0 +1,16 @@
+# Local build context for Dockerfile.local.
+# The context is the parent `repos` folder.
+SharpMind.Studio/bin
+SharpMind.Studio/obj
+SharpMind.Studio/SharpMind.Studio/bin
+SharpMind.Studio/SharpMind.Studio/obj
+SharpMind.Studio/SharpMind.Studio.Core/bin
+SharpMind.Studio/SharpMind.Studio.Core/obj
+SharpMind.Studio/SharpMind.Studio.Tests
+SharpMind.Studio/SharpMind.Studio.UI
+SharpMind.Studio/docs
+SharpMind.Studio/publish
+SharpMind.Studio/.git
+SharpMind/bin
+SharpMind/obj
+SharpMind/.git

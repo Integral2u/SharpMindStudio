@@ -94,9 +94,16 @@ dotnet publish SharpMind.Studio.UI  -c Release -o publish/desktop
 ### Docker
 
 A preview Docker image for the Studio web app lives in `docker/studio`. The
-SharpMind packages must be available from NuGet (or a local feed) at build time.
+local-source Dockerfile builds against the sibling `SharpMind` checkout and does
+not need the packages published; the normal Dockerfile uses NuGet for a clean
+public/CI build.
 
 ```powershell
+# local source (parent repos folder as context)
+docker build -f SharpMind.Studio/docker/studio/Dockerfile.local `
+  -t sharpmind-studio:local ..
+
+# package build, after the SharpMind packages are published
 docker build -f docker/studio/Dockerfile -t sharpmind-studio:preview .
 docker run --rm -p 5117:5117 -p 5118:5118 `
   -v "${PWD}/data:/data/SharpMind" sharpmind-studio:preview
