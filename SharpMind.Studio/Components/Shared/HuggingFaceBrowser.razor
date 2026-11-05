@@ -1,28 +1,26 @@
 @using SharpMind.Studio.Core.HuggingFace
 @using SharpMind.Studio.Services
 @inject HuggingFaceService HF
-@inject IJSRuntime JS
 
 <div class="panel-body stack">
-    <div class="row" style="align-items:flex-end; gap:.6rem; flex-wrap:wrap;">
-        <div class="field" style="min-width:20rem;">
-            <label class="field-label" for="hf-token">HuggingFace token (optional)</label>
-            <input id="hf-token" class="input" type="password" @bind="_token"
-                   placeholder="@(HF.HasToken ? "Token configured - leave blank to keep" : "hf_... for gated models")"
-                   autocomplete="off" />
-        </div>
-        <div class="row" style="align-items:center;">
-            <span class="provider-dot @(HF.HasToken ? "on" : "off")"></span>
-            <button type="button" class="button" @onclick="SaveToken">Save token</button>
-            @if (HF.HasToken)
-            {
-                <button type="button" class="button danger" @onclick="ClearToken">Clear token</button>
-            }
-        </div>
+    <div class="row" style="align-items:center; gap:.5rem; flex-wrap:wrap;">
+        <span class="provider-dot @(HF.HasToken ? "on" : "off")"></span>
+        <span class="small faint">
+            @(HF.HasToken
+                ? "HuggingFace token configured."
+                : "No HuggingFace token. Public GGUF downloads work without one.")
+        </span>
+        <a class="button" href="/settings?tab=openrouter">Manage in Providers</a>
     </div>
-    <div class="small faint">
-        The token is encrypted locally and only used for gated repositories. Downloading
-        public GGUF files needs no token.
+
+    <div class="row">
+        <input class="input" @bind="HF.Query" @bind:event="oninput"
+               @onkeydown="OnSearchKey"
+               placeholder="Search HuggingFace for GGUF models, e.g. tinyllama, qwen, gemma" />
+        <button type="button" class="button primary" @onclick="SearchAsync"
+                disabled="@HF.IsSearching">
+            @(HF.IsSearching ? "Searching..." : "Search")
+        </button>
     </div>
 
     <div class="row">
@@ -159,26 +157,11 @@
 @code {
     [Parameter] public EventCallback<string> OnDownloaded { get; set; }
 
-    private string _token = "";
-
     protected override void OnInitialized() => HF.Changed += OnHfChanged;
 
     public void Dispose() => HF.Changed -= OnHfChanged;
 
     private void OnHfChanged() => _ = InvokeAsync(StateHasChanged);
-
-    private void SaveToken()
-    {
-        HF.SaveToken(_token);
-        _token = "";
-    }
-
-    private async Task ClearToken()
-    {
-        bool confirmed = await JS.InvokeAsync<bool>(
-            "confirm", "Delete the saved HuggingFace token?");
-        if (confirmed) HF.ClearToken();
-    }
 
     private Task SearchAsync() => HF.SearchAsync();
 

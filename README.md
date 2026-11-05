@@ -42,12 +42,15 @@ native streaming tool-call deltas.
 
 ## HuggingFace models
 
-Open **Training > Models** and use **Find GGUF models**:
+The access token lives under **Settings → Providers → HuggingFace Model source**.
+Only a token is needed for gated repositories; public GGUF downloads work without
+one, and no username is required.
+
+Open **Training → Models** and use **Find GGUF models**:
 
 - search the HuggingFace Hub for GGUF repositories
 - inspect license, gated status, files, quantisation and size
 - download to `%USERPROFILE%\SharpMind\Models` with progress and resume
-- save an encrypted HuggingFace token for gated repositories
 
 Downloaded GGUF files can be converted to `.smm` with the converter directly
 below the browser, or used as local models where supported.
@@ -87,6 +90,19 @@ Build a release and publish the web host or desktop shell:
 dotnet publish SharpMind.Studio     -c Release -o publish/web
 dotnet publish SharpMind.Studio.UI  -c Release -o publish/desktop
 ```
+
+### Docker
+
+A preview Docker image for the Studio web app lives in `docker/studio`. The
+SharpMind packages must be available from NuGet (or a local feed) at build time.
+
+```powershell
+docker build -f docker/studio/Dockerfile -t sharpmind-studio:preview .
+docker run --rm -p 5117:5117 -p 5118:5118 `
+  -v "${PWD}/data:/data/SharpMind" sharpmind-studio:preview
+```
+
+See `docker/studio/README.md` for compose, volumes and the data directory.
 
 ## Training smoke test (working notes)
 

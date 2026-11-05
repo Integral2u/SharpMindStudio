@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/.vs/
+**/publish/
+**/nupkg/
+**/local-packages/
+**/data/
+docs/
+publish/
+.git/
+.gitignore

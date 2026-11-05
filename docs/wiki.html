@@ -229,11 +229,14 @@
 
             <h2 id="huggingface">HuggingFace <span style="color:var(--teal);font-family:var(--mono);font-size:.65rem;">AVAILABLE</span></h2>
             <p>
-                Open <strong>Training → Models → Find GGUF models</strong>. Search the Hub,
+                The optional access token lives under
+                <strong>Settings → Providers → HuggingFace Model source</strong>. Only a
+                token is needed for gated repositories; public GGUF downloads work without
+                one, and no username is required. Open
+                <strong>Training → Models → Find GGUF models</strong>, search the Hub,
                 inspect license, gated status, files, quantisation and size, then download
-                into <code>Models\</code> with progress and resume. An optional encrypted
-                HuggingFace token covers gated repositories. Downloaded GGUF files can be
-                converted to <code>.smm</code> with the converter directly below the
+                into <code>Models\</code> with progress and resume. Downloaded GGUF files can
+                be converted to <code>.smm</code> with the converter directly below the
                 browser.
             </p>
 

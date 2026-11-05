@@ -8,6 +8,7 @@
 @inject StudioWorkspaceService Workspace
 @inject InferenceSettingsService Inference
 @inject OpenRouterSettingsService OpenRouter
+@inject HuggingFaceService HuggingFace
 @inject ModelCatalogService Catalog
 @inject GatewayService Gateway
 @inject IJSRuntime JS
@@ -250,6 +251,48 @@ else if (_tab == "openrouter")
             </div>
         </div>
     </section>
+
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">HuggingFace</div>
+                <h2>Model source</h2>
+            </div>
+            <div class="row" style="align-items:center; gap:.45rem;">
+                <span class="provider-dot @(HuggingFace.HasToken ? "on" : "off")"></span>
+                <span class="faint small mono">@(HuggingFace.HasToken ? "token configured" : "no token")</span>
+            </div>
+        </div>
+        <div class="panel-body stack">
+            <p class="small faint">
+                Browse and download GGUF models under <strong>Training → Models</strong>.
+                Public GGUF downloads work without a token; a token is only needed for
+                gated repositories. The token is encrypted with the same local key box as
+                the other provider secrets.
+            </p>
+            <div class="field">
+                <label class="field-label" for="huggingface-token">Access token (optional)</label>
+                <input id="huggingface-token" class="input" type="password" @bind="_hfToken"
+                       placeholder="@(HuggingFace.HasToken ? "Leave blank to keep the saved token" : "hf_...")"
+                       autocomplete="off" />
+                <span class="small faint">Stored encrypted under <span class="mono">@StudioPaths.HuggingFaceFile</span>.</span>
+            </div>
+            <div class="row">
+                <button type="button" class="button primary" @onclick="SaveHuggingFaceToken">Save token</button>
+                <button type="button" class="button danger" @onclick="DeleteHuggingFaceToken"
+                        disabled="@(!HuggingFace.HasToken)">Delete token</button>
+                <a class="button" href="/training?tab=models">Find GGUF models</a>
+            </div>
+            @if (_hfStatus is { Length: > 0 })
+            {
+                <div class="status-line">@_hfStatus</div>
+            }
+            @if (_hfError is not null)
+            {
+                <div class="error-line">@_hfError</div>
+            }
+        </div>
+    </section>
 }
 else if (_tab == "pair")
 {
@@ -430,6 +473,9 @@ else
     private string? _openRouterError;
     private bool _openRouterTesting;
     private IReadOnlyList<OpenRouterModel> _openRouterModels = [];
+    private string _hfToken = "";
+    private string? _hfStatus;
+    private string? _hfError;
     private InferenceOverrides _system = new();
     private IReadOnlyList<ModelFamily> _families = [];
     private IReadOnlyList<ModelDescriptor> _models = [];
@@ -606,6 +652,41 @@ else
         _openRouterKey = "";
         _openRouterStatus = "OpenRouter API key deleted.";
         _openRouterError = null;
+    }
+
+    private void SaveHuggingFaceToken()
+    {
+        if (string.IsNullOrWhiteSpace(_hfToken))
+        {
+            _hfStatus = "Enter a HuggingFace token first.";
+            _hfError = null;
+            return;
+        }
+
+        try
+        {
+            HuggingFace.SaveToken(_hfToken);
+            _hfToken = "";
+            _hfStatus = "HuggingFace token saved.";
+            _hfError = null;
+        }
+        catch (Exception ex)
+        {
+            _hfError = ex.Message;
+            _hfStatus = "Could not save the HuggingFace token.";
+        }
+    }
+
+    private async Task DeleteHuggingFaceToken()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", "Delete the saved HuggingFace token?");
+        if (!confirmed) return;
+
+        HuggingFace.ClearToken();
+        _hfToken = "";
+        _hfStatus = "HuggingFace token deleted.";
+        _hfError = null;
     }
 
     private async Task LoadCatalogAsync()
