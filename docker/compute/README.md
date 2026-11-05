@@ -95,7 +95,7 @@ docker push <dockerhub-user>/sharpmind-compute:preview
 ### 2. Create a network volume (optional but recommended)
 
 Dashboard → **Storage** → **Network volumes** → **New volume**. Pick the same
-region you will use for the GPU. Size it for the models you want to run; even
+region you will use for the pod. Size it for the models you want to run; even
 20 GB is enough for several small GGUF/SMM models. Mount path inside the pod:
 `/data/SharpMind`.
 
@@ -107,7 +107,7 @@ Dashboard → **Pods** → **Deploy**. Choose **Pods**, then:
 
 | Field | Value |
 |---|---|
-| GPU | Any 16–24 GB card is a fine start (RTX 4090 / A5000 / L4) |
+| Pod type | **CPU pod** for the first smoke test (see the GPU note below) |
 | Template | **Custom** / **Custom container image** |
 | Container image | `<dockerhub-user>/sharpmind-compute:preview` |
 | Container disk | 20 GB or more |
@@ -126,6 +126,12 @@ SHARPMIND_PLUGINS=/app/plugins
 
 You do **not** need `SHARPMIND_MODEL`: if it is blank the host picks a model from
 `/data/SharpMind/Models`, and you can upload and activate one at runtime.
+
+> **GPU note.** This first Compute image runs inference and training on the CPU.
+> A GPU pod will work, but the GPU will sit idle until the ILGPU accelerator
+> plugin (`SharpMind.GPU`, the `ilgpu` plugin) is published into
+> `/app/plugins`. Start with a CPU pod; it is much cheaper and exercises the
+> same endpoints.
 
 Deploy and wait for the pod to show **Running**.
 
@@ -164,13 +170,24 @@ A small model uploads in seconds. Large models should go on the network volume
 instead, or be uploaded with a TCP-exposed port, because the HTTP proxy has a
 100-second response timeout.
 
-Test a chat:
+Test a chat from PowerShell:
 
 ```powershell
-curl.exe -X POST "$base/v1/chat/completions" `
-  -H $auth -H "Content-Type: application/json" `
-  -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Once upon a time\"}],\"max_tokens\":32}'
+$body = @{
+  messages = @(@{ role = "user"; content = "Once upon a time" })
+  max_tokens = 32
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod "$base/v1/chat/completions" `
+  -Method Post -Headers @{ Authorization = "Bearer <SHARPMIND_TOKEN>" } `
+  -ContentType "application/json" -Body $body |
+  Select-Object -ExpandProperty choices |
+  Select-Object -ExpandProperty message
 ```
+
+`curl.exe` works too, but pass JSON from a file (`--data-binary "@chat.json"`);
+PowerShell does not strip the backslashes in an inline `-d "{\"a\":1}"`
+argument.
 
 ### 6. Upload a dataset and train
 
@@ -204,11 +221,36 @@ send a portable job:
 }
 ```
 
+Post it with a PowerShell hashtable (no JSON escaping to get wrong):
+
+```powershell
+$job = @{
+  job = @{
+    name = "runpod-smoke"
+    sources = @(@{
+      component = @{
+        typeName = "SharpMind.Data.Sources.TextFileSource"
+        args = @{ path = "/data/SharpMind/Files/datasets/smoke.txt"; mode = "FilePerDoc" }
+      }
+    })
+    totalSteps = 100
+    exportPath = "runpod-smoke/out.smm"
+    tokenizerCachePath = "runpod-smoke/out.tokenizer.json"
+  }
+} | ConvertTo-Json -Depth 10
+
+$created = Invoke-RestMethod "$base/v1/training/jobs" -Method Post `
+  -Headers @{ Authorization = "Bearer <SHARPMIND_TOKEN>" } `
+  -ContentType "application/json" -Body $job
+$created
+```
+
 Poll, then download the export:
 
 ```powershell
-curl.exe -H $auth "$base/v1/training/jobs/<JOB_ID>"
-curl.exe -H $auth "$base/v1/training/jobs/<JOB_ID>/download" -o out.smm
+$id = $created.id
+Invoke-RestMethod "$base/v1/training/jobs/$id" -Headers @{ Authorization = "Bearer <SHARPMIND_TOKEN>" }
+curl.exe -H $auth "$base/v1/training/jobs/$id/download" -o out.smm
 ```
 
 ### 7. Stopping
@@ -232,28 +274,15 @@ HTTP proxy.
 
 ## Training jobs
 
-The job request is the Studio `.smmt` payload directly:
+The job request is the Studio `.smmt` payload directly. The quick start above
+shows the smallest useful example; Studio sends the full settings object.
 
-```json
-{
-  "job": {
-    "name": "runpod-smoke",
-    "sources": [
-      {
-        "component": {
-          "typeName": "SharpMind.Data.Sources.TextFileSource",
-          "args": { "path": "/data/SharpMind/Corpus/smoke.txt", "mode": "FilePerDoc" }
-        }
-      }
-    ],
-    "totalSteps": 100,
-    "exportPath": "/data/SharpMind/Training/runpod-smoke.smm"
-  }
-}
-```
+Paths inside the job are container paths:
 
-The data and export paths must exist inside the pod/volume. Upload the corpus or
-point at a file already on the mounted volume.
+- upload datasets with `PUT /v1/files/...` and use the returned `fullPath`;
+- a path already on the mounted volume works too (`/data/SharpMind/...`);
+- an absolute `exportPath` is used verbatim;
+- a relative `exportPath` resolves under `/data/SharpMind/Training`.
 
 Poll:
 
@@ -262,12 +291,21 @@ curl -H "Authorization: Bearer ..." `
   https://<POD_ID>-8080.proxy.runpod.net/v1/training/jobs/<JOB_ID>
 ```
 
-Artifacts are written to the paths in the job. Keep them on a persistent volume
-before the pod is terminated.
+Artifacts are written to the paths in the job. Download them before the pod is
+terminated, or keep them on the persistent volume:
+
+```powershell
+curl.exe -H "Authorization: Bearer ..." `
+  "https://<POD_ID>-8080.proxy.runpod.net/v1/training/jobs/<JOB_ID>/download" `
+  -o trained.smm
+```
 
 ## Current limits
 
 - One model per host process; switching models unloads the previous one.
+- CPU inference and training in the published image. Training can use the
+  `ilgpu` accelerator plugin, and inference can too once it is wired to the
+  plugin's `IInferenceEngineFactory`; neither plugin ships in the image yet.
 - No tool calling yet; inference and training only.
 - No multi-tenant isolation; run one host per user/session.
 - Uploads live in `/data/SharpMind/Files`; keep the network volume attached so

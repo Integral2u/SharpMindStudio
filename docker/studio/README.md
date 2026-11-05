@@ -50,10 +50,42 @@ Data, models, chats, datasets and training output live under the mounted
 - Web UI: `http://127.0.0.1:5117`
 - LAN/phone listener: port `5118`
 
+### Reaching a container
+
+Studio only answers trusted clients. Requests that arrive from outside the
+machine are answered with **404** until LAN access is enabled; inside a
+container every request from Docker's port mapping is "outside", even when the
+browser is on the same PC. The image sets `Studio__LanEnabled=true` so this is
+handled: a non-loopback browser is redirected to `/pair`, and nothing else is
+served until it is paired.
+
+Check the container:
+
+```powershell
+curl.exe http://127.0.0.1:5117/health
+```
+
+To pair a browser with a headless container, create a pairing offer from inside
+the container, open it in the browser, then approve it:
+
+```powershell
+# 1. create an offer (returns token and pin)
+docker exec sharpmind-studio curl -s -X POST http://127.0.0.1:5117/gateway/api/pairing/new
+
+# 2. open http://127.0.0.1:5117/pair and enter the token and pin
+
+# 3. approve the pending request (id comes from step 1)
+docker exec sharpmind-studio curl -s -X POST `
+  http://127.0.0.1:5117/gateway/api/pairings/<ID>/approve `
+  -H "Content-Type: application/json" -d "{\"mode\":\"desktop\"}"
+```
+
+The browser then reloads with a device cookie. `mode` is `desktop` or `mobile`.
+
 ## Notes
 
 - The desktop shell (`SharpMind.Studio.UI`) is Windows/WebView2 only and is not
   part of this image.
-- The future SharpMind Compute host will be a separate image with its own
-  inference and training API. This Studio image is for the local-first web UI.
+- The Compute host is a separate image (`docker/compute/`) with its own
+  inference and training API. This Studio image is the local-first web UI.
 - A GPU is not required for the Studio web UI; model speed is a separate concern.

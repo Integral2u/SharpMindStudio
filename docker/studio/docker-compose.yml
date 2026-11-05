@@ -11,6 +11,7 @@ services:
       Studio__Root: /data/SharpMind
       Studio__Url: http://0.0.0.0:5117
       Studio__LanUrl: http://0.0.0.0:5118
+      Studio__LanEnabled: "true"
     volumes:
       - ${SHARPMIND_DATA:-./data}:/data/SharpMind
     restart: unless-stopped

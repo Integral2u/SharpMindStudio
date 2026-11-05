@@ -15,6 +15,7 @@ RUN dotnet publish SharpMind.Studio.ComputeHost/SharpMind.Studio.ComputeHost.csp
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
+RUN mkdir -p /app/plugins
 
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
     SHARPMIND_DATA=/data/SharpMind \
