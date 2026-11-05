@@ -17,15 +17,56 @@ public sealed class ModelRuntime : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private LoadedStudioModel? _loaded;
     private IChatSession? _session;
+    private string? _modelPath;
 
     public ModelRuntime(ComputeOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _modelPath = options.ModelPath;
     }
 
-    public string ModelId => _options.ModelId;
+    public string ModelId =>
+        string.IsNullOrWhiteSpace(_modelPath)
+            ? "default"
+            : Path.GetFileNameWithoutExtension(_modelPath);
+
     public bool IsLoaded => _session is not null;
-    public string? ModelPath => _options.ModelPath;
+    public string? ModelPath => _modelPath;
+
+    /// <summary>
+    /// Switches the active model and loads it eagerly so a bad file fails at
+    /// activation time instead of on the next chat request.
+    /// </summary>
+    public async Task ActivateAsync(string? path, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await UnloadAsync().ConfigureAwait(false);
+            _modelPath = string.IsNullOrWhiteSpace(path) ? null : Path.GetFullPath(path);
+            _options.ModelPath = _modelPath;
+            if (_modelPath is not null)
+                await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task UnloadAsync()
+    {
+        if (_session is not null)
+        {
+            try { await _session.DisposeAsync().ConfigureAwait(false); } catch { }
+            _session = null;
+        }
+        if (_loaded is not null)
+        {
+            try { _host.Release(_loaded); } catch { }
+            _loaded = null;
+        }
+    }
 
     public async IAsyncEnumerable<string> GenerateAsync(
         ChatCompletionRequest request,
@@ -37,7 +78,7 @@ public sealed class ModelRuntime : IAsyncDisposable
             IChatSession session = await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
             session.ClearHistory();
             session.ResetCaches();
-            session.MaxNewTokens = Math.Max(1, request.MaxTokens ?? 512);
+            session.MaxNewTokens = Math.Max(1, request.TokenLimit ?? 512);
             session.Temperature = request.Temperature ?? 0.7f;
             session.TopP = request.TopP ?? 0.9f;
 
@@ -85,11 +126,11 @@ public sealed class ModelRuntime : IAsyncDisposable
     {
         if (_session is not null) return _session;
 
-        if (string.IsNullOrWhiteSpace(_options.ModelPath) || !File.Exists(_options.ModelPath))
+        if (string.IsNullOrWhiteSpace(_modelPath) || !File.Exists(_modelPath))
             throw new InvalidOperationException(
-                "No model configured. Set SHARPMIND_MODEL or put a .smm/.gguf in SHARPMIND_MODELS_DIR.");
+                "No model configured. Upload one to /v1/models/{name}, or put a .smm/.gguf in SHARPMIND_MODELS_DIR.");
 
-        ModelDescriptor descriptor = ModelCatalog.Describe(_options.ModelPath);
+        ModelDescriptor descriptor = ModelCatalog.Describe(_modelPath);
         ResolvedInference profile = InferenceResolver.Resolve(
             InferenceOverrides.SystemDefaults(), null, null, null);
         BuilderCatalogResult builders = BuilderCatalog.Discover(_options.PluginsFolder);
@@ -148,16 +189,7 @@ public sealed class ModelRuntime : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_session is not null)
-        {
-            try { await _session.DisposeAsync().ConfigureAwait(false); } catch { }
-            _session = null;
-        }
-        if (_loaded is not null)
-        {
-            _host.Release(_loaded);
-            _loaded = null;
-        }
+        await UnloadAsync().ConfigureAwait(false);
         _gate.Dispose();
     }
 }

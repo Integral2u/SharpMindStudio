@@ -19,12 +19,16 @@ If the sibling `SharpMind` source tree exists, build from the parent `repos`
 folder with the local Dockerfile:
 
 ```powershell
+cd C:\Integral2u\source\repos
+Copy-Item SharpMind.Studio\docker\local-context.dockerignore .dockerignore
 docker build -f SharpMind.Studio/docker/studio/Dockerfile.local `
-  -t sharpmind-studio:local ..
+  -t sharpmind-studio:local .
 ```
 
 This uses the project references automatically and does not need the packages
-published. The build context is larger because it includes the SharpMind source.
+published. The build context is larger because it includes the SharpMind source,
+so the `.dockerignore` above keeps the other repositories in that folder out of
+the context.
 
 ## Run
 

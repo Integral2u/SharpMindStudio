@@ -10,8 +10,18 @@ public sealed class ChatCompletionRequest
     public List<ChatCompletionMessage> Messages { get; set; } = [];
     public bool Stream { get; set; }
     public float? Temperature { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("top_p")]
     public float? TopP { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("max_tokens")]
     public int? MaxTokens { get; set; }
+
+    /// <summary>Newer OpenAI name for the same limit; used when <see cref="MaxTokens"/> is absent.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("max_completion_tokens")]
+    public int? MaxCompletionTokens { get; set; }
+
+    public int? TokenLimit => MaxTokens ?? MaxCompletionTokens;
 }
 
 public sealed class TrainingJobRequest
@@ -19,6 +29,11 @@ public sealed class TrainingJobRequest
     public required TrainingJobSettings Job { get; set; }
     public string? PluginsFolder { get; set; }
     public string? RecipeFolder { get; set; }
+}
+
+public sealed class ActivateModelRequest
+{
+    public string? Name { get; set; }
 }
 
 public sealed class TrainingJobState

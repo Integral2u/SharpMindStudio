@@ -9,6 +9,8 @@ ComputeOptions options = ComputeOptions.FromEnvironment();
 StudioPaths.UseRoot(options.DataRoot);
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.ConfigureKestrel(kestrel =>
+    kestrel.Limits.MaxRequestBodySize = 8L * 1024 * 1024 * 1024);
 builder.Services.ConfigureHttpJsonOptions(json =>
 {
     json.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -64,34 +66,205 @@ app.MapGet("/", () => Results.Json(new
 {
     name = "SharpMind Compute",
     status = "ok",
-    docs = "/health, /v1/models, /v1/chat/completions, /v1/training/jobs",
+    docs = "/health, /v1/models, /v1/files, /v1/chat/completions, /v1/training/jobs",
 }));
 
 app.MapGet("/health", (ModelRuntime runtime, TrainingJobManager jobs) => Results.Json(new
 {
     status = "ok",
-    model = options.ModelId,
-    modelPath = options.ModelPath,
-    modelConfigured = !string.IsNullOrWhiteSpace(options.ModelPath)
-        && File.Exists(options.ModelPath),
+    model = runtime.ModelId,
+    modelPath = runtime.ModelPath,
+    modelConfigured = options.ModelConfigured,
     modelLoaded = runtime.IsLoaded,
     dataRoot = options.DataRoot,
+    modelsFolder = options.ModelsFolder,
+    filesFolder = options.FilesFolder,
     runningJobs = jobs.List().Count(job => job.Status == "running"),
 }));
 
-app.MapGet("/v1/models", () => Results.Json(new
+app.MapGet("/v1/models", (ModelRuntime runtime) => Results.Json(new
 {
     @object = "list",
-    data = new[]
-    {
-        new
-        {
-            id = options.ModelId,
-            @object = "model",
-            owned_by = "sharpmind",
-        },
-    },
+    data = ListedModels(runtime, options),
 }));
+
+app.MapPut("/v1/models/{name}", async (
+    string name,
+    HttpContext context,
+    ModelRuntime runtime,
+    CancellationToken cancellationToken) =>
+{
+    string fileName = Path.GetFileName(name);
+    if (!options.IsSupportedModelName(fileName))
+        return Results.BadRequest(new { error = new { message = "Model name must end in .smm or .gguf." } });
+
+    Directory.CreateDirectory(options.ModelsFolder);
+    string destination = Path.Combine(options.ModelsFolder, fileName);
+
+    long bytes;
+    try
+    {
+        bytes = await HostFiles.SaveAsync(context.Request.Body, destination, cancellationToken);
+    }
+    catch (OperationCanceledException)
+    {
+        return Results.Empty;
+    }
+
+    if (bytes == 0)
+    {
+        try { File.Delete(destination); } catch { }
+        return Results.BadRequest(new { error = new { message = "The upload was empty." } });
+    }
+
+    bool activate = string.Equals(
+        context.Request.Query["activate"], "true", StringComparison.OrdinalIgnoreCase);
+    if (activate)
+    {
+        try
+        {
+            await runtime.ActivateAsync(destination, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return Results.Json(
+                new
+                {
+                    error = new { message = $"Uploaded, but the model did not load: {ex.Message}" },
+                    path = destination,
+                    bytes,
+                },
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+    }
+
+    return Results.Json(new
+    {
+        id = Path.GetFileNameWithoutExtension(destination),
+        name = fileName,
+        path = destination,
+        bytes,
+        active = string.Equals(runtime.ModelPath, destination, StringComparison.OrdinalIgnoreCase),
+        loaded = runtime.IsLoaded,
+    });
+});
+
+app.MapPost("/v1/models/activate", async (
+    ActivateModelRequest request,
+    ModelRuntime runtime,
+    CancellationToken cancellationToken) =>
+{
+    string? path = options.ResolveModelFile(request.Name ?? "");
+    if (path is null)
+        return Results.NotFound(new { error = new { message = "No such model in the models folder." } });
+
+    try
+    {
+        await runtime.ActivateAsync(path, cancellationToken);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(
+            new { error = new { message = ex.Message } },
+            statusCode: StatusCodes.Status422UnprocessableEntity);
+    }
+
+    return Results.Json(new { id = runtime.ModelId, path, loaded = runtime.IsLoaded });
+});
+
+app.MapPost("/v1/models/unload", async (ModelRuntime runtime, CancellationToken cancellationToken) =>
+{
+    await runtime.ActivateAsync(null, cancellationToken);
+    return Results.Json(new { id = runtime.ModelId, loaded = runtime.IsLoaded });
+});
+
+app.MapDelete("/v1/models/{name}", async (
+    string name,
+    ModelRuntime runtime,
+    CancellationToken cancellationToken) =>
+{
+    string? path = options.ResolveModelFile(name);
+    if (path is null) return Results.NotFound();
+
+    if (string.Equals(runtime.ModelPath, path, StringComparison.OrdinalIgnoreCase))
+        await runtime.ActivateAsync(null, cancellationToken);
+
+    File.Delete(path);
+    return Results.Ok(new { deleted = Path.GetFileName(path) });
+});
+
+app.MapGet("/v1/files", () =>
+{
+    if (!Directory.Exists(options.FilesFolder))
+        return Results.Json(Array.Empty<object>());
+
+    var files = Directory
+        .EnumerateFiles(options.FilesFolder, "*", SearchOption.AllDirectories)
+        .Select(path => new
+        {
+            path = Path.GetRelativePath(options.FilesFolder, path).Replace('\\', '/'),
+            fullPath = path,
+            bytes = new FileInfo(path).Length,
+            modifiedUtc = File.GetLastWriteTimeUtc(path),
+        })
+        .OrderBy(entry => entry.path, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    return Results.Json(files);
+});
+
+app.MapPut("/v1/files/{**path}", async (
+    string path,
+    HttpContext context,
+    CancellationToken cancellationToken) =>
+{
+    if (!HostFiles.TryResolve(options.FilesFolder, path, out string destination))
+        return Results.BadRequest(new { error = new { message = "Invalid file path." } });
+
+    long bytes;
+    try
+    {
+        bytes = await HostFiles.SaveAsync(context.Request.Body, destination, cancellationToken);
+    }
+    catch (OperationCanceledException)
+    {
+        return Results.Empty;
+    }
+
+    if (bytes == 0)
+    {
+        try { File.Delete(destination); } catch { }
+        return Results.BadRequest(new { error = new { message = "The upload was empty." } });
+    }
+
+    return Results.Json(new
+    {
+        path = Path.GetRelativePath(options.FilesFolder, destination).Replace('\\', '/'),
+        fullPath = destination,
+        bytes,
+    });
+});
+
+app.MapGet("/v1/files/{**path}", (string path) =>
+{
+    if (!HostFiles.TryResolve(options.FilesFolder, path, out string full) || !File.Exists(full))
+        return Results.NotFound();
+
+    return Results.File(
+        full,
+        "application/octet-stream",
+        Path.GetFileName(full),
+        enableRangeProcessing: true);
+});
+
+app.MapDelete("/v1/files/{**path}", (string path) =>
+{
+    if (!HostFiles.TryResolve(options.FilesFolder, path, out string full) || !File.Exists(full))
+        return Results.NotFound();
+
+    File.Delete(full);
+    return Results.Ok(new { deleted = Path.GetRelativePath(options.FilesFolder, full).Replace('\\', '/') });
+});
 
 app.MapPost("/v1/chat/completions", async (
     ChatCompletionRequest request,
@@ -247,6 +420,54 @@ app.MapGet("/v1/training/jobs/{id}/artifacts", (string id, TrainingJobManager jo
         })
         : Results.NotFound());
 
+app.MapGet("/v1/training/jobs/{id}/download", (
+    string id,
+    string? artifact,
+    TrainingJobManager jobs) =>
+{
+    if (jobs.Get(id) is not { } state) return Results.NotFound();
+
+    string? path = artifact?.Trim().ToLowerInvariant() switch
+    {
+        "adapter" => state.AdapterPath,
+        _ => state.ExportPath,
+    };
+
+    if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        return Results.NotFound(new { error = new { message = "Artifact is not available yet." } });
+
+    return Results.File(
+        path,
+        "application/octet-stream",
+        Path.GetFileName(path),
+        enableRangeProcessing: true);
+});
+
 app.Run();
+
+static object[] ListedModels(ModelRuntime runtime, ComputeOptions options)
+{
+    if (!Directory.Exists(options.ModelsFolder)) return [];
+
+    string? active = runtime.ModelPath is { } current
+        ? Path.GetFullPath(current)
+        : null;
+
+    return Directory
+        .EnumerateFiles(options.ModelsFolder)
+        .Where(options.IsSupportedModelName)
+        .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+        .Select(path => (object)new
+        {
+            id = Path.GetFileNameWithoutExtension(path),
+            name = Path.GetFileName(path),
+            @object = "model",
+            owned_by = "sharpmind",
+            bytes = new FileInfo(path).Length,
+            active = active is not null
+                && string.Equals(Path.GetFullPath(path), active, StringComparison.OrdinalIgnoreCase),
+        })
+        .ToArray();
+}
 
 public partial class Program;

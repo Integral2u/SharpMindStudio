@@ -1,0 +1,36 @@
+# Copy this file to the parent folder that contains both `SharpMind/` and
+# `SharpMind.Studio/` and name it `.dockerignore`.
+#
+# The local Dockerfiles need that parent folder as their build context, because
+# they compile the sibling `SharpMind` source tree. Without this file Docker
+# sends every other repository in the parent folder to the daemon too.
+#
+#   docker build -f SharpMind.Studio/docker/compute/Dockerfile.local -t sharpmind-compute:local .
+#   docker build -f SharpMind.Studio/docker/studio/Dockerfile.local  -t sharpmind-studio:local  .
+
+*
+!SharpMind
+!SharpMind.Studio
+
+SharpMind/.git
+SharpMind/.github
+SharpMind/.vs
+SharpMind/bin
+SharpMind/logs
+SharpMind/nupkg
+SharpMind/BenchmarkDotNet.Artifacts
+SharpMind/**/bin
+SharpMind/**/obj
+SharpMind/**/logs
+SharpMind/**/.vs
+
+SharpMind.Studio/.git
+SharpMind.Studio/.github
+SharpMind.Studio/.vs
+SharpMind.Studio/**/bin
+SharpMind.Studio/**/obj
+SharpMind.Studio/publish
+SharpMind.Studio/SharpMind.Studio.Tests
+SharpMind.Studio/SharpMind.Studio.UI
+SharpMind.Studio/docs
+SharpMind.Studio/local-packages

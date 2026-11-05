@@ -8,9 +8,15 @@ public sealed class ComputeOptions
     public string Token { get; init; } = "";
     public bool AllowAnonymous { get; init; }
     public string DataRoot { get; init; } = StudioPaths.Root;
-    public string? ModelPath { get; init; }
+    public string? ModelPath { get; set; }
     public string ModelsFolder { get; init; } = Path.Combine(StudioPaths.Root, "Models");
     public string PluginsFolder { get; init; } = Path.Combine(AppContext.BaseDirectory, "plugins");
+
+    /// <summary>Uploaded datasets and other job inputs live here.</summary>
+    public string FilesFolder => Path.Combine(DataRoot, "Files");
+
+    /// <summary>Default folder for relative training export paths.</summary>
+    public string TrainingFolder => Path.Combine(DataRoot, "Training");
 
     public static ComputeOptions FromEnvironment()
     {
@@ -49,6 +55,26 @@ public sealed class ComputeOptions
         string.IsNullOrWhiteSpace(ModelPath)
             ? "default"
             : Path.GetFileNameWithoutExtension(ModelPath);
+
+    public bool ModelConfigured =>
+        !string.IsNullOrWhiteSpace(ModelPath) && File.Exists(ModelPath);
+
+    /// <summary>Resolves a model name against <see cref="ModelsFolder"/>, rejecting path escapes.</summary>
+    public string? ResolveModelFile(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        string fileName = Path.GetFileName(name.Trim());
+        if (!fileName.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
+        string candidate = Path.Combine(ModelsFolder, fileName);
+        return File.Exists(candidate) ? candidate : null;
+    }
+
+    public bool IsSupportedModelName(string name)
+    {
+        string extension = Path.GetExtension(name);
+        return extension.Equals(".smm", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".gguf", StringComparison.OrdinalIgnoreCase);
+    }
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Token) || AllowAnonymous;
 

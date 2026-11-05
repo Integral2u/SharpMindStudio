@@ -48,6 +48,8 @@ public sealed class TrainingJobManager
         state.Status = "running";
         state.StartedUtc = DateTimeOffset.UtcNow;
 
+        ResolveRelativePaths(request, options);
+
         var status = new InlineProgress<string>(line =>
         {
             lock (state.Log)
@@ -102,6 +104,27 @@ public sealed class TrainingJobManager
             state.FinishedUtc = DateTimeOffset.UtcNow;
             _cancellations.TryRemove(id, out CancellationTokenSource? cts);
             cts?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Treats relative export and tokenizer paths as relative to the data root so
+    /// a client can post a portable job without knowing the container layout.
+    /// </summary>
+    private static void ResolveRelativePaths(TrainingJobRequest request, ComputeOptions options)
+    {
+        string export = request.Job.ExportPath ?? "";
+        if (export.Length > 0 && !Path.IsPathRooted(export))
+        {
+            request.Job.ExportPath = Path.GetFullPath(
+                Path.Combine(options.TrainingFolder, export));
+        }
+
+        string tokenizer = request.Job.TokenizerCachePath ?? "";
+        if (tokenizer.Length > 0 && !Path.IsPathRooted(tokenizer))
+        {
+            request.Job.TokenizerCachePath = Path.GetFullPath(
+                Path.Combine(options.TrainingFolder, tokenizer));
         }
     }
 

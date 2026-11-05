@@ -2,6 +2,9 @@
 # Local-source build. Context must be the parent folder that contains both
 # SharpMind/ and SharpMind.Studio/:
 #   docker build -f SharpMind.Studio/docker/studio/Dockerfile.local -t sharpmind-studio:local ..
+#
+# Copy docker/local-context.dockerignore to that parent folder as `.dockerignore`
+# so unrelated repositories are not sent to the Docker daemon.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
