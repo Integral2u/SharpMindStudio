@@ -13,7 +13,7 @@ public sealed record OpenRouterSettingsDocument
 {
     public const string CurrentSchema = "studio-openrouter/1";
     public const string DefaultBaseUrl = "https://openrouter.ai/api/v1";
-    public const string DefaultModelId = "openai/gpt-4o-mini";
+    public const string DefaultModelId = "openrouter/free";
     public const string AttributionReferer = "https://integral2u.github.io/SharpMindStudio/";
     public const string AttributionTitle = "SharpMind Studio";
 
@@ -27,6 +27,9 @@ public sealed record OpenRouterSettingsDocument
 
     /// <summary>True after the first free-model seed so setup does not repeat it.</summary>
     public bool FreeModelsSeeded { get; set; }
+
+    /// <summary>True once the old auto-seeded gpt-4o-mini entry has been removed.</summary>
+    public bool LegacyDefaultRemoved { get; set; }
 
     /// <summary>Recently used models (kept for older settings files and suggestions).</summary>
     public List<string> RecentModels { get; set; } = [];
@@ -256,6 +259,13 @@ public sealed class OpenRouterSettingsStore
             : NormalizeBaseUrl(document.BaseUrl);
         document.ActiveModels ??= [];
         document.RecentModels ??= [];
+
+        if (!document.LegacyDefaultRemoved)
+        {
+            document.ActiveModels.RemoveAll(model =>
+                model.Equals("openai/gpt-4o-mini", StringComparison.OrdinalIgnoreCase));
+            document.LegacyDefaultRemoved = true;
+        }
 
         if (document.ActiveModels.Count == 0)
             document.ActiveModels.Add(OpenRouterSettingsDocument.DefaultModelId);

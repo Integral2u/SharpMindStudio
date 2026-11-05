@@ -14,7 +14,7 @@ public sealed class OpenRouterSettingsStoreTests
         var store = new OpenRouterSettingsStore(settings, key);
 
         store.SetApiKey("sk-or-secret");
-        store.SetDefaults("https://openrouter.ai/api/v1/", "openai/gpt-4o-mini");
+        store.SetDefaults("https://openrouter.ai/api/v1/", OpenRouterSettingsDocument.DefaultModelId);
 
         Assert.True(File.Exists(settings));
         Assert.DoesNotContain("sk-or-secret", File.ReadAllText(settings));
@@ -23,9 +23,9 @@ public sealed class OpenRouterSettingsStoreTests
 
         var reopened = new OpenRouterSettingsStore(settings, key);
         Assert.Equal("sk-or-secret", reopened.ApiKey);
-        Assert.Equal("openai/gpt-4o-mini", reopened.Document.DefaultModel);
+        Assert.Equal(OpenRouterSettingsDocument.DefaultModelId, reopened.Document.DefaultModel);
         Assert.Equal("https://openrouter.ai/api/v1", reopened.Document.BaseUrl);
-        Assert.Contains("openai/gpt-4o-mini", reopened.Document.ActiveModels);
+        Assert.Contains(OpenRouterSettingsDocument.DefaultModelId, reopened.Document.ActiveModels);
     }
 
     [Fact]
@@ -76,6 +76,30 @@ public sealed class OpenRouterSettingsStoreTests
 
         Assert.True(store.RemoveActiveModel("anthropic/claude-sonnet-4"));
         Assert.Equal(OpenRouterSettingsDocument.DefaultModelId, store.Document.DefaultModel);
+    }
+
+    [Fact]
+    public void LegacyGpt4oSeed_IsRemovedAndReplacedWithFree()
+    {
+        using var temp = new TempDirectory();
+        string settings = temp.Combine("openrouter.json");
+        string key = temp.Combine("openrouter.key");
+        File.WriteAllText(settings, """
+            {
+              "schema": "studio-openrouter/1",
+              "baseUrl": "https://openrouter.ai/api/v1",
+              "defaultModel": "openai/gpt-4o-mini",
+              "activeModels": ["openai/gpt-4o-mini"],
+              "freeModelsSeeded": false
+            }
+            """);
+
+        var store = new OpenRouterSettingsStore(settings, key);
+
+        Assert.DoesNotContain("openai/gpt-4o-mini", store.Document.ActiveModels);
+        Assert.Contains(OpenRouterSettingsDocument.DefaultModelId, store.Document.ActiveModels);
+        Assert.Equal(OpenRouterSettingsDocument.DefaultModelId, store.Document.DefaultModel);
+        Assert.True(store.Document.LegacyDefaultRemoved);
     }
 
     [Fact]
