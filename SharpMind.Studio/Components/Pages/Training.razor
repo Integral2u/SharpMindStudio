@@ -2,6 +2,7 @@
 @implements IDisposable
 @using SharpMind.Data.Sources
 @using SharpMind.Model.Format
+@using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Services
@@ -10,6 +11,7 @@
 @inject StudioConversionService Convert
 @inject StudioExamService Exam
 @inject StudioRehearsalService Rehearsal
+@inject ComputeProviderService Compute
 @inject StudioWorkspaceService Workspace
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -103,6 +105,24 @@
             <TrainingJobEditor Job="_job" />
 
             <div class="training-actions">
+                <div class="field" style="min-width: 16rem;">
+                    <label class="field-label" for="training-compute">Run on</label>
+                    <select id="training-compute" class="input" @bind="_computeProviderId"
+                            disabled="@(Lab.IsRunning || Rehearsal.IsRunning)">
+                        <option value="">This PC</option>
+                        @foreach (ComputeProviderSettings host in Compute.Providers)
+                        {
+                            <option value="@host.Id">@host.Name (@ComputeProviderKinds.Display(host.Kind))</option>
+                        }
+                    </select>
+                    @if (_computeProviderId is not null)
+                    {
+                        <span class="small faint">
+                            Sources, base model and checkpoints are uploaded first, then the export is
+                            downloaded back here.
+                        </span>
+                    }
+                </div>
                 <button type="button" class="button primary" @onclick="StartTraining"
                         disabled="@(Lab.IsRunning || Rehearsal.IsRunning || _starting)">
                     @(Lab.IsRunning ? "Training..." : "Start training")
@@ -1136,6 +1156,7 @@ else if (_tab == "models")
     private string _selectedJobPath = "";
     private string? _error;
     private bool _starting;
+    private string? _computeProviderId;
 
     private string _convertSource = "";
     private string _convertDestination = "";
@@ -1550,7 +1571,7 @@ else if (_tab == "models")
         _tuning = true;
         try
         {
-            if (!Lab.Start(job, Workspace.PluginsFolder))
+            if (!Lab.Start(job, Workspace.PluginsFolder, _computeProviderId))
                 _tuneError = "A training run is already active.";
         }
         catch (Exception ex)
@@ -1663,7 +1684,7 @@ else if (_tab == "models")
         _starting = true;
         try
         {
-            if (!Lab.Start(_job, Workspace.PluginsFolder))
+            if (!Lab.Start(_job, Workspace.PluginsFolder, _computeProviderId))
                 _error = "A training run is already active.";
         }
         catch (Exception ex)

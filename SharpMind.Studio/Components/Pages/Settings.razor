@@ -1,5 +1,6 @@
 ﻿@page "/settings"
 @using Microsoft.AspNetCore.Components
+@using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Core.OpenRouter
 @using SharpMind.Studio.Core.Storage
@@ -8,9 +9,12 @@
 @inject StudioWorkspaceService Workspace
 @inject InferenceSettingsService Inference
 @inject OpenRouterSettingsService OpenRouter
+@inject ComputeProviderService Compute
+@inject DockerHostService Docker
 @inject HuggingFaceService HuggingFace
 @inject ModelCatalogService Catalog
 @inject GatewayService Gateway
+@inject PathPickerService Picker
 @inject IJSRuntime JS
 
 <PageTitle>Settings - SharpMind Studio</PageTitle>
@@ -255,6 +259,247 @@ else if (_tab == "openrouter")
     <section class="panel">
         <div class="panel-head">
             <div>
+                <div class="eyebrow">SharpMind Compute</div>
+                <h2>Docker hosts</h2>
+            </div>
+            <div class="row" style="align-items:center; gap:.45rem;">
+                <span class="provider-dot @(Compute.DefaultProvider?.Healthy == true ? "on" : "off")"></span>
+                <span class="faint small mono">@Compute.Providers.Count host(s)</span>
+            </div>
+        </div>
+        <div class="panel-body stack">
+            <p class="small faint">
+                A Compute host is the SharpMind server image: one model, chat completions and
+                training jobs. Use <strong>Local Docker</strong> for a container on this PC and
+                <strong>Remote host</strong> for Runpod or any other machine. The token is encrypted
+                with the same local key box as the other provider secrets.
+            </p>
+
+            <div class="row">
+                <button type="button" class="button primary" @onclick="NewCompute">Add host</button>
+                <span class="small faint">Default host is used by Chat and Training when you pick Compute.</span>
+            </div>
+
+            @if (_computeStatus is { Length: > 0 })
+            {
+                <div class="status-line">@_computeStatus</div>
+            }
+            @if (_computeError is not null)
+            {
+                <div class="error-line">@_computeError</div>
+            }
+
+            @if (_computeEditing)
+            {
+                <div class="training-subsection">
+                    <div class="training-subsection-head">
+                        <label class="field-label">@(_editingComputeId is null ? "New Compute host" : "Edit Compute host")</label>
+                    </div>
+                    <div class="training-form">
+                        <div class="field">
+                            <label class="field-label" for="compute-name">Name</label>
+                            <input id="compute-name" class="input" @bind="_computeName" placeholder="Local Docker" />
+                        </div>
+                        <div class="field">
+                            <label class="field-label" for="compute-kind">Kind</label>
+                            <select id="compute-kind" class="input" @bind="_computeKind">
+                                <option value="@ComputeProviderKinds.Local">Local Docker</option>
+                                <option value="@ComputeProviderKinds.Remote">Remote host</option>
+                            </select>
+                        </div>
+                        <div class="field training-form-wide">
+                            <label class="field-label" for="compute-url">Base URL</label>
+                            <input id="compute-url" class="input" @bind="_computeBaseUrl"
+                                   placeholder="http://127.0.0.1:8080" />
+                            <span class="small faint">
+                                Local Docker: <span class="mono">http://127.0.0.1:8080</span>.
+                                Remote: the Runpod proxy URL or your host's address.
+                            </span>
+                        </div>
+                        <div class="field training-form-wide">
+                            <label class="field-label" for="compute-token">Token</label>
+                            <div class="row">
+                                <input id="compute-token" class="input"
+                                       type="@(_computeShowToken ? "text" : "password")" @bind="_computeToken"
+                                       placeholder="@(_editingComputeId is null ? "Leave blank to generate" : "leave blank to keep")"
+                                       autocomplete="off" />
+                                <button type="button" class="button" @onclick="GenerateComputeToken">Generate</button>
+                                <button type="button" class="button" @onclick="() => _computeShowToken = !_computeShowToken">
+                                    @(_computeShowToken ? "Hide" : "Show")
+                                </button>
+                            </div>
+                            <span class="small faint">
+                                The same value as <span class="mono">SHARPMIND_TOKEN</span> on the host.
+                                A generated token is saved with this host, so Studio and the container always match.
+                            </span>
+                        </div>
+
+                        @if (_computeKind == ComputeProviderKinds.Local)
+                        {
+                            <div class="field">
+                                <label class="field-label" for="compute-image">Docker image</label>
+                                <input id="compute-image" class="input" @bind="_computeImage"
+                                       placeholder="@ComputeProviderPresets.DefaultImage" />
+                                <span class="small faint">The local image built from <span class="mono">docker/compute</span>.</span>
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="compute-port">Port</label>
+                                <input id="compute-port" class="input" type="number" min="1" max="65535"
+                                       @bind="_computePort" />
+                                <span class="small faint">Studio will connect to <span class="mono">http://127.0.0.1:@_computePort</span>.</span>
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="compute-gpu">GPU</label>
+                                <label class="small">
+                                    <input id="compute-gpu" type="checkbox" @bind="_computeUseGpu" />
+                                    Start the container with <span class="mono">--gpus all</span>
+                                </label>
+                                <span class="small faint">
+                                    Only tick this when Docker and the host have an NVIDIA runtime.
+                                    The preview image still runs on the CPU until the ILGPU plugin ships.
+                                </span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="field training-form-wide">
+                                <label class="field-label" for="compute-pod">Runpod Pod ID (optional)</label>
+                                <div class="row">
+                                    <input id="compute-pod" class="input" @bind="_computePodId"
+                                           placeholder="abc123xyz" />
+                                    <button type="button" class="button" @onclick="BuildRunpodUrl">Build URL</button>
+                                </div>
+                                <span class="small faint">
+                                    Runpod → Pods → Connect shows the Pod ID and the HTTP port URL.
+                                    This helper turns it into <span class="mono">https://&lt;pod&gt;-8080.proxy.runpod.net</span>.
+                                </span>
+                            </div>
+                        }
+                    </div>
+                    <div class="row">
+                        <button type="button" class="button primary" @onclick="SaveCompute">Save host</button>
+                        <button type="button" class="button" @onclick="CancelCompute">Cancel</button>
+                    </div>
+                </div>
+            }
+
+            @foreach (ComputeProviderSettings provider in Compute.Providers)
+            {
+                <div class="training-subsection">
+                    <div class="training-subsection-head">
+                        <div class="row" style="align-items:center; gap:.5rem;">
+                            <span class="provider-dot @(provider.Healthy == true ? "on" : provider.Healthy == false ? "off" : "off")"></span>
+                            <strong>@provider.Name</strong>
+                            <span class="faint small mono">@ComputeProviderKinds.Display(provider.Kind)</span>
+                            @if (string.Equals(provider.Id, Compute.DefaultProviderId, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <span class="training-chip">default</span>
+                            }
+                        </div>
+                        <div class="row">
+                            @if (!string.Equals(provider.Id, Compute.DefaultProviderId, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <button type="button" class="button" @onclick="() => SetDefaultCompute(provider.Id)">Make default</button>
+                            }
+                            <button type="button" class="button" @onclick="() => TestComputeAsync(provider.Id)"
+                                    disabled="@_computeBusy">Test</button>
+                            <button type="button" class="button" @onclick="() => EditCompute(provider)">Edit</button>
+                            <button type="button" class="button danger" @onclick="() => RemoveCompute(provider)">Delete</button>
+                        </div>
+                    </div>
+
+                    <div class="spread small mono"><span>@provider.BaseUrl</span><span>@(Compute.HasToken(provider.Id) ? "token saved" : "no token")</span></div>
+                    @if (provider.LastStatus is { Length: > 0 })
+                    {
+                        <div class="small faint">@provider.LastStatus</div>
+                    }
+
+                    <div class="training-form">
+                        <div class="field">
+                            <label class="field-label" for="compute-model-@provider.Id">Model on host</label>
+                            <select id="compute-model-@provider.Id" class="input"
+                                    value="@(provider.DefaultModel ?? "")"
+                                    @onchange="e => UseComputeModel(provider.Id, e.Value?.ToString())">
+                                <option value="">Automatic (first model)</option>
+                                @foreach (string model in provider.Models)
+                                {
+                                    <option value="@model">@model</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label class="field-label">Refresh</label>
+                            <button type="button" class="button" @onclick="() => RefreshComputeModelsAsync(provider.Id)"
+                                    disabled="@_computeBusy">Read models on host</button>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label class="field-label" for="compute-upload-@provider.Id">Upload a model from this PC</label>
+                        <div class="row">
+                            <input id="compute-upload-@provider.Id" class="input" @bind="_computeModelPath"
+                                   placeholder="C:\Users\you\SharpMind\Models\model.gguf" />
+                            <button type="button" class="button" @onclick="BrowseComputeModel">Browse</button>
+                            <button type="button" class="button primary"
+                                    @onclick="() => UploadComputeModelAsync(provider.Id)"
+                                    disabled="@_computeBusy">Upload and use</button>
+                        </div>
+                        <span class="small faint">
+                            HuggingFace downloads land in your Models folder; pick one here to copy it to the host.
+                            Large models are better placed on the host's network volume.
+                        </span>
+                        @if (_computeBusy && _computeUploadProgress > 0)
+                        {
+                            <div class="status-line">Uploading @((_computeUploadProgress * 100).ToString("0"))%</div>
+                        }
+                    </div>
+
+                    @if (provider.NormalizedKind == ComputeProviderKinds.Local)
+                    {
+                        <div class="training-subsection">
+                            <div class="training-subsection-head">
+                                <label class="field-label">Local Docker</label>
+                                <div class="row">
+                                    <button type="button" class="button" @onclick="() => CheckDockerAsync(provider.Id)"
+                                            disabled="@_dockerBusy">Check</button>
+                                    <button type="button" class="button primary"
+                                            @onclick="() => StartDockerContainerAsync(provider.Id)"
+                                            disabled="@_dockerBusy">Start container</button>
+                                    <button type="button" class="button" @onclick="() => StopDockerContainerAsync(provider.Id)"
+                                            disabled="@_dockerBusy">Stop</button>
+                                    <button type="button" class="button" @onclick="() => DockerLogsAsync(provider.Id)"
+                                            disabled="@_dockerBusy">Logs</button>
+                                    @if (Docker.CanStartDockerDesktop && _dockerEngine is { Available: false })
+                                    {
+                                        <button type="button" class="button" @onclick="StartDockerDesktop">Start Docker Desktop</button>
+                                    }
+                                </div>
+                            </div>
+                            <div class="small faint">@_dockerStatus</div>
+                            @if (_dockerError is not null)
+                            {
+                                <div class="error-line">@_dockerError</div>
+                            }
+                            @if (_dockerLogs is { Length: > 0 })
+                            {
+                                <pre class="small mono" style="max-height:12rem;overflow:auto;">@_dockerLogs</pre>
+                            }
+                            <div class="small faint">
+                                Image <span class="mono">@(provider.DockerImage ?? ComputeProviderPresets.DefaultImage)</span>,
+                                port <span class="mono">@(provider.DockerPort ?? ComputeProviderPresets.DefaultPort)</span>,
+                                data <span class="mono">@DockerHostService.DefaultDataFolder(provider.ContainerName ?? "")</span>.
+                                Start recreates the container so its token, port and image match this panel.
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head">
+            <div>
                 <div class="eyebrow">HuggingFace</div>
                 <h2>Model source</h2>
             </div>
@@ -473,6 +718,27 @@ else
     private string? _openRouterError;
     private bool _openRouterTesting;
     private IReadOnlyList<OpenRouterModel> _openRouterModels = [];
+    private string? _computeStatus;
+    private string? _computeError;
+    private bool _computeBusy;
+    private bool _computeEditing;
+    private string? _editingComputeId;
+    private string _computeName = "";
+    private string _computeKind = ComputeProviderKinds.Local;
+    private string _computeBaseUrl = ComputeProviderSettings.DefaultLocalUrl;
+    private string _computeToken = "";
+    private string _computeImage = ComputeProviderPresets.DefaultImage;
+    private int _computePort = ComputeProviderPresets.DefaultPort;
+    private bool _computeUseGpu;
+    private string _computePodId = "";
+    private bool _computeShowToken;
+    private bool _dockerBusy;
+    private string _dockerStatus = "Not checked yet.";
+    private string? _dockerError;
+    private string? _dockerLogs;
+    private DockerEngineStatus? _dockerEngine;
+    private string _computeModelPath = "";
+    private double _computeUploadProgress;
     private string _hfToken = "";
     private string? _hfStatus;
     private string? _hfError;
@@ -794,6 +1060,410 @@ else
         _lanEnabled = Gateway.Config.LanEnabled;
         _serverStatus = "Local defaults restored: 127.0.0.1:5117";
     }
+
+    private void NewCompute()
+    {
+        _computeEditing = true;
+        _editingComputeId = null;
+        _computeName = "Local Docker";
+        _computeKind = ComputeProviderKinds.Local;
+        _computeBaseUrl = ComputeProviderSettings.DefaultLocalUrl;
+        _computeToken = "";
+        _computeImage = ComputeProviderPresets.DefaultImage;
+        _computePort = ComputeProviderPresets.DefaultPort;
+        _computeUseGpu = false;
+        _computePodId = "";
+        _computeShowToken = false;
+        _computeStatus = null;
+        _computeError = null;
+    }
+
+    private void EditCompute(ComputeProviderSettings provider)
+    {
+        _computeEditing = true;
+        _editingComputeId = provider.Id;
+        _computeName = provider.Name;
+        _computeKind = provider.NormalizedKind;
+        _computeBaseUrl = provider.BaseUrl;
+        _computeToken = "";
+        _computeImage = provider.DockerImage ?? ComputeProviderPresets.DefaultImage;
+        _computePort = provider.DockerPort ?? ComputeProviderPresets.DefaultPort;
+        _computeUseGpu = provider.UseGpu;
+        _computePodId = "";
+        _computeShowToken = false;
+        _computeStatus = null;
+        _computeError = null;
+    }
+
+    private void CancelCompute()
+    {
+        _computeEditing = false;
+        _editingComputeId = null;
+        _computeToken = "";
+        _computeError = null;
+    }
+
+    private void SaveCompute()
+    {
+        _computeError = null;
+        if (string.IsNullOrWhiteSpace(_computeName))
+            _computeName = _computeKind == ComputeProviderKinds.Local ? "Local Docker" : "SharpMind Compute";
+
+        bool local = _computeKind == ComputeProviderKinds.Local;
+        string baseUrl = local
+            ? ComputeProviderPresets.LocalUrl(_computePort)
+            : ComputeProviderPresets.NormalizeUrl(_computeBaseUrl);
+
+        if (_editingComputeId is null)
+        {
+            ComputeProviderSettings provider = Compute.Add(
+                _computeName,
+                _computeKind,
+                baseUrl,
+                string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken);
+            ApplyDockerSettings(provider.Id);
+            _computeStatus = local
+                ? "Host added. Press Start container below."
+                : "Host added. Press Test to read its models.";
+        }
+        else
+        {
+            Compute.Update(
+                _editingComputeId,
+                _computeName,
+                _computeKind,
+                baseUrl,
+                string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken);
+            ApplyDockerSettings(_editingComputeId);
+            _computeStatus = "Compute host saved.";
+        }
+
+        _computeEditing = false;
+        _editingComputeId = null;
+        _computeToken = "";
+    }
+
+    private void ApplyDockerSettings(string id)
+    {
+        ComputeProviderSettings? provider = Compute.Find(id);
+        if (provider is null) return;
+        string container = string.IsNullOrWhiteSpace(provider.ContainerName)
+            ? DockerHostService.DefaultContainerName(id)
+            : provider.ContainerName;
+        Compute.SetDocker(id, _computeImage, _computePort, _computeUseGpu, container);
+    }
+
+    private void GenerateComputeToken()
+    {
+        _computeToken = ComputeProviderPresets.NewToken();
+        _computeShowToken = true;
+        _computeStatus = _computeKind == ComputeProviderKinds.Local
+            ? "Token generated. Save the host, then Start container."
+            : "Token generated. Copy it into SHARPMIND_TOKEN on the remote host before deploying.";
+    }
+
+    private void BuildRunpodUrl()
+    {
+        if (string.IsNullOrWhiteSpace(_computePodId))
+        {
+            _computeError = "Enter the Runpod Pod ID first.";
+            return;
+        }
+
+        _computeBaseUrl = ComputeProviderPresets.TryRunpodUrl(_computePodId)
+            ?? _computeBaseUrl;
+        _computeError = null;
+        _computeStatus = $"URL set to {_computeBaseUrl}.";
+    }
+
+    private async Task CheckDockerAsync(string id)
+    {
+        _dockerBusy = true;
+        _dockerError = null;
+        _dockerStatus = "Checking Docker...";
+        StateHasChanged();
+        try
+        {
+            DockerEngineStatus engine = await Docker.GetEngineStatusAsync();
+            _dockerEngine = engine;
+            if (!engine.Available)
+            {
+                _dockerStatus = engine.Message;
+                return;
+            }
+
+            ComputeProviderSettings? provider = Compute.Find(id);
+            string container = provider?.ContainerName
+                ?? DockerHostService.DefaultContainerName(id);
+            DockerContainerStatus status = await Docker.GetContainerStatusAsync(container);
+            if (!status.Exists)
+            {
+                _dockerStatus = "Docker is running. The container is not created yet.";
+                return;
+            }
+
+            _dockerStatus = status.Running
+                ? $"Container {container} is running."
+                : $"Container {container} is {status.State}.";
+        }
+        catch (Exception ex)
+        {
+            _dockerError = ex.Message;
+            _dockerStatus = "Docker check failed.";
+        }
+        finally
+        {
+            _dockerBusy = false;
+        }
+    }
+
+    private async Task StartDockerContainerAsync(string id)
+    {
+        ComputeProviderSettings? provider = Compute.Find(id);
+        if (provider is null) return;
+
+        _dockerBusy = true;
+        _dockerError = null;
+        StateHasChanged();
+        try
+        {
+            DockerEngineStatus engine = await Docker.GetEngineStatusAsync();
+            _dockerEngine = engine;
+            if (!engine.Available)
+            {
+                _dockerStatus = engine.Message;
+                return;
+            }
+
+            string token = Compute.EnsureToken(id);
+            string container = string.IsNullOrWhiteSpace(provider.ContainerName)
+                ? DockerHostService.DefaultContainerName(id)
+                : provider.ContainerName;
+            int port = provider.DockerPort ?? ComputeProviderPresets.DefaultPort;
+            string image = provider.DockerImage ?? ComputeProviderPresets.DefaultImage;
+            string data = DockerHostService.DefaultDataFolder(container);
+
+            Compute.Update(
+                id,
+                provider.Name,
+                ComputeProviderKinds.Local,
+                ComputeProviderPresets.LocalUrl(port),
+                token: null);
+            Compute.SetDocker(id, image, port, provider.UseGpu, container);
+
+            _dockerStatus = $"Starting {image} on port {port}...";
+            StateHasChanged();
+
+            DockerContainerStatus status = await Docker.StartAsync(new DockerStartRequest
+            {
+                ContainerName = container,
+                Image = image,
+                Port = port,
+                Token = token,
+                DataFolder = data,
+                UseGpu = provider.UseGpu,
+            });
+
+            _dockerStatus = status.Running
+                ? $"Container {container} is running on port {port}."
+                : $"Container {container} is {status.State}.";
+            _computeStatus = _dockerStatus;
+
+            await TestComputeAsync(id);
+            await RefreshComputeModelsAsync(id);
+        }
+        catch (Exception ex)
+        {
+            _dockerError = ex.Message;
+            _dockerStatus = "The container did not start.";
+        }
+        finally
+        {
+            _dockerBusy = false;
+        }
+    }
+
+    private async Task StopDockerContainerAsync(string id)
+    {
+        ComputeProviderSettings? provider = Compute.Find(id);
+        if (provider is null) return;
+
+        _dockerBusy = true;
+        _dockerError = null;
+        StateHasChanged();
+        try
+        {
+            string container = string.IsNullOrWhiteSpace(provider.ContainerName)
+                ? DockerHostService.DefaultContainerName(id)
+                : provider.ContainerName;
+            await Docker.StopAsync(container, remove: false);
+            _dockerStatus = $"Container {container} stopped.";
+            _computeStatus = _dockerStatus;
+        }
+        catch (Exception ex)
+        {
+            _dockerError = ex.Message;
+        }
+        finally
+        {
+            _dockerBusy = false;
+        }
+    }
+
+    private async Task DockerLogsAsync(string id)
+    {
+        _dockerBusy = true;
+        _dockerError = null;
+        StateHasChanged();
+        try
+        {
+            ComputeProviderSettings? provider = Compute.Find(id);
+            string container = provider?.ContainerName
+                ?? DockerHostService.DefaultContainerName(id);
+            _dockerLogs = await Docker.GetLogsAsync(container);
+        }
+        catch (Exception ex)
+        {
+            _dockerError = ex.Message;
+        }
+        finally
+        {
+            _dockerBusy = false;
+        }
+    }
+
+    private void StartDockerDesktop()
+    {
+        Docker.StartDockerDesktop();
+        _dockerStatus = "Starting Docker Desktop. Press Check again in a moment.";
+    }
+
+    private async Task TestComputeAsync(string id)
+    {
+        _computeBusy = true;
+        _computeError = null;
+        _computeStatus = "Testing the host...";
+        StateHasChanged();
+        try
+        {
+            ComputeHealth health = await Compute.TestAsync(id);
+            _computeStatus = health.ModelConfigured
+                ? $"Online. {health.Model} is {(health.ModelLoaded ? "loaded" : "ready")}."
+                : "Online. Upload a model to start chatting.";
+        }
+        catch (Exception ex)
+        {
+            _computeError = ex.Message;
+            _computeStatus = null;
+        }
+        finally
+        {
+            _computeBusy = false;
+        }
+    }
+
+    private async Task RefreshComputeModelsAsync(string id)
+    {
+        _computeBusy = true;
+        _computeError = null;
+        _computeStatus = "Reading models on the host...";
+        StateHasChanged();
+        try
+        {
+            IReadOnlyList<ComputeModelInfo> models = await Compute.RefreshModelsAsync(id);
+            _computeStatus = models.Count == 0
+                ? "The host has no models yet. Upload one below."
+                : $"{models.Count} model(s) on the host.";
+        }
+        catch (Exception ex)
+        {
+            _computeError = ex.Message;
+            _computeStatus = null;
+        }
+        finally
+        {
+            _computeBusy = false;
+        }
+    }
+
+    private void UseComputeModel(string id, string? model)
+    {
+        Compute.SetDefaultModel(id, string.IsNullOrWhiteSpace(model) ? null : model);
+        _computeStatus = string.IsNullOrWhiteSpace(model)
+            ? "The host will use its first model."
+            : $"Using {model}.";
+    }
+
+    private void SetDefaultCompute(string id)
+    {
+        Compute.SetDefault(id);
+        _computeStatus = "Default Compute host updated.";
+    }
+
+    private void RemoveCompute(ComputeProviderSettings provider)
+    {
+        Compute.Remove(provider.Id);
+        if (string.Equals(_editingComputeId, provider.Id, StringComparison.OrdinalIgnoreCase))
+            CancelCompute();
+        _computeStatus = $"{provider.Name} removed.";
+    }
+
+    private async Task BrowseComputeModel()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StudioPaths.Models,
+            "Choose a model to upload",
+            "*.smm");
+        if (selection?.Path is { Length: > 0 } path)
+            _computeModelPath = path;
+    }
+
+    private async Task UploadComputeModelAsync(string id)
+    {
+        if (string.IsNullOrWhiteSpace(_computeModelPath) || !File.Exists(_computeModelPath))
+        {
+            _computeError = "Choose an existing .smm or .gguf file first.";
+            return;
+        }
+
+        _computeBusy = true;
+        _computeError = null;
+        _computeUploadProgress = 0;
+        _computeStatus = $"Uploading {Path.GetFileName(_computeModelPath)}...";
+        StateHasChanged();
+        try
+        {
+            var progress = new Progress<double>(value =>
+            {
+                _computeUploadProgress = value;
+                _ = InvokeAsync(StateHasChanged);
+            });
+            ComputeUploadResult result = await Compute.UploadModelAsync(
+                id, _computeModelPath.Trim(), progress);
+            _computeStatus = result.Active
+                ? $"{result.Name} uploaded and active ({FormatBytes(result.Bytes)})."
+                : $"{result.Name} uploaded ({FormatBytes(result.Bytes)}).";
+            _computeUploadProgress = 0;
+        }
+        catch (Exception ex)
+        {
+            _computeError = ex.Message;
+            _computeStatus = null;
+        }
+        finally
+        {
+            _computeBusy = false;
+        }
+    }
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        >= 1024L * 1024 * 1024 => $"{bytes / 1024.0 / 1024 / 1024:0.0} GB",
+        >= 1024L * 1024 => $"{bytes / 1024.0 / 1024:0.0} MB",
+        >= 1024 => $"{bytes / 1024.0:0.0} KB",
+        _ => $"{bytes} bytes",
+    };
     private void SaveSystemFromEditor(InferenceOverrides value)
     {
         _system = value;

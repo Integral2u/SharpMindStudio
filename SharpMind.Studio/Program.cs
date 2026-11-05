@@ -2,6 +2,7 @@
 using SharpMind.Studio.Components;
 using SharpMind.Studio.Services;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Gateway;
 using SharpMind.Studio.Core.HuggingFace;
 using SharpMind.Studio.Core.OpenRouter;
@@ -26,7 +27,13 @@ builder.Services.AddSingleton<StudioCanaryService>();
 builder.Services.AddSingleton<ModelCatalogService>();
 builder.Services.AddSingleton<InferenceSettingsService>();
 builder.Services.AddSingleton<OpenRouterSettingsService>();
+builder.Services.AddSingleton<ComputeProviderService>();
+builder.Services.AddSingleton<DockerHostService>();
 builder.Services.AddHttpClient<OpenRouterClient>(client =>
+{
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddHttpClient<ComputeClient>(client =>
 {
     client.Timeout = Timeout.InfiniteTimeSpan;
 });

@@ -1,4 +1,8 @@
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using SharpMind.Studio.Core.Compute;
+using SharpMind.Studio.Core.Serialization;
 using SharpMind.Studio.Core.Storage;
 using SharpMind.Studio.Core.Training;
 using SharpMind.Training;
@@ -13,6 +17,7 @@ namespace SharpMind.Studio.Services;
 /// </summary>
 public sealed class StudioTrainingService : IDisposable
 {
+    private readonly ComputeProviderService _compute;
     private readonly Lock _gate = new();
     private readonly List<string> _log = [];
     private readonly List<TrainingCurvePoint> _curve = [];
@@ -27,6 +32,8 @@ public sealed class StudioTrainingService : IDisposable
     private string? _error;
     private string? _exportPath;
     private string? _adapterPath;
+    private string? _remoteProviderId;
+    private string? _remoteJobId;
     private float _progress;
     private int _currentStep;
     private int _totalSteps;
@@ -40,6 +47,15 @@ public sealed class StudioTrainingService : IDisposable
     private bool _running;
 
     public event Action? Changed;
+
+    public StudioTrainingService(ComputeProviderService compute)
+    {
+        _compute = compute ?? throw new ArgumentNullException(nameof(compute));
+    }
+
+    /// <summary>The Compute host used by the current remote run, if any.</summary>
+    public string? RemoteProviderId { get { lock (_gate) return _remoteProviderId; } }
+    public bool IsRemoteRun => RemoteProviderId is not null;
 
     public bool IsRunning { get { lock (_gate) return _running; } }
     public string Status { get { lock (_gate) return _status; } }
@@ -126,7 +142,7 @@ public sealed class StudioTrainingService : IDisposable
         new(Path.Combine(StudioPaths.Training, "playbooks"));
 
     /// <summary>Starts a run. Returns false when one is already running.</summary>
-    public bool Start(TrainingJobSettings job, string pluginsFolder)
+    public bool Start(TrainingJobSettings job, string pluginsFolder, string? computeProviderId = null)
     {
         ArgumentNullException.ThrowIfNull(job);
 
@@ -145,7 +161,11 @@ public sealed class StudioTrainingService : IDisposable
             _loss = _valLoss = _learningRate = _gradNorm = _tokensPerSecond = null;
             _bestValLoss = null;
             _bestValStep = null;
-            _status = "Preparing training…";
+            _remoteProviderId = computeProviderId;
+            _remoteJobId = null;
+            _status = computeProviderId is null
+                ? "Preparing training…"
+                : "Preparing remote training…";
             _log.Clear();
             _curve.Clear();
             _running = true;
@@ -154,13 +174,17 @@ public sealed class StudioTrainingService : IDisposable
         }
 
         SaveWorkingCopy(job);
-        _run = Task.Run(() => RunCoreAsync(job, pluginsFolder, _cts.Token));
+        _run = computeProviderId is null
+            ? Task.Run(() => RunCoreAsync(job, pluginsFolder, _cts.Token))
+            : Task.Run(() => RunRemoteCoreAsync(job, computeProviderId, _cts.Token));
         Changed?.Invoke();
         return true;
     }
 
     public void Cancel()
     {
+        string? providerId = null;
+        string? remoteId = null;
         lock (_gate)
         {
             if (!_running || _cts is null) return;
@@ -168,8 +192,21 @@ public sealed class StudioTrainingService : IDisposable
             {
                 _cts.Cancel();
                 _status = "Interrupting — saving a checkpoint, then stopping…";
+                providerId = _remoteProviderId;
+                remoteId = _remoteJobId;
             }
         }
+
+        if (providerId is not null && remoteId is not null
+            && _compute.Resolve(providerId) is { } provider)
+        {
+            _ = Task.Run(async () =>
+            {
+                try { await _compute.Client.CancelJobAsync(provider, remoteId); }
+                catch { }
+            });
+        }
+
         Changed?.Invoke();
     }
 
@@ -245,6 +282,334 @@ public sealed class StudioTrainingService : IDisposable
         }
 
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Runs the job on a SharpMind Compute host. Local source files are uploaded
+    /// first and their paths rewritten to the host's container paths; the export
+    /// is downloaded back to the path the Training page already shows.
+    /// </summary>
+    private async Task RunRemoteCoreAsync(
+        TrainingJobSettings job,
+        string providerId,
+        CancellationToken cancellationToken)
+    {
+        string? localExport = null;
+        string? localAdapter = null;
+        TrainingRunResult result;
+        int lastStep = 0;
+
+        try
+        {
+            ComputeProvider provider = _compute.Resolve(providerId)
+                ?? throw new InvalidOperationException("The Compute host was not found.");
+            if (!provider.IsUsable)
+                throw new InvalidOperationException(
+                    "The Compute host needs a URL and token. Add them in Settings → Providers.");
+
+            AddLog($"Remote training on {provider.Name}.");
+            string bucket = $"jobs/{Sanitize(job.Name)}";
+            localExport = job.ExportFilePath;
+
+            TrainingJobSettings remoteJob = CloneJob(job);
+            remoteJob.SourcePath = null;
+            remoteJob.IncrementalMode = false;
+            remoteJob.SourceHashes = [];
+            remoteJob.SourceFileHashes = [];
+            remoteJob.ExportPath = $"{bucket}/out.smm";
+            remoteJob.TokenizerCachePath = $"{bucket}/tokenizer.json";
+            if (remoteJob.IsFineTune)
+                remoteJob.AdapterPath = $"{bucket}/adapter.smlora";
+
+            await UploadSourcesAsync(provider, remoteJob, bucket, cancellationToken)
+                .ConfigureAwait(false);
+
+            JsonObject payload = JsonSerializer.SerializeToNode(remoteJob, StudioJson.Event)
+                as JsonObject
+                ?? throw new InvalidOperationException("The training job could not be serialized.");
+
+            ComputeJob created = await _compute.Client
+                .StartTrainingAsync(provider, payload, cancellationToken)
+                .ConfigureAwait(false);
+            lock (_gate) _remoteJobId = created.Id;
+            AddLog($"Queued {created.Id} on {provider.Name}.");
+
+            int lastLogCount = 0;
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+
+                ComputeJob state = await _compute.Client
+                    .GetJobAsync(provider, created.Id, cancellationToken)
+                    .ConfigureAwait(false);
+
+                lastStep = state.Step ?? lastStep;
+                lock (_gate)
+                {
+                    _progress = (float)Math.Clamp(state.Progress, 0, 1);
+                    if (state.Step is int step) _currentStep = step;
+                    if (state.Loss is { } loss) _loss = loss;
+                    if (state.ValLoss is { } valLoss) _valLoss = valLoss;
+                    if (state.Step is int curveStep
+                        && (_curve.Count == 0 || curveStep > _curve[^1].Step))
+                    {
+                        _curve.Add(new TrainingCurvePoint(
+                            curveStep,
+                            state.Loss ?? 0,
+                            0,
+                            state.ValLoss));
+                    }
+                    _status = state.Step is int current
+                        ? $"Remote {state.Status} · step {current}"
+                        : $"Remote {state.Status}…";
+                }
+                Changed?.Invoke();
+
+                IReadOnlyList<string> logs = await _compute.Client
+                    .GetJobLogAsync(provider, created.Id, cancellationToken)
+                    .ConfigureAwait(false);
+                if (logs.Count > lastLogCount)
+                {
+                    for (int i = lastLogCount; i < logs.Count; i++)
+                        AddLog(logs[i]);
+                    lastLogCount = logs.Count;
+                }
+
+                if (string.Equals(state.Status, "succeeded", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (localExport is not null)
+                    {
+                        AddLog("Downloading the trained model…");
+                        await DownloadArtifactAsync(
+                            provider, created.Id, localExport, artifact: null, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(state.AdapterPath) && localExport is not null)
+                    {
+                        localAdapter = job.AdapterFilePath;
+                        try
+                        {
+                            await DownloadArtifactAsync(
+                                provider, created.Id, localAdapter, "adapter", cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            localAdapter = null;
+                        }
+                    }
+
+                    result = new TrainingRunResult
+                    {
+                        Success = true,
+                        ExportPath = localExport,
+                        AdapterPath = localAdapter,
+                        FinalStep = lastStep,
+                        BestValLoss = _bestValLoss,
+                        BestValStep = _bestValStep,
+                    };
+                    break;
+                }
+
+                if (state.Status is "failed" or "cancelled")
+                {
+                    result = new TrainingRunResult
+                    {
+                        Success = false,
+                        Error = state.Error ?? state.Status,
+                        FinalStep = lastStep,
+                    };
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            result = new TrainingRunResult { Success = false, Error = "cancelled", FinalStep = lastStep };
+        }
+        catch (Exception ex)
+        {
+            result = new TrainingRunResult
+            {
+                Success = false,
+                Error = $"{ex.GetType().Name}: {ex.Message}",
+                FinalStep = lastStep,
+            };
+            AddLog($"Remote training failed: {result.Error}");
+        }
+
+        TrainingRunRecord? record = null;
+        lock (_gate)
+        {
+            _running = false;
+            _result = result;
+            _error = result.Success ? null : result.Error;
+            _exportPath = result.Success ? result.ExportPath : null;
+            _adapterPath = result.Success ? result.AdapterPath : null;
+            _status = result.Success
+                ? $"Finished on the remote host at step {result.FinalStep}. Model downloaded."
+                : string.Equals(result.Error, "cancelled", StringComparison.OrdinalIgnoreCase)
+                    ? "Remote training cancelled."
+                    : "Remote training failed.";
+            _clock.Stop();
+            _cts?.Dispose();
+            _cts = null;
+
+            if (_job is { } settings)
+            {
+                record = TrainingRunRecord.From(
+                    settings, result, _curve, _clock.Elapsed,
+                    result.Success ? result.ExportPath : null);
+            }
+            _historyCache = null;
+        }
+
+        if (record is not null)
+        {
+            try { TrainingRunStore.Save(record); }
+            catch
+            {
+                // History is a convenience; losing it must not change the run result.
+            }
+        }
+
+        Changed?.Invoke();
+    }
+
+    private static TrainingJobSettings CloneJob(TrainingJobSettings job)
+    {
+        string json = JsonSerializer.Serialize(job, StudioJson.Event);
+        return JsonSerializer.Deserialize<TrainingJobSettings>(json, StudioJson.Event)
+            ?? throw new InvalidOperationException("The training job could not be cloned.");
+    }
+
+    private async Task UploadSourcesAsync(
+        ComputeProvider provider,
+        TrainingJobSettings job,
+        string bucket,
+        CancellationToken cancellationToken)
+    {
+        var uploaded = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        int files = 0;
+
+        if (!string.IsNullOrWhiteSpace(job.BaseModelPath) && File.Exists(job.BaseModelPath))
+        {
+            AddLog($"Uploading base model {Path.GetFileName(job.BaseModelPath)}…");
+            ComputeUploadResult result = await _compute
+                .UploadFileAsync(
+                    provider.Id,
+                    job.BaseModelPath,
+                    $"{bucket}/base/{Path.GetFileName(job.BaseModelPath)}",
+                    null,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            job.BaseModelPath = result.Path;
+            files++;
+        }
+
+        if (!string.IsNullOrWhiteSpace(job.ResumeFrom))
+        {
+            if (File.Exists(job.ResumeFrom))
+            {
+                AddLog($"Uploading resume checkpoint {Path.GetFileName(job.ResumeFrom)}…");
+                ComputeUploadResult result = await _compute
+                    .UploadFileAsync(
+                        provider.Id,
+                        job.ResumeFrom,
+                        $"{bucket}/resume/{Path.GetFileName(job.ResumeFrom)}",
+                        null,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                job.ResumeFrom = result.Path;
+                files++;
+            }
+            else if (Directory.Exists(job.ResumeFrom))
+            {
+                AddLog("Uploading resume checkpoints…");
+                foreach (string file in Directory.EnumerateFiles(
+                    job.ResumeFrom, "*", SearchOption.AllDirectories))
+                {
+                    string relative = Path.GetRelativePath(job.ResumeFrom, file).Replace('\\', '/');
+                    await _compute
+                        .UploadFileAsync(
+                            provider.Id, file, $"{bucket}/resume/{relative}", null, cancellationToken)
+                        .ConfigureAwait(false);
+                    files++;
+                }
+                job.ResumeFrom = $"{bucket}/resume";
+            }
+        }
+
+        for (int index = 0; index < job.Sources.Count; index++)
+        {
+            JobComponent component = job.Sources[index].Component;
+            foreach (string key in component.Args.Keys.ToList())
+            {
+                string value = component.Args[key];
+                if (string.IsNullOrWhiteSpace(value)) continue;
+
+                if (File.Exists(value))
+                {
+                    if (!uploaded.TryGetValue(value, out string? remote))
+                    {
+                        remote = $"{bucket}/inputs/s{index}/{Path.GetFileName(value)}";
+                        AddLog($"Uploading {Path.GetFileName(value)}…");
+                        ComputeUploadResult result = await _compute
+                            .UploadFileAsync(provider.Id, value, remote, null, cancellationToken)
+                            .ConfigureAwait(false);
+                        uploaded[value] = result.Path;
+                        remote = result.Path;
+                        files++;
+                    }
+                    component.Args[key] = remote!;
+                }
+                else if (Directory.Exists(value))
+                {
+                    string folder = Path.GetFileName(
+                        value.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    string remoteRoot = $"{bucket}/inputs/s{index}/{folder}";
+                    AddLog($"Uploading folder {folder}…");
+
+                    foreach (string file in Directory.EnumerateFiles(
+                        value, "*", SearchOption.AllDirectories))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        string relative = Path.GetRelativePath(value, file).Replace('\\', '/');
+                        ComputeUploadResult result = await _compute
+                            .UploadFileAsync(
+                                provider.Id, file, $"{remoteRoot}/{relative}", null, cancellationToken)
+                            .ConfigureAwait(false);
+                        files++;
+                        if (files % 10 == 0)
+                            AddLog($"Uploaded {files} file(s)…");
+                        _ = result;
+                    }
+
+                    component.Args[key] = remoteRoot;
+                }
+            }
+        }
+
+        if (files > 0) AddLog($"Uploaded {files} input file(s).");
+    }
+
+    private async Task DownloadArtifactAsync(
+        ComputeProvider provider,
+        string jobId,
+        string localPath,
+        string? artifact,
+        CancellationToken cancellationToken)
+    {
+        string? folder = Path.GetDirectoryName(localPath);
+        if (!string.IsNullOrEmpty(folder)) Directory.CreateDirectory(folder);
+
+        await using Stream stream = await _compute.Client
+            .DownloadArtifactAsync(provider, jobId, artifact, cancellationToken)
+            .ConfigureAwait(false);
+        await using var file = new FileStream(
+            localPath, FileMode.Create, FileAccess.Write, FileShare.None, 81_920, useAsync: true);
+        await stream.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
     }
 
     private void ReportStep(TrainStepResult step)

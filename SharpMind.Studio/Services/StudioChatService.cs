@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using SharpMind.Inference.Agent;
 using SharpMind.Inference.Chat;
 using SharpMind.Studio.Core.Chat;
+using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.OpenRouter;
 using SharpMind.Studio.Core.Runs;
@@ -17,6 +18,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly InferenceSettingsService _inference;
     private readonly OpenRouterSettingsService _openRouter;
     private readonly OpenRouterClient _openRouterClient;
+    private readonly ComputeProviderService _compute;
     private readonly StudioModelHost _host;
     private readonly StudioWorkService _work;
     private readonly StudioDeviceAccess _device;
@@ -43,6 +45,7 @@ public sealed class StudioChatService : IAsyncDisposable
         InferenceSettingsService inference,
         OpenRouterSettingsService openRouter,
         OpenRouterClient openRouterClient,
+        ComputeProviderService compute,
         StudioModelHost host,
         StudioWorkService work,
         StudioDeviceAccess device)
@@ -52,6 +55,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _inference = inference;
         _openRouter = openRouter;
         _openRouterClient = openRouterClient;
+        _compute = compute;
         _host = host;
         _work = work;
         _device = device;
@@ -65,7 +69,13 @@ public sealed class StudioChatService : IAsyncDisposable
     public ResolvedInference? Resolved => _resolved;
     public bool IsStreaming => _streaming;
     public bool IsLoading => _loading;
-    public bool IsRemote => string.Equals(_document?.Provider, "openrouter", StringComparison.OrdinalIgnoreCase);
+    public bool IsOpenRouter => string.Equals(_document?.Provider, "openrouter", StringComparison.OrdinalIgnoreCase);
+    public bool IsCompute => string.Equals(_document?.Provider, "compute", StringComparison.OrdinalIgnoreCase);
+    public bool IsRemote => IsOpenRouter || IsCompute;
+    public string? ComputeProviderId => _document?.RemoteProvider;
+    public string? RemoteProviderName => IsCompute
+        ? _compute.Find(_document?.RemoteProvider)?.Name ?? "SharpMind Compute"
+        : IsOpenRouter ? "OpenRouter" : null;
     public bool IsWorkMode => string.Equals(_document?.Mode, "work", StringComparison.OrdinalIgnoreCase);
     public bool IsChatActive => (_loading || _streaming) && !IsWorkMode;
     public bool IsWorkActive => (_loading || _streaming) && IsWorkMode;
@@ -153,6 +163,50 @@ public sealed class StudioChatService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Starts a chat backed by a SharpMind Compute host. The host streams an
+    /// OpenAI-compatible completion; no local weights are loaded.
+    /// </summary>
+    public async Task NewComputeChatAsync(
+        string providerId,
+        string modelId,
+        string? systemPrompt,
+        string mode = "chat",
+        InferenceOverrides? overrides = null)
+    {
+        ComputeProvider provider = _compute.Resolve(providerId)
+            ?? throw new InvalidOperationException("The Compute host was not found.");
+
+        string model = string.IsNullOrWhiteSpace(modelId)
+            ? provider.DefaultModel ?? provider.Models.FirstOrDefault() ?? ""
+            : modelId.Trim();
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            throw new InvalidOperationException(
+                "The Compute host has no model yet. Add one in Settings → Providers.");
+        }
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            EndSession();
+            _document = _store.CreateCompute(
+                provider.Id, provider.Name, model, systemPrompt, mode);
+            _document.Overrides = overrides ?? new InferenceOverrides();
+            _model = null;
+            _resolved = null;
+            _error = null;
+            _status = $"Ready ({provider.Name}).";
+            _cacheWarning = null;
+            _compute.RememberModel(provider.Id, model);
+            Notify();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task OpenAsync(string id)
     {
         if (_document?.Id.Equals(id, StringComparison.OrdinalIgnoreCase) == true)
@@ -170,6 +224,17 @@ public sealed class StudioChatService : IAsyncDisposable
                 _resolved = null;
                 _error = null;
                 _status = "Ready (OpenRouter).";
+                _cacheWarning = null;
+                Notify();
+                return;
+            }
+
+            if (string.Equals(document.Provider, "compute", StringComparison.OrdinalIgnoreCase))
+            {
+                _model = null;
+                _resolved = null;
+                _error = null;
+                _status = $"Ready ({_compute.Find(document.RemoteProvider)?.Name ?? "Compute"}).";
                 _cacheWarning = null;
                 Notify();
                 return;
@@ -203,9 +268,15 @@ public sealed class StudioChatService : IAsyncDisposable
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (IsRemote)
+            if (IsOpenRouter)
             {
                 await SendRemoteCoreAsync(text.Trim()).ConfigureAwait(false);
+                return;
+            }
+
+            if (IsCompute)
+            {
+                await SendComputeCoreAsync(text.Trim()).ConfigureAwait(false);
                 return;
             }
 
@@ -539,6 +610,152 @@ public sealed class StudioChatService : IAsyncDisposable
             RemoveEmptyAssistant(assistant);
             _error = ex.Message;
             _status = "OpenRouter request failed.";
+        }
+        catch (Exception ex)
+        {
+            RemoveEmptyAssistant(assistant);
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+            _status = "Generation failed.";
+        }
+        finally
+        {
+            _streamCts?.Dispose();
+            _streamCts = null;
+            _streaming = false;
+            _store.Save(_document);
+            Notify();
+        }
+    }
+
+    /// <summary>
+    /// Runs a turn against a SharpMind Compute host. Those hosts expose plain
+    /// OpenAI chat completions and are inference-only, so this path streams text
+    /// without the OpenRouter tool loop.
+    /// </summary>
+    private async Task SendComputeCoreAsync(string text)
+    {
+        if (_document is null) return;
+
+        ComputeProvider? provider = _compute.Resolve(_document.RemoteProvider);
+        if (provider is null || !provider.IsUsable)
+        {
+            _error = "The Compute host is not configured. Add its URL and token in Settings → Providers.";
+            _status = "Compute host is not configured.";
+            Notify();
+            return;
+        }
+
+        string model = string.IsNullOrWhiteSpace(_document.RemoteModel)
+            ? provider.DefaultModel ?? provider.Models.FirstOrDefault() ?? ""
+            : _document.RemoteModel!;
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            _error = "The Compute host has no model. Upload one in Settings → Providers.";
+            _status = "No model on the Compute host.";
+            Notify();
+            return;
+        }
+
+        _streaming = true;
+        _error = null;
+        _status = "Thinking...";
+        _streamCts = new CancellationTokenSource();
+
+        _document.Messages.Add(ChatMessage.User(text, "You"));
+        ChatMessage assistant = ChatMessage.Agent("");
+        _document.Messages.Add(assistant);
+        Notify();
+        await Task.Yield();
+
+        var messages = new List<JsonObject>();
+        if (!string.IsNullOrWhiteSpace(_document.SystemPrompt))
+        {
+            messages.Add(new JsonObject
+            {
+                ["role"] = "system",
+                ["content"] = _document.SystemPrompt,
+            });
+        }
+
+        foreach (ChatMessage message in _document.Messages.Take(_document.Messages.Count - 1))
+        {
+            if (message.Role == ChatRole.System) continue;
+            if (string.IsNullOrWhiteSpace(message.Content)) continue;
+
+            string role = message.Role switch
+            {
+                ChatRole.Agent => "assistant",
+                ChatRole.Tool => "assistant",
+                _ => "user",
+            };
+            messages.Add(new JsonObject
+            {
+                ["role"] = role,
+                ["content"] = message.Content,
+            });
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+        var lastNotify = TimeSpan.Zero;
+        int? promptTokens = null;
+        int? completionTokens = null;
+
+        try
+        {
+            await foreach (ComputeStreamEvent entry in _compute.Client.StreamChatAsync(
+                provider,
+                model,
+                messages,
+                _document.Overrides.Temperature,
+                _document.Overrides.TopP,
+                _document.Overrides.MaxNewTokens,
+                _streamCts.Token).WithCancellation(_streamCts.Token).ConfigureAwait(false))
+            {
+                if (!string.IsNullOrWhiteSpace(entry.Error))
+                    throw new ComputeException(entry.Error);
+
+                if (entry.PromptTokens is int prompt) promptTokens = prompt;
+                if (entry.CompletionTokens is int completion) completionTokens = completion;
+
+                if (!string.IsNullOrEmpty(entry.Delta))
+                {
+                    assistant.Content += entry.Delta;
+                    _status = "Writing...";
+                    if (lastNotify == TimeSpan.Zero ||
+                        stopwatch.Elapsed - lastNotify > TimeSpan.FromMilliseconds(40))
+                    {
+                        lastNotify = stopwatch.Elapsed;
+                        Notify();
+                    }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(assistant.Content) && assistant.Metadata is null)
+                _document.Messages.Remove(assistant);
+
+            double? tps = null;
+            if (completionTokens is int generated && stopwatch.Elapsed.TotalSeconds > 0.1)
+                tps = generated / stopwatch.Elapsed.TotalSeconds;
+            else if (assistant.Content.Length > 0 && stopwatch.Elapsed.TotalSeconds > 0.1)
+                tps = (assistant.Content.Length / 4.0) / stopwatch.Elapsed.TotalSeconds;
+
+            _document.LastTokensPerSecond = tps;
+            _document.LastCost = null;
+            _document.LastPromptTokens = promptTokens;
+            _document.LastCompletionTokens = completionTokens;
+            _document.LastToolCalls = 0;
+            _status = tps is { } speed ? $"Ready. {speed:F1} tok/s." : "Ready.";
+        }
+        catch (OperationCanceledException)
+        {
+            RemoveEmptyAssistant(assistant);
+            _status = "Stopped.";
+        }
+        catch (ComputeException ex)
+        {
+            RemoveEmptyAssistant(assistant);
+            _error = ex.Message;
+            _status = "Compute request failed.";
         }
         catch (Exception ex)
         {

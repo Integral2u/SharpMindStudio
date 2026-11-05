@@ -3,6 +3,18 @@
 A small HTTP service that runs one SharpMind model and accepts inference and
 training jobs. It is the first scaffold of the Cloud/Compute provider.
 
+## Start it from Studio
+
+You do not have to touch a terminal. In Studio open **Settings → Providers →
+SharpMind Compute → Add host**, choose **Local Docker**, and press **Start
+container**. Studio generates the bearer token, picks port `8080`, creates the
+data folder and runs this image. For a remote host, paste the Runpod Pod ID and
+press **Build URL**, then copy the generated token into the pod's
+`SHARPMIND_TOKEN`.
+
+The rest of this file is the manual reference: the API, environment variables,
+local Docker commands and the step-by-step Runpod deployment.
+
 ## Endpoints
 
 | Method | Path | Purpose |

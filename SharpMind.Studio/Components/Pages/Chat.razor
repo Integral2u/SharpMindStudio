@@ -2,6 +2,7 @@
 @page "/chat/{ChatId}"
 @implements IDisposable
 @using SharpMind.Inference.Chat
+@using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Core.OpenRouter
 @using SharpMind.Studio.Core.Runs
@@ -9,6 +10,7 @@
 @inject StudioChatService ChatService
 @inject InferenceSettingsService Inference
 @inject OpenRouterSettingsService OpenRouter
+@inject ComputeProviderService Compute
 @inject ModelCatalogService Catalog
 @inject MarkdownService Markdown
 @inject StudioWorkspaceService Workspace
@@ -68,7 +70,13 @@
                         <label class="field-label" for="chat-provider">Provider</label>
                         <select id="chat-provider" class="input" @onchange="SetProvider">
                             <option value="local" selected="@(!_remoteChat)">Local model</option>
-                            <option value="openrouter" selected="@_remoteChat">OpenRouter</option>
+                            <option value="openrouter" selected="@(_remoteChat && _computeProviderId is null)">OpenRouter</option>
+                            @foreach (ComputeProviderSettings host in Compute.Providers)
+                            {
+                                <option value="@($"compute:{host.Id}")" selected="@(_computeProviderId == host.Id)">
+                                    @host.Name (@ComputeProviderKinds.Display(host.Kind))
+                                </option>
+                            }
                         </select>
                     </div>
                     @if (!_remoteChat)
@@ -99,23 +107,42 @@
                     {
                         <div class="field">
                             <label class="field-label" for="chat-remote-model">Model</label>
-                            <select id="chat-remote-model" class="input" @bind="_remoteModel"
-                                    @bind:after="SaveRemoteModelChoice"
-                                    @onfocus="EnsureActiveModels">
-                                @if (OpenRouter.ActiveModels.Count == 0)
-                                {
-                                    <option value="">@(OpenRouter.HasApiKey ? "Loading models..." : "No active models")</option>
-                                }
-                                @foreach (string model in OpenRouter.ActiveModels)
-                                {
-                                    <option value="@model">@model</option>
-                                }
-                            </select>
+                            @if (_computeProviderId is not null)
+                            {
+                                ComputeProvider? host = Compute.Resolve(_computeProviderId);
+                                <select id="chat-remote-model" class="input" @bind="_remoteModel"
+                                        @bind:after="SaveRemoteModelChoice">
+                                    @if (host is null || host.Models.Count == 0)
+                                    {
+                                        <option value="">@(host is null ? "No host selected" : "No models on this host")</option>
+                                    }
+                                    @foreach (string model in host?.Models ?? [])
+                                    {
+                                        <option value="@model">@model</option>
+                                    }
+                                </select>
+                                <a class="small" href="/settings?tab=openrouter">Manage hosts and models</a>
+                            }
+                            else
+                            {
+                                <select id="chat-remote-model" class="input" @bind="_remoteModel"
+                                        @bind:after="SaveRemoteModelChoice"
+                                        @onfocus="EnsureActiveModels">
+                                    @if (OpenRouter.ActiveModels.Count == 0)
+                                    {
+                                        <option value="">@(OpenRouter.HasApiKey ? "Loading models..." : "No active models")</option>
+                                    }
+                                    @foreach (string model in OpenRouter.ActiveModels)
+                                    {
+                                        <option value="@model">@model</option>
+                                    }
+                                </select>
+                            }
                         </div>
                     }
                 </div>
 
-                @if (_remoteChat)
+                @if (_remoteChat && _computeProviderId is null)
                 {
                     <div class="welcome-model-status">
                         <span class="small faint">
@@ -140,6 +167,33 @@
                             Chat uses the selected remote model. Work keeps the local project tools;
                             only the model runs remotely. OpenRouter models are inference-only, so
                             local tuning is unavailable.
+                        </div>
+                    }
+                }
+                else if (_remoteChat && _computeProviderId is { } hostId)
+                {
+                    ComputeProvider? host = Compute.Resolve(hostId);
+                    <div class="welcome-model-status">
+                        <span class="small faint">
+                            @(host is { IsUsable: true } ? $"{host.Name} ready" : "This host needs a token")
+                        </span>
+                    </div>
+                    @if (host is null || !host.IsUsable)
+                    {
+                        <div class="tool-warning">
+                            <div>
+                                <strong>This Compute host needs a token.</strong>
+                                <span class="small faint">Open Settings to set its URL and token.</span>
+                            </div>
+                            <div class="row">
+                                <button type="button" class="button" @onclick="OpenRouterSettings">Manage hosts</button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="small faint">
+                            Inference runs on @host.Name. Work tools need a local model or OpenRouter.
                         </div>
                     }
                 }
@@ -190,7 +244,7 @@
                     <div class="eyebrow">
                         @if (ChatService.IsRemote)
                         {
-                            <text>OpenRouter | @ChatService.RemoteModel</text>
+                            <text>@ChatService.RemoteProviderName | @ChatService.RemoteModel</text>
                         }
                         else
                         {
@@ -460,16 +514,20 @@ else
     private bool _allowUnverifiedTools;
     private bool _allowFailedTools;
     private bool _remoteChat;
+    private string? _computeProviderId;
     private string _remoteModel = "";
     private string? _selectedModelPath;
     private string _input = "";
 
-    private bool RemoteReady =>
-        _remoteChat &&
-        !string.IsNullOrWhiteSpace(_remoteModel) &&
-        OpenRouter.HasApiKey &&
-        OpenRouter.ActiveModels.Any(model =>
-            model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase));
+    private bool RemoteReady => _remoteChat
+        && !string.IsNullOrWhiteSpace(_remoteModel)
+        && (_computeProviderId is { } computeId
+            ? Compute.Resolve(computeId) is { IsUsable: true } host
+              && (host.Models.Count == 0
+                  || host.Models.Any(model => model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)))
+            : OpenRouter.HasApiKey
+              && OpenRouter.ActiveModels.Any(model =>
+                  model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)));
 
     private string? SelectedFileName =>
         _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.FileName;
@@ -608,10 +666,12 @@ else
         if (ChatService.Document is not null)
         {
             _remoteChat = ChatService.IsRemote;
+            _computeProviderId = ChatService.ComputeProviderId;
             if (_remoteChat)
             {
                 _remoteModel = ChatService.RemoteModel ?? _remoteModel;
-                if (!string.IsNullOrWhiteSpace(_remoteModel)
+                if (_computeProviderId is null
+                    && !string.IsNullOrWhiteSpace(_remoteModel)
                     && !OpenRouter.ActiveModels.Any(model =>
                         model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)))
                 {
@@ -637,10 +697,21 @@ else
             string remotePrompt = _input.Trim();
             _input = "";
             StateHasChanged();
-            await ChatService.NewRemoteChatAsync(
-                _remoteModel.Trim(),
-                systemPrompt: null,
-                mode: _workMode ? "work" : "chat");
+            if (_computeProviderId is { } computeId)
+            {
+                await ChatService.NewComputeChatAsync(
+                    computeId,
+                    _remoteModel.Trim(),
+                    systemPrompt: null,
+                    mode: _workMode ? "work" : "chat");
+            }
+            else
+            {
+                await ChatService.NewRemoteChatAsync(
+                    _remoteModel.Trim(),
+                    systemPrompt: null,
+                    mode: _workMode ? "work" : "chat");
+            }
 
             if (ChatService.Document is not null)
             {
@@ -695,7 +766,10 @@ else
 
     private void SaveRemoteModelChoice()
     {
-        if (!string.IsNullOrWhiteSpace(_remoteModel))
+        if (string.IsNullOrWhiteSpace(_remoteModel)) return;
+        if (_computeProviderId is { } id)
+            Compute.RememberModel(id, _remoteModel);
+        else
             OpenRouter.SetDefaultModel(_remoteModel);
     }
 
@@ -762,10 +836,39 @@ else
 
     private async Task SetProvider(ChangeEventArgs args)
     {
-        _remoteChat = string.Equals(
-            args.Value?.ToString(), "openrouter", StringComparison.OrdinalIgnoreCase);
+        string value = args.Value?.ToString() ?? "local";
+        if (value.StartsWith("compute:", StringComparison.OrdinalIgnoreCase))
+        {
+            _computeProviderId = value["compute:".Length..];
+            _remoteChat = true;
+            _workMode = false;
+            ComputeProvider? host = Compute.Resolve(_computeProviderId);
+            _remoteModel = host?.DefaultModel ?? host?.Models.FirstOrDefault() ?? "";
+            if (host is { IsUsable: true } && host.Models.Count == 0)
+            {
+                try
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                    await Compute.RefreshModelsAsync(_computeProviderId, timeout.Token);
+                    host = Compute.Resolve(_computeProviderId);
+                    _remoteModel = host?.DefaultModel ?? host?.Models.FirstOrDefault() ?? _remoteModel;
+                }
+                catch
+                {
+                    // The Settings provider panel explains an unreachable host.
+                }
+            }
+        }
+        else
+        {
+            _computeProviderId = null;
+            _remoteChat = string.Equals(value, "openrouter", StringComparison.OrdinalIgnoreCase);
+        }
+
+        UpdateLatestModelRun();
+        RefreshTuneSelection();
         await InvokeAsync(StateHasChanged);
-        if (_remoteChat)
+        if (_remoteChat && _computeProviderId is null)
             await EnsureActiveModels();
     }
 

@@ -13,6 +13,8 @@ public sealed record ChatSessionDocument
     public required string ModelPath { get; init; }
     public string Provider { get; set; } = "local";
     public string? RemoteModel { get; set; }
+    /// <summary>Compute provider id when <see cref="Provider"/> is "compute".</summary>
+    public string? RemoteProvider { get; set; }
     public string? ModelFingerprint { get; init; }
     public string? FamilyId { get; init; }
     public string? FamilyName { get; init; }

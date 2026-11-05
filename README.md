@@ -23,8 +23,8 @@ to GitHub Pages. Open `docs/index.html` locally to preview it without a server.
 
 - Windows 10/11 (the optional WPF/WebView2 shell is Windows-only).
 - [.NET 10 SDK](https://dotnet.microsoft.com/) (pinned by `global.json`).
-- A GGUF or `.smm` model for local Chat and Work, or an OpenRouter API key for
-  remote models.
+- A GGUF or `.smm` model for local Chat and Work, an OpenRouter API key, or a
+  SharpMind Compute host (local Docker or a remote server).
 
 ## OpenRouter
 
@@ -39,6 +39,43 @@ models. Work mode keeps its project tools, permissions, skills and memory local.
 Only the model conversation and the tool results the model asks for are sent to
 OpenRouter. OpenAI-style tool calling is supported, including the provider's
 native streaming tool-call deltas.
+
+## SharpMind Compute hosts
+
+A **Compute host** is the SharpMind server image: one model, OpenAI-style chat
+completions and background training jobs. Add one under **Settings → Providers
+→ SharpMind Compute → Add host**.
+
+### Local Docker
+
+1. Start Docker Desktop.
+2. Add a host with kind **Local Docker** and press **Start container**. Studio
+   generates and saves the bearer token, picks port `8080`, creates the data
+   folder and runs the image for you. There are no Docker commands to type.
+3. Upload a model from this PC, or download a GGUF from HuggingFace first and
+   then upload it. The first model becomes the active one.
+
+**Start Docker Desktop** appears in the panel when the engine is not running.
+
+### Remote host (Runpod or any server)
+
+1. Create the pod on the provider's site with the Compute image and expose
+   HTTP port `8080`.
+2. Paste the **Pod ID** (Runpod) and press **Build URL**, or paste the host URL
+   directly. Studio fills in `https://<pod>-8080.proxy.runpod.net`.
+3. Press **Generate**, then copy the token into the pod's
+   `SHARPMIND_TOKEN` environment variable.
+4. Press **Test**; Studio reads the host's models and marks it online.
+
+### Use it
+
+- **Chat**: choose the host as the Provider on the welcome or chat screen.
+- **Training**: choose the host under **Run on**. Studio uploads the job's local
+  sources, base model and resume checkpoints, polls the remote job, streams its
+  log and downloads the exported `.smm` back into the normal Training folder.
+
+Hosts are inference-only for now: Work tool calling needs a local model or
+OpenRouter, and the preview image runs on the CPU until the ILGPU plugin ships.
 
 ## HuggingFace models
 

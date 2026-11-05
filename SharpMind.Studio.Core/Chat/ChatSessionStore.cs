@@ -114,6 +114,41 @@ public sealed class ChatSessionStore
         return document;
     }
 
+    /// <summary>
+    /// Starts a chat backed by a SharpMind Compute host. The provider id is kept
+    /// so reopening the chat can resolve the same host and token.
+    /// </summary>
+    public ChatSessionDocument CreateCompute(
+        string providerId,
+        string providerName,
+        string modelId,
+        string? systemPrompt,
+        string mode = "chat")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(providerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
+        string id = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("n")[..8]}";
+        string cleanModel = modelId.Trim();
+        var document = new ChatSessionDocument
+        {
+            Id = id,
+            Name = $"{cleanModel} via {providerName}",
+            ModelPath = "compute",
+            Provider = "compute",
+            RemoteProvider = providerId,
+            RemoteModel = cleanModel,
+            FamilyId = "compute",
+            FamilyName = providerName,
+            InferenceVersion = typeof(IChatSession).Assembly.GetName().Version?.ToString(),
+            Mode = mode,
+            SystemPrompt = systemPrompt,
+            Messages = [],
+        };
+
+        Save(document);
+        return document;
+    }
+
     public ChatSessionDocument Open(string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);

@@ -2,12 +2,14 @@
 @implements IDisposable
 @using SharpMind.Studio.Core.Runs
 @using SharpMind.Studio.Core.Inference
+@using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.OpenRouter
 @using SharpMind.Studio.Services
 @inject ThemeService Theme
 @inject ModelCatalogService Catalog
 @inject InferenceSettingsService Inference
 @inject OpenRouterSettingsService OpenRouter
+@inject ComputeProviderService Compute
 @inject StudioChatService ChatService
 @inject StudioWorkspaceService Workspace
 @inject NavigationManager Nav
@@ -36,7 +38,9 @@
             <span class="welcome-mode-name">Chat</span>
             <span class="welcome-mode-hint">Talk to the selected model</span>
         </button>
-        <button type="button" class="welcome-mode @(_mode == "work" ? "selected" : "")" @onclick='() => SetMode("work")'>
+        <button type="button" class="welcome-mode @(_mode == "work" ? "selected" : "")"
+                @onclick='() => SetMode("work")' disabled="@(_computeProviderId is not null)"
+                title="@(_computeProviderId is not null ? "Work tools need a local model or OpenRouter." : null)">
             <span class="welcome-mode-name">Work</span>
             <span class="welcome-mode-hint">Start a project-backed session with tools</span>
         </button>
@@ -55,10 +59,35 @@
             <label class="field-label" for="welcome-provider">Provider</label>
             <select id="welcome-provider" class="input" @onchange="SetProvider">
                 <option value="local" selected="@(!_remoteChat)">Local model</option>
-                <option value="openrouter" selected="@_remoteChat">OpenRouter</option>
+                <option value="openrouter" selected="@(_remoteChat && _computeProviderId is null)">OpenRouter</option>
+                @foreach (ComputeProviderSettings host in Compute.Providers)
+                {
+                    <option value="@($"compute:{host.Id}")" selected="@(_computeProviderId == host.Id)">
+                        @host.Name (@ComputeProviderKinds.Display(host.Kind))
+                    </option>
+                }
             </select>
         </div>
-        @if (_remoteChat)
+        @if (_computeProviderId is not null)
+        {
+            <div class="field welcome-model">
+                <label class="field-label" for="welcome-remote-model">Compute model</label>
+                <select id="welcome-remote-model" class="input" @bind="_remoteModel"
+                        @bind:after="SaveComputeModelChoice">
+                    @{ ComputeProvider? host = Compute.Resolve(_computeProviderId); }
+                    @if (host is null || host.Models.Count == 0)
+                    {
+                        <option value="">@(host is null ? "No host selected" : "No models on this host")</option>
+                    }
+                    @foreach (string model in host?.Models ?? [])
+                    {
+                        <option value="@model">@model</option>
+                    }
+                </select>
+                <a class="small" href="/settings?tab=openrouter">Manage models and host</a>
+            </div>
+        }
+        else if (_remoteChat)
         {
             <div class="field welcome-model">
                 <label class="field-label" for="welcome-remote-model">OpenRouter model</label>
@@ -100,7 +129,7 @@
                 <option value="">New</option>
                 @foreach (var session in _sessions)
                 {
-                    <option value="@session.Id">@session.Name@(session.Mode == "work" ? " / work" : "")@(session.Provider == "openrouter" ? " / remote" : "")</option>
+                    <option value="@session.Id">@session.Name@(session.Mode == "work" ? " / work" : "")@(session.Provider is "openrouter" or "compute" ? " / remote" : "")</option>
                 }
             </select>
         </div>
@@ -116,7 +145,7 @@
             </div>
         }
     </div>
-    @if (_remoteChat && !OpenRouter.HasApiKey)
+    @if (_remoteChat && _computeProviderId is null && !OpenRouter.HasApiKey)
     {
         <div class="tool-warning">
             <div>
@@ -128,11 +157,45 @@
             </div>
         </div>
     }
-    @if (_remoteChat && OpenRouter.HasApiKey)
+    @if (_remoteChat && _computeProviderId is null && OpenRouter.HasApiKey)
     {
         <div class="small faint">
             OpenRouter models are inference-only; local tuning is unavailable. Work tools stay on this machine.
         </div>
+    }
+    @if (_computeProviderId is { } selectedHostId)
+    {
+        ComputeProvider? selectedHost = Compute.Resolve(selectedHostId);
+        @if (selectedHost is null || !selectedHost.IsUsable)
+        {
+            <div class="tool-warning">
+                <div>
+                    <strong>This Compute host needs a token.</strong>
+                    <span class="small faint">Open Settings to set its URL and token, or start it from the Local Docker panel.</span>
+                </div>
+                <div class="row">
+                    <button type="button" class="button" @onclick="OpenRouterSettings">Manage hosts</button>
+                </div>
+            </div>
+        }
+        else if (selectedHost.Models.Count == 0)
+        {
+            <div class="tool-warning">
+                <div>
+                    <strong>No models on this host.</strong>
+                    <span class="small faint">Upload one from Settings → Providers.</span>
+                </div>
+                <div class="row">
+                    <button type="button" class="button" @onclick="OpenRouterSettings">Manage hosts</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="small faint">
+                Inference runs on @selectedHost.Name. Work tools need a local model or OpenRouter.
+            </div>
+        }
     }
     <div class="status-line">@(ChatService.IsLoading || _busy ? ChatService.Status : "Ready.")</div>
 
@@ -210,6 +273,7 @@
     private TuneTarget _tuneTarget = TuneTarget.Chat;
     private string? _selectedModelPath;
     private bool _remoteChat;
+    private string? _computeProviderId;
     private string _remoteModel = "";
     private string _prompt = "";
     private string _mode = "chat";
@@ -219,12 +283,15 @@
     private bool _busy;
     private string? _error;
 
-    private bool RemoteReady =>
-        _remoteChat &&
-        !string.IsNullOrWhiteSpace(_remoteModel) &&
-        OpenRouter.HasApiKey &&
-        OpenRouter.ActiveModels.Any(model =>
-            model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase));
+    private bool RemoteReady => _remoteChat
+        && !string.IsNullOrWhiteSpace(_remoteModel)
+        && (_computeProviderId is { } computeId
+            ? Compute.Resolve(computeId) is { IsUsable: true } host
+              && (host.Models.Count == 0
+                  || host.Models.Any(model => model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)))
+            : OpenRouter.HasApiKey
+              && OpenRouter.ActiveModels.Any(model =>
+                  model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)));
 
     private string? SelectedFileName =>
         _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.FileName;
@@ -286,6 +353,12 @@
             OpenRouter.SetDefaultModel(_remoteModel);
     }
 
+    private void SaveComputeModelChoice()
+    {
+        if (_computeProviderId is { } id && !string.IsNullOrWhiteSpace(_remoteModel))
+            Compute.RememberModel(id, _remoteModel);
+    }
+
     private void UpdateLatestRun()
     {
         if (_remoteChat)
@@ -312,9 +385,14 @@
 
         if (_remoteChat)
         {
+            if (_computeProviderId is not null && _mode == "work")
+                _mode = "chat";
+
             if (!RemoteReady)
             {
-                _error = "Choose an OpenRouter model and add an API key first.";
+                _error = _computeProviderId is not null
+                    ? "Choose a Compute host with a token and a model first."
+                    : "Choose an OpenRouter model and add an API key first.";
                 return;
             }
 
@@ -322,7 +400,16 @@
             _error = null;
             try
             {
-                await ChatService.NewRemoteChatAsync(_remoteModel.Trim(), systemPrompt: null, mode: _mode);
+                if (_computeProviderId is { } computeId)
+                {
+                    await ChatService.NewComputeChatAsync(
+                        computeId, _remoteModel.Trim(), systemPrompt: null, mode: _mode);
+                }
+                else
+                {
+                    await ChatService.NewRemoteChatAsync(_remoteModel.Trim(), systemPrompt: null, mode: _mode);
+                }
+
                 if (ChatService.Document is null)
                 {
                     _error = ChatService.Error ?? ChatService.Status;
@@ -425,10 +512,39 @@
 
     private async Task SetProvider(ChangeEventArgs args)
     {
-        _remoteChat = string.Equals(
-            args.Value?.ToString(), "openrouter", StringComparison.OrdinalIgnoreCase);
+        string value = args.Value?.ToString() ?? "local";
+        if (value.StartsWith("compute:", StringComparison.OrdinalIgnoreCase))
+        {
+            _computeProviderId = value["compute:".Length..];
+            _remoteChat = true;
+            _mode = "chat";
+            ComputeProvider? host = Compute.Resolve(_computeProviderId);
+            _remoteModel = host?.DefaultModel ?? host?.Models.FirstOrDefault() ?? "";
+            if (host is { IsUsable: true } && host.Models.Count == 0)
+            {
+                try
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                    await Compute.RefreshModelsAsync(_computeProviderId, timeout.Token);
+                    host = Compute.Resolve(_computeProviderId);
+                    _remoteModel = host?.DefaultModel ?? host?.Models.FirstOrDefault() ?? _remoteModel;
+                }
+                catch
+                {
+                    // The panel under Settings explains an unreachable host.
+                }
+            }
+        }
+        else
+        {
+            _computeProviderId = null;
+            _remoteChat = string.Equals(value, "openrouter", StringComparison.OrdinalIgnoreCase);
+        }
+
+        UpdateLatestRun();
+        RefreshTuneSelection();
         await InvokeAsync(StateHasChanged);
-        if (_remoteChat)
+        if (_remoteChat && _computeProviderId is null)
             await EnsureActiveModels();
     }
 
