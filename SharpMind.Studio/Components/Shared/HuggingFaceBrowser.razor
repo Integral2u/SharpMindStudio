@@ -23,16 +23,6 @@
         </button>
     </div>
 
-    <div class="row">
-        <input class="input" @bind="HF.Query" @bind:event="oninput"
-               @onkeydown="OnSearchKey"
-               placeholder="Search HuggingFace for GGUF models, e.g. tinyllama, qwen, gemma" />
-        <button type="button" class="button primary" @onclick="SearchAsync"
-                disabled="@HF.IsSearching">
-            @(HF.IsSearching ? "Searching..." : "Search")
-        </button>
-    </div>
-
     <div class="status-line">@HF.Status</div>
     @if (HF.Error is not null)
     {

@@ -126,9 +126,9 @@
         <div class="panel-body stack">
             <div class="field">
                 <label class="field-label" for="close-to-tray">When I close the window</label>
-                <select id="close-to-tray" class="input" @bind="_closeToTray" @bind:after="SaveCloseToTrayAsync">
-                    <option value="true">Minimize to tray (default)</option>
-                    <option value="false">Exit Studio</option>
+                <select id="close-to-tray" class="input" @onchange="SetCloseToTray">
+                    <option value="true" selected="@_closeToTray">Minimize to tray (default)</option>
+                    <option value="false" selected="@(!_closeToTray)">Exit Studio</option>
                 </select>
             </div>
             <div class="small faint">
@@ -752,6 +752,13 @@ else
         _closeToTrayStatus = _closeToTray
             ? "The close button will minimize to the tray."
             : "The close button will exit Studio.";
+    }
+
+    private async Task SetCloseToTray(ChangeEventArgs args)
+    {
+        _closeToTray = string.Equals(
+            args.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        await SaveCloseToTrayAsync();
     }
 
     private void OpenFolder(string path)
