@@ -179,6 +179,21 @@ public sealed class ComputeClient
         }
     }
 
+    /// <summary>Deletes a model file from the host's models folder.</summary>
+    public async Task DeleteModelAsync(
+        ComputeProvider provider,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        using HttpResponseMessage response = await SendAsync(
+            provider,
+            HttpMethod.Delete,
+            $"v1/models/{Uri.EscapeDataString(name)}",
+            content: null,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<ComputeUploadResult> UploadModelAsync(
         ComputeProvider provider,
         string localPath,

@@ -359,7 +359,7 @@ else if (_tab == "openrouter")
             {
                 <div class="status-line">@_computeStatus</div>
             }
-            @if (_computeError is not null)
+            @if (_computeError is not null && _computeErrorHostId is null)
             {
                 <div class="error-line">@_computeError</div>
             }
@@ -582,6 +582,24 @@ else if (_tab == "openrouter")
                         </div>
                     </div>
 
+                    @if (provider.Models.Count > 0)
+                    {
+                        <div class="field training-form-wide">
+                            <label class="field-label">Models on host</label>
+                            @foreach (string model in provider.Models)
+                            {
+                                <div class="spread">
+                                    <span class="mono small">@model</span>
+                                    <button type="button" class="button danger"
+                                            @onclick="() => DeleteHostModelAsync(provider.Id, model)"
+                                            disabled="@_computeBusy"
+                                            title="Delete this model file from the host.">Delete</button>
+                                </div>
+                            }
+                            <span class="small faint">Delete removes the file from the host. Your local copy is not touched.</span>
+                        </div>
+                    }
+
                     <div class="field">
                         <label class="field-label" for="compute-upload-@provider.Id">Upload a model from this PC</label>
                         <div class="row">
@@ -611,7 +629,7 @@ else if (_tab == "openrouter")
                             </div>
                             <div class="small faint">Uploading @Path.GetFileName(_computeModelPath)…</div>
                         }
-                        @if (_computeError is not null)
+                        @if (_computeError is not null && _computeErrorHostId == provider.Id)
                         {
                             <div class="error-line">@_computeError</div>
                         }
@@ -942,6 +960,7 @@ else
     private IReadOnlyList<OpenRouterModel> _openRouterModels = [];
     private string? _computeStatus;
     private string? _computeError;
+    private string? _computeErrorHostId;
     private bool _computeBusy;
     private bool _computeEditing;
     private string? _editingComputeId;
@@ -1345,6 +1364,7 @@ else
         _runpodStatus = null;
         _computeStatus = null;
         _computeError = null;
+        _computeErrorHostId = null;
     }
 
     private void EditCompute(ComputeProviderSettings provider)
@@ -1371,6 +1391,7 @@ else
         _runpodStatus = null;
         _computeStatus = null;
         _computeError = null;
+        _computeErrorHostId = null;
     }
 
     private void CancelCompute()
@@ -1379,11 +1400,13 @@ else
         _editingComputeId = null;
         _computeToken = "";
         _computeError = null;
+        _computeErrorHostId = null;
     }
 
     private void SaveCompute()
     {
         _computeError = null;
+        _computeErrorHostId = null;
         if (string.IsNullOrWhiteSpace(_computeName))
             _computeName = _computeKind == ComputeProviderKinds.Local ? "Local Docker" : "SharpMind Compute";
 
@@ -1640,6 +1663,34 @@ else
         }
     }
 
+    private async Task DeleteHostModelAsync(string id, string model)
+    {
+        _computeErrorHostId = id;
+        _computeError = null;
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", $"Delete '{model}' from the host? The local copy is not touched.");
+        if (!confirmed) return;
+
+        _computeBusy = true;
+        _computeStatus = $"Deleting {model}...";
+        StateHasChanged();
+        try
+        {
+            await Compute.DeleteModelAsync(id, model);
+            _computeStatus = $"{model} deleted from the host.";
+            await RefreshComputeModelsAsync(id);
+        }
+        catch (Exception ex)
+        {
+            _computeError = ex.Message;
+            _computeStatus = null;
+        }
+        finally
+        {
+            _computeBusy = false;
+        }
+    }
+
     private void GenerateComputeToken()
     {
         _computeToken = ComputeProviderPresets.NewToken();
@@ -1838,6 +1889,14 @@ else
     {
         _computeBusy = true;
         _computeError = null;
+        _computeErrorHostId = id;
+        if (UndeployedRunpod(id) is { } message)
+        {
+            _computeError = message;
+            _computeStatus = null;
+            _computeBusy = false;
+            return;
+        }
         _computeStatus = "Testing the host...";
         StateHasChanged();
         try
@@ -1858,10 +1917,34 @@ else
         }
     }
 
+    /// <summary>Returns a setup message when a Runpod host has not been deployed yet.</summary>
+    private string? UndeployedRunpod(string id)
+    {
+        ComputeProviderSettings? provider = Compute.Find(id);
+        if (provider is null || provider.Prefab != ComputeProviderPrefabs.Runpod) return null;
+        if (!string.IsNullOrWhiteSpace(provider.RunpodPodId)
+            && Uri.TryCreate(provider.BaseUrl, UriKind.Absolute, out Uri? uri)
+            && !uri.IsLoopback)
+        {
+            return null;
+        }
+
+        return "This Runpod host has no running pod yet. Press Deploy pod first"
+            + " (and save the host if you just added the API key).";
+    }
+
     private async Task RefreshComputeModelsAsync(string id)
     {
         _computeBusy = true;
         _computeError = null;
+        _computeErrorHostId = id;
+        if (UndeployedRunpod(id) is { } message)
+        {
+            _computeError = message;
+            _computeStatus = null;
+            _computeBusy = false;
+            return;
+        }
         _computeStatus = "Reading models on the host...";
         StateHasChanged();
         try
@@ -1923,14 +2006,22 @@ else
 
     private async Task UploadComputeModelAsync(string id)
     {
+        _computeErrorHostId = id;
+        _computeError = null;
         if (string.IsNullOrWhiteSpace(_computeModelPath) || !File.Exists(_computeModelPath))
         {
             _computeError = "Choose an existing .smm or .gguf file first.";
             return;
         }
 
+        if (UndeployedRunpod(id) is { } message)
+        {
+            _computeError = message;
+            _computeStatus = null;
+            return;
+        }
+
         _computeBusy = true;
-        _computeError = null;
         _uploadingId = id;
         _computeUploadProgress = 0;
         _computeStatus = $"Uploading {Path.GetFileName(_computeModelPath)}...";

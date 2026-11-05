@@ -240,6 +240,18 @@ public sealed class ComputeProviderService
         return result;
     }
 
+    /// <summary>Deletes a model file from the host and forgets it locally.</summary>
+    public async Task DeleteModelAsync(
+        string id,
+        string model,
+        CancellationToken cancellationToken = default)
+    {
+        ComputeProvider provider = ResolveOrThrow(id);
+        await _client.DeleteModelAsync(provider, model, cancellationToken);
+        _store.ForgetModel(id, model);
+        Changed?.Invoke();
+    }
+
     /// <summary>Copies a dataset/job input to the host and returns its container path.</summary>
     public async Task<ComputeUploadResult> UploadFileAsync(
         string id,

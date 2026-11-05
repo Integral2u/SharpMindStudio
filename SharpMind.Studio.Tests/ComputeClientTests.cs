@@ -224,6 +224,20 @@ public sealed class ComputeClientTests
     }
 
     [Fact]
+    public async Task DeleteModel_UsesTheDeleteEndpoint()
+    {
+        var handler = new CaptureHandler(_ => Json("""{"deleted":"tinystories.smm"}"""));
+        using var http = new HttpClient(handler);
+        var client = new ComputeClient(http);
+
+        await client.DeleteModelAsync(Provider, "tinystories.smm");
+
+        Assert.Equal("DELETE", handler.LastMethod);
+        Assert.Equal("http://127.0.0.1:8080/v1/models/tinystories.smm", handler.LastUri);
+        Assert.Equal("Bearer test-token", handler.LastAuthorization);
+    }
+
+    [Fact]
     public async Task HttpErrors_AreSurfacedWithTheHostMessage()
     {
         var handler = new CaptureHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized)
