@@ -1387,6 +1387,22 @@ else
             _registryStatus = "Image published. Use it as the host's Server image.";
             _runpodImage = _registryTarget.Trim();
             _registryLog = $"Target: {_runpodImage}";
+
+            // Point remote hosts that still carry the default image at what was just pushed.
+            foreach (ComputeProviderSettings host in Compute.Providers)
+            {
+                if (host.NormalizedKind != ComputeProviderKinds.Remote) continue;
+                if (!string.IsNullOrWhiteSpace(host.RunpodImage)
+                    && !string.Equals(
+                        host.RunpodImage,
+                        ComputeProviderPresets.DefaultServerImage,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                Compute.SetRunpod(host.Id, null, _runpodImage, null, null);
+            }
         }
         catch (Exception ex)
         {
