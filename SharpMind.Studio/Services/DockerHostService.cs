@@ -27,6 +27,14 @@ public sealed record DockerStartRequest
     public bool UseGpu { get; init; }
 }
 
+public sealed record DockerPublishRequest
+{
+    public required string DockerHubUser { get; init; }
+    public required string AccessToken { get; init; }
+    public required string SourceImage { get; init; }
+    public required string TargetImage { get; init; }
+}
+
 /// <summary>
 /// Runs the local Compute container for the user: no terminal commands, no
 /// image tags to memorise. It shells out to the Docker CLI on the Studio host
@@ -183,6 +191,45 @@ public sealed class DockerHostService
         return exit == 0 ? output.Trim() : FirstLine(error);
     }
 
+    /// <summary>Logs in, tags and pushes an image to Docker Hub. No credentials are stored.</summary>
+    public async Task PublishAsync(
+        DockerPublishRequest request,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.DockerHubUser))
+            throw new InvalidOperationException("Enter your Docker Hub username.");
+        if (string.IsNullOrWhiteSpace(request.AccessToken))
+            throw new InvalidOperationException("Enter a Docker Hub access token.");
+        if (string.IsNullOrWhiteSpace(request.TargetImage)
+            || !request.TargetImage.Contains('/', StringComparison.Ordinal))
+            throw new InvalidOperationException("The target image must be <user>/<repository>:<tag>.");
+
+        progress?.Report($"Signing in to Docker Hub as {request.DockerHubUser}…");
+        (int loginExit, _, string loginError) = await RunAsync(
+            ["login", "-u", request.DockerHubUser, "--password-stdin"],
+            cancellationToken,
+            stdin: request.AccessToken.Trim());
+        if (loginExit != 0)
+            throw new InvalidOperationException($"Docker Hub login failed: {FirstLine(loginError)}");
+
+        progress?.Report($"Tagging {request.SourceImage}…");
+        (int tagExit, _, string tagError) = await RunAsync(
+            ["tag", request.SourceImage, request.TargetImage], cancellationToken);
+        if (tagExit != 0)
+            throw new InvalidOperationException($"Docker tag failed: {FirstLine(tagError)}");
+
+        progress?.Report($"Pushing {request.TargetImage} — the first push can take several minutes…");
+        (int pushExit, string pushOutput, string pushError) = await RunAsync(
+            ["push", request.TargetImage], cancellationToken);
+        if (pushExit != 0)
+            throw new InvalidOperationException($"Docker push failed: {FirstLine(pushError)}");
+
+        progress?.Report(pushOutput.Trim());
+        progress?.Report("Image published.");
+    }
+
     public void StartDockerDesktop()
     {
         string? path = DesktopPaths.FirstOrDefault(File.Exists);
@@ -199,12 +246,14 @@ public sealed class DockerHostService
 
     private static async Task<(int ExitCode, string Output, string Error)> RunAsync(
         IReadOnlyList<string> arguments,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? stdin = null)
     {
         var info = new ProcessStartInfo("docker")
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = stdin is not null,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
@@ -217,6 +266,13 @@ public sealed class DockerHostService
 
         Task<string> output = process.StandardOutput.ReadToEndAsync(cancellationToken);
         Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
+        if (stdin is not null)
+        {
+            await process.StandardInput.WriteAsync(stdin.AsMemory(), cancellationToken);
+            await process.StandardInput.FlushAsync(cancellationToken);
+            process.StandardInput.Close();
+        }
+
         await process.WaitForExitAsync(cancellationToken);
         return (process.ExitCode, await output, await error);
     }

@@ -11,6 +11,7 @@
 @inject OpenRouterSettingsService OpenRouter
 @inject ComputeProviderService Compute
 @inject DockerHostService Docker
+@inject RunpodService Runpod
 @inject HuggingFaceService HuggingFace
 @inject ModelCatalogService Catalog
 @inject GatewayService Gateway
@@ -293,6 +294,56 @@ else if (_tab == "openrouter")
                 <span class="small faint">Default host is used by Chat and Training when you pick Compute.</span>
             </div>
 
+            <div class="training-subsection">
+                <div class="training-subsection-head">
+                    <label class="field-label">Publish the server image</label>
+                    <span class="faint small">one-time per image</span>
+                </div>
+                <p class="small faint">
+                    A remote host has to pull the image from a registry. Build
+                    <span class="mono">docker/server/Dockerfile.gpu.local</span> once, then push it
+                    here. Studio runs the Docker commands; the access token is only used for this push
+                    and is not saved.
+                </p>
+                <div class="training-form">
+                    <div class="field">
+                        <label class="field-label" for="registry-user">Docker Hub user</label>
+                        <input id="registry-user" class="input" @bind="_registryUser"
+                               @bind:after="SyncRegistryTarget" placeholder="your-dockerhub-name" />
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="registry-token">Access token</label>
+                        <input id="registry-token" class="input" type="password"
+                               @bind="_registryToken" autocomplete="off"
+                               placeholder="Docker Hub read/write token" />
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="registry-source">Local image</label>
+                        <input id="registry-source" class="input" @bind="_registrySource" />
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="registry-target">Target image</label>
+                        <input id="registry-target" class="input" @bind="_registryTarget"
+                               placeholder="your-name/sharpmind-server:gpu" />
+                    </div>
+                </div>
+                <div class="row">
+                    <button type="button" class="button primary" @onclick="PublishImageAsync"
+                            disabled="@_registryBusy">
+                        @(_registryBusy ? "Pushing..." : "Push image")
+                    </button>
+                    <span class="small faint">The first GPU push is about 2 GB.</span>
+                </div>
+                @if (_registryStatus is { Length: > 0 })
+                {
+                    <div class="status-line">@_registryStatus</div>
+                }
+                @if (_registryLog is { Length: > 0 })
+                {
+                    <pre class="small mono" style="max-height:10rem;overflow:auto;">@_registryLog</pre>
+                }
+            </div>
+
             @if (_computeStatus is { Length: > 0 })
             {
                 <div class="status-line">@_computeStatus</div>
@@ -396,6 +447,30 @@ else if (_tab == "openrouter")
                                     Runpod → Pods → Connect shows the Pod ID and the HTTP port URL.
                                     This helper turns it into <span class="mono">https://&lt;pod&gt;-8080.proxy.runpod.net</span>.
                                 </span>
+                            </div>
+                            <div class="field training-form-wide">
+                                <label class="field-label" for="runpod-key">Runpod API key</label>
+                                <input id="runpod-key" class="input" type="password" @bind="_runpodKey"
+                                       autocomplete="off"
+                                       placeholder="@(_editingComputeId is null ? "rpa_..." : "leave blank to keep")" />
+                                <span class="small faint">
+                                    Optional. With a key, save the host and use <strong>Deploy pod</strong>
+                                    on its card; Studio creates and can terminate the pod for you.
+                                </span>
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="runpod-image">Server image</label>
+                                <input id="runpod-image" class="input" @bind="_runpodImage"
+                                       placeholder="your-name/sharpmind-server:gpu" />
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="runpod-gpu">GPU type</label>
+                                <input id="runpod-gpu" class="input" @bind="_runpodGpu" />
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="runpod-disk">Container disk (GB)</label>
+                                <input id="runpod-disk" class="input" type="number" min="1" max="500"
+                                       @bind="_runpodDisk" />
                             </div>
                         }
                     </div>
@@ -516,6 +591,43 @@ else if (_tab == "openrouter")
                                 port <span class="mono">@(provider.DockerPort ?? ComputeProviderPresets.DefaultPort)</span>,
                                 data <span class="mono">@DockerHostService.DefaultDataFolder(provider.ContainerName ?? "")</span>.
                                 Start recreates the container so its token, port and image match this panel.
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="training-subsection">
+                            <div class="training-subsection-head">
+                                <label class="field-label">Runpod</label>
+                                <div class="row">
+                                    <span class="small mono">@(provider.RunpodPodStatus ?? "no pod")</span>
+                                    <button type="button" class="button primary"
+                                            @onclick="() => DeployRunpodAsync(provider.Id)"
+                                            disabled="@_runpodBusy">Deploy pod</button>
+                                    <button type="button" class="button"
+                                            @onclick="() => RefreshRunpodAsync(provider.Id)"
+                                            disabled="@_runpodBusy">Refresh</button>
+                                    <button type="button" class="button danger"
+                                            @onclick="() => TerminateRunpodAsync(provider.Id)"
+                                            disabled="@_runpodBusy">Terminate</button>
+                                </div>
+                            </div>
+                            @if (_runpodStatus is { Length: > 0 })
+                            {
+                                <div class="status-line">@_runpodStatus</div>
+                            }
+                            <div class="small faint">
+                                @(Runpod.HasApiKey(provider.Id)
+                                    ? "Runpod API key saved."
+                                    : "Add a Runpod API key in Edit to deploy from here.")
+                                Pod <span class="mono">@(provider.RunpodPodId ?? "none")</span>.
+                                Image <span class="mono">@(provider.RunpodImage ?? ComputeProviderPresets.DefaultServerImage)</span>,
+                                GPU <span class="mono">@(provider.RunpodGpuType ?? ComputeProviderPresets.DefaultGpuType)</span>,
+                                @(provider.RunpodDiskGb ?? ComputeProviderPresets.DefaultRunpodDiskGb) GB disk.
+                            </div>
+                            <div class="small faint">
+                                Deploy uses that image; push it once with <strong>Publish the server image</strong>.
+                                When the pod reports RUNNING, Studio fills the API and Studio URLs and tests the host.
                             </div>
                         </div>
                     }
@@ -755,6 +867,19 @@ else
     private string _computeBaseUrl = ComputeProviderSettings.DefaultLocalUrl;
     private string _computeToken = "";
     private string _computeStudioUrl = "";
+    private string _runpodKey = "";
+    private string _runpodImage = ComputeProviderPresets.DefaultServerImage;
+    private string _runpodGpu = ComputeProviderPresets.DefaultGpuType;
+    private int _runpodDisk = ComputeProviderPresets.DefaultRunpodDiskGb;
+    private string? _runpodStatus;
+    private bool _runpodBusy;
+    private string _registryUser = "";
+    private string _registryToken = "";
+    private string _registrySource = ComputeProviderPresets.DefaultServerImage;
+    private string _registryTarget = "";
+    private string? _registryStatus;
+    private string? _registryLog;
+    private bool _registryBusy;
     private string _computeImage = ComputeProviderPresets.DefaultImage;
     private int _computePort = ComputeProviderPresets.DefaultPort;
     private bool _computeUseGpu;
@@ -1125,6 +1250,11 @@ else
         _computeStudioUrl = ComputeProviderPresets.DeriveStudioUrl(
             ComputeProviderPresets.LocalUrl(_computePort)) ?? "";
         _computeShowToken = false;
+        _runpodKey = "";
+        _runpodImage = ComputeProviderPresets.DefaultServerImage;
+        _runpodGpu = ComputeProviderPresets.DefaultGpuType;
+        _runpodDisk = ComputeProviderPresets.DefaultRunpodDiskGb;
+        _runpodStatus = null;
         _computeStatus = null;
         _computeError = null;
     }
@@ -1145,6 +1275,11 @@ else
             ?? ComputeProviderPresets.DeriveStudioUrl(provider.BaseUrl)
             ?? "";
         _computeShowToken = false;
+        _runpodKey = "";
+        _runpodImage = provider.RunpodImage ?? ComputeProviderPresets.DefaultServerImage;
+        _runpodGpu = provider.RunpodGpuType ?? ComputeProviderPresets.DefaultGpuType;
+        _runpodDisk = provider.RunpodDiskGb ?? ComputeProviderPresets.DefaultRunpodDiskGb;
+        _runpodStatus = null;
         _computeStatus = null;
         _computeError = null;
     }
@@ -1177,6 +1312,7 @@ else
                 string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken);
             ApplyDockerSettings(provider.Id);
             Compute.SetStudioUrl(provider.Id, _computeStudioUrl);
+            SaveRunpodSettings(provider.Id);
             _computeStatus = local
                 ? "Host added. Press Start container below."
                 : "Host added. Press Test to read its models.";
@@ -1191,6 +1327,7 @@ else
                 string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken);
             ApplyDockerSettings(_editingComputeId);
             Compute.SetStudioUrl(_editingComputeId, _computeStudioUrl);
+            SaveRunpodSettings(_editingComputeId);
             _computeStatus = "Compute host saved.";
         }
 
@@ -1207,6 +1344,165 @@ else
             ? DockerHostService.DefaultContainerName(id)
             : provider.ContainerName;
         Compute.SetDocker(id, _computeImage, _computePort, _computeUseGpu, container);
+    }
+
+    private void SaveRunpodSettings(string id)
+    {
+        Compute.SetRunpod(
+            id,
+            string.IsNullOrWhiteSpace(_runpodKey) ? null : _runpodKey,
+            _runpodImage,
+            _runpodGpu,
+            _runpodDisk);
+    }
+
+    private void SyncRegistryTarget()
+    {
+        if (string.IsNullOrWhiteSpace(_registryUser)) return;
+        _registryTarget = $"{_registryUser.Trim().ToLowerInvariant()}/sharpmind-server:gpu";
+    }
+
+    private async Task PublishImageAsync()
+    {
+        _registryBusy = true;
+        _registryStatus = "Publishing the image...";
+        _registryLog = null;
+        StateHasChanged();
+        try
+        {
+            var progress = new Progress<string>(line =>
+            {
+                _registryStatus = line;
+                _ = InvokeAsync(StateHasChanged);
+            });
+
+            await Docker.PublishAsync(new DockerPublishRequest
+            {
+                DockerHubUser = _registryUser.Trim(),
+                AccessToken = _registryToken,
+                SourceImage = _registrySource.Trim(),
+                TargetImage = _registryTarget.Trim(),
+            }, progress);
+
+            _registryStatus = "Image published. Use it as the host's Server image.";
+            _runpodImage = _registryTarget.Trim();
+            _registryLog = $"Target: {_runpodImage}";
+        }
+        catch (Exception ex)
+        {
+            _registryStatus = null;
+            _registryLog = ex.Message;
+        }
+        finally
+        {
+            _registryBusy = false;
+        }
+    }
+
+    private async Task DeployRunpodAsync(string id)
+    {
+        _runpodBusy = true;
+        _computeError = null;
+        _runpodStatus = "Creating the pod...";
+        StateHasChanged();
+        try
+        {
+            RunpodPod pod = await Runpod.DeployAsync(id);
+            _runpodStatus = $"Pod {pod.Id} is {pod.Status}.";
+            StateHasChanged();
+
+            for (int attempt = 0; attempt < 90; attempt++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                pod = await Runpod.RefreshAsync(id);
+                _runpodStatus = $"Pod {pod.Id} is {pod.Status}.";
+                StateHasChanged();
+                if (pod.Status is "RUNNING" or "ERROR" or "EXITED" or "TERMINATED")
+                    break;
+            }
+
+            if (pod.Status == "RUNNING")
+            {
+                _runpodStatus = "Pod running. Waiting for the API...";
+                StateHasChanged();
+                for (int attempt = 0; attempt < 30; attempt++)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5));
+                    try
+                    {
+                        await Compute.TestAsync(id);
+                        await Compute.RefreshModelsAsync(id);
+                        _runpodStatus = "Pod running and the API answered. Upload a model to start.";
+                        break;
+                    }
+                    catch
+                    {
+                        _runpodStatus = $"Pod running; API not ready yet ({attempt + 1}/30)...";
+                        StateHasChanged();
+                    }
+                }
+            }
+            else
+            {
+                _runpodStatus = $"Pod {pod.Id} ended in {pod.Status}.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _computeError = ex.Message;
+            _runpodStatus = null;
+        }
+        finally
+        {
+            _runpodBusy = false;
+        }
+    }
+
+    private async Task RefreshRunpodAsync(string id)
+    {
+        _runpodBusy = true;
+        _computeError = null;
+        StateHasChanged();
+        try
+        {
+            RunpodPod pod = await Runpod.RefreshAsync(id);
+            _runpodStatus = $"Pod {pod.Id} is {pod.Status}.";
+            if (pod.Status == "RUNNING")
+            {
+                try { await Compute.TestAsync(id); }
+                catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            _computeError = ex.Message;
+        }
+        finally
+        {
+            _runpodBusy = false;
+        }
+    }
+
+    private async Task TerminateRunpodAsync(string id)
+    {
+        _runpodBusy = true;
+        _computeError = null;
+        _runpodStatus = "Terminating the pod...";
+        StateHasChanged();
+        try
+        {
+            await Runpod.TerminateAsync(id);
+            _runpodStatus = "Pod terminated.";
+        }
+        catch (Exception ex)
+        {
+            _computeError = ex.Message;
+            _runpodStatus = null;
+        }
+        finally
+        {
+            _runpodBusy = false;
+        }
     }
 
     private void GenerateComputeToken()

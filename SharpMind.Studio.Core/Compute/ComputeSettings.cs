@@ -41,6 +41,16 @@ public sealed class ComputeProviderSettings
     public bool UseGpu { get; set; }
     public string? ContainerName { get; set; }
 
+    // --- Runpod helper --------------------------------------------------
+    // Optional: lets Studio create and terminate the pod through Runpod's API.
+
+    public string? RunpodApiKeyProtected { get; set; }
+    public string? RunpodImage { get; set; }
+    public string? RunpodGpuType { get; set; }
+    public int? RunpodDiskGb { get; set; }
+    public string? RunpodPodId { get; set; }
+    public string? RunpodPodStatus { get; set; }
+
     public DateTimeOffset? LastSeenUtc { get; set; }
     public string? LastStatus { get; set; }
 
@@ -374,6 +384,63 @@ public sealed class ComputeSettingsStore
         }
     }
 
+    /// <summary>The decrypted Runpod API key, or null when none is saved.</summary>
+    public string? RunpodApiKey(string id)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            return provider is null
+                ? null
+                : GatewaySecretBox.Unprotect(provider.RunpodApiKeyProtected, _keyFile);
+        }
+    }
+
+    /// <summary>Stores the Runpod deployment settings. A null key keeps the current one.</summary>
+    public bool SetRunpod(
+        string id,
+        string? apiKey,
+        string? image,
+        string? gpuType,
+        int? diskGb)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            if (apiKey is not null)
+            {
+                provider.RunpodApiKeyProtected = string.IsNullOrWhiteSpace(apiKey)
+                    ? null
+                    : GatewaySecretBox.Protect(apiKey.Trim(), _keyFile);
+            }
+
+            if (!string.IsNullOrWhiteSpace(image)) provider.RunpodImage = image.Trim();
+            if (!string.IsNullOrWhiteSpace(gpuType)) provider.RunpodGpuType = gpuType.Trim();
+            if (diskGb is > 0) provider.RunpodDiskGb = diskGb;
+            SaveLocked();
+            return true;
+        }
+    }
+
+    public bool SetRunpodPod(string id, string? podId, string? status)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.RunpodPodId = string.IsNullOrWhiteSpace(podId) ? null : podId.Trim();
+            provider.RunpodPodStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+            SaveLocked();
+            return true;
+        }
+    }
+
     public void RecordProbe(string id, bool healthy, string? status)
     {
         lock (_gate)
@@ -453,6 +520,9 @@ public sealed class ComputeSettingsStore
             provider.DockerImage ??= ComputeProviderPresets.DefaultImage;
             provider.DockerPort ??= ComputeProviderPresets.DefaultPort;
             provider.ContainerName ??= ComputeProviderPresets.ContainerName(provider.Id);
+            provider.RunpodImage ??= ComputeProviderPresets.DefaultServerImage;
+            provider.RunpodGpuType ??= ComputeProviderPresets.DefaultGpuType;
+            provider.RunpodDiskGb ??= ComputeProviderPresets.DefaultRunpodDiskGb;
         }
 
         if (document.Providers.Count == 0)

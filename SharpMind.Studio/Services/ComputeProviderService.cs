@@ -120,6 +120,23 @@ public sealed class ComputeProviderService
         if (_store.SetStudioUrl(id, url)) Changed?.Invoke();
     }
 
+    public string? RunpodApiKey(string id) => _store.RunpodApiKey(id);
+
+    public void SetRunpod(
+        string id,
+        string? apiKey,
+        string? image,
+        string? gpuType,
+        int? diskGb)
+    {
+        if (_store.SetRunpod(id, apiKey, image, gpuType, diskGb)) Changed?.Invoke();
+    }
+
+    public void SetRunpodPod(string id, string? podId, string? status)
+    {
+        if (_store.SetRunpodPod(id, podId, status)) Changed?.Invoke();
+    }
+
     /// <summary>Cheap reachability check used by the provider dot and the Test button.</summary>
     public async Task<ComputeHealth> TestAsync(
         string id,

@@ -126,6 +126,32 @@ public sealed class ComputeSettingsStoreTests
     }
 
     [Fact]
+    public void RunpodSettings_StoreTheKeyEncryptedAndKeepPodState()
+    {
+        using var temp = new TempDirectory();
+        string settings = temp.Combine("compute.json");
+        string key = temp.Combine("compute.key");
+        var store = new ComputeSettingsStore(settings, key);
+        string id = store.Providers[0].Id;
+
+        store.SetRunpod(id, "rpa_secret", "me/sharpmind-server:gpu", "NVIDIA L4", 40);
+        Assert.DoesNotContain("rpa_secret", File.ReadAllText(settings));
+        Assert.Equal("rpa_secret", store.RunpodApiKey(id));
+
+        store.SetRunpod(id, null, null, null, null);
+        Assert.Equal("rpa_secret", store.RunpodApiKey(id));
+        Assert.Equal("me/sharpmind-server:gpu", store.Find(id)!.RunpodImage);
+
+        store.SetRunpodPod(id, "pod123", "RUNNING");
+        var reopened = new ComputeSettingsStore(settings, key);
+        Assert.Equal("pod123", reopened.Find(id)!.RunpodPodId);
+        Assert.Equal("RUNNING", reopened.Find(id)!.RunpodPodStatus);
+        Assert.Equal("NVIDIA L4", reopened.Find(id)!.RunpodGpuType);
+        Assert.Equal(40, reopened.Find(id)!.RunpodDiskGb);
+        Assert.Equal("rpa_secret", reopened.RunpodApiKey(id));
+    }
+
+    [Fact]
     public void RecordProbe_KeepsStatusAndHealth()
     {
         using var temp = new TempDirectory();

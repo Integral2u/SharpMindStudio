@@ -9,6 +9,9 @@ public static class ComputeProviderPresets
 {
     public const int DefaultPort = 8080;
     public const string DefaultImage = "sharpmind-compute:local";
+    public const string DefaultServerImage = "sharpmind-server:gpu";
+    public const string DefaultGpuType = "NVIDIA GeForce RTX 4090";
+    public const int DefaultRunpodDiskGb = 30;
 
     public static string LocalUrl(int port = DefaultPort) => $"http://127.0.0.1:{port}";
 

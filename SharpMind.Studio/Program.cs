@@ -29,11 +29,16 @@ builder.Services.AddSingleton<InferenceSettingsService>();
 builder.Services.AddSingleton<OpenRouterSettingsService>();
 builder.Services.AddSingleton<ComputeProviderService>();
 builder.Services.AddSingleton<DockerHostService>();
+builder.Services.AddSingleton<RunpodService>();
 builder.Services.AddHttpClient<OpenRouterClient>(client =>
 {
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
 builder.Services.AddHttpClient<ComputeClient>(client =>
+{
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddHttpClient<RunpodClient>(client =>
 {
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
