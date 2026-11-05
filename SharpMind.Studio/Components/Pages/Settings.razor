@@ -338,6 +338,16 @@ else if (_tab == "openrouter")
                 {
                     <div class="status-line">@_registryStatus</div>
                 }
+                @if (_registryBusy)
+                {
+                    <div class="row" style="align-items:center; gap:.6rem;">
+                        <span class="spinner-ring"></span>
+                        <div class="progress-track" style="flex:1;">
+                            <div class="progress-fill" style="width:@((_registryProgress ?? 0) * 100)%"></div>
+                        </div>
+                        <span class="mono small">@(_registryProgress is { } fraction ? $"{fraction * 100:0}%" : "…")</span>
+                    </div>
+                }
                 @if (_registryLog is { Length: > 0 })
                 {
                     <pre class="small mono" style="max-height:10rem;overflow:auto;">@_registryLog</pre>
@@ -365,11 +375,15 @@ else if (_tab == "openrouter")
                             <input id="compute-name" class="input" @bind="_computeName" placeholder="Local Docker" />
                         </div>
                         <div class="field">
-                            <label class="field-label" for="compute-kind">Kind</label>
-                            <select id="compute-kind" class="input" @bind="_computeKind" @bind:after="SyncComputeStudioUrl">
-                                <option value="@ComputeProviderKinds.Local">Local Docker</option>
-                                <option value="@ComputeProviderKinds.Remote">Remote host</option>
+                            <label class="field-label" for="compute-prefab">Host type</label>
+                            <select id="compute-prefab" class="input" @bind="_computePrefab"
+                                    @bind:after="SyncPrefab">
+                                @foreach (ComputeProviderPrefab prefab in ComputeProviderPrefabs.All)
+                                {
+                                    <option value="@prefab.Id">@prefab.Name</option>
+                                }
                             </select>
+                            <span class="small faint">@ComputeProviderPrefabs.Find(_computePrefab).Description</span>
                         </div>
                         <div class="field training-form-wide">
                             <label class="field-label" for="compute-url">Base URL</label>
@@ -408,7 +422,7 @@ else if (_tab == "openrouter")
                             </span>
                         </div>
 
-                        @if (_computeKind == ComputeProviderKinds.Local)
+                        @if (_computePrefab == ComputeProviderPrefabs.LocalDocker)
                         {
                             <div class="field">
                                 <label class="field-label" for="compute-image">Docker image</label>
@@ -434,7 +448,7 @@ else if (_tab == "openrouter")
                                 </span>
                             </div>
                         }
-                        else
+                        else if (_computePrefab == ComputeProviderPrefabs.Runpod)
                         {
                             <div class="field training-form-wide">
                                 <label class="field-label" for="compute-pod">Runpod Pod ID (optional)</label>
@@ -488,7 +502,7 @@ else if (_tab == "openrouter")
                         <div class="row" style="align-items:center; gap:.5rem;">
                             <span class="provider-dot @(provider.Healthy == true ? "on" : provider.Healthy == false ? "off" : "off")"></span>
                             <strong>@provider.Name</strong>
-                            <span class="faint small mono">@ComputeProviderKinds.Display(provider.Kind)</span>
+                            <span class="faint small mono">@ComputeProviderPrefabs.Find(provider.Prefab).Name</span>
                             @if (string.Equals(provider.Id, Compute.DefaultProviderId, StringComparison.OrdinalIgnoreCase))
                             {
                                 <span class="training-chip">default</span>
@@ -502,6 +516,7 @@ else if (_tab == "openrouter")
                             <button type="button" class="button" @onclick="() => TestComputeAsync(provider.Id)"
                                     disabled="@_computeBusy">Test</button>
                             <button type="button" class="button" @onclick="() => EditCompute(provider)">Edit</button>
+                            <button type="button" class="button" @onclick="() => DuplicateCompute(provider)">Duplicate</button>
                             <button type="button" class="button danger" @onclick="() => RemoveCompute(provider)">Delete</button>
                         </div>
                     </div>
@@ -556,7 +571,7 @@ else if (_tab == "openrouter")
                         }
                     </div>
 
-                    @if (provider.NormalizedKind == ComputeProviderKinds.Local)
+                    @if (provider.Prefab == ComputeProviderPrefabs.LocalDocker)
                     {
                         <div class="training-subsection">
                             <div class="training-subsection-head">
@@ -594,7 +609,7 @@ else if (_tab == "openrouter")
                             </div>
                         </div>
                     }
-                    else
+                    else if (provider.Prefab == ComputeProviderPrefabs.Runpod)
                     {
                         <div class="training-subsection">
                             <div class="training-subsection-head">
@@ -864,6 +879,7 @@ else
     private string? _editingComputeId;
     private string _computeName = "";
     private string _computeKind = ComputeProviderKinds.Local;
+    private string _computePrefab = ComputeProviderPrefabs.LocalDocker;
     private string _computeBaseUrl = ComputeProviderSettings.DefaultLocalUrl;
     private string _computeToken = "";
     private string _computeStudioUrl = "";
@@ -880,6 +896,7 @@ else
     private string? _registryStatus;
     private string? _registryLog;
     private bool _registryBusy;
+    private double? _registryProgress;
     private string _computeImage = ComputeProviderPresets.DefaultImage;
     private int _computePort = ComputeProviderPresets.DefaultPort;
     private bool _computeUseGpu;
@@ -1239,6 +1256,7 @@ else
     {
         _computeEditing = true;
         _editingComputeId = null;
+        _computePrefab = ComputeProviderPrefabs.LocalDocker;
         _computeName = "Local Docker";
         _computeKind = ComputeProviderKinds.Local;
         _computeBaseUrl = ComputeProviderSettings.DefaultLocalUrl;
@@ -1264,6 +1282,7 @@ else
         _computeEditing = true;
         _editingComputeId = provider.Id;
         _computeName = provider.Name;
+        _computePrefab = provider.Prefab;
         _computeKind = provider.NormalizedKind;
         _computeBaseUrl = provider.BaseUrl;
         _computeToken = "";
@@ -1298,7 +1317,7 @@ else
         if (string.IsNullOrWhiteSpace(_computeName))
             _computeName = _computeKind == ComputeProviderKinds.Local ? "Local Docker" : "SharpMind Compute";
 
-        bool local = _computeKind == ComputeProviderKinds.Local;
+        bool local = _computePrefab == ComputeProviderPrefabs.LocalDocker;
         string baseUrl = local
             ? ComputeProviderPresets.LocalUrl(_computePort)
             : ComputeProviderPresets.NormalizeUrl(_computeBaseUrl);
@@ -1309,7 +1328,8 @@ else
                 _computeName,
                 _computeKind,
                 baseUrl,
-                string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken);
+                string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken,
+                _computePrefab);
             ApplyDockerSettings(provider.Id);
             Compute.SetStudioUrl(provider.Id, _computeStudioUrl);
             SaveRunpodSettings(provider.Id);
@@ -1324,7 +1344,8 @@ else
                 _computeName,
                 _computeKind,
                 baseUrl,
-                string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken);
+                string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken,
+                prefab: _computePrefab);
             ApplyDockerSettings(_editingComputeId);
             Compute.SetStudioUrl(_editingComputeId, _computeStudioUrl);
             SaveRunpodSettings(_editingComputeId);
@@ -1334,6 +1355,23 @@ else
         _computeEditing = false;
         _editingComputeId = null;
         _computeToken = "";
+    }
+
+    private void SyncPrefab()
+    {
+        _computeKind = ComputeProviderPrefabs.Find(_computePrefab).Kind;
+        if (_editingComputeId is null)
+        {
+            _computeName = _computePrefab switch
+            {
+                ComputeProviderPrefabs.LocalDocker => "Local Docker",
+                ComputeProviderPrefabs.Runpod => "Runpod GPU",
+                _ => "SharpMind Server",
+            };
+        }
+
+        if (_computePrefab == ComputeProviderPrefabs.LocalDocker)
+            SyncComputeStudioUrl();
     }
 
     private void ApplyDockerSettings(string id)
@@ -1367,12 +1405,14 @@ else
         _registryBusy = true;
         _registryStatus = "Publishing the image...";
         _registryLog = null;
+        _registryProgress = null;
         StateHasChanged();
         try
         {
-            var progress = new Progress<string>(line =>
+            var progress = new Progress<DockerPublishProgress>(value =>
             {
-                _registryStatus = line;
+                _registryStatus = value.Message;
+                if (value.Fraction is { } fraction) _registryProgress = fraction;
                 _ = InvokeAsync(StateHasChanged);
             });
 
@@ -1385,6 +1425,7 @@ else
             }, progress);
 
             _registryStatus = "Image published. Use it as the host's Server image.";
+            _registryProgress = 1;
             _runpodImage = _registryTarget.Trim();
             _registryLog = $"Target: {_runpodImage}";
 
@@ -1783,6 +1824,12 @@ else
         if (string.Equals(_editingComputeId, provider.Id, StringComparison.OrdinalIgnoreCase))
             CancelCompute();
         _computeStatus = $"{provider.Name} removed.";
+    }
+
+    private void DuplicateCompute(ComputeProviderSettings provider)
+    {
+        ComputeProviderSettings copy = Compute.Duplicate(provider.Id);
+        _computeStatus = $"{copy.Name} added. Edit it to change its name or URL.";
     }
 
     private async Task BrowseComputeModel()

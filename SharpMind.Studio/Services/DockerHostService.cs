@@ -35,6 +35,8 @@ public sealed record DockerPublishRequest
     public required string TargetImage { get; init; }
 }
 
+public sealed record DockerPublishProgress(double? Fraction, string Message);
+
 /// <summary>
 /// Runs the local Compute container for the user: no terminal commands, no
 /// image tags to memorise. It shells out to the Docker CLI on the Studio host
@@ -194,7 +196,7 @@ public sealed class DockerHostService
     /// <summary>Logs in, tags and pushes an image to Docker Hub. No credentials are stored.</summary>
     public async Task PublishAsync(
         DockerPublishRequest request,
-        IProgress<string>? progress = null,
+        IProgress<DockerPublishProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -206,7 +208,7 @@ public sealed class DockerHostService
             || !request.TargetImage.Contains('/', StringComparison.Ordinal))
             throw new InvalidOperationException("The target image must be <user>/<repository>:<tag>.");
 
-        progress?.Report($"Signing in to Docker Hub as {request.DockerHubUser}…");
+        progress?.Report(new DockerPublishProgress(null, $"Signing in to Docker Hub as {request.DockerHubUser}…"));
         (int loginExit, _, string loginError) = await RunAsync(
             ["login", "-u", request.DockerHubUser, "--password-stdin"],
             cancellationToken,
@@ -214,20 +216,149 @@ public sealed class DockerHostService
         if (loginExit != 0)
             throw new InvalidOperationException($"Docker Hub login failed: {FirstLine(loginError)}");
 
-        progress?.Report($"Tagging {request.SourceImage}…");
+        progress?.Report(new DockerPublishProgress(null, $"Tagging {request.SourceImage}…"));
         (int tagExit, _, string tagError) = await RunAsync(
             ["tag", request.SourceImage, request.TargetImage], cancellationToken);
         if (tagExit != 0)
             throw new InvalidOperationException($"Docker tag failed: {FirstLine(tagError)}");
 
-        progress?.Report($"Pushing {request.TargetImage} — the first push can take several minutes…");
-        (int pushExit, string pushOutput, string pushError) = await RunAsync(
-            ["push", request.TargetImage], cancellationToken);
-        if (pushExit != 0)
-            throw new InvalidOperationException($"Docker push failed: {FirstLine(pushError)}");
+        progress?.Report(new DockerPublishProgress(0, $"Pushing {request.TargetImage}…"));
 
-        progress?.Report(pushOutput.Trim());
-        progress?.Report("Image published.");
+        var layers = new Dictionary<string, (double Current, double Total)>(StringComparer.Ordinal);
+        string? lastLine = null;
+
+        int pushExit = await RunStreamingAsync(
+            ["push", request.TargetImage],
+            line =>
+            {
+                foreach (string part in line.Split(
+                    '\r', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string clean = System.Text.RegularExpressions.Regex.Replace(
+                        part, "\u001b\\[[0-9;?]*[A-Za-z]", "").Trim();
+                    if (clean.Length == 0) continue;
+                    lastLine = clean;
+                    double? fraction = UpdatePushProgress(clean, layers);
+                    string message = fraction is { } value
+                        ? $"Pushing… {value * 100:0}%"
+                        : clean;
+                    progress?.Report(new DockerPublishProgress(fraction, message));
+                }
+            },
+            cancellationToken);
+
+        if (pushExit != 0)
+        {
+            string raw = lastLine ?? "Docker push failed.";
+            throw new InvalidOperationException(ExplainPushFailure(raw));
+        }
+
+        progress?.Report(new DockerPublishProgress(1, "Image published."));
+    }
+
+    /// <summary>
+    /// Parses Docker's non-TTY layer lines (<c>id: Pushing 12.3MB/45.6MB</c>)
+    /// into an aggregate fraction across all layers that have reported sizes.
+    /// </summary>
+    private static double? UpdatePushProgress(
+        string line,
+        Dictionary<string, (double Current, double Total)> layers)
+    {
+        int colon = line.IndexOf(':');
+        string key = colon > 0 ? line[..colon].Trim() : line.Trim();
+        if (key.Length == 0 || key.Length > 80) return Aggregate(layers);
+
+        string payload = colon > 0 ? line[(colon + 1)..] : line;
+
+        int slash = payload.IndexOf('/');
+        if (slash > 0 && payload.Contains("Pushing", StringComparison.OrdinalIgnoreCase))
+        {
+            string before = payload[..slash];
+            string after = payload[(slash + 1)..];
+            double? current = ParseBytes(before);
+            double? total = ParseBytes(after);
+            if (current is { } c && total is { } t && t > 0)
+            {
+                layers[key] = (Math.Min(c, t), t);
+                return Aggregate(layers);
+            }
+        }
+
+        if (payload.Contains("Pushed", StringComparison.OrdinalIgnoreCase)
+            && layers.TryGetValue(key, out (double Current, double Total) done))
+        {
+            layers[key] = (done.Total, done.Total);
+            return Aggregate(layers);
+        }
+
+        int percent = payload.IndexOf('%');
+        if (percent > 0)
+        {
+            int start = percent - 1;
+            while (start >= 0 && (char.IsDigit(payload[start]) || payload[start] == '.')) start--;
+            string number = payload[(start + 1)..percent];
+            if (double.TryParse(number, out double value) && value is >= 0 and <= 100)
+                return value / 100.0;
+        }
+
+        return Aggregate(layers);
+    }
+
+    private static double? Aggregate(Dictionary<string, (double Current, double Total)> layers)
+    {
+        if (layers.Count == 0) return null;
+        double current = layers.Values.Sum(layer => layer.Current);
+        double total = layers.Values.Sum(layer => layer.Total);
+        return total <= 0 ? null : Math.Clamp(current / total, 0, 1);
+    }
+
+    private static double? ParseBytes(string text)
+    {
+        string value = text.Trim();
+        int index = 0;
+        while (index < value.Length
+               && (char.IsDigit(value[index]) || value[index] == '.' || value[index] == ','))
+        {
+            index++;
+        }
+
+        if (index == 0) return null;
+        string number = value[..index].Replace(',', '.');
+        if (!double.TryParse(
+                number,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out double size))
+        {
+            return null;
+        }
+
+        string unit = value[index..].Trim().ToUpperInvariant();
+        double multiplier = unit switch
+        {
+            "B" => 1,
+            "KB" or "KIB" => 1024,
+            "MB" or "MIB" => 1024 * 1024,
+            "GB" or "GIB" => 1024L * 1024 * 1024,
+            _ => 0,
+        };
+        return multiplier == 0 ? null : size * multiplier;
+    }
+
+    private static string ExplainPushFailure(string raw)
+    {
+        string text = raw.Trim();
+        if (text.Contains("proxyconnect", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("192.168.65.1", StringComparison.Ordinal)
+            || text.Contains("i/o timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Docker Desktop's HTTP proxy timed out during the upload. Open Docker Desktop → "
+                + "Settings → Resources → Proxies and turn off 'Use system proxy' (or fix the proxy), "
+                + "then press Push image again. Layers already uploaded are reused. If a VPN or "
+                + "security tool is intercepting traffic, disconnect it for the push.";
+        }
+
+        return text;
     }
 
     public void StartDockerDesktop()
@@ -275,6 +406,42 @@ public sealed class DockerHostService
 
         await process.WaitForExitAsync(cancellationToken);
         return (process.ExitCode, await output, await error);
+    }
+
+    /// <summary>Runs Docker and forwards each output line as it arrives (push progress).</summary>
+    private static async Task<int> RunStreamingAsync(
+        IReadOnlyList<string> arguments,
+        Action<string> onLine,
+        CancellationToken cancellationToken)
+    {
+        var info = new ProcessStartInfo("docker")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (string argument in arguments)
+            info.ArgumentList.Add(argument);
+
+        using var process = new Process { StartInfo = info };
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data)) onLine(e.Data);
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (!string.IsNullOrWhiteSpace(e.Data)) onLine(e.Data);
+        };
+
+        if (!process.Start())
+            throw new InvalidOperationException("Docker could not be started.");
+
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        await process.WaitForExitAsync(cancellationToken);
+        process.WaitForExit(); // flush the asynchronous readers
+        return process.ExitCode;
     }
 
     private static string FirstLine(string value) =>

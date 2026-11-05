@@ -152,6 +152,34 @@ public sealed class ComputeSettingsStoreTests
     }
 
     [Fact]
+    public void Prefabs_DriveKindAndReload()
+    {
+        using var temp = new TempDirectory();
+        string settings = temp.Combine("compute.json");
+        var store = new ComputeSettingsStore(settings, temp.Combine("compute.key"));
+
+        ComputeProviderSettings runpod = store.Add(
+            "Runpod", ComputeProviderKinds.Remote, "https://pod", "t",
+            ComputeProviderPrefabs.Runpod);
+        Assert.Equal(ComputeProviderPrefabs.Runpod, runpod.Prefab);
+        Assert.Equal(ComputeProviderKinds.Remote, runpod.NormalizedKind);
+
+        ComputeProviderSettings local = store.Add(
+            "Local", ComputeProviderKinds.Remote, "http://127.0.0.1:8080", "t",
+            ComputeProviderPrefabs.LocalDocker);
+        Assert.Equal(ComputeProviderKinds.Local, local.NormalizedKind);
+
+        ComputeProviderSettings custom = store.Add(
+            "Custom", ComputeProviderKinds.Remote, "https://server", "t");
+        Assert.Equal(ComputeProviderPrefabs.Custom, custom.Prefab);
+
+        var reopened = new ComputeSettingsStore(settings, temp.Combine("compute.key"));
+        Assert.Equal(ComputeProviderPrefabs.Runpod, reopened.Find(runpod.Id)!.Prefab);
+        Assert.Equal(ComputeProviderKinds.Remote, reopened.Find(runpod.Id)!.NormalizedKind);
+        Assert.Equal(ComputeProviderPrefabs.LocalDocker, reopened.Find(local.Id)!.Prefab);
+    }
+
+    [Fact]
     public void RecordProbe_KeepsStatusAndHealth()
     {
         using var temp = new TempDirectory();

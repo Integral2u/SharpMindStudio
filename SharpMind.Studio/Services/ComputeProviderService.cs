@@ -35,9 +35,10 @@ public sealed class ComputeProviderService
         string name,
         string? kind,
         string? baseUrl,
-        string? token)
+        string? token,
+        string? prefab = null)
     {
-        ComputeProviderSettings provider = _store.Add(name, kind, baseUrl, token);
+        ComputeProviderSettings provider = _store.Add(name, kind, baseUrl, token, prefab);
         Changed?.Invoke();
         return provider;
     }
@@ -48,9 +49,10 @@ public sealed class ComputeProviderService
         string? kind,
         string? baseUrl,
         string? token,
-        string? defaultModel = null)
+        string? defaultModel = null,
+        string? prefab = null)
     {
-        bool updated = _store.Update(id, name, kind, baseUrl, token, defaultModel);
+        bool updated = _store.Update(id, name, kind, baseUrl, token, defaultModel, prefab);
         if (updated) Changed?.Invoke();
         return updated;
     }
@@ -135,6 +137,40 @@ public sealed class ComputeProviderService
     public void SetRunpodPod(string id, string? podId, string? status)
     {
         if (_store.SetRunpodPod(id, podId, status)) Changed?.Invoke();
+    }
+
+    public void SetPrefab(string id, string? prefab)
+    {
+        if (_store.SetPrefab(id, prefab)) Changed?.Invoke();
+    }
+
+    /// <summary>Copies a host's settings (including secrets) under a new id.</summary>
+    public ComputeProviderSettings Duplicate(string id)
+    {
+        ComputeProviderSettings source = _store.Find(id)
+            ?? throw new InvalidOperationException("The Compute host was not found.");
+
+        ComputeProviderSettings copy = _store.Add(
+            $"{source.Name} copy",
+            source.NormalizedKind,
+            source.BaseUrl,
+            _store.Token(id),
+            source.Prefab);
+        _store.SetDocker(
+            copy.Id,
+            source.DockerImage,
+            source.DockerPort ?? ComputeProviderPresets.DefaultPort,
+            source.UseGpu,
+            ComputeProviderPresets.ContainerName(copy.Id));
+        _store.SetStudioUrl(copy.Id, source.StudioUrl);
+        _store.SetRunpod(
+            copy.Id,
+            _store.RunpodApiKey(id),
+            source.RunpodImage,
+            source.RunpodGpuType,
+            source.RunpodDiskGb);
+        Changed?.Invoke();
+        return copy;
     }
 
     /// <summary>Cheap reachability check used by the provider dot and the Test button.</summary>

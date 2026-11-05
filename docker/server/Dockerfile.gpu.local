@@ -33,7 +33,12 @@ FROM nvidia/cuda:12.6.3-runtime-ubuntu24.04 AS cuda
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-COPY --from=cuda /usr/local/cuda/lib64/ /usr/local/cuda/lib64/
+# Only the CUDA user-space libraries the ILGPU plugin actually loads. The full
+# /usr/local/cuda/lib64 tree is ~1.8 GB; cuBLAS + cudart + nvJitLink are ~620 MB.
+COPY --from=cuda /usr/local/cuda/lib64/libcublas.so.12* /usr/local/cuda/lib64/
+COPY --from=cuda /usr/local/cuda/lib64/libcublasLt.so.12* /usr/local/cuda/lib64/
+COPY --from=cuda /usr/local/cuda/lib64/libcudart.so.12* /usr/local/cuda/lib64/
+COPY --from=cuda /usr/local/cuda/lib64/libnvJitLink.so.12* /usr/local/cuda/lib64/
 COPY --from=build /app/studio /app/studio
 COPY --from=build /app/compute /app/compute
 COPY --from=build /app/plugins /app/plugins

@@ -14,6 +14,9 @@ public sealed class ComputeProviderSettings
     public string Name { get; set; } = "SharpMind Compute";
     public string Kind { get; set; } = ComputeProviderKinds.Local;
 
+    /// <summary>Which Add/Edit flavour this host uses: local-docker, runpod or custom.</summary>
+    public string Prefab { get; set; } = ComputeProviderPrefabs.Custom;
+
     /// <summary>Host root, for example <c>http://127.0.0.1:8080</c> or a Runpod proxy URL.</summary>
     public string BaseUrl { get; set; } = ComputeProviderSettings.DefaultLocalUrl;
 
@@ -58,9 +61,7 @@ public sealed class ComputeProviderSettings
     public bool? Healthy { get; set; }
 
     public string NormalizedKind =>
-        string.Equals(Kind, ComputeProviderKinds.Remote, StringComparison.OrdinalIgnoreCase)
-            ? ComputeProviderKinds.Remote
-            : ComputeProviderKinds.Local;
+        ComputeProviderPrefabs.Find(Prefab).Kind;
 }
 
 public static class ComputeProviderKinds
@@ -72,6 +73,42 @@ public static class ComputeProviderKinds
         string.Equals(kind, Remote, StringComparison.OrdinalIgnoreCase)
             ? "Remote host"
             : "Local Docker";
+}
+
+/// <summary>
+/// A host flavour in the Add/Edit form. Adding another provider (Vultr, AWS,
+/// a bare server) is a new entry here plus its fields in the panel.
+/// </summary>
+public sealed record ComputeProviderPrefab(
+    string Id,
+    string Name,
+    string Kind,
+    string Description,
+    bool Docker,
+    bool Runpod);
+
+public static class ComputeProviderPrefabs
+{
+    public const string LocalDocker = "local-docker";
+    public const string Runpod = "runpod";
+    public const string Custom = "custom";
+
+    public static IReadOnlyList<ComputeProviderPrefab> All { get; } =
+    [
+        new(LocalDocker, "Local Docker", ComputeProviderKinds.Local,
+            "A container on this PC, started from Studio.", Docker: true, Runpod: false),
+        new(Runpod, "Runpod GPU", ComputeProviderKinds.Remote,
+            "Studio creates the GPU pod through Runpod's API.", Docker: false, Runpod: true),
+        new(Custom, "Custom remote server", ComputeProviderKinds.Remote,
+            "Any machine that already runs the SharpMind Server image.", Docker: false, Runpod: false),
+    ];
+
+    public static ComputeProviderPrefab Find(string? id) =>
+        All.FirstOrDefault(prefab =>
+            prefab.Id.Equals(id, StringComparison.OrdinalIgnoreCase))
+        ?? All[2];
+
+    public static string Normalize(string? id) => Find(id).Id;
 }
 
 /// <summary>The persisted set of Compute hosts and which one is the default.</summary>
@@ -174,15 +211,22 @@ public sealed class ComputeSettingsStore
         string name,
         string? kind,
         string? baseUrl,
-        string? token)
+        string? token,
+        string? prefab = null)
     {
+        ComputeProviderPrefab flavor = prefab is null
+            ? ComputeProviderPrefabs.Find(
+                string.Equals(kind, ComputeProviderKinds.Local, StringComparison.OrdinalIgnoreCase)
+                    ? ComputeProviderPrefabs.LocalDocker
+                    : ComputeProviderPrefabs.Custom)
+            : ComputeProviderPrefabs.Find(prefab);
+
         var provider = new ComputeProviderSettings
         {
             Id = $"compute-{Guid.NewGuid().ToString("n")[..10]}",
             Name = string.IsNullOrWhiteSpace(name) ? "SharpMind Compute" : name.Trim(),
-            Kind = string.Equals(kind, ComputeProviderKinds.Remote, StringComparison.OrdinalIgnoreCase)
-                ? ComputeProviderKinds.Remote
-                : ComputeProviderKinds.Local,
+            Kind = flavor.Kind,
+            Prefab = flavor.Id,
             BaseUrl = NormalizeBaseUrl(baseUrl),
             DockerPort = ComputeProviderPresets.DefaultPort,
             DockerImage = ComputeProviderPresets.DefaultImage,
@@ -210,7 +254,8 @@ public sealed class ComputeSettingsStore
         string? kind,
         string? baseUrl,
         string? token,
-        string? defaultModel = null)
+        string? defaultModel = null,
+        string? prefab = null)
     {
         lock (_gate)
         {
@@ -222,6 +267,12 @@ public sealed class ComputeSettingsStore
             provider.Kind = string.Equals(kind, ComputeProviderKinds.Remote, StringComparison.OrdinalIgnoreCase)
                 ? ComputeProviderKinds.Remote
                 : ComputeProviderKinds.Local;
+            provider.Prefab = prefab is null
+                ? (string.Equals(provider.Kind, ComputeProviderKinds.Local, StringComparison.OrdinalIgnoreCase)
+                    ? ComputeProviderPrefabs.LocalDocker
+                    : provider.Prefab)
+                : ComputeProviderPrefabs.Normalize(prefab);
+            provider.Kind = ComputeProviderPrefabs.Find(provider.Prefab).Kind;
             provider.BaseUrl = NormalizeBaseUrl(baseUrl);
             provider.StudioUrl = ComputeProviderPresets.DeriveStudioUrl(provider.BaseUrl);
 
@@ -441,6 +492,22 @@ public sealed class ComputeSettingsStore
         }
     }
 
+    /// <summary>Changes the host flavour and keeps Kind in sync with it.</summary>
+    public bool SetPrefab(string id, string? prefab)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.Prefab = ComputeProviderPrefabs.Normalize(prefab);
+            provider.Kind = ComputeProviderPrefabs.Find(provider.Prefab).Kind;
+            SaveLocked();
+            return true;
+        }
+    }
+
     public void RecordProbe(string id, bool healthy, string? status)
     {
         lock (_gate)
@@ -513,6 +580,18 @@ public sealed class ComputeSettingsStore
         {
             provider.Models ??= [];
             provider.UploadedModels ??= [];
+            if (string.IsNullOrWhiteSpace(provider.Prefab))
+            {
+                provider.Prefab = string.Equals(
+                    provider.Kind, ComputeProviderKinds.Local, StringComparison.OrdinalIgnoreCase)
+                    ? ComputeProviderPrefabs.LocalDocker
+                    : (!string.IsNullOrWhiteSpace(provider.RunpodPodId)
+                       || !string.IsNullOrWhiteSpace(provider.RunpodApiKeyProtected))
+                        ? ComputeProviderPrefabs.Runpod
+                        : ComputeProviderPrefabs.Custom;
+            }
+            provider.Prefab = ComputeProviderPrefabs.Normalize(provider.Prefab);
+            provider.Kind = ComputeProviderPrefabs.Find(provider.Prefab).Kind;
             provider.BaseUrl = NormalizeBaseUrl(provider.BaseUrl);
             provider.StudioUrl = string.IsNullOrWhiteSpace(provider.StudioUrl)
                 ? ComputeProviderPresets.DeriveStudioUrl(provider.BaseUrl)
@@ -532,6 +611,7 @@ public sealed class ComputeSettingsStore
                 Id = $"compute-{Guid.NewGuid().ToString("n")[..10]}",
                 Name = "Local Docker",
                 Kind = ComputeProviderKinds.Local,
+                Prefab = ComputeProviderPrefabs.LocalDocker,
                 BaseUrl = ComputeProviderSettings.DefaultLocalUrl,
                 DockerPort = ComputeProviderPresets.DefaultPort,
                 DockerImage = ComputeProviderPresets.DefaultImage,
