@@ -1,6 +1,8 @@
 # Studio in Docker
 
 This image runs the **Studio web app**, not the separate SharpMind Compute host.
+See `docker/README.md` for the local/cloud host matrix (RunPod, Vultr, Oracle
+Always Free, AWS Free Tier, SnapDeploy) and the persistent-data rules.
 
 ## Build
 
