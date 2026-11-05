@@ -73,8 +73,9 @@ reports what loaded and why inference may have stayed on the CPU:
 "acceleratorReason": "Inference on ilgpu (CUDA · cuBLAS)."
 ```
 
-- An unsupported model (LayerNorm, dense FFN) stays on the CPU and the reason is
-  reported; it does not fail the chat.
+- An unsupported model or shape stays on the CPU and the reason is reported; it
+  does not fail the chat. Inference covers RMSNorm/LayerNorm + gated or dense
+  GELU FFN; GPU training still requires RMSNorm + gated FFN.
 - `SHARPMIND_ACCELERATOR=auto` applies `ilgpu` to training jobs that do not name
   an accelerator. A job that names one is never overridden.
 - The driver (`libcuda.so.1`) is injected by the container runtime; the image
@@ -334,9 +335,9 @@ curl.exe -H "Authorization: Bearer ..." `
 ## Current limits
 
 - One model per host process; switching models unloads the previous one.
-- CPU inference and training in the published image. Training can use the
-  `ilgpu` accelerator plugin, and inference can too once it is wired to the
-  plugin's `IInferenceEngineFactory`; neither plugin ships in the image yet.
+- Training and inference use the CPU in the base image. The GPU server image
+  adds the `ilgpu` plugin; training requires RMSNorm + gated FFN, while
+  inference also supports LayerNorm + dense GELU FFN.
 - No tool calling yet; inference and training only.
 - No multi-tenant isolation; run one host per user/session.
 - Uploads live in `/data/SharpMind/Files`; keep the network volume attached so

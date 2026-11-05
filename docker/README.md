@@ -56,8 +56,9 @@ default. The combined image does both behind the same volume.
   not name an accelerator.
 - `/health` reports the plugin, its backend (`CUDA · cuBLAS` / `OpenCL`) and the
   reason for any CPU fallback.
-- The plugin supports RMSNorm + RoPE/NoPE + gated-FFN models. Train with the
-  LLaMA or Qwen preset to exercise it.
+- Inference supports RMSNorm or LayerNorm + RoPE/NoPE + gated or dense GELU FFN.
+  Training still requires RMSNorm + gated FFN, so use the LLaMA or Qwen preset
+  for GPU training.
 
 ## Build order
 

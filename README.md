@@ -75,7 +75,8 @@ completions and background training jobs. Add one under **Settings → Providers
   log and downloads the exported `.smm` back into the normal Training folder.
 
 Hosts are inference-only for now: Work tool calling needs a local model or
-OpenRouter, and the preview image runs on the CPU until the ILGPU plugin ships.
+OpenRouter. The GPU server image ships the ILGPU plugin, which reports its
+backend and any CPU fallback in `/health`.
 
 ## HuggingFace models
 

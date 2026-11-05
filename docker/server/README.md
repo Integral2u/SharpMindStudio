@@ -123,9 +123,10 @@ On Runpod use the pod's **Web Terminal** for the same two commands.
   unsupported model shape falls back to CPU and the reason appears in `/health`.
 - `SHARPMIND_ACCELERATOR=auto` makes training jobs use the plugin when they do
   not name an accelerator. An explicit job accelerator is never overridden.
-- The plugin only supports RMSNorm + RoPE/NoPE + gated-FFN models. A GPT-2 /
-  LayerNorm / dense-FFN model stays on the CPU by design; train with the
-  **LLaMA** or **Qwen** preset to exercise the GPU.
+- Inference supports RMSNorm or LayerNorm + RoPE/NoPE + gated or dense GELU FFN,
+  so GPT-2/BERT-style models now run on the GPU too. Training still supports
+  RMSNorm + gated FFN only; train with the **LLaMA** or **Qwen** preset for GPU
+  training (GPT-2 training stays on the CPU and says why).
 - The NVIDIA driver is mounted by the container runtime. The image only carries
   cuBLAS/cudart; `libcuda.so.1` must come from the host.
 
