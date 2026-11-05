@@ -111,6 +111,14 @@ docker run --rm -p 5117:5117 -p 5118:5118 `
 
 See `docker/studio/README.md` for compose, volumes and the data directory.
 
+### Compute host
+
+`SharpMind.Studio.ComputeHost` is the first Cloud/Compute service: one model per
+process, OpenAI-style chat completions, and background training jobs. Build it
+with `docker/compute/Dockerfile.local` or the package Dockerfile, then run it on
+local Docker or a GPU host such as Runpod. See `docker/compute/README.md` for
+the API, environment variables, local test commands and Runpod steps.
+
 ## Training smoke test (working notes)
 
 > This section is a pre-release helper and will be rewritten with the main README.

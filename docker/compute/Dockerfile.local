@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1.7
+# Local-source build. Context must be the parent folder containing both
+# SharpMind/ and SharpMind.Studio/:
+#   docker build -f SharpMind.Studio/docker/compute/Dockerfile.local -t sharpmind-compute:local ..
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY SharpMind.Studio/Directory.Build.props \
+     SharpMind.Studio/Directory.Packages.props \
+     SharpMind.Studio/SharpMind.References.props \
+     /src/SharpMind.Studio/
+
+COPY SharpMind/ /src/SharpMind/
+COPY SharpMind.Studio/SharpMind.Studio.Core/ /src/SharpMind.Studio/SharpMind.Studio.Core/
+COPY SharpMind.Studio/SharpMind.Studio.ComputeHost/ /src/SharpMind.Studio/SharpMind.Studio.ComputeHost/
+
+RUN dotnet restore /src/SharpMind.Studio/SharpMind.Studio.ComputeHost/SharpMind.Studio.ComputeHost.csproj
+RUN dotnet publish /src/SharpMind.Studio/SharpMind.Studio.ComputeHost/SharpMind.Studio.ComputeHost.csproj \
+    -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+COPY --from=build /app/publish .
+
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    SHARPMIND_DATA=/data/SharpMind \
+    SHARPMIND_MODELS_DIR=/data/SharpMind/Models \
+    SHARPMIND_PLUGINS=/app/plugins
+
+EXPOSE 8080
+VOLUME ["/data/SharpMind"]
+
+ENTRYPOINT ["dotnet", "SharpMind.Studio.ComputeHost.dll"]

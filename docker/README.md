@@ -4,8 +4,8 @@ There will be two images:
 
 | Image | What it is | Status |
 |---|---|---|
-| `docker/studio` | The Studio web app: chats, data, training, local models | Preview, build after the SharpMind 1.1.0 packages are on NuGet |
-| `docker/compute` | A SharpMind Compute host: inference and training API | Planned |
+| `docker/studio` | The Studio web app: chats, data, training, local models | Preview; local-source build works, package build after NuGet publish |
+| `docker/compute` | A SharpMind Compute host: inference and training API | Initial scaffold; local Docker and Runpod instructions included |
 
 Both are plain Docker images, so they run on local Docker or any host that
 provides a Docker daemon.

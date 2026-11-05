@@ -1,0 +1,18 @@
+services:
+  compute:
+    build:
+      # Parent folder containing both SharpMind/ and SharpMind.Studio/.
+      context: ../../..
+      dockerfile: SharpMind.Studio/docker/compute/Dockerfile.local
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      SHARPMIND_TOKEN: ${SHARPMIND_TOKEN:?Set SHARPMIND_TOKEN}
+      SHARPMIND_MODEL: ${SHARPMIND_MODEL:-}
+      SHARPMIND_DATA: /data/SharpMind
+      SHARPMIND_MODELS_DIR: /data/SharpMind/Models
+      SHARPMIND_PLUGINS: /app/plugins
+    volumes:
+      - ${SHARPMIND_DATA:-./compute-data}:/data/SharpMind
+    restart: unless-stopped
