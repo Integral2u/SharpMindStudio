@@ -38,6 +38,8 @@ public static class StudioPaths
     public static string WorkToolsFile => Path.Combine(Projects, "work-tools.json");
     public static string OpenRouterFile => Path.Combine(Projects, "openrouter.json");
     public static string OpenRouterKeyFile => Path.Combine(Projects, "openrouter.key");
+    public static string HuggingFaceFile => Path.Combine(Projects, "huggingface.json");
+    public static string HuggingFaceKeyFile => Path.Combine(Projects, "huggingface.key");
     public static string Gateway => Path.Combine(Projects, "Gateway");
 
     public static void EnsureCreated()

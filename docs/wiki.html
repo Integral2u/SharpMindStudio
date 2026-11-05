@@ -227,13 +227,14 @@
                 until we can validate the lifecycle and artifact download on a real host.
             </p>
 
-            <h2 id="huggingface">HuggingFace <span style="color:var(--warn);font-family:var(--mono);font-size:.65rem;">NEXT</span></h2>
+            <h2 id="huggingface">HuggingFace <span style="color:var(--teal);font-family:var(--mono);font-size:.65rem;">AVAILABLE</span></h2>
             <p>
-                Planned model discovery: search HuggingFace for GGUF repos, show license,
-                gated status, files, quantisation and size, then download to
-                <code>Models\</code> with progress and resume. An optional encrypted HF token
-                covers gated models. Downloaded GGUF files convert to <code>.smm</code> with
-                the existing converter.
+                Open <strong>Training → Models → Find GGUF models</strong>. Search the Hub,
+                inspect license, gated status, files, quantisation and size, then download
+                into <code>Models\</code> with progress and resume. An optional encrypted
+                HuggingFace token covers gated repositories. Downloaded GGUF files can be
+                converted to <code>.smm</code> with the converter directly below the
+                browser.
             </p>
 
             <h2 id="security">Security and privacy</h2>
@@ -259,8 +260,8 @@
 
             <h2 id="roadmap">Roadmap</h2>
             <ol>
-                <li>Static site and public preview.</li>
-                <li>HuggingFace GGUF discovery and download.</li>
+                <li>Static site and public preview <span style="color:var(--teal);">(built, awaiting publish)</span>.</li>
+                <li>HuggingFace GGUF discovery and download <span style="color:var(--teal);">(available)</span>.</li>
                 <li>Cloud compute: Docker host, inference and training, artifact export.</li>
                 <li>Provider adapters for more GPU hosts.</li>
                 <li>First packaged release.</li>

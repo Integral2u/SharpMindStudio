@@ -47,6 +47,9 @@ First public repository release.
 - **Data Factory** — a saved pipeline under **Training > Data**: source files or
   JSONL, cleaning and filters, a local or OpenRouter provider transform, preview
   and sample review, then chat or text JSONL export ready for SFT or pretraining.
+- **HuggingFace model browser** — search the Hub for GGUF repositories, inspect
+  license/gated status/files/quantisation/size, download to `Models` with resume,
+  and store an encrypted token for gated repositories.
 
 ### Changed
 

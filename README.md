@@ -40,6 +40,18 @@ Only the model conversation and the tool results the model asks for are sent to
 OpenRouter. OpenAI-style tool calling is supported, including the provider's
 native streaming tool-call deltas.
 
+## HuggingFace models
+
+Open **Training > Models** and use **Find GGUF models**:
+
+- search the HuggingFace Hub for GGUF repositories
+- inspect license, gated status, files, quantisation and size
+- download to `%USERPROFILE%\SharpMind\Models` with progress and resume
+- save an encrypted HuggingFace token for gated repositories
+
+Downloaded GGUF files can be converted to `.smm` with the converter directly
+below the browser, or used as local models where supported.
+
 ## Data Factory
 
 Open **Training > Data** to build a dataset as a saved recipe (`.smmdf`):

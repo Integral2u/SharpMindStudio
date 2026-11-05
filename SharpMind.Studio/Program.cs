@@ -3,6 +3,7 @@ using SharpMind.Studio.Components;
 using SharpMind.Studio.Services;
 using SharpMind.Studio.Core.Storage;
 using SharpMind.Studio.Core.Gateway;
+using SharpMind.Studio.Core.HuggingFace;
 using SharpMind.Studio.Core.OpenRouter;
 using Yarp.ReverseProxy.Forwarder;
 
@@ -26,6 +27,10 @@ builder.Services.AddSingleton<ModelCatalogService>();
 builder.Services.AddSingleton<InferenceSettingsService>();
 builder.Services.AddSingleton<OpenRouterSettingsService>();
 builder.Services.AddHttpClient<OpenRouterClient>(client =>
+{
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddHttpClient<HuggingFaceClient>(client =>
 {
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
@@ -54,6 +59,7 @@ builder.Services.AddScoped<PathPickerService>();
 builder.Services.AddScoped<StudioWorkService>();
 builder.Services.AddScoped<StudioChatService>();
 builder.Services.AddScoped<DataFactoryService>();
+builder.Services.AddScoped<HuggingFaceService>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()

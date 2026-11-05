@@ -988,6 +988,17 @@ else if (_tab == "runs")
 }
 else if (_tab == "models")
 {
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">HuggingFace</div>
+                <h2>Find GGUF models</h2>
+            </div>
+            <span class="faint small mono">download to Models</span>
+        </div>
+        <HuggingFaceBrowser OnDownloaded="OnModelDownloaded" />
+    </section>
+
     <section class="panel training-convert">
         <div class="panel-head">
             <div>
@@ -1295,6 +1306,13 @@ else if (_tab == "models")
     });
 
     private void OnExamChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnModelDownloaded(string path) => _ = InvokeAsync(() =>
+    {
+        _convertSource = path;
+        SuggestDestination();
+        StateHasChanged();
+    });
 
     private void PickSource(ChangeEventArgs args)
     {

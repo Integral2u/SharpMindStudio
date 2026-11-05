@@ -1,0 +1,213 @@
+@using SharpMind.Studio.Core.HuggingFace
+@using SharpMind.Studio.Services
+@inject HuggingFaceService HF
+@inject IJSRuntime JS
+
+<div class="panel-body stack">
+    <div class="row" style="align-items:flex-end; gap:.6rem; flex-wrap:wrap;">
+        <div class="field" style="min-width:20rem;">
+            <label class="field-label" for="hf-token">HuggingFace token (optional)</label>
+            <input id="hf-token" class="input" type="password" @bind="_token"
+                   placeholder="@(HF.HasToken ? "Token configured - leave blank to keep" : "hf_... for gated models")"
+                   autocomplete="off" />
+        </div>
+        <div class="row" style="align-items:center;">
+            <span class="provider-dot @(HF.HasToken ? "on" : "off")"></span>
+            <button type="button" class="button" @onclick="SaveToken">Save token</button>
+            @if (HF.HasToken)
+            {
+                <button type="button" class="button danger" @onclick="ClearToken">Clear token</button>
+            }
+        </div>
+    </div>
+    <div class="small faint">
+        The token is encrypted locally and only used for gated repositories. Downloading
+        public GGUF files needs no token.
+    </div>
+
+    <div class="row">
+        <input class="input" @bind="HF.Query" @bind:event="oninput"
+               @onkeydown="OnSearchKey"
+               placeholder="Search HuggingFace for GGUF models, e.g. tinyllama, qwen, gemma" />
+        <button type="button" class="button primary" @onclick="SearchAsync"
+                disabled="@HF.IsSearching">
+            @(HF.IsSearching ? "Searching..." : "Search")
+        </button>
+    </div>
+
+    <div class="status-line">@HF.Status</div>
+    @if (HF.Error is not null)
+    {
+        <div class="error-line">@HF.Error</div>
+    }
+
+    @if (HF.Results.Count > 0)
+    {
+        <div class="training-jobs">
+            @foreach (HuggingFaceRepo repo in HF.Results)
+            {
+                <div class="training-job">
+                    <div>
+                        <strong>@repo.Id</strong>
+                        <div class="small faint">
+                            @if (!string.IsNullOrWhiteSpace(repo.Author))
+                            {
+                                <span>@repo.Author · </span>
+                            }
+                            <span>@repo.Downloads.ToString("N0") downloads · @repo.Likes.ToString("N0") likes</span>
+                            @if (!string.IsNullOrWhiteSpace(repo.License))
+                            {
+                                <span> · @repo.License</span>
+                            }
+                            @if (repo.LastModified is { } modified)
+                            {
+                                <span> · @modified.ToLocalTime().ToString("dd MMM yyyy")</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="row">
+                        @if (repo.Gated)
+                        {
+                            <span class="training-chip">gated</span>
+                        }
+                        <span class="training-chip">@repo.GgufFileCount GGUF</span>
+                        <button type="button" class="button"
+                                @onclick="() => SelectRepoAsync(repo)"
+                                disabled="@(HF.IsLoadingFiles || HF.IsDownloading)">
+                            Files
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (!HF.IsSearching && !string.IsNullOrWhiteSpace(HF.Query) &&
+             HF.Status.StartsWith("No GGUF", StringComparison.Ordinal))
+    {
+        <div class="empty">No GGUF repositories matched that search.</div>
+    }
+
+    @if (HF.SelectedRepo is { } selected)
+    {
+        <div class="training-subsection">
+            <div class="training-subsection-head">
+                <label class="field-label">@selected.Id</label>
+                <span class="faint small">@HF.Files.Count GGUF file(s)</span>
+            </div>
+            @if (HF.IsLoadingFiles)
+            {
+                <div class="row"><span class="spinner-ring"></span><span class="small faint">Reading files...</span></div>
+            }
+            else if (HF.Files.Count == 0)
+            {
+                <div class="small faint">No GGUF files in this repository.</div>
+            }
+            else
+            {
+                @foreach (HuggingFaceFile file in HF.Files)
+                {
+                    <div class="training-job">
+                        <div>
+                            <strong class="mono">@file.FileName</strong>
+                            <div class="small faint">
+                                @FormatSize(file.Size)
+                                @if (!string.IsNullOrWhiteSpace(file.Quantization))
+                                {
+                                    <span> · @file.Quantization</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="row">
+                            <button type="button" class="button primary"
+                                    @onclick="() => DownloadAsync(file)"
+                                    disabled="@HF.IsDownloading">
+                                Download
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    }
+
+    @if (HF.IsDownloading)
+    {
+        <div class="progress-track">
+            <div class="progress-fill" style="width:@Percent"></div>
+        </div>
+        <div class="row" style="align-items:center;">
+            <span class="small faint">
+                @FormatSize(HF.DownloadedBytes)
+                @if (HF.TotalBytes is { } total)
+                {
+                    <span> / @FormatSize(total)</span>
+                }
+            </span>
+            <button type="button" class="button danger" @onclick="HF.Cancel">Cancel</button>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(HF.DownloadPath))
+    {
+        <div class="small faint">
+            Saved to <span class="mono">@HF.DownloadPath</span>. Convert it to <span class="mono">.smm</span>
+            below, or use it directly as a local model.
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback<string> OnDownloaded { get; set; }
+
+    private string _token = "";
+
+    protected override void OnInitialized() => HF.Changed += OnHfChanged;
+
+    public void Dispose() => HF.Changed -= OnHfChanged;
+
+    private void OnHfChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void SaveToken()
+    {
+        HF.SaveToken(_token);
+        _token = "";
+    }
+
+    private async Task ClearToken()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", "Delete the saved HuggingFace token?");
+        if (confirmed) HF.ClearToken();
+    }
+
+    private Task SearchAsync() => HF.SearchAsync();
+
+    private async Task OnSearchKey(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !HF.IsSearching)
+            await HF.SearchAsync();
+    }
+
+    private Task SelectRepoAsync(HuggingFaceRepo repo) => HF.SelectRepoAsync(repo);
+
+    private async Task DownloadAsync(HuggingFaceFile file)
+    {
+        string? path = await HF.DownloadAsync(file);
+        if (path is not null)
+            await OnDownloaded.InvokeAsync(path);
+    }
+
+    private string Percent => HF.DownloadPercent is { } percent
+        ? (percent * 100).ToString("0") + "%"
+        : "0%";
+
+    private static string FormatSize(long? bytes)
+    {
+        if (bytes is null or <= 0) return "size unknown";
+        double value = bytes.Value;
+        if (value >= 1024d * 1024 * 1024) return $"{value / (1024d * 1024 * 1024):F2} GB";
+        if (value >= 1024d * 1024) return $"{value / (1024d * 1024):F1} MB";
+        if (value >= 1024d) return $"{value / 1024d:F1} KB";
+        return $"{value:F0} B";
+    }
+}
