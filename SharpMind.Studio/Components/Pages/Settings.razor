@@ -12,6 +12,7 @@
 @inject ComputeProviderService Compute
 @inject DockerHostService Docker
 @inject RunpodService Runpod
+@inject SshHostService Ssh
 @inject HuggingFaceService HuggingFace
 @inject ModelCatalogService Catalog
 @inject GatewayService Gateway
@@ -521,6 +522,120 @@ else if (_tab == "openrouter")
                                        @bind="_runpodDisk" />
                             </div>
                         }
+                        else
+                        {
+                            <div class="field training-form-wide">
+                                <label class="field-label" for="compute-remote-image">Server image</label>
+                                <div class="row">
+                                    <input id="compute-remote-image" class="input" @bind="_computeImage"
+                                           placeholder="@ComputeProviderPresets.DefaultServerImage" />
+                                    @if (Compute.RegistryImage is { Length: > 0 } published
+                                         && !string.Equals(published, _computeImage, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <button type="button" class="button"
+                                                @onclick="() => _computeImage = published"
+                                                title="Use the image last pushed from this panel.">Use published</button>
+                                    }
+                                </div>
+                                <span class="small faint">
+                                    A registry name such as <span class="mono">your-name/sharpmind-server:gpu</span>.
+                                    The SSH helper pulls this image on the host.
+                                </span>
+                            </div>
+
+                            <div class="field training-form-wide">
+                                <label class="field-label">SSH setup (optional)</label>
+                                <span class="small faint">
+                                    Lets Studio install Docker, pull the image and start the container on
+                                    the host. Without it, set the host up yourself and use Test.
+                                </span>
+                            </div>
+
+                            <div class="field">
+                                <label class="field-label" for="compute-ssh-host">SSH host</label>
+                                <input id="compute-ssh-host" class="input" @bind="_computeSshHost"
+                                       placeholder="203.0.113.10 or host.example.com" />
+                                <span class="small faint">Blank uses the Base URL's host when it is not loopback.</span>
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="compute-ssh-port">SSH port</label>
+                                <input id="compute-ssh-port" class="input" type="number" min="1" max="65535"
+                                       @bind="_computeSshPort" />
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="compute-ssh-user">SSH user</label>
+                                <input id="compute-ssh-user" class="input" @bind="_computeSshUser"
+                                       placeholder="root" />
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="compute-ssh-container">Container name</label>
+                                <input id="compute-ssh-container" class="input" @bind="_computeSshContainer"
+                                       placeholder="sharpmind" />
+                            </div>
+
+                            <div class="field training-form-wide">
+                                <label class="field-label" for="compute-ssh-key">Private key</label>
+                                <div class="row">
+                                    <input id="compute-ssh-key" class="input" @bind="_computeSshKeyPath"
+                                           placeholder="Blank: %USERPROFILE%\.ssh\id_ed25519" />
+                                    <button type="button" class="button" @onclick="BrowseSshKey"
+                                            title="Choose an OpenSSH or PEM private key.">Browse</button>
+                                    <button type="button" class="button" @onclick="CreateSshKey"
+                                            title="Create a new ed25519 key pair in %USERPROFILE%\.ssh when none exists.">
+                                        Create key
+                                    </button>
+                                </div>
+                                <span class="small faint">
+                                    The key is read from this PC and never copied to the host.
+                                    A password below can be used instead.
+                                </span>
+                                @if (_sshKeyStatus.Length > 0)
+                                {
+                                    <div class="status-line">@_sshKeyStatus</div>
+                                }
+                                @if (_sshPublicKey.Length > 0)
+                                {
+                                    <textarea class="input mono" readonly rows="2" style="font-size:.72rem;"
+                                              title="Paste this public key into the host's ~/.ssh/authorized_keys.">@_sshPublicKey</textarea>
+                                    <div class="row">
+                                        <button type="button" class="button"
+                                                @onclick="CopySshPublicKey"
+                                                title="Copy the public key for the provider's SSH key field or the host console.">
+                                            Copy public key
+                                        </button>
+                                        <span class="small faint">
+                                            Add this once to the host (or to the instance at creation), then
+                                            press Test SSH.
+                                        </span>
+                                    </div>
+                                }
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="compute-ssh-passphrase">Key passphrase</label>
+                                <input id="compute-ssh-passphrase" class="input" type="password"
+                                       @bind="_computeSshPassphrase" autocomplete="off"
+                                       placeholder="@(_editingComputeId is null ? "if the key is encrypted" : "leave blank to keep")" />
+                            </div>
+                            <div class="field">
+                                <label class="field-label" for="compute-ssh-password">SSH password</label>
+                                <input id="compute-ssh-password" class="input" type="password"
+                                       @bind="_computeSshPassword" autocomplete="off"
+                                       placeholder="@(_editingComputeId is null ? "alternative to a key" : "leave blank to keep")" />
+                                <span class="small faint">Stored encrypted with the same local key as the token.</span>
+                            </div>
+                            <div class="field training-form-wide">
+                                <label class="small">
+                                    <input type="checkbox" @bind="_computeUseGpu" />
+                                    GPU host — run the container with <span class="mono">--gpus all</span>
+                                    and install the NVIDIA container toolkit when missing
+                                </label>
+                                <span class="small faint">
+                                    The NVIDIA driver itself must already be on the host; use a GPU image
+                                    from the provider or install the driver first. From-scratch pretraining
+                                    still runs on the CPU.
+                                </span>
+                            </div>
+                        }
                     </div>
                     <div class="row">
                         <button type="button" class="button primary" @onclick="SaveCompute">Save host</button>
@@ -604,6 +719,10 @@ else if (_tab == "openrouter")
                         else if (provider.Prefab == ComputeProviderPrefabs.Runpod)
                         {
                             <text>1. Deploy pod · 2. Upload a model for Chat · 3. Train (no model needed)</text>
+                        }
+                        else if (provider.Prefab == ComputeProviderPrefabs.Vultr)
+                        {
+                            <text>1. Set up &amp; deploy over SSH · 2. Upload a model for Chat · 3. Train (no model needed)</text>
                         }
                         else
                         {
@@ -823,6 +942,62 @@ else if (_tab == "openrouter")
                                 Deploy uses the saved API key and image; if you just typed them, press
                                 <strong>Edit → Save host</strong> first. When the pod reports RUNNING,
                                 Studio fills the API and Studio URLs and tests the host.
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="training-subsection">
+                            <div class="training-subsection-head">
+                                <label class="field-label">SSH setup</label>
+                                <div class="row">
+                                    <button type="button" class="button"
+                                            @onclick="() => TestSshAsync(provider.Id)"
+                                            disabled="@_sshBusy"
+                                            title="Connect over SSH and show the OS, Docker and NVIDIA state.">
+                                        Test SSH
+                                    </button>
+                                    <button type="button" class="button primary"
+                                            @onclick="() => SetupSshAsync(provider.Id)"
+                                            disabled="@_sshBusy"
+                                            title="Install Docker (and the NVIDIA toolkit on a GPU host), pull the image and start the container.">
+                                        @SshBusyLabel(provider.Id, "Set up & deploy")
+                                    </button>
+                                    <button type="button" class="button"
+                                            @onclick="() => SshLogsAsync(provider.Id)"
+                                            disabled="@_sshBusy"
+                                            title="Show the last lines from the container on the host.">
+                                        Container logs
+                                    </button>
+                                    <button type="button" class="button"
+                                            @onclick="() => SshStopAsync(provider.Id)"
+                                            disabled="@_sshBusy"
+                                            title="Stop the container on the host. Its data folder is kept.">
+                                        Stop
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="small faint">@Compute.DescribeSsh(provider.Id)</div>
+                            @if (_sshHostId == provider.Id)
+                            {
+                                @if (_sshStage is { Length: > 0 })
+                                {
+                                    <div class="status-line">@_sshStage</div>
+                                }
+                                @if (_sshError is { Length: > 0 })
+                                {
+                                    <div class="error-line">@_sshError</div>
+                                }
+                                @if (_sshLog.Length > 0)
+                                {
+                                    <pre class="small mono" style="max-height:14rem;overflow:auto;">@_sshLog</pre>
+                                }
+                            }
+                            <div class="small faint">
+                                Setup needs TCP 22 open to this PC, plus 8080 and 5117 for the
+                                container. The SSH password/passphrase is stored encrypted; the
+                                host key is trusted on first use. If the provider firewall blocks
+                                the ports, start it and open them on the instance page.
                             </div>
                         </div>
                     }
@@ -1108,6 +1283,21 @@ else
     private string? _dockerError;
     private string? _dockerLogs;
     private DockerEngineStatus? _dockerEngine;
+    private bool _sshBusy;
+    private string? _sshHostId;
+    private string? _sshStage;
+    private string? _sshError;
+    private string _sshLog = "";
+    private readonly List<string> _sshLines = [];
+    private string _computeSshHost = "";
+    private int _computeSshPort = SshTargets.DefaultPort;
+    private string _computeSshUser = SshTargets.DefaultUser;
+    private string _computeSshKeyPath = "";
+    private string _computeSshPassphrase = "";
+    private string _computeSshPassword = "";
+    private string _computeSshContainer = "sharpmind";
+    private string _sshKeyStatus = "";
+    private string _sshPublicKey = "";
     private string _computeModelPath = "";
     private double _computeUploadProgress;
     private string? _uploadingId;
@@ -1474,6 +1664,7 @@ else
         _runpodImage = Compute.RegistryImage ?? ComputeProviderPresets.DefaultServerImage;
         _runpodGpu = ComputeProviderPresets.DefaultGpuType;
         _runpodDisk = ComputeProviderPresets.DefaultRunpodDiskGb;
+        ResetSshEditor();
         _runpodStatus = null;
         _computeStatus = null;
         _computeError = null;
@@ -1490,7 +1681,9 @@ else
         _computeKind = provider.NormalizedKind;
         _computeBaseUrl = provider.BaseUrl;
         _computeToken = "";
-        _computeImage = provider.DockerImage ?? ComputeProviderPresets.DefaultImage;
+        _computeImage = provider.Prefab is ComputeProviderPrefabs.Vultr or ComputeProviderPrefabs.Custom
+            ? SshSetupScript.ResolveImage(provider, Compute.RegistryImage)
+            : provider.DockerImage ?? ComputeProviderPresets.DefaultImage;
         _computePort = provider.DockerPort ?? ComputeProviderPresets.DefaultPort;
         _computeUseGpu = provider.UseGpu;
         _computePodId = "";
@@ -1498,6 +1691,7 @@ else
             ?? ComputeProviderPresets.DeriveStudioUrl(provider.BaseUrl)
             ?? "";
         _computeShowToken = false;
+        LoadSshEditor(provider);
         _runpodKey = "";
         _runpodImage = string.IsNullOrWhiteSpace(provider.RunpodImage)
             || string.Equals(provider.RunpodImage, ComputeProviderPresets.DefaultServerImage, StringComparison.OrdinalIgnoreCase)
@@ -1559,6 +1753,7 @@ else
             ApplyDockerSettings(provider.Id);
             Compute.SetStudioUrl(provider.Id, _computeStudioUrl);
             SaveRunpodSettings(provider.Id);
+            SaveSshSettings(provider.Id);
             _computeStatus = local
                 ? "Host added. Press Start container below."
                 : "Host added. Press Test to read its models.";
@@ -1575,6 +1770,7 @@ else
             ApplyDockerSettings(_editingComputeId);
             Compute.SetStudioUrl(_editingComputeId, _computeStudioUrl);
             SaveRunpodSettings(_editingComputeId);
+            SaveSshSettings(_editingComputeId);
             _computeStatus = "Compute host saved.";
         }
 
@@ -1599,6 +1795,11 @@ else
 
         if (_computePrefab == ComputeProviderPrefabs.LocalDocker)
             SyncComputeStudioUrl();
+        else if (_computePrefab is ComputeProviderPrefabs.Vultr or ComputeProviderPrefabs.Custom
+                 && string.Equals(_computeImage, ComputeProviderPresets.DefaultImage, StringComparison.OrdinalIgnoreCase))
+        {
+            _computeImage = Compute.RegistryImage ?? ComputeProviderPresets.DefaultServerImage;
+        }
     }
 
     private void ApplyDockerSettings(string id)
@@ -1619,6 +1820,357 @@ else
             _runpodImage,
             _runpodGpu,
             _runpodDisk);
+    }
+
+    private void ResetSshEditor()
+    {
+        _computeSshHost = "";
+        _computeSshPort = SshTargets.DefaultPort;
+        _computeSshUser = SshTargets.DefaultUser;
+        _computeSshKeyPath = "";
+        _computeSshPassphrase = "";
+        _computeSshPassword = "";
+        _computeSshContainer = "sharpmind";
+        _sshKeyStatus = "";
+        _sshPublicKey = "";
+    }
+
+    private void LoadSshEditor(ComputeProviderSettings provider)
+    {
+        _computeSshHost = provider.SshHost ?? "";
+        _computeSshPort = provider.SshPort is > 0 and <= 65535
+            ? provider.SshPort.Value
+            : SshTargets.DefaultPort;
+        _computeSshUser = string.IsNullOrWhiteSpace(provider.SshUser)
+            ? SshTargets.DefaultUser
+            : provider.SshUser;
+        _computeSshKeyPath = provider.SshKeyPath ?? "";
+        _computeSshPassphrase = "";
+        _computeSshPassword = "";
+        _computeSshContainer = string.IsNullOrWhiteSpace(provider.SshContainerName)
+            ? "sharpmind"
+            : provider.SshContainerName;
+        _sshKeyStatus = "";
+        _sshPublicKey = ReadPublicKey(provider.SshKeyPath);
+    }
+
+    private static string ReadPublicKey(string? privateKeyPath)
+    {
+        if (string.IsNullOrWhiteSpace(privateKeyPath)) return "";
+        try
+        {
+            string publicPath = privateKeyPath + ".pub";
+            return File.Exists(publicPath) ? File.ReadAllText(publicPath).Trim() : "";
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private void SaveSshSettings(string id)
+    {
+        Compute.SetSsh(
+            id,
+            _computeSshHost,
+            _computeSshPort,
+            _computeSshUser,
+            _computeSshKeyPath,
+            string.IsNullOrWhiteSpace(_computeSshPassword) ? null : _computeSshPassword,
+            string.IsNullOrWhiteSpace(_computeSshPassphrase) ? null : _computeSshPassphrase,
+            _computeSshContainer,
+            _computeUseGpu);
+    }
+
+    private async Task BrowseSshKey()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            SshKeyStartFolder(),
+            "Choose an SSH private key");
+        if (selection?.Path is { Length: > 0 } path)
+        {
+            _computeSshKeyPath = path;
+            _sshPublicKey = ReadPublicKey(path);
+            _sshKeyStatus = _sshPublicKey.Length > 0
+                ? "Selected an existing key. Copy its public key if the host does not know it yet."
+                : "Selected a key without a .pub file. The host must already trust this key.";
+        }
+    }
+
+    private void CreateSshKey()
+    {
+        _sshKeyStatus = "";
+        try
+        {
+            string path = string.IsNullOrWhiteSpace(_computeSshKeyPath)
+                ? SshKeyGenerator.DefaultPrivateKeyPath
+                : _computeSshKeyPath;
+            bool existed = File.Exists(path);
+            SshKeyPair pair = SshKeyGenerator.Ensure(
+                string.IsNullOrWhiteSpace(_computeSshKeyPath) ? null : _computeSshKeyPath);
+            _computeSshKeyPath = pair.PrivateKeyPath;
+            _sshPublicKey = pair.PublicKey;
+            _sshKeyStatus = existed
+                ? $"Using the existing key at {pair.PrivateKeyPath}. Add its public key to the host if it is not there yet."
+                : $"Created {pair.PrivateKeyPath}. Add the public key to the host, then press Test SSH.";
+        }
+        catch (Exception ex)
+        {
+            _sshKeyStatus = $"Could not create a key: {ex.Message}";
+        }
+    }
+
+    private async Task CopySshPublicKey()
+    {
+        if (_sshPublicKey.Length == 0) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _sshPublicKey);
+            _sshKeyStatus = "Public key copied.";
+        }
+        catch (Exception ex)
+        {
+            _sshKeyStatus = $"Could not copy the public key: {ex.Message}";
+        }
+    }
+
+    private static string SshKeyStartFolder()
+    {
+        string ssh = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
+        return Directory.Exists(ssh) ? ssh : "";
+    }
+
+    private string SshBusyLabel(string id, string fallback) =>
+        _sshBusy && string.Equals(_sshHostId, id, StringComparison.OrdinalIgnoreCase)
+            ? "Working…"
+            : fallback;
+
+    private void ResetSshLog()
+    {
+        _sshLines.Clear();
+        _sshLog = "";
+        _sshError = null;
+        _sshStage = null;
+    }
+
+    private void AddSshLine(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return;
+        string text = line.TrimEnd();
+        if (text.StartsWith("SM_", StringComparison.Ordinal)) return;
+        const int maxLines = 400;
+        _sshLines.Add(text);
+        if (_sshLines.Count > maxLines)
+            _sshLines.RemoveRange(0, _sshLines.Count - maxLines);
+        _sshLog = string.Join('\n', _sshLines);
+    }
+
+    private IProgress<SshProgress> SshProgressFor(string id) =>
+        new Progress<SshProgress>(progress => _ = InvokeAsync(() =>
+        {
+            if (!string.Equals(_sshHostId, id, StringComparison.OrdinalIgnoreCase)) return;
+            _sshStage = StageLabel(progress.Stage);
+            AddSshLine(progress.Line);
+            StateHasChanged();
+        }));
+
+    private static string StageLabel(string stage) => stage switch
+    {
+        "connect" => "Connecting over SSH…",
+        "probe" => "Checking the host…",
+        "docker" => "Installing Docker…",
+        "toolkit" => "Installing the NVIDIA container toolkit…",
+        "pull" => "Pulling the server image…",
+        "run" => "Starting the container…",
+        "ready" => "Container is running.",
+        "logs" => "Reading container logs…",
+        "stop" => "Stopping the container…",
+        _ => "Working…",
+    };
+
+    private async Task TestSshAsync(string id)
+    {
+        if (_sshBusy) return;
+        _sshBusy = true;
+        _sshHostId = id;
+        ResetSshLog();
+        _sshStage = "Connecting over SSH…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            SshCredentials credentials = Compute.SshCredentials(id)
+                ?? throw new InvalidOperationException(
+                    "No SSH host is configured. Press Edit and add the host, user and key or password.");
+            SshProbe probe = await Ssh.ProbeAsync(credentials, SshProgressFor(id));
+            AddSshLine(probe.Summary);
+            _sshStage = probe.HasDocker
+                ? $"SSH works. Docker {probe.DockerVersion} is installed."
+                : "SSH works. Docker is not installed yet; Set up & deploy installs it.";
+            if (probe.HasGpu)
+                AddSshLine($"GPU: {probe.Gpu}");
+            if (probe.HasGpu && !probe.HasNvidiaToolkit)
+                AddSshLine("NVIDIA container toolkit is missing; setup installs it on a GPU host.");
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            _sshError = ex.Message;
+            AddSshLine($"ERROR: {ex.Message}");
+        }
+        finally
+        {
+            _sshBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SetupSshAsync(string id)
+    {
+        if (_sshBusy) return;
+        ComputeProviderSettings? provider = Compute.Find(id);
+        if (provider is null) return;
+
+        _sshBusy = true;
+        _sshHostId = id;
+        ResetSshLog();
+        _sshStage = "Connecting over SSH…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            SshCredentials credentials = Compute.SshCredentials(id)
+                ?? throw new InvalidOperationException(
+                    "No SSH host is configured. Press Edit and add the host, user and key or password.");
+
+            string token = Compute.EnsureToken(id);
+            var request = new SshSetupRequest
+            {
+                Image = SshSetupScript.ResolveImage(provider, Compute.RegistryImage),
+                Token = token,
+                ContainerName = string.IsNullOrWhiteSpace(provider.SshContainerName)
+                    ? "sharpmind"
+                    : provider.SshContainerName,
+                UseGpu = provider.UseGpu,
+            };
+            AddSshLine($"Deploying {request.Image} as '{request.ContainerName}' on {credentials.Target.Display}.");
+            SshSetupResult result = await Ssh.SetupAsync(credentials, request, SshProgressFor(id));
+            foreach (string warning in result.Warnings) AddSshLine($"Warning: {warning}");
+
+            if (Uri.TryCreate(provider.BaseUrl, UriKind.Absolute, out Uri? current)
+                && SshTargets.IsLoopback(current.Host))
+            {
+                Compute.SetBaseUrl(id, $"http://{credentials.Target.Host}:{request.ApiPort}");
+                AddSshLine($"Base URL set to http://{credentials.Target.Host}:{request.ApiPort}.");
+            }
+
+            _sshStage = $"Container '{result.ContainerName}' is {result.ContainerStatus}.";
+            AddSshLine(_sshStage);
+
+            try
+            {
+                using var apiTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+                await Compute.TestAsync(id, apiTimeout.Token);
+                _sshStage += " Compute API answered /health.";
+                AddSshLine("Compute API answered /health.");
+            }
+            catch (OperationCanceledException)
+            {
+                _sshStage += " API did not answer within 25 seconds.";
+                AddSshLine(
+                    "The container is running, but the API did not answer within 25 seconds. "
+                    + "Open TCP 8080 in the provider firewall (and check the container logs), then press Test.");
+            }
+            catch (Exception ex)
+            {
+                _sshStage += " API is not reachable from this PC yet.";
+                AddSshLine(
+                    $"The container is running, but the API did not answer: {ex.Message} "
+                    + "Open TCP 8080 in the provider firewall, then press Test.");
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            _sshError = ex.Message;
+            AddSshLine($"ERROR: {ex.Message}");
+        }
+        finally
+        {
+            _sshBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SshLogsAsync(string id)
+    {
+        if (_sshBusy) return;
+        ComputeProviderSettings? provider = Compute.Find(id);
+        if (provider is null) return;
+
+        _sshBusy = true;
+        _sshHostId = id;
+        ResetSshLog();
+        _sshStage = "Reading container logs…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            SshCredentials credentials = Compute.SshCredentials(id)
+                ?? throw new InvalidOperationException("No SSH host is configured.");
+            string container = string.IsNullOrWhiteSpace(provider.SshContainerName)
+                ? "sharpmind"
+                : provider.SshContainerName;
+            string logs = await Ssh.LogsAsync(credentials, container, 120);
+            AddSshLine(logs.Length == 0 ? "(no log output)" : logs);
+            _sshStage = $"Last 120 lines from '{container}'.";
+        }
+        catch (Exception ex)
+        {
+            _sshError = ex.Message;
+            AddSshLine($"ERROR: {ex.Message}");
+        }
+        finally
+        {
+            _sshBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SshStopAsync(string id)
+    {
+        if (_sshBusy) return;
+        ComputeProviderSettings? provider = Compute.Find(id);
+        if (provider is null) return;
+
+        _sshBusy = true;
+        _sshHostId = id;
+        ResetSshLog();
+        _sshStage = "Stopping the container…";
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            SshCredentials credentials = Compute.SshCredentials(id)
+                ?? throw new InvalidOperationException("No SSH host is configured.");
+            string container = string.IsNullOrWhiteSpace(provider.SshContainerName)
+                ? "sharpmind"
+                : provider.SshContainerName;
+            string status = await Ssh.StopAsync(credentials, container);
+            _sshStage = status.Length == 0
+                ? $"Container '{container}' stopped."
+                : $"Container '{container}': {status}";
+            AddSshLine(_sshStage);
+        }
+        catch (Exception ex)
+        {
+            _sshError = ex.Message;
+            AddSshLine($"ERROR: {ex.Message}");
+        }
+        finally
+        {
+            _sshBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private void SetRunpodImage(string id, string? image)

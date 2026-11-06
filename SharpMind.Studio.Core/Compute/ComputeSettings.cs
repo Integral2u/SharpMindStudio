@@ -44,6 +44,18 @@ public sealed class ComputeProviderSettings
     public bool UseGpu { get; set; }
     public string? ContainerName { get; set; }
 
+    // --- SSH helper ------------------------------------------------------
+    // Optional: lets Studio log in, install Docker, pull the image and start
+    // the combined server container without a terminal.
+
+    public string? SshHost { get; set; }
+    public int? SshPort { get; set; } = SshTargets.DefaultPort;
+    public string? SshUser { get; set; } = SshTargets.DefaultUser;
+    public string? SshKeyPath { get; set; }
+    public string? SshPasswordProtected { get; set; }
+    public string? SshKeyPassphraseProtected { get; set; }
+    public string? SshContainerName { get; set; }
+
     // --- Runpod helper --------------------------------------------------
     // Optional: lets Studio create and terminate the pod through Runpod's API.
 
@@ -515,6 +527,114 @@ public sealed class ComputeSettingsStore
         }
     }
 
+    /// <summary>
+    /// Stores the SSH helper settings. Null password/passphrase keep the saved
+    /// secret; a blank value clears it. Secrets are encrypted like every other key.
+    /// </summary>
+    public bool SetSsh(
+        string id,
+        string? host,
+        int port,
+        string? user,
+        string? keyPath,
+        string? password,
+        string? passphrase,
+        string? containerName,
+        bool useGpu)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.SshHost = string.IsNullOrWhiteSpace(host) ? null : host.Trim();
+            provider.SshPort = port is > 0 and <= 65535 ? port : SshTargets.DefaultPort;
+            provider.SshUser = string.IsNullOrWhiteSpace(user)
+                ? SshTargets.DefaultUser
+                : user.Trim();
+            provider.SshKeyPath = string.IsNullOrWhiteSpace(keyPath) ? null : keyPath.Trim();
+            provider.UseGpu = useGpu;
+            provider.SshContainerName = string.IsNullOrWhiteSpace(containerName)
+                ? "sharpmind"
+                : containerName.Trim();
+
+            if (password is not null)
+            {
+                provider.SshPasswordProtected = string.IsNullOrWhiteSpace(password)
+                    ? null
+                    : GatewaySecretBox.Protect(password, _keyFile);
+            }
+
+            if (passphrase is not null)
+            {
+                provider.SshKeyPassphraseProtected = string.IsNullOrWhiteSpace(passphrase)
+                    ? null
+                    : GatewaySecretBox.Protect(passphrase, _keyFile);
+            }
+
+            SaveLocked();
+            return true;
+        }
+    }
+
+    /// <summary>The decrypted SSH password, or null when the host uses a key.</summary>
+    public string? SshPassword(string id)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            return provider is null
+                ? null
+                : GatewaySecretBox.Unprotect(provider.SshPasswordProtected, _keyFile);
+        }
+    }
+
+    /// <summary>The decrypted private-key passphrase, or null when the key is unencrypted.</summary>
+    public string? SshKeyPassphrase(string id)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            return provider is null
+                ? null
+                : GatewaySecretBox.Unprotect(provider.SshKeyPassphraseProtected, _keyFile);
+        }
+    }
+
+    /// <summary>Updates the server image without touching the Docker ports or token.</summary>
+    public bool SetImage(string id, string? image)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.DockerImage = string.IsNullOrWhiteSpace(image) ? null : image.Trim();
+            SaveLocked();
+            return true;
+        }
+    }
+
+    /// <summary>Replaces the API address and re-derives the Studio URL.</summary>
+    public bool SetBaseUrl(string id, string? url)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.BaseUrl = NormalizeBaseUrl(url);
+            provider.StudioUrl = ComputeProviderPresets.DeriveStudioUrl(provider.BaseUrl);
+            SaveLocked();
+            return true;
+        }
+    }
+
     /// <summary>Changes the host flavour and keeps Kind in sync with it.</summary>
     public bool SetPrefab(string id, string? prefab)
     {
@@ -622,6 +742,9 @@ public sealed class ComputeSettingsStore
             provider.DockerImage ??= ComputeProviderPresets.DefaultImage;
             provider.DockerPort ??= ComputeProviderPresets.DefaultPort;
             provider.ContainerName ??= ComputeProviderPresets.ContainerName(provider.Id);
+            provider.SshPort ??= SshTargets.DefaultPort;
+            provider.SshUser ??= SshTargets.DefaultUser;
+            provider.SshContainerName ??= "sharpmind";
             provider.RunpodImage ??= ComputeProviderPresets.DefaultServerImage;
             provider.RunpodGpuType ??= ComputeProviderPresets.DefaultGpuType;
             provider.RunpodDiskGb ??= ComputeProviderPresets.DefaultRunpodDiskGb;

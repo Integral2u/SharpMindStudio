@@ -17,7 +17,7 @@ box and for API-only GPU workers.
 |---|---|---|
 | Local Docker | Development and small experiments | Uses the local CPU/GPU; easiest way to test the image lifecycle |
 | [Runpod](https://runpod.io?ref=ltj4z1kb) | GPU inference and training | GPU containers are the natural fit; mount a network volume at `/data/SharpMind` |
-| [Vultr](https://www.vultr.com/?ref=9933964) | Small cloud hosts / GPU instances | Standard Docker host; choose a GPU plan for training |
+| [Vultr](https://www.vultr.com/?ref=9933964) | Small cloud hosts / GPU instances | Studio can install Docker and start the container over SSH; choose a GPU plan for training |
 | Oracle Cloud Always Free | Studio web UI / small CPU inference | Free tier is Arm CPU, not GPU; fine for Studio, not for GPU training |
 | AWS / AWS Free Tier | Studio web UI / small CPU inference | Free tier is small CPU; GPU instances are paid |
 | SnapDeploy | Any platform that runs a Docker image | Works as a host if Docker and persistent storage are available |

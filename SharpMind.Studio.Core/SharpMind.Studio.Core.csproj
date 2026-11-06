@@ -7,6 +7,10 @@
   <Import Project="..\SharpMind.References.props" />
 
   <ItemGroup>
+    <PackageReference Include="SSH.NET" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Training\Rules\studio-training.rules.json" />
   </ItemGroup>
 

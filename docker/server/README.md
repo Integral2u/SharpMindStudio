@@ -112,27 +112,43 @@ If you do not have a Runpod account, [create one here](https://runpod.io?ref=ltj
 
 ## Vultr
 
-Vultr works as a generic Docker host; there is no deploy helper for it yet. If
-you do not have an account, [create one here](https://www.vultr.com/?ref=9933964).
+If you do not have an account, [create one here](https://www.vultr.com/?ref=9933964).
 
-1. Create a Cloud Compute or GPU instance (Ubuntu with Docker) in a region near
-   you. Open ports **5117** and **8080** in the Vultr firewall.
-2. Run the image:
+1. Create a Cloud Compute or GPU instance with Ubuntu in a region near you.
+   Choose a GPU image that includes the NVIDIA driver for a GPU host. Open
+   **22** (setup), **5117** and **8080** in the Vultr firewall.
+2. Add an SSH key when you create the instance, or paste your public key into
+   the instance's web console once (`/root/.ssh/authorized_keys`).
+3. In Studio: **Settings → Providers → Compute → Add host → Vultr cloud
+   server**, then **Edit**:
+   - Base URL `http://<public-ip>:8080`
+   - Studio URL `http://<public-ip>:5117`
+   - Server image `<dockerhub-user>/sharpmind-server:gpu` (Press **Publish the
+     server image** first.)
+   - SSH host, user, private key path (or password); tick **GPU host** on a GPU
+     plan
+4. Save the host and press **Set up & deploy** on its card. The helper logs in,
+   installs Docker, installs the NVIDIA container toolkit on a GPU host, pulls
+   the image and starts the container with `/data/SharpMind` mounted. It then
+   tests the API from Studio.
 
-   ```bash
-   docker run -d --restart unless-stopped \
-     -p 5117:5117 -p 8080:8080 \
-     -e SHARPMIND_TOKEN=<long-random-token> \
-     -v /data/sharpmind:/data/SharpMind \
-     <dockerhub-user>/sharpmind-server:gpu
-   ```
+The helper cannot install the NVIDIA **driver** itself (that needs a reboot).
+If `nvidia-smi` is missing it stops and says so; use a Vultr GPU image or
+install the driver from the console first, then deploy again. Studio's token is
+generated and saved with the host, so the container and Studio always match.
 
-3. In Studio add a **Vultr cloud server** host with
-   `http://<public-ip>:8080` and the token; the Studio URL is
-   `http://<public-ip>:5117`.
+Everything is still one Docker host, so the manual commands keep working:
+
+```bash
+docker run -d --restart unless-stopped \
+  -p 5117:5117 -p 8080:8080 \
+  -e SHARPMIND_TOKEN=<long-random-token> \
+  -v /data/SharpMind:/data/SharpMind \
+  <dockerhub-user>/sharpmind-server:gpu
+```
 
 GPU training on Vultr requires a GPU plan; the CPU plans are fine for Studio and
-small CPU inference.
+small CPU inference. Vultr bills a stopped instance until it is destroyed.
 
 ## GPU plugin
 

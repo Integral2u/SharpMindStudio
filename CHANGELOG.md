@@ -50,6 +50,12 @@ First public repository release.
 - **HuggingFace model browser** — search the Hub for GGUF repositories, inspect
   license/gated status/files/quantisation/size, download to `Models` with resume,
   and store an encrypted token for gated repositories.
+- **Compute hosts** — one model per process behind an OpenAI-style API, with
+  Local Docker start/stop, Runpod pod deploy/terminate, and SSH setup for Vultr
+  or custom Linux hosts (Docker and NVIDIA container toolkit install, image
+  pull, container run, logs and stop). Chat and Training route to the host;
+  models and datasets upload with progress; the GPU plugin accelerates
+  inference and LoRA fine-tuning and falls back to the CPU with a loud log.
 
 ### Changed
 

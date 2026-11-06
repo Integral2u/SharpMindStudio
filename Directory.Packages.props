@@ -15,6 +15,7 @@
     <PackageVersion Include="SharpMind.Training" Version="1.1.0" />
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <PackageVersion Include="QRCoder" Version="1.8.1" />
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />

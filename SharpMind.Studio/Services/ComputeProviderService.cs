@@ -148,6 +148,56 @@ public sealed class ComputeProviderService
         if (_store.SetRunpodPod(id, podId, status)) Changed?.Invoke();
     }
 
+    public void SetSsh(
+        string id,
+        string? host,
+        int port,
+        string? user,
+        string? keyPath,
+        string? password,
+        string? passphrase,
+        string? containerName,
+        bool useGpu)
+    {
+        if (_store.SetSsh(id, host, port, user, keyPath, password, passphrase, containerName, useGpu))
+            Changed?.Invoke();
+    }
+
+    public void SetImage(string id, string? image)
+    {
+        if (_store.SetImage(id, image)) Changed?.Invoke();
+    }
+
+    public void SetBaseUrl(string id, string? url)
+    {
+        if (_store.SetBaseUrl(id, url)) Changed?.Invoke();
+    }
+
+    /// <summary>The decrypted SSH login material, or null when no host is known.</summary>
+    public SshCredentials? SshCredentials(string id)
+    {
+        ComputeProviderSettings? provider = _store.Find(id);
+        if (provider is null) return null;
+        SshTarget? target = SshTargets.FromSettings(provider);
+        if (target is null) return null;
+
+        return new SshCredentials(
+            target,
+            provider.SshKeyPath,
+            _store.SshKeyPassphrase(id),
+            _store.SshPassword(id));
+    }
+
+    public bool HasSshPassword(string id) => !string.IsNullOrWhiteSpace(_store.SshPassword(id));
+
+    public string DescribeSsh(string id)
+    {
+        ComputeProviderSettings? provider = _store.Find(id);
+        return provider is null
+            ? "Host not found."
+            : SshSetupScript.Describe(provider, _store.RegistryImage);
+    }
+
     public void SetPrefab(string id, string? prefab)
     {
         if (_store.SetPrefab(id, prefab)) Changed?.Invoke();
@@ -178,6 +228,16 @@ public sealed class ComputeProviderService
             source.RunpodImage,
             source.RunpodGpuType,
             source.RunpodDiskGb);
+        _store.SetSsh(
+            copy.Id,
+            source.SshHost,
+            source.SshPort ?? SshTargets.DefaultPort,
+            source.SshUser,
+            source.SshKeyPath,
+            _store.SshPassword(id),
+            _store.SshKeyPassphrase(id),
+            source.SshContainerName,
+            source.UseGpu);
         Changed?.Invoke();
         return copy;
     }
