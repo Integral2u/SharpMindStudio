@@ -93,14 +93,17 @@
                         else
                         {
                             <div class="field">
-                                <label class="field-label" for="chat-model">Model</label>
+                                <div class="field-label-row">
+                                    <label class="field-label" for="chat-model">Model</label>
+                                    <a class="small" href="/training?tab=models"
+                                       title="Find GGUF models on HuggingFace">Find models</a>
+                                </div>
                                 <select id="chat-model" class="input" @bind="_selectedModelPath" @bind:after="SaveModelChoiceAsync">
                                     @foreach (var model in _models)
                                     {
                                         <option value="@model.Path" title="@model.Path">@model.DisplayName (@model.FileName) - @model.Family.DisplayName (@FileSize(model.SizeBytes))</option>
                                     }
                                 </select>
-                                <a class="small" href="/training?tab=models">Find GGUF models on HuggingFace</a>
                             </div>
                         }
                     }

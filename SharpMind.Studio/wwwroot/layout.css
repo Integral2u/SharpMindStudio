@@ -444,6 +444,31 @@
     font-size: .7rem;
 }
 
+.topbar-links {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    margin-left: .35rem;
+    font-family: var(--mono);
+    font-size: .62rem;
+}
+.topbar-links a { color: var(--faint); }
+.topbar-links a:hover { color: var(--text); }
+.topbar-links .sponsor {
+    padding: .16rem .5rem;
+    border: 1px solid rgba(var(--accent-rgb), .3);
+    border-radius: 99px;
+    color: var(--accent);
+}
+.topbar-links .sponsor:hover {
+    color: var(--accent);
+    border-color: rgba(var(--accent-rgb), .55);
+    background: rgba(var(--accent-rgb), .08);
+}
+@media (max-width: 700px) {
+    .topbar-links .powered { display: none; }
+}
+
 .dot {
     width: .42rem;
     height: .42rem;

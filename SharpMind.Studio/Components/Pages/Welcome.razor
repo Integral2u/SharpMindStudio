@@ -109,7 +109,11 @@
         else
         {
             <div class="field welcome-model">
-                <label class="field-label" for="welcome-model">Model</label>
+                <div class="field-label-row">
+                    <label class="field-label" for="welcome-model">Model</label>
+                    <a class="small" href="/training?tab=models"
+                       title="Find GGUF models on HuggingFace">Find models</a>
+                </div>
                 <select id="welcome-model" class="input" @bind="_selectedModelPath" @bind:after="SaveDefaultModelAsync">
                     @if (_models.Count == 0)
                     {
@@ -120,7 +124,6 @@
                         <option value="@model.Path">@model.FileName - @model.Family.DisplayName</option>
                     }
                 </select>
-                <a class="small" href="/training?tab=models">Find GGUF models on HuggingFace</a>
             </div>
         }
 

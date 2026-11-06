@@ -318,6 +318,16 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     text-transform: uppercase;
 }
 
+.field-label-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .45rem;
+    min-height: 1rem;
+}
+.field-label-row .field-label { margin: 0; }
+.field-label-row .small { font-size: .62rem; white-space: nowrap; }
+
 .input, .textarea {
     width: 100%;
     border: 1px solid var(--line-strong);
