@@ -122,8 +122,9 @@
                     {
                         <span class="small faint">
                             Saved jobs and <strong>Run selected</strong> use this target too.
-                            Sources, base model and checkpoints are uploaded first, then the export is
-                            downloaded back here.
+                            Training from scratch needs no model on the host; a fine-tune uploads its
+                            base model with the job. Sources and checkpoints are uploaded first, then
+                            the export is downloaded back here.
                         </span>
                         @if (_remoteAcceleratorError is not null)
                         {

@@ -549,35 +549,52 @@ else if (_tab == "openrouter")
                         <strong>Setup:</strong>
                         @if (provider.Prefab == ComputeProviderPrefabs.LocalDocker)
                         {
-                            <text>1. Start container · 2. Upload a model · 3. Chat or Train</text>
+                            <text>1. Start container · 2. Upload a model for Chat · 3. Train (no model needed)</text>
                         }
                         else if (provider.Prefab == ComputeProviderPrefabs.Runpod)
                         {
-                            <text>1. Deploy pod · 2. Upload a model · 3. Chat or Train</text>
+                            <text>1. Deploy pod · 2. Upload a model for Chat · 3. Train (no model needed)</text>
                         }
                         else
                         {
-                            <text>1. Test · 2. Upload a model · 3. Chat or Train</text>
+                            <text>1. Test · 2. Upload a model for Chat · 3. Train (no model needed)</text>
                         }
                     </div>
 
+                    @{
+                        bool needsDeploy = provider.Prefab == ComputeProviderPrefabs.Runpod
+                            && UndeployedRunpod(provider.Id) is not null;
+                    }
+                    @if (needsDeploy)
+                    {
+                        <div class="small faint">
+                            Deploy the pod before managing models. Training from scratch does not need a
+                            model on the host; a fine-tune's base model is uploaded with the job.
+                        </div>
+                    }
+
                     <div class="training-form">
                         <div class="field">
-                            <label class="field-label" for="compute-model-@provider.Id">Model on host</label>
+                            <label class="field-label" for="compute-model-@provider.Id">Chat model</label>
                             <select id="compute-model-@provider.Id" class="input"
                                     value="@(provider.DefaultModel ?? "")"
+                                    disabled="@needsDeploy"
                                     @onchange="e => UseComputeModel(provider.Id, e.Value?.ToString())">
-                                <option value="">Automatic (first model)</option>
+                                <option value="">None yet (upload one for Chat)</option>
                                 @foreach (string model in provider.Models)
                                 {
                                     <option value="@model">@model</option>
                                 }
                             </select>
+                            <span class="small faint">
+                                Chat needs a model. Training from scratch does not, and a fine-tune
+                                uploads its base model with the job.
+                            </span>
                         </div>
                         <div class="field">
                             <label class="field-label">Refresh</label>
                             <button type="button" class="button" @onclick="() => RefreshComputeModelsAsync(provider.Id)"
-                                    disabled="@_computeBusy"
+                                    disabled="@(_computeBusy || needsDeploy)"
                                     title="Read the model folder from the host and update this list.">Read models on host</button>
                         </div>
                     </div>
@@ -592,7 +609,7 @@ else if (_tab == "openrouter")
                                     <span class="mono small">@model</span>
                                     <button type="button" class="button danger"
                                             @onclick="() => DeleteHostModelAsync(provider.Id, model)"
-                                            disabled="@_computeBusy"
+                                            disabled="@(_computeBusy || needsDeploy)"
                                             title="Delete this model file from the host.">Delete</button>
                                 </div>
                             }
@@ -604,12 +621,13 @@ else if (_tab == "openrouter")
                         <label class="field-label" for="compute-upload-@provider.Id">Upload a model from this PC</label>
                         <div class="row">
                             <input id="compute-upload-@provider.Id" class="input" @bind="_computeModelPath"
+                                   disabled="@needsDeploy"
                                    placeholder="C:\Users\you\SharpMind\Models\model.gguf" />
                             <button type="button" class="button" @onclick="BrowseComputeModel"
                                     title="Choose a local .smm or .gguf file.">Browse</button>
                             <button type="button" class="button primary"
                                     @onclick="() => UploadComputeModelAsync(provider.Id)"
-                                    disabled="@_computeBusy"
+                                    disabled="@(_computeBusy || needsDeploy)"
                                     title="Copy this model to the host and make it the active model.">
                                 @(_uploadingId == provider.Id ? "Uploading…" : "Upload and use")
                             </button>
