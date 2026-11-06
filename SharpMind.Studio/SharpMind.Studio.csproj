@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <ProjectGuid>{3F6A6B8E-7F1C-4A1B-9D2E-6C5B4A392817}</ProjectGuid>
 </PropertyGroup>
 
   <ItemGroup>

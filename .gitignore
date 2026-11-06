@@ -12,3 +12,6 @@ StudioProject/
 *.nupkg
 *.snupkg
 *.binlog
+SharpMind.Studio Setup/Debug/
+SharpMind.Studio Setup/Release/
+UpgradeLog*.htm

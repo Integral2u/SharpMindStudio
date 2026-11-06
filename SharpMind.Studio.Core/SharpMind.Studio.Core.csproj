@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <RootNamespace>SharpMind.Studio.Core</RootNamespace>
+    <ProjectGuid>{4D5E6F70-8192-4A3B-9C4D-5E6F708192A3}</ProjectGuid>
   </PropertyGroup>
 
   <Import Project="..\SharpMind.References.props" />
