@@ -272,9 +272,9 @@ public static class SshSetupScript
     public static string Inspect(string container) => """
         set -u
         NAME=__CONTAINER__
-        if docker ps -a --filter "name=^${NAME}$" --format '{{.State.Status}}|{{.Image}}|{{.Ports}}' \
+        if docker ps -a --filter "name=^${NAME}$" --format '{{.Status}}|{{.Image}}|{{.Ports}}' \
              | head -n 1 | grep -q .; then
-          docker ps -a --filter "name=^${NAME}$" --format '{{.State.Status}}|{{.Image}}|{{.Ports}}' | head -n 1
+          docker ps -a --filter "name=^${NAME}$" --format '{{.Status}}|{{.Image}}|{{.Ports}}' | head -n 1
         else
           echo "missing"
         fi
@@ -295,18 +295,23 @@ public static class SshSetupScript
         echo "${STATUS:-missing}"
         """.Replace("__CONTAINER__", Quote(container), StringComparison.Ordinal);
 
-    /// <summary>Picks the image to deploy when a host still carries the local-only default.</summary>
+    /// <summary>Picks the image to deploy when a host still carries a local-only name.</summary>
     public static string ResolveImage(ComputeProviderSettings provider, string? registryImage)
     {
         ArgumentNullException.ThrowIfNull(provider);
         string configured = provider.DockerImage?.Trim() ?? "";
         string? published = registryImage?.Trim();
+        bool localName = configured.Length == 0
+            || string.Equals(configured, ComputeProviderPresets.DefaultImage, StringComparison.OrdinalIgnoreCase)
+            || LooksUnpublished(configured);
+
+        if (localName && !string.IsNullOrWhiteSpace(published) && !LooksUnpublished(published))
+            return published!;
+
         if (configured.Length == 0
             || string.Equals(configured, ComputeProviderPresets.DefaultImage, StringComparison.OrdinalIgnoreCase))
         {
-            configured = !string.IsNullOrWhiteSpace(published)
-                ? published!
-                : ComputeProviderPresets.DefaultServerImage;
+            return ComputeProviderPresets.DefaultServerImage;
         }
 
         return configured;

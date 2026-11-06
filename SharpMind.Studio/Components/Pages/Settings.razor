@@ -978,6 +978,15 @@ else if (_tab == "openrouter")
                                 </div>
                             </div>
                             <div class="small faint">@Compute.DescribeSsh(provider.Id)</div>
+                            @if (SshSetupScript.LooksUnpublished(Compute.SshImage(provider.Id)))
+                            {
+                                <div class="error-line">
+                                    The server image <span class="mono">@Compute.SshImage(provider.Id)</span>
+                                    has no registry prefix, so the host cannot pull it. Press
+                                    <strong>Edit</strong> and enter the full name, for example
+                                    <span class="mono">your-name/sharpmind-server:gpu</span>.
+                                </div>
+                            }
                             @if (_sshHostId == provider.Id)
                             {
                                 @if (_sshStage is { Length: > 0 })

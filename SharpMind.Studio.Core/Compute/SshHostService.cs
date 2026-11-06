@@ -111,10 +111,10 @@ public sealed class SshHostService
 
         if (SshSetupScript.LooksUnpublished(request.Image))
         {
-            warnings.Add(
-                $"The image '{request.Image}' has no registry prefix. Docker Hub pulls need user/repository:tag; "
-                + "publish the image first, or type the full name in Edit.");
-            Report(progress, "pull", warnings[^1]);
+            throw new InvalidOperationException(
+                $"The image '{request.Image}' has no registry prefix, so the host cannot pull it. "
+                + "Press Edit and enter the full name (for example your-name/sharpmind-server:gpu), "
+                + "or publish the image from this panel first.");
         }
 
         Report(progress, "pull", $"Pulling {request.Image}. The first pull can take a few minutes…");

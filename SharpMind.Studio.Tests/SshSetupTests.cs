@@ -167,6 +167,12 @@ public sealed class SshSetupTests
 
         provider.DockerImage = "other/image:cpu";
         Assert.Equal("other/image:cpu", SshSetupScript.ResolveImage(provider, "me/sharpmind-server:gpu"));
+
+        // A local-only tag is replaced by the image this Studio published.
+        provider.DockerImage = "sharpmind-server:gpu";
+        Assert.Equal(
+            "me/sharpmind-server:gpu",
+            SshSetupScript.ResolveImage(provider, "me/sharpmind-server:gpu"));
     }
 
     [Fact]

@@ -198,6 +198,15 @@ public sealed class ComputeProviderService
             : SshSetupScript.Describe(provider, _store.RegistryImage);
     }
 
+    /// <summary>The image the SSH helper would pull, after the local-only default is resolved.</summary>
+    public string SshImage(string id)
+    {
+        ComputeProviderSettings? provider = _store.Find(id);
+        return provider is null
+            ? ComputeProviderPresets.DefaultServerImage
+            : SshSetupScript.ResolveImage(provider, _store.RegistryImage);
+    }
+
     public void SetPrefab(string id, string? prefab)
     {
         if (_store.SetPrefab(id, prefab)) Changed?.Invoke();
