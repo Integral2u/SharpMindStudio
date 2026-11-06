@@ -88,10 +88,13 @@ public sealed class TrainingJobManager
             state.Success = result.Success;
             state.ExportPath = result.ExportPath;
             state.AdapterPath = result.AdapterPath;
-            state.Error = result.Error;
+            state.Error = result.Error
+                ?? (string.IsNullOrWhiteSpace(result.AcceleratorReason)
+                    ? null
+                    : $"Accelerator '{result.AcceleratorRequested}' declined: {result.AcceleratorReason}");
             state.Status = result.Success
                 ? "succeeded"
-                : string.Equals(result.Error, "cancelled", StringComparison.OrdinalIgnoreCase)
+                : string.Equals(state.Error, "cancelled", StringComparison.OrdinalIgnoreCase)
                     ? "cancelled"
                     : "failed";
         }

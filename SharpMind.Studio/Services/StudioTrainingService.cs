@@ -484,6 +484,19 @@ public sealed class StudioTrainingService : IDisposable
             ?? throw new InvalidOperationException("The training job could not be cloned.");
     }
 
+    /// <summary>Logs upload progress in 25% steps so a large corpus does not look stalled.</summary>
+    private IProgress<double> UploadProgress(string name)
+    {
+        int next = 25;
+        return new Progress<double>(value =>
+        {
+            int percent = (int)Math.Round(Math.Clamp(value, 0, 1) * 100);
+            if (percent < next) return;
+            AddLog($"Uploading {name}: {percent}%");
+            next = percent + 25;
+        });
+    }
+
     private async Task UploadSourcesAsync(
         ComputeProvider provider,
         TrainingJobSettings job,
@@ -501,7 +514,7 @@ public sealed class StudioTrainingService : IDisposable
                     provider.Id,
                     job.BaseModelPath,
                     $"{bucket}/base/{Path.GetFileName(job.BaseModelPath)}",
-                    null,
+                    UploadProgress(Path.GetFileName(job.BaseModelPath)),
                     cancellationToken)
                 .ConfigureAwait(false);
             job.BaseModelPath = result.Path;
@@ -518,7 +531,7 @@ public sealed class StudioTrainingService : IDisposable
                         provider.Id,
                         job.ResumeFrom,
                         $"{bucket}/resume/{Path.GetFileName(job.ResumeFrom)}",
-                        null,
+                        UploadProgress(Path.GetFileName(job.ResumeFrom)),
                         cancellationToken)
                     .ConfigureAwait(false);
                 job.ResumeFrom = result.Path;
@@ -533,7 +546,8 @@ public sealed class StudioTrainingService : IDisposable
                     string relative = Path.GetRelativePath(job.ResumeFrom, file).Replace('\\', '/');
                     await _compute
                         .UploadFileAsync(
-                            provider.Id, file, $"{bucket}/resume/{relative}", null, cancellationToken)
+                            provider.Id, file, $"{bucket}/resume/{relative}",
+                            UploadProgress(Path.GetFileName(file)), cancellationToken)
                         .ConfigureAwait(false);
                     files++;
                 }
@@ -556,7 +570,8 @@ public sealed class StudioTrainingService : IDisposable
                         remote = $"{bucket}/inputs/s{index}/{Path.GetFileName(value)}";
                         AddLog($"Uploading {Path.GetFileName(value)}…");
                         ComputeUploadResult result = await _compute
-                            .UploadFileAsync(provider.Id, value, remote, null, cancellationToken)
+                            .UploadFileAsync(provider.Id, value, remote,
+                            UploadProgress(Path.GetFileName(value)), cancellationToken)
                             .ConfigureAwait(false);
                         uploaded[value] = result.Path;
                         remote = result.Path;
@@ -578,7 +593,8 @@ public sealed class StudioTrainingService : IDisposable
                         string relative = Path.GetRelativePath(value, file).Replace('\\', '/');
                         ComputeUploadResult result = await _compute
                             .UploadFileAsync(
-                                provider.Id, file, $"{remoteRoot}/{relative}", null, cancellationToken)
+                                provider.Id, file, $"{remoteRoot}/{relative}",
+                                UploadProgress(relative), cancellationToken)
                             .ConfigureAwait(false);
                         files++;
                         if (files % 10 == 0)

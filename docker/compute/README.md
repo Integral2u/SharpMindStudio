@@ -75,7 +75,8 @@ reports what loaded and why inference may have stayed on the CPU:
 
 - An unsupported model or shape stays on the CPU and the reason is reported; it
   does not fail the chat. Inference covers RMSNorm/LayerNorm + gated or dense
-  GELU FFN; GPU training still requires RMSNorm + gated FFN.
+  GELU FFN; GPU training is **LoRA fine-tuning only** (M1) on RMSNorm + gated
+  FFN base models, while from-scratch pretraining stays on the CPU.
 - `SHARPMIND_ACCELERATOR=auto` applies `ilgpu` to training jobs that do not name
   an accelerator. A job that names one is never overridden.
 - The driver (`libcuda.so.1`) is injected by the container runtime; the image

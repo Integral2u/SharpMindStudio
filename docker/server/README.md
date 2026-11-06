@@ -150,9 +150,10 @@ small CPU inference.
 - `SHARPMIND_ACCELERATOR=auto` makes training jobs use the plugin when they do
   not name an accelerator. An explicit job accelerator is never overridden.
 - Inference supports RMSNorm or LayerNorm + RoPE/NoPE + gated or dense GELU FFN,
-  so GPT-2/BERT-style models now run on the GPU too. Training still supports
-  RMSNorm + gated FFN only; train with the **LLaMA** or **Qwen** preset for GPU
-  training (GPT-2 training stays on the CPU and says why).
+  so GPT-2/BERT-style models now run on the GPU too. GPU **training is LoRA
+  fine-tuning only** (M1): it requires a LLaMA/Qwen-style base model with
+  RMSNorm + gated FFN. From-scratch pretraining stays on the CPU (the plugin
+  reports "only LoRA adapters are trainable in M1").
 - The NVIDIA driver is mounted by the container runtime. The image only carries
   cuBLAS/cudart; `libcuda.so.1` must come from the host.
 

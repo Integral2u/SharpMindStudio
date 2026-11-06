@@ -57,8 +57,8 @@ default. The combined image does both behind the same volume.
 - `/health` reports the plugin, its backend (`CUDA · cuBLAS` / `OpenCL`) and the
   reason for any CPU fallback.
 - Inference supports RMSNorm or LayerNorm + RoPE/NoPE + gated or dense GELU FFN.
-  Training still requires RMSNorm + gated FFN, so use the LLaMA or Qwen preset
-  for GPU training.
+  GPU training is **LoRA fine-tuning only** (M1) and requires a LLaMA/Qwen-style
+  base with RMSNorm + gated FFN; from-scratch pretraining stays on the CPU.
 
 ## Build order
 
