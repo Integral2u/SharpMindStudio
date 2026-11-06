@@ -118,7 +118,9 @@ If you do not have an account, [create one here](https://www.vultr.com/?ref=9933
    Choose a GPU image that includes the NVIDIA driver for a GPU host. Open
    **22** (setup), **5117** and **8080** in the Vultr firewall.
 2. Add an SSH key when you create the instance, or paste your public key into
-   the instance's web console once (`/root/.ssh/authorized_keys`).
+   the instance's web console once (`/root/.ssh/authorized_keys`). If you do not
+   have a key, **Edit → Create key** makes `~/.ssh/sharpmind_ed25519` on this PC
+   and shows the public key to copy. A root password works too.
 3. In Studio: **Settings → Providers → Compute → Add host → Vultr cloud
    server**, then **Edit**:
    - Base URL `http://<public-ip>:8080`
