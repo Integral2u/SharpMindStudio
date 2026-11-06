@@ -151,6 +151,10 @@
             {
                 <div class="error-line">@_error</div>
             }
+            @if (Lab.Error is { } runError)
+            {
+                <div class="error-line">Run failed: @runError</div>
+            }
         </div>
     </section>
 }
@@ -1567,7 +1571,7 @@ else if (_tab == "models")
         };
     }
 
-    private void StartFineTune()
+    private async Task StartFineTune()
     {
         _tuneError = null;
         if (Lab.IsRunning || Rehearsal.IsRunning) return;
@@ -1583,7 +1587,13 @@ else if (_tab == "models")
         try
         {
             if (!Lab.Start(job, Workspace.PluginsFolder, _computeProviderId))
+            {
                 _tuneError = "A training run is already active.";
+            }
+            else
+            {
+                await ScrollToRunAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -1696,7 +1706,13 @@ else if (_tab == "models")
         try
         {
             if (!Lab.Start(_job, Workspace.PluginsFolder, _computeProviderId))
+            {
                 _error = "A training run is already active.";
+            }
+            else
+            {
+                await ScrollToRunAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -1706,6 +1722,21 @@ else if (_tab == "models")
         finally
         {
             _starting = false;
+        }
+    }
+
+    private async Task ScrollToRunAsync()
+    {
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+            await JS.InvokeVoidAsync(
+                "eval",
+                "document.getElementById('training-run')?.scrollIntoView({behavior:'smooth',block:'start'})");
+        }
+        catch
+        {
+            // Scrolling is a convenience; the run panel is still rendered above.
         }
     }
 
