@@ -6,7 +6,7 @@ obj/
 *.user
 *.suo
 TestResults/
-runs/
+/runs/
 StudioProject/
 *.log
 *.nupkg
