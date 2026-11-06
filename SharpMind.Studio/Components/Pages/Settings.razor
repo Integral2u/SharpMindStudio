@@ -392,20 +392,23 @@ else if (_tab == "openrouter")
                         </div>
                         <div class="field">
                             <label class="field-label" for="compute-prefab">Host type</label>
-                            <select id="compute-prefab" class="input" @bind="_computePrefab"
-                                    @bind:after="SyncPrefab">
-                                @foreach (ComputeProviderPrefab prefab in ComputeProviderPrefabs.All)
+                            <div class="row" style="align-items:center;">
+                                <select id="compute-prefab" class="input" style="flex:1;"
+                                        @bind="_computePrefab" @bind:after="SyncPrefab">
+                                    @foreach (ComputeProviderPrefab prefab in ComputeProviderPrefabs.All)
+                                    {
+                                        <option value="@prefab.Id">@prefab.Name</option>
+                                    }
+                                </select>
+                                @if (ComputeProviderPrefabs.Find(_computePrefab).ReferralUrl is { Length: > 0 } referral)
                                 {
-                                    <option value="@prefab.Id">@prefab.Name</option>
+                                    <a class="button" href="@referral" target="_blank" rel="noopener"
+                                       title="Open the @ComputeProviderPrefabs.Find(_computePrefab).Name sign-up page (referral link).">
+                                        Sign up
+                                    </a>
                                 }
-                            </select>
+                            </div>
                             <span class="small faint">@ComputeProviderPrefabs.Find(_computePrefab).Description</span>
-                            @if (ComputeProviderPrefabs.Find(_computePrefab).ReferralUrl is { Length: > 0 } referral)
-                            {
-                                <a class="small" href="@referral" target="_blank" rel="noopener">
-                                    Create a @ComputeProviderPrefabs.Find(_computePrefab).Name account
-                                </a>
-                            }
                         </div>
                         <div class="field training-form-wide">
                             <label class="field-label" for="compute-url">Base URL</label>
@@ -540,6 +543,13 @@ else if (_tab == "openrouter")
                             }
                         </div>
                         <div class="row" @onclick:stopPropagation="true">
+                            @if (ComputeProviderPrefabs.Find(provider.Prefab).ReferralUrl is { Length: > 0 } referral)
+                            {
+                                <a class="button" href="@referral" target="_blank" rel="noopener"
+                                   title="Open the @ComputeProviderPrefabs.Find(provider.Prefab).Name sign-up page (referral link).">
+                                    Sign up
+                                </a>
+                            }
                             @if (!string.Equals(provider.Id, Compute.DefaultProviderId, StringComparison.OrdinalIgnoreCase))
                             {
                                 <button type="button" class="button" @onclick="() => SetDefaultCompute(provider.Id)"
@@ -590,7 +600,6 @@ else if (_tab == "openrouter")
                     {
                         <div class="small faint">
                             A Vultr instance running the server image.
-                            <a href="https://www.vultr.com/?ref=9933964" target="_blank" rel="noopener">Create a Vultr account</a>.
                         </div>
                     }
                     @if (needsDeploy)
@@ -746,10 +755,6 @@ else if (_tab == "openrouter")
                                             disabled="@_runpodBusy"
                                             title="Terminate the Runpod pod and stop its billing.">Terminate</button>
                                 </div>
-                            </div>
-                            <div class="small faint">
-                                No Runpod account?
-                                <a href="https://runpod.io?ref=ltj4z1kb" target="_blank" rel="noopener">Create one</a>.
                             </div>
                             @if (_runpodStatus is { Length: > 0 })
                             {

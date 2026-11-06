@@ -357,6 +357,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     font-size: .72rem;
     letter-spacing: .05em;
     text-transform: uppercase;
+    text-decoration: none;
     cursor: pointer;
     transition: background .15s ease, border-color .15s ease, transform .1s ease;
 }
