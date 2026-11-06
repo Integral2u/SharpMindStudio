@@ -284,7 +284,7 @@ else if (_tab == "openrouter")
                 <summary class="settings-subgroup-head">
                     <div>
                         <div class="eyebrow">Compute hosts</div>
-                        <h3>SharpMind Compute</h3>
+                        <h3>Compute</h3>
                     </div>
                     <div class="row" style="align-items:center; gap:.45rem;">
                         <span class="provider-dot @(Compute.DefaultProvider?.Healthy == true ? "on" : "off")"></span>
@@ -304,11 +304,15 @@ else if (_tab == "openrouter")
                 <span class="small faint">Default host is used by Chat and Training when you pick Compute.</span>
             </div>
 
-            <div class="training-subsection">
-                <div class="training-subsection-head">
-                    <label class="field-label">Publish the server image</label>
-                    <span class="faint small">one-time per image</span>
-                </div>
+            <details class="settings-subgroup">
+                <summary class="settings-subgroup-head">
+                    <div>
+                        <div class="eyebrow">Registry</div>
+                        <h3>Image</h3>
+                    </div>
+                    <span class="faint small">push the server image once</span>
+                </summary>
+                <div class="settings-subgroup-body stack">
                 <p class="small faint">
                     A remote host has to pull the image from a registry. Build
                     <span class="mono">docker/server/Dockerfile.gpu.local</span> once, then push it
@@ -363,7 +367,8 @@ else if (_tab == "openrouter")
                 {
                     <pre class="small mono" style="max-height:10rem;overflow:auto;">@_registryLog</pre>
                 }
-            </div>
+                </div>
+            </details>
 
             @if (_computeStatus is { Length: > 0 })
             {
@@ -395,6 +400,12 @@ else if (_tab == "openrouter")
                                 }
                             </select>
                             <span class="small faint">@ComputeProviderPrefabs.Find(_computePrefab).Description</span>
+                            @if (ComputeProviderPrefabs.Find(_computePrefab).ReferralUrl is { Length: > 0 } referral)
+                            {
+                                <a class="small" href="@referral" target="_blank" rel="noopener">
+                                    Create a @ComputeProviderPrefabs.Find(_computePrefab).Name account
+                                </a>
+                            }
                         </div>
                         <div class="field training-form-wide">
                             <label class="field-label" for="compute-url">Base URL</label>
@@ -517,8 +528,8 @@ else if (_tab == "openrouter")
 
             @foreach (ComputeProviderSettings provider in Compute.Providers)
             {
-                <div class="training-subsection">
-                    <div class="training-subsection-head">
+                <details class="settings-subgroup">
+                    <summary class="settings-subgroup-head">
                         <div class="row" style="align-items:center; gap:.5rem;">
                             <span class="provider-dot @(provider.Healthy == true ? "on" : provider.Healthy == false ? "off" : "off")"></span>
                             <strong>@provider.Name</strong>
@@ -528,7 +539,7 @@ else if (_tab == "openrouter")
                                 <span class="training-chip">default</span>
                             }
                         </div>
-                        <div class="row">
+                        <div class="row" @onclick:stopPropagation="true">
                             @if (!string.Equals(provider.Id, Compute.DefaultProviderId, StringComparison.OrdinalIgnoreCase))
                             {
                                 <button type="button" class="button" @onclick="() => SetDefaultCompute(provider.Id)"
@@ -544,8 +555,8 @@ else if (_tab == "openrouter")
                             <button type="button" class="button danger" @onclick="() => RemoveCompute(provider)"
                                     title="Remove this host from Studio. The remote pod or container is not affected.">Delete</button>
                         </div>
-                    </div>
-
+                    </summary>
+                    <div class="settings-subgroup-body stack">
                     <div class="spread small mono"><span>@provider.BaseUrl</span><span>@(Compute.HasToken(provider.Id) ? "token saved" : "no token")</span></div>
                     @if (provider.StudioUrl is { Length: > 0 })
                     {
@@ -574,6 +585,13 @@ else if (_tab == "openrouter")
                     @{
                         bool needsDeploy = provider.Prefab == ComputeProviderPrefabs.Runpod
                             && UndeployedRunpod(provider.Id) is not null;
+                    }
+                    @if (provider.Prefab == ComputeProviderPrefabs.Vultr)
+                    {
+                        <div class="small faint">
+                            A Vultr instance running the server image.
+                            <a href="https://www.vultr.com/?ref=9933964" target="_blank" rel="noopener">Create a Vultr account</a>.
+                        </div>
                     }
                     @if (needsDeploy)
                     {
@@ -729,6 +747,10 @@ else if (_tab == "openrouter")
                                             title="Terminate the Runpod pod and stop its billing.">Terminate</button>
                                 </div>
                             </div>
+                            <div class="small faint">
+                                No Runpod account?
+                                <a href="https://runpod.io?ref=ltj4z1kb" target="_blank" rel="noopener">Create one</a>.
+                            </div>
                             @if (_runpodStatus is { Length: > 0 })
                             {
                                 <div class="status-line">@_runpodStatus</div>
@@ -780,7 +802,8 @@ else if (_tab == "openrouter")
                             </div>
                         </div>
                     }
-                </div>
+                    </div>
+                </details>
             }
         </div>
             </details>
@@ -853,7 +876,7 @@ else if (_tab == "pair")
 }
 else if (_tab == "families")
 {
-    <details class="panel settings-collapsible">
+    <details class="panel settings-collapsible" open>
         <summary class="panel-head">
             <div>
                 <div class="eyebrow">Inference</div>
@@ -923,12 +946,28 @@ else if (_tab == "models")
                                         Generators="Workspace.Builders.Generators"
                                         Caches="Workspace.Builders.Caches" />
                 <span class="small faint">Unset fields inherit from the model family, then System. Changes apply immediately.</span>
-                @if (_models.FirstOrDefault(model => model.Path == _selectedModelPath) is { } tunedModel)
-                {
-                    <ModelTunePanel @key="tunedModel.Path" Model="tunedModel"
-                                    Generators="Workspace.Builders.Generators"
-                                    Caches="Workspace.Builders.Caches" />
-                }
+            }
+        </div>
+    </details>
+
+    <details class="panel settings-collapsible">
+        <summary class="panel-head">
+            <div>
+                <div class="eyebrow">Tuning</div>
+                <h2>Model tuning</h2>
+            </div>
+            <span class="faint small mono">presets for the selected model</span>
+        </summary>
+        <div class="panel-body stack">
+            @if (_models.FirstOrDefault(model => model.Path == _selectedModelPath) is { } tunedModel)
+            {
+                <ModelTunePanel @key="tunedModel.Path" Model="tunedModel"
+                                Generators="Workspace.Builders.Generators"
+                                Caches="Workspace.Builders.Caches" />
+            }
+            else
+            {
+                <div class="small faint">Select a model in the Models group above to tune it.</div>
             }
         </div>
     </details>
@@ -1512,6 +1551,7 @@ else
             {
                 ComputeProviderPrefabs.LocalDocker => "Local Docker",
                 ComputeProviderPrefabs.Runpod => "Runpod GPU",
+                ComputeProviderPrefabs.Vultr => "Vultr",
                 _ => "SharpMind Server",
             };
         }

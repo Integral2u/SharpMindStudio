@@ -107,7 +107,8 @@ curl -H "Authorization: Bearer change-me" http://127.0.0.1:8080/v1/models
 ## Push and run on Runpod
 
 You need a Docker Hub account (free) and a Runpod account. Nothing else has to
-be published first.
+be published first. If you do not have a Runpod account,
+[create one here](https://runpod.io?ref=ltj4z1kb).
 
 ### 1. Build and push the image
 

@@ -85,12 +85,14 @@ public sealed record ComputeProviderPrefab(
     string Kind,
     string Description,
     bool Docker,
-    bool Runpod);
+    bool Runpod,
+    string? ReferralUrl = null);
 
 public static class ComputeProviderPrefabs
 {
     public const string LocalDocker = "local-docker";
     public const string Runpod = "runpod";
+    public const string Vultr = "vultr";
     public const string Custom = "custom";
 
     public static IReadOnlyList<ComputeProviderPrefab> All { get; } =
@@ -98,7 +100,11 @@ public static class ComputeProviderPrefabs
         new(LocalDocker, "Local Docker", ComputeProviderKinds.Local,
             "A container on this PC, started from Studio.", Docker: true, Runpod: false),
         new(Runpod, "Runpod GPU", ComputeProviderKinds.Remote,
-            "Studio creates the GPU pod through Runpod's API.", Docker: false, Runpod: true),
+            "Studio creates the GPU pod through Runpod's API.", Docker: false, Runpod: true,
+            ReferralUrl: "https://runpod.io?ref=ltj4z1kb"),
+        new(Vultr, "Vultr cloud server", ComputeProviderKinds.Remote,
+            "A Vultr instance running the SharpMind Server image.", Docker: false, Runpod: false,
+            ReferralUrl: "https://www.vultr.com/?ref=9933964"),
         new(Custom, "Custom remote server", ComputeProviderKinds.Remote,
             "Any machine that already runs the SharpMind Server image.", Docker: false, Runpod: false),
     ];
@@ -106,7 +112,7 @@ public static class ComputeProviderPrefabs
     public static ComputeProviderPrefab Find(string? id) =>
         All.FirstOrDefault(prefab =>
             prefab.Id.Equals(id, StringComparison.OrdinalIgnoreCase))
-        ?? All[2];
+        ?? All.First(prefab => prefab.Id == Custom);
 
     public static string Normalize(string? id) => Find(id).Id;
 }

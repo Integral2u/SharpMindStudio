@@ -75,6 +75,8 @@ On Runpod use the pod's **Web Terminal** for the same two commands.
 
 ## Runpod
 
+If you do not have a Runpod account, [create one here](https://runpod.io?ref=ltj4z1kb).
+
 1. Push the image to Docker Hub:
 
    ```powershell
@@ -107,6 +109,30 @@ On Runpod use the pod's **Web Terminal** for the same two commands.
 5. In Studio **Settings → Providers → SharpMind Compute**, add a Remote host
    with the API URL and token, set the Studio URL to the `5117` URL, then press
    **Test**. **System → Connection → Use a Compute host** fills the same address.
+
+## Vultr
+
+Vultr works as a generic Docker host; there is no deploy helper for it yet. If
+you do not have an account, [create one here](https://www.vultr.com/?ref=9933964).
+
+1. Create a Cloud Compute or GPU instance (Ubuntu with Docker) in a region near
+   you. Open ports **5117** and **8080** in the Vultr firewall.
+2. Run the image:
+
+   ```bash
+   docker run -d --restart unless-stopped \
+     -p 5117:5117 -p 8080:8080 \
+     -e SHARPMIND_TOKEN=<long-random-token> \
+     -v /data/sharpmind:/data/SharpMind \
+     <dockerhub-user>/sharpmind-server:gpu
+   ```
+
+3. In Studio add a **Vultr cloud server** host with
+   `http://<public-ip>:8080` and the token; the Studio URL is
+   `http://<public-ip>:5117`.
+
+GPU training on Vultr requires a GPU plan; the CPU plans are fine for Studio and
+small CPU inference.
 
 ## GPU plugin
 
