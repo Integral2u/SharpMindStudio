@@ -2,14 +2,14 @@
 @inject WorkToolService Tools
 @inject StudioChatService ChatService
 
-<section class="panel">
-    <div class="panel-head">
+<details class="panel settings-collapsible">
+    <summary class="panel-head">
         <div>
             <div class="eyebrow">Work inheritance</div>
             <h2>System tools</h2>
         </div>
         <button type="button" class="button" @onclick="Refresh">Refresh plugins</button>
-    </div>
+    </summary>
     <div class="panel-body stack">
         <p class="small faint">
             These defaults apply to new Work projects. A project can enable or disable individual tools afterwards. Chat has no tools.
@@ -53,7 +53,7 @@
             </div>
         }
     </div>
-</section>
+</details>
 
 @code {
     private async Task SetDefaultAsync(WorkToolInfo tool, object? enabled)

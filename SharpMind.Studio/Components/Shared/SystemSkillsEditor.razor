@@ -4,14 +4,14 @@
 @inject StudioChatService ChatService
 @inject PathPickerService Picker
 
-<section class="panel">
-    <div class="panel-head">
+<details class="panel settings-collapsible">
+    <summary class="panel-head">
         <div>
             <div class="eyebrow">Work inheritance</div>
             <h2>System skills</h2>
         </div>
         <span class="faint small mono">@Skills.Folder</span>
-    </div>
+    </summary>
     <div class="panel-body stack">
         <p class="small faint">
             These skills live in the shared Skills folder. Each project chooses which ones to use; a project can override the defaults. You can add skills here or copy .md files into the folder.
@@ -46,7 +46,7 @@
             <span class="status-line">@_status</span>
         </div>
     </div>
-</section>
+</details>
 
 @code {
     private sealed class SkillDraft

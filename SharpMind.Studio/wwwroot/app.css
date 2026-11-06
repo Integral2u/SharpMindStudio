@@ -147,6 +147,82 @@ code, .mono {
     overflow-x: auto;
 }
 
+/* Collapsible settings groups */
+details.panel.settings-collapsible > summary.panel-head {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+details.panel.settings-collapsible > summary.panel-head::-webkit-details-marker,
+details.settings-subgroup > summary::-webkit-details-marker {
+    display: none;
+}
+
+details.panel.settings-collapsible > summary.panel-head::after {
+    content: "▸";
+    color: var(--muted);
+    font-size: .75rem;
+    margin-left: .25rem;
+}
+
+details.panel.settings-collapsible[open] > summary.panel-head::after {
+    content: "▾";
+}
+
+details.panel.settings-collapsible:not([open]) > summary.panel-head {
+    border-bottom: none;
+}
+
+details.panel.settings-collapsible > summary.panel-head:hover {
+    background: rgba(255, 255, 255, .02);
+}
+
+.settings-subgroup {
+    border: 1px solid var(--line);
+    border-radius: .7rem;
+    background: rgba(10, 16, 24, .35);
+}
+
+.settings-subgroup > summary.settings-subgroup-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .8rem 1rem;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+.settings-subgroup > summary.settings-subgroup-head::after {
+    content: "▸";
+    color: var(--muted);
+    font-size: .75rem;
+    margin-left: .25rem;
+}
+
+.settings-subgroup[open] > summary.settings-subgroup-head::after {
+    content: "▾";
+}
+
+.settings-subgroup[open] > summary.settings-subgroup-head {
+    border-bottom: 1px solid var(--line);
+}
+
+.settings-subgroup > summary.settings-subgroup-head:hover {
+    background: rgba(255, 255, 255, .02);
+}
+
+.settings-subgroup-body {
+    padding: 1rem;
+}
+
+.settings-subgroup-head h3 {
+    margin: 0;
+    font-size: .98rem;
+}
+
 .grid-2 {
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr);

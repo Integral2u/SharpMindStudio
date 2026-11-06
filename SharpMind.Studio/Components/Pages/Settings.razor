@@ -40,67 +40,14 @@
 
 @if (_tab == "system")
 {
-    <section class="panel">
-        <div class="panel-head">
-            <div>
-                <div class="eyebrow">Inference</div>
-                <h2>System defaults</h2>
-            </div>
-            <span class="faint small mono">root of every chat</span>
-        </div>
-        <div class="panel-body stack">
-            <div class="field">
-                <label class="field-label" for="default-chat-model">Default chat model</label>
-                <select id="default-chat-model" class="input" @bind="_defaultModelPath" @bind:after="SaveDefaultModel">
-                    @foreach (var model in _models)
-                    {
-                        <option value="@model.Path">@model.FileName - @model.DisplayName (@model.Family.DisplayName)</option>
-                    }
-                </select>
-                <div class="small faint">Used by the welcome screen until you choose another model there.</div>
-            </div>
-
-            <InferenceProfileEditor Value="_system" ValueChanged="SaveSystemFromEditor"
-                                    Generators="Workspace.Builders.Generators"
-                                    Caches="Workspace.Builders.Caches" />
-            <div class="status-line">@_status</div>
-        </div>
-    </section>
-
-    <SystemSkillsEditor />
-
-    <SystemToolsEditor />
-
-    <section class="panel">
-        <div class="panel-head">
-            <div>
-                <div class="eyebrow">Storage</div>
-                <h2>Where data lives</h2>
-            </div>
-            <span class="faint small mono">settings vs project</span>
-        </div>
-        <div class="panel-body stack small mono">
-            <div class="spread"><span class="faint">root</span><span>@StudioPaths.Root</span></div>
-            <div class="spread"><span class="faint">settings</span><span>@StudioPaths.Projects</span></div>
-            <div class="spread"><span class="faint">project</span><span>@Workspace.Project.Root</span></div>
-            <div class="spread"><span class="faint">runs</span><span>@Workspace.Runs.RunsRoot</span></div>
-            <div class="spread"><span class="faint">chats</span><span>@Workspace.Project.ChatsDirectory</span></div>
-            <div class="row" style="margin-top: .5rem;">
-                <button type="button" class="button" @onclick="() => OpenFolder(Workspace.Project.Root)">Open project folder</button>
-                <button type="button" class="button" @onclick="() => OpenFolder(Workspace.Runs.RunsRoot)">Open runs folder</button>
-                <button type="button" class="button" @onclick="() => OpenFolder(StudioPaths.Projects)">Open settings folder</button>
-            </div>
-            <div class="small faint">Runs and chats live in the current project. The settings folder holds settings, inference profiles, Gateway data, and shared skills config.</div>
-        </div>
-    </section>
-    <section class="panel">
-        <div class="panel-head">
+    <details class="panel settings-collapsible" open>
+        <summary class="panel-head">
             <div>
                 <div class="eyebrow">Connection</div>
                 <h2>Studio server</h2>
             </div>
             <span class="faint small mono">applies on next start</span>
-        </div>
+        </summary>
         <div class="panel-body stack">
             <div class="field">
                 <label class="field-label" for="studio-provider">Use a Compute host</label>
@@ -131,16 +78,70 @@
             <div class="status-line">@_serverStatus</div>
             <div class="small faint">Used when Studio starts. If the configured server is unreachable, the desktop app asks whether to run locally.</div>
         </div>
-    </section>
+    </details>
 
-    <section class="panel">
-        <div class="panel-head">
+    <details class="panel settings-collapsible">
+        <summary class="panel-head">
+            <div>
+                <div class="eyebrow">Inference</div>
+                <h2>System defaults</h2>
+            </div>
+            <span class="faint small mono">root of every chat</span>
+        </summary>
+        <div class="panel-body stack">
+            <div class="field">
+                <label class="field-label" for="default-chat-model">Default chat model</label>
+                <select id="default-chat-model" class="input" @bind="_defaultModelPath" @bind:after="SaveDefaultModel">
+                    @foreach (var model in _models)
+                    {
+                        <option value="@model.Path">@model.FileName - @model.DisplayName (@model.Family.DisplayName)</option>
+                    }
+                </select>
+                <div class="small faint">Used by the welcome screen until you choose another model there.</div>
+            </div>
+
+            <InferenceProfileEditor Value="_system" ValueChanged="SaveSystemFromEditor"
+                                    Generators="Workspace.Builders.Generators"
+                                    Caches="Workspace.Builders.Caches" />
+            <div class="status-line">@_status</div>
+        </div>
+    </details>
+
+    <SystemSkillsEditor />
+
+    <SystemToolsEditor />
+
+    <details class="panel settings-collapsible">
+        <summary class="panel-head">
+            <div>
+                <div class="eyebrow">Storage</div>
+                <h2>Where data lives</h2>
+            </div>
+            <span class="faint small mono">settings vs project</span>
+        </summary>
+        <div class="panel-body stack small mono">
+            <div class="spread"><span class="faint">root</span><span>@StudioPaths.Root</span></div>
+            <div class="spread"><span class="faint">settings</span><span>@StudioPaths.Projects</span></div>
+            <div class="spread"><span class="faint">project</span><span>@Workspace.Project.Root</span></div>
+            <div class="spread"><span class="faint">runs</span><span>@Workspace.Runs.RunsRoot</span></div>
+            <div class="spread"><span class="faint">chats</span><span>@Workspace.Project.ChatsDirectory</span></div>
+            <div class="row" style="margin-top: .5rem;">
+                <button type="button" class="button" @onclick="() => OpenFolder(Workspace.Project.Root)">Open project folder</button>
+                <button type="button" class="button" @onclick="() => OpenFolder(Workspace.Runs.RunsRoot)">Open runs folder</button>
+                <button type="button" class="button" @onclick="() => OpenFolder(StudioPaths.Projects)">Open settings folder</button>
+            </div>
+            <div class="small faint">Runs and chats live in the current project. The settings folder holds settings, inference profiles, Gateway data, and shared skills config.</div>
+        </div>
+    </details>
+
+    <details class="panel settings-collapsible">
+        <summary class="panel-head">
             <div>
                 <div class="eyebrow">Desktop</div>
                 <h2>Window behaviour</h2>
             </div>
             <span class="faint small mono">desktop app only</span>
-        </div>
+        </summary>
         <div class="panel-body stack">
             <div class="field">
                 <label class="field-label" for="close-to-tray">When I close the window</label>
@@ -154,24 +155,33 @@
             </div>
             <div class="status-line">@_closeToTrayStatus</div>
         </div>
-    </section>
+    </details>
 
 }
 
 else if (_tab == "openrouter")
 {
-    <section class="panel">
-        <div class="panel-head">
+    <details class="panel settings-collapsible">
+        <summary class="panel-head">
             <div>
-                <div class="eyebrow">OpenRouter</div>
+                <div class="eyebrow">Settings</div>
                 <h2>Providers</h2>
             </div>
-            <div class="row" style="align-items:center; gap:.45rem;">
-                <span class="provider-dot @(OpenRouter.HasApiKey ? "on" : "off")"></span>
-                <span class="faint small mono">@(OpenRouter.HasApiKey ? "key configured" : "no key")</span>
-            </div>
-        </div>
+            <span class="faint small mono">@(Compute.Providers.Count + 2) group(s)</span>
+        </summary>
         <div class="panel-body stack">
+            <details class="settings-subgroup">
+                <summary class="settings-subgroup-head">
+                    <div>
+                        <div class="eyebrow">Model provider</div>
+                        <h3>OpenRouter</h3>
+                    </div>
+                    <div class="row" style="align-items:center; gap:.45rem;">
+                        <span class="provider-dot @(OpenRouter.HasApiKey ? "on" : "off")"></span>
+                        <span class="faint small mono">@(OpenRouter.HasApiKey ? "key configured" : "no key")</span>
+                    </div>
+                </summary>
+                <div class="settings-subgroup-body stack">
             <p class="small faint">
                 Chat and Work can use OpenRouter models. The API key is encrypted with a local
                 key file and never written to the chat documents. Leave the key field blank to
@@ -268,20 +278,20 @@ else if (_tab == "openrouter")
                 </div>
             </div>
         </div>
-    </section>
+            </details>
 
-    <section class="panel">
-        <div class="panel-head">
-            <div>
-                <div class="eyebrow">SharpMind Compute</div>
-                <h2>Docker hosts</h2>
-            </div>
-            <div class="row" style="align-items:center; gap:.45rem;">
-                <span class="provider-dot @(Compute.DefaultProvider?.Healthy == true ? "on" : "off")"></span>
-                <span class="faint small mono">@Compute.Providers.Count host(s)</span>
-            </div>
-        </div>
-        <div class="panel-body stack">
+            <details class="settings-subgroup">
+                <summary class="settings-subgroup-head">
+                    <div>
+                        <div class="eyebrow">Compute hosts</div>
+                        <h3>SharpMind Compute</h3>
+                    </div>
+                    <div class="row" style="align-items:center; gap:.45rem;">
+                        <span class="provider-dot @(Compute.DefaultProvider?.Healthy == true ? "on" : "off")"></span>
+                        <span class="faint small mono">@Compute.Providers.Count host(s)</span>
+                    </div>
+                </summary>
+                <div class="settings-subgroup-body stack">
             <p class="small faint">
                 A Compute host is the SharpMind server image: one model, chat completions and
                 training jobs. Use <strong>Local Docker</strong> for a container on this PC and
@@ -773,20 +783,20 @@ else if (_tab == "openrouter")
                 </div>
             }
         </div>
-    </section>
+            </details>
 
-    <section class="panel">
-        <div class="panel-head">
-            <div>
-                <div class="eyebrow">HuggingFace</div>
-                <h2>Model source</h2>
-            </div>
-            <div class="row" style="align-items:center; gap:.45rem;">
-                <span class="provider-dot @(HuggingFace.HasToken ? "on" : "off")"></span>
-                <span class="faint small mono">@(HuggingFace.HasToken ? "token configured" : "no token")</span>
-            </div>
-        </div>
-        <div class="panel-body stack">
+            <details class="settings-subgroup">
+                <summary class="settings-subgroup-head">
+                    <div>
+                        <div class="eyebrow">Model source</div>
+                        <h3>HuggingFace</h3>
+                    </div>
+                    <div class="row" style="align-items:center; gap:.45rem;">
+                        <span class="provider-dot @(HuggingFace.HasToken ? "on" : "off")"></span>
+                        <span class="faint small mono">@(HuggingFace.HasToken ? "token configured" : "no token")</span>
+                    </div>
+                </summary>
+                <div class="settings-subgroup-body stack">
             <p class="small faint">
                 Browse and download GGUF models under <strong>Training → Models</strong>.
                 Public GGUF downloads work without a token; a token is only needed for
@@ -815,7 +825,9 @@ else if (_tab == "openrouter")
                 <div class="error-line">@_hfError</div>
             }
         </div>
-    </section>
+            </details>
+        </div>
+    </details>
 }
 else if (_tab == "pair")
 {
@@ -841,14 +853,14 @@ else if (_tab == "pair")
 }
 else if (_tab == "families")
 {
-    <section class="panel">
-        <div class="panel-head">
+    <details class="panel settings-collapsible">
+        <summary class="panel-head">
             <div>
                 <div class="eyebrow">Inference</div>
                 <h2>Model families</h2>
             </div>
             <span class="faint small mono">detected from metadata</span>
-        </div>
+        </summary>
         <div class="panel-body stack">
             <div class="row">
                 <select class="input" style="max-width: 22rem;" @bind="_selectedFamilyId" @bind:after="LoadFamilyDraft">
@@ -874,18 +886,18 @@ else if (_tab == "families")
                 <span class="small faint">Unset fields inherit from System. Changes apply immediately.</span>
             }
         </div>
-    </section>
+    </details>
 }
 else if (_tab == "models")
 {
-    <section class="panel">
-        <div class="panel-head">
+    <details class="panel settings-collapsible">
+        <summary class="panel-head">
             <div>
                 <div class="eyebrow">Inference</div>
                 <h2>Models</h2>
             </div>
             <span class="faint small mono">@_models.Count detected</span>
-        </div>
+        </summary>
         <div class="panel-body stack">
             <div class="row">
                 <select class="input" style="max-width: 30rem;" @bind="_selectedModelPath" @bind:after="LoadModelDraft">
@@ -919,7 +931,7 @@ else if (_tab == "models")
                 }
             }
         </div>
-    </section>
+    </details>
 }
 else
 {
