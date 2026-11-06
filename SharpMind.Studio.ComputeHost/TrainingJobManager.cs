@@ -76,14 +76,32 @@ public sealed class TrainingJobManager
 
         try
         {
-            TrainingRunResult result = await TrainingRunner.RunAsync(
-                request.Job,
-                request.PluginsFolder ?? options.PluginsFolder,
-                status,
-                progress,
-                onStep: onStep,
-                cancellationToken: cancellationToken,
-                recipeFolder: request.RecipeFolder).ConfigureAwait(false);
+            TrainingRunResult result = await RunOnceAsync();
+
+            if (!result.Success
+                && !string.IsNullOrWhiteSpace(result.AcceleratorReason)
+                && options.AcceleratorFallback)
+            {
+                string requested = result.AcceleratorRequested ?? request.Job.Accelerator ?? "accelerator";
+                status.Report(
+                    $"Accelerator '{requested}' declined: {result.AcceleratorReason} " +
+                    "Retrying on the CPU. Set SHARPMIND_ACCELERATOR_FALLBACK=false to fail instead.");
+
+                string? refusal = result.AcceleratorReason;
+                request.Job.Accelerator = null;
+                state.Progress = 0;
+                result = await RunOnceAsync();
+
+                state.Success = result.Success;
+                state.ExportPath = result.ExportPath;
+                state.AdapterPath = result.AdapterPath;
+                state.Error = result.Success
+                    ? null
+                    : $"After Accelerator '{requested}' declined ({refusal}), the CPU retry failed: "
+                      + (result.Error ?? "no error given");
+                state.Status = result.Success ? "succeeded" : "failed";
+                return;
+            }
 
             state.Success = result.Success;
             state.ExportPath = result.ExportPath;
@@ -97,6 +115,16 @@ public sealed class TrainingJobManager
                 : string.Equals(state.Error, "cancelled", StringComparison.OrdinalIgnoreCase)
                     ? "cancelled"
                     : "failed";
+
+            async Task<TrainingRunResult> RunOnceAsync() =>
+                await TrainingRunner.RunAsync(
+                    request.Job,
+                    request.PluginsFolder ?? options.PluginsFolder,
+                    status,
+                    progress,
+                    onStep: onStep,
+                    cancellationToken: cancellationToken,
+                    recipeFolder: request.RecipeFolder).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

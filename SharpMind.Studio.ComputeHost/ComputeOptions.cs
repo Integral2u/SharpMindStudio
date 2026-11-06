@@ -24,6 +24,13 @@ public sealed class ComputeOptions
     /// </summary>
     public string? InferenceAccelerator { get; init; }
 
+    /// <summary>
+    /// When a training accelerator refuses a job, retry it on the CPU with a loud
+    /// log line instead of failing. Set SHARPMIND_ACCELERATOR_FALLBACK=false to fail
+    /// on refusal, matching the library's no-silent-fallback rule.
+    /// </summary>
+    public bool AcceleratorFallback { get; init; } = true;
+
     /// <summary>Uploaded datasets and other job inputs live here.</summary>
     public string FilesFolder => Path.Combine(DataRoot, "Files");
 
@@ -62,6 +69,8 @@ public sealed class ComputeOptions
             PluginsFolder = Path.GetFullPath(plugins),
             Accelerator = Env("SHARPMIND_ACCELERATOR"),
             InferenceAccelerator = Env("SHARPMIND_INFERENCE_ACCELERATOR"),
+            AcceleratorFallback = !string.Equals(
+                Env("SHARPMIND_ACCELERATOR_FALLBACK"), "false", StringComparison.OrdinalIgnoreCase),
         };
     }
 
