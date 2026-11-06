@@ -1,4 +1,5 @@
 @using SharpMind.Studio.Services
+@implements IDisposable
 @inject StudioTrainingService Training
 
 <section class="panel training-run" id="training-run">
@@ -80,6 +81,45 @@
 </section>
 
 @code {
+    private System.Threading.Timer? _refresh;
+    private volatile bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        Training.Changed += OnTrainingChanged;
+        // The panel reads the service directly, so it must repaint itself. A
+        // timer also covers a circuit that missed a Changed notification while
+        // a remote job was being polled.
+        _refresh = new System.Threading.Timer(
+            _ => Repaint(),
+            null,
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromMilliseconds(500));
+    }
+
+    private void OnTrainingChanged() => Repaint(force: true);
+
+    private void Repaint(bool force = false)
+    {
+        if (_disposed) return;
+        if (!force && !Training.IsRunning) return;
+        try
+        {
+            _ = InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // The circuit may be gone; the next render does not matter.
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Training.Changed -= OnTrainingChanged;
+        _refresh?.Dispose();
+    }
+
     private string Percent => (Training.Progress * 100).ToString("0") + "%";
 
     private string LogTail

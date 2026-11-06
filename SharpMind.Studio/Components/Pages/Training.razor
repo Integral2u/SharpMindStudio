@@ -45,7 +45,7 @@
 
 @if (_tab == "new")
 {
-    @if (Lab.IsRunning || Lab.Result is not null)
+    @if (Lab.IsRunning || Lab.Result is not null || Lab.Error is not null)
     {
         <TrainingRunPanel />
     }
@@ -160,7 +160,7 @@
 }
 else if (_tab == "improve")
 {
-    @if (Lab.IsRunning || Lab.Result is not null)
+    @if (Lab.IsRunning || Lab.Result is not null || Lab.Error is not null)
     {
         <TrainingRunPanel />
     }
@@ -498,6 +498,10 @@ else if (_tab == "improve")
             {
                 <div class="error-line">@_tuneError</div>
             }
+            @if (Lab.Error is { } tuneRunError)
+            {
+                <div class="error-line">Run failed: @tuneRunError</div>
+            }
         </div>
     </section>
 
@@ -759,7 +763,7 @@ else if (_tab == "data")
 }
 else if (_tab == "runs")
 {
-    @if (Lab.IsRunning || Lab.Result is not null)
+    @if (Lab.IsRunning || Lab.Result is not null || Lab.Error is not null)
     {
         <TrainingRunPanel />
     }
@@ -1787,10 +1791,21 @@ else if (_tab == "models")
     {
         try
         {
-            await InvokeAsync(StateHasChanged);
-            await JS.InvokeVoidAsync(
-                "eval",
-                "document.getElementById('training-run')?.scrollIntoView({behavior:'smooth',block:'start'})");
+            // The panel appears on the next render, so retry briefly instead of
+            // scrolling a missing element once.
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(120);
+                bool found = await JS.InvokeAsync<bool>(
+                    "eval", "!!document.getElementById('training-run')");
+                if (!found) continue;
+
+                await JS.InvokeVoidAsync(
+                    "eval",
+                    "document.getElementById('training-run')?.scrollIntoView({behavior:'smooth',block:'start'})");
+                return;
+            }
         }
         catch
         {
