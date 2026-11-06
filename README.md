@@ -9,13 +9,17 @@ libraries and shares their model, tokenizer and run formats. Models, datasets,
 sessions and checkpoints stay on your machine until you explicitly send a job to a
 compute host or a prompt to OpenRouter.
 
+- **Site and wiki:** <https://integral2u.github.io/SharpMindStudio/>
+- **Installer:** <https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMind.Studio.Setup.msi.zip>
+- **Source:** <https://github.com/Integral2u/SharpMindStudio>
+
 ![SharpMind Studio chat view](docs/chat-view.png)
 
 ## Install
 
-Download the Windows installer from
-[Releases](https://github.com/Integral2u/SharpMindStudio/releases). The source path
-below needs the .NET 10 SDK; the installer is built from the same release.
+Download the Windows installer:
+[SharpMind Studio Setup](https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMind.Studio.Setup.msi.zip).
+The source path below needs the .NET 10 SDK; the installer is built from the same release.
 
 ## Build from source
 
