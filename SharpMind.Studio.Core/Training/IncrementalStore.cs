@@ -5,7 +5,7 @@ namespace SharpMind.Studio.Core.Training;
 /// <summary>
 /// Persists a training job's per-file corpus hashes
 /// (<see cref="TrainingJobSettings.SourceFileHashes"/>) next to its checkpoints so
-/// an incremental run can detect exactly which files are new or changed â€” even
+/// an incremental run can detect exactly which files are new or changed - even
 /// across an app restart before the job file itself has been manually saved.
 /// The sidecar lives at <c>&lt;CheckpointDir&gt;/incremental-file-hashes.json</c>
 /// and is a plain JSON serialization of the map; missing/unreadable files are

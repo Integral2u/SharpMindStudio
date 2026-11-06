@@ -63,7 +63,7 @@ public sealed class TrainingRunResult
 
     /// <summary>
     /// Set when an accelerator was explicitly requested (its sanity-checked name in
-    /// <see cref="AcceleratorRequested"/>) but its engine factory declined â€” e.g. the ILGPU plugin was
+    /// <see cref="AcceleratorRequested"/>) but its engine factory declined - e.g. the ILGPU plugin was
     /// chosen but no CUDA/OpenCL device is present. The CUI turns this into a consent picker (CPU +
     /// every other capable plugin, from <see cref="AcceleratorReason"/> as the why) rather than failing
     /// the run outright. Never set alongside <see cref="Success"/>.
@@ -104,7 +104,7 @@ public static class TrainingRunner
 
         try
         {
-            Log("Resolving data pipelineâ€¦");
+            Log("Resolving data pipeline...");
             var components = ComponentRegistry.ScanFolder(pluginsFolder, out var pluginWarnings);
             foreach (var w in pluginWarnings) Log($"Plugin: {w}");
 
@@ -130,7 +130,7 @@ public static class TrainingRunner
             var plan = IncrementalPlanner.Build(job, components, Log);
             if (plan.NothingToTrain)
             {
-                Log($"Incremental: no new or changed files since the last run â€” nothing to train.");
+                Log($"Incremental: no new or changed files since the last run - nothing to train.");
                 return new TrainingRunResult { Success = true, NothingToTrain = true };
             }
 
@@ -178,16 +178,16 @@ public static class TrainingRunner
             // indexes the same stream (see TrainConfig.DataFingerprint).
             string? dataFingerprint = SourceHasher.Combined(sourceHashes);
             foreach (var kv in sourceHashes.Where(kv => kv.Value is not null))
-                Log($"Source hash {kv.Key}: {kv.Value![..Math.Min(12, kv.Value == null ? 0 : kv.Value.Length)]}â€¦");
+                Log($"Source hash {kv.Key}: {kv.Value![..Math.Min(12, kv.Value == null ? 0 : kv.Value.Length)]}...");
             if (changed)
-                Log("WARNING: training sources changed since the last run â€” the cached tokenizer may be stale "
+                Log("WARNING: training sources changed since the last run - the cached tokenizer may be stale "
                     + "for this corpus. The data cursor is reset, so this run starts at the head of the new corpus.");
             if (sourceHashes.Count > 0)
                 job.SourceHashes = sourceHashes;
 
             progress.Report(0.05f);
 
-            // Pre-flight QAT validation â€” fail before the tokenizer and model are
+            // Pre-flight QAT validation - fail before the tokenizer and model are
             // built if the chosen target can't fit the planned dimensions, so the
             // user sees one clear message instead of a deep run-time exception. The
             // model vocab is padded to the target's block alignment later (see
@@ -198,7 +198,7 @@ public static class TrainingRunner
                 return new TrainingRunResult { Success = false, Error = qatProblem };
             }
 
-            // 1. Tokenizer â€” BPE trained on the corpus and cached on disk, or a
+            // 1. Tokenizer - BPE trained on the corpus and cached on disk, or a
             // character-level tokenizer derived from the corpus characters. The
             // vocab must always reflect the FULL corpus, never just the deltas of
             // an incremental run, so when the cache is missing we train it over the
@@ -371,13 +371,13 @@ public static class TrainingRunner
                     if (existed && job.TokenizerVocabSize > tokenizer.VocabSize)
                     {
                         int priorVocab = tokenizer.VocabSize;
-                        Log($"Tokenizer: target {job.TokenizerVocabSize} > cached {priorVocab} â€” growing append-only.");
+                        Log($"Tokenizer: target {job.TokenizerVocabSize} > cached {priorVocab} - growing append-only.");
                         int grown = await GrowTokenizerAsync(job, pluginsFolder, job.TokenizerVocabSize, Log, cancellationToken);
                         if (grown > priorVocab)
                         {
                             tokenizer = TokenizationPipeline.Load(tokenizerPath);
                             grewTokenizer = true;
-                            Log($"Tokenizer: grew {priorVocab} â†’ {tokenizer.VocabSize} tokens (old IDs unchanged).");
+                            Log($"Tokenizer: grew {priorVocab} -> {tokenizer.VocabSize} tokens (old IDs unchanged).");
                         }
                         else
                         {
@@ -403,7 +403,7 @@ public static class TrainingRunner
                 // 2. Model config.
                 modelConfig = TrainingModelOptions.ResolveModelConfig(job, tokenizer.VocabSize);
                 if (modelConfig.VocabSize != tokenizer.VocabSize)
-                    Log($"QAT: padded model vocab {tokenizer.VocabSize} â†’ {modelConfig.VocabSize} "
+                    Log($"QAT: padded model vocab {tokenizer.VocabSize} -> {modelConfig.VocabSize} "
                         + $"for {TrainingModelOptions.ParseQat(job.QuantAwareTraining)} block alignment.");
                 Log($"Model: H={job.HiddenDim} L={job.NumLayers} heads={job.NumHeads} ffn={job.FfnDim}");
             }
@@ -425,7 +425,7 @@ public static class TrainingRunner
                 Log("SFT: reading conversation records directly; the packed-text data cache is skipped.");
             }
 
-            // 3. Data pipeline â€” clean â†’ tokenise â†’ TrainingBatches. Random-window
+            // 3. Data pipeline - clean -> tokenise -> TrainingBatches. Random-window
             // batching samples contiguous windows from one flat corpus stream
             // (nanoGPT-style); PackingBatcher is the default document packer.
             // Two deterministic, content-hashed slices can be removed:
@@ -648,7 +648,7 @@ public static class TrainingRunner
             var dataLoader = new DataLoader(pipeline, tokenise, batcher, prefetchBuffer: 4,
                 maxBatches: job.TotalSteps * job.GradAccumSteps,
                 skipProgress: (done, total) =>
-                    Log($"Data cursor: replayed {done:N0}/{total:N0} batchesâ€¦"));
+                    Log($"Data cursor: replayed {done:N0}/{total:N0} batches..."));
             stringLoader = dataLoader;
             loaderDescription = dataLoader.Describe();
             }
@@ -656,7 +656,7 @@ public static class TrainingRunner
             ITrainingBatchSource loader = sftLoader ?? stringLoader!;
             Log($"Data pipeline: {loaderDescription}");
 
-            // 4. Model â€” empty float weights, randomised unless resuming.
+            // 4. Model - empty float weights, randomised unless resuming.
             var sharpConfig = job.IsFineTune
                 ? modelConfig.ForModel(HardwareTier.Auto)
                 : TrainingModelOptions.ResolveSharpConfig(job);
@@ -666,8 +666,8 @@ public static class TrainingRunner
             // auto-resume the latest one, so an interrupted run can always be
             // picked back up without re-entering the path manually. StartFresh
             // forces a from-scratch run regardless of what exists on disk.
-            // Incremental runs ALWAYS continue from the newest checkpoint â€”
-            // "force resume latest" â€” ignoring StartFresh/ResumeFrom, because
+            // Incremental runs ALWAYS continue from the newest checkpoint -
+            // "force resume latest" - ignoring StartFresh/ResumeFrom, because
             // the delta pipeline only delivers unseen data: building on top of
             // the latest weights is the entire point.
             string checkpointDir = job.Rehearsal
@@ -730,18 +730,18 @@ public static class TrainingRunner
             {
                 resumeDir = Checkpoint.FindLatest(checkpointDir);
                 if (resumeDir is null)
-                    Log("Incremental: no prior checkpoint found â€” starting from random weights on the new/changed files only.");
+                    Log("Incremental: no prior checkpoint found - starting from random weights on the new/changed files only.");
             }
             else if (!job.StartFresh && !string.IsNullOrWhiteSpace(job.WarmRestartFrom)
                      && Directory.Exists(job.WarmRestartFrom))
             {
                 // Warm restart: reuse the weights as an initialisation under a
-                // fresh schedule. Never a strict resume â€” the embedding may have
+                // fresh schedule. Never a strict resume - the embedding may have
                 // been widened by an append-only tokenizer grow, and the optimizer
                 // state is intentionally dropped.
                 resumeDir = null;
                 warmRestartDir = job.WarmRestartFrom;
-                Log($"Warm restart from {Path.GetFileName(warmRestartDir)} â€” reusing weights, fresh optimizer (step 0).");
+                Log($"Warm restart from {Path.GetFileName(warmRestartDir)} - reusing weights, fresh optimizer (step 0).");
             }
             else
             {
@@ -770,7 +770,7 @@ public static class TrainingRunner
                 warmRestartDir = resumeDir;
                 resumeDir = null;
                 job.ResumeFrom = null; // this run writes new-vocab checkpoints; later runs resume those
-                Log($"Warm restart from {Path.GetFileName(warmRestartDir)} â€” embedding widened, fresh optimizer (step 0).");
+                Log($"Warm restart from {Path.GetFileName(warmRestartDir)} - embedding widened, fresh optimizer (step 0).");
             }
 
             // Safety net: a checkpoint built for a different vocabulary cannot be
@@ -802,8 +802,8 @@ public static class TrainingRunner
                     warmRestartPriorVocab = priorVocab;
                     resumeDir = null;
                     job.ResumeFrom = null; // see the grown-tokenizer case above
-                    Log($"Checkpoint vocab {priorVocab} â†’ model vocab {modelConfig.VocabSize} "
-                        + "â€” warm restart instead of strict resume.");
+                    Log($"Checkpoint vocab {priorVocab} -> model vocab {modelConfig.VocabSize} "
+                        + "- warm restart instead of strict resume.");
                 }
             }
 
@@ -927,7 +927,7 @@ public static class TrainingRunner
                     WeightInitializer.InitializeNewEmbeddingRows(emb, priorVocab, Seed + 7919);
 
                 Log(priorVocab > 0
-                    ? $"Warm restart: reused weights (checkpoint vocab {priorVocab} â†’ model vocab {modelConfig.VocabSize}); "
+                    ? $"Warm restart: reused weights (checkpoint vocab {priorVocab} -> model vocab {modelConfig.VocabSize}); "
                       + $"{Math.Max(0, modelConfig.VocabSize - priorVocab)} new embedding rows initialised."
                     : $"Warm restart: reused weights; embedding rows beyond the checkpoint initialised.");
             }
@@ -935,7 +935,7 @@ public static class TrainingRunner
             // Accelerator plugins live in the same folder as data-pipeline plugins.
             // An explicit accelerator that cannot be honoured (no device, unsupported shape) is
             // reported back to the UI, which shows a consent picker (CPU + every other capable
-            // plugin) rather than failing the run â€” never a silent CPU fallback. Only genuinely
+            // plugin) rather than failing the run - never a silent CPU fallback. Only genuinely
             // unfindable/non-capable names fail here with an error.
             var accelerators = AcceleratorLoader.LoadFrom(pluginsFolder, out var acceleratorWarnings);
             foreach (var w in acceleratorWarnings) Log($"Accelerator: {w}");
@@ -968,13 +968,13 @@ public static class TrainingRunner
                 engine = resolved.Engine;
                 if (engine is not null)
                 {
-                    // Re-derived from the same name Resolve just matched — FirstOrDefault
+                    // Re-derived from the same name Resolve just matched - FirstOrDefault
                     // rather than First so a future drift between the two lookups logs
                     // nothing instead of throwing "Sequence contains no matching element"
                     // into the generic catch around this run.
                     var chosen = accelerators.FirstOrDefault(p => string.Equals(p.Name, resolved.Name, StringComparison.OrdinalIgnoreCase));
                     if (chosen is not null)
-                        Log($"Accelerator: {chosen.Name} — {chosen.Description}");
+                        Log($"Accelerator: {chosen.Name} - {chosen.Description}");
                     Log($"Engine: {engine.Description}");
                 }
             }
@@ -1051,7 +1051,7 @@ public static class TrainingRunner
                     // recorded by the previous run points into data this run never
                     // sees - applying it would discard exactly the new files the run
                     // exists to train on. A plain resume replays the same stream, so
-                    // it picks the cursor up and continues where it stopped â€” unless
+                    // it picks the cursor up and continues where it stopped - unless
                     // the sources changed, in which case the old cursor no longer
                     // indexes this corpus and replaying it would silently stall.
                     ResumeDataCursor = !job.IncrementalMode && !changed,
@@ -1061,7 +1061,7 @@ public static class TrainingRunner
                     QuantAwareTraining = qat,
                     // Guard a strict resume against a vocabulary change (the model's
                     // padded vocab is what the checkpoint recorded). Zero during a
-                    // warm restart so the guard is skipped â€” the whole point there
+                    // warm restart so the guard is skipped - the whole point there
                     // is a deliberately widened embedding.
                     ExpectedVocabSize = warmRestartDir is null ? modelConfig.VocabSize : 0,
                 });
@@ -1089,8 +1089,8 @@ public static class TrainingRunner
                     ? $"Continuing to step {job.TotalSteps} (from {warmRestartStartStep})"
                     : $"Training {job.TotalSteps} steps";
                 Log(qat is { } q
-                    ? $"{stepPlan} with QAT [{q}] — full backprop (loss → gradients → AdamW)…"
-                    : $"{stepPlan} (float32) — full backprop (loss → gradients → AdamW)…");
+                    ? $"{stepPlan} with QAT [{q}] - full backprop (loss -> gradients -> AdamW)..."
+                    : $"{stepPlan} (float32) - full backprop (loss -> gradients -> AdamW)...");
                 progress.Report(0.12f);
             }
 
@@ -1552,7 +1552,7 @@ public static class TrainingRunner
     }
 
     /// <summary>
-    /// A composite over every configured source, unrestricted â€” used to train the
+    /// A composite over every configured source, unrestricted - used to train the
     /// tokenizer over the complete corpus even when the training pipeline of an
     /// incremental run is restricted to the delta files.
     /// </summary>
@@ -1564,7 +1564,7 @@ public static class TrainingRunner
 
     /// <summary>
     /// Builds the job's full corpus source (all sources merged) for a caller
-    /// outside the runner â€” the wizard's vocabulary analysis and tokenizer-grow
+    /// outside the runner - the wizard's vocabulary analysis and tokenizer-grow
     /// buttons. Throws when the job has no source or a source can't be resolved.
     /// </summary>
     public static IDataSource BuildCorpusSource(TrainingJobSettings job, string pluginsFolder)
@@ -1639,7 +1639,7 @@ public static class TrainingRunner
         var grown = await trainer.GrowAsync(existing, source.ReadAsync(), newTargetVocabSize, cancellationToken);
         TokenizerFile.Save(grown, path);
         job.TrainedTokenizerVocab = grown.Vocab.Size;
-        log?.Invoke($"Tokenizer grown: {existing.Vocab.Size} â†’ {grown.Vocab.Size} tokens ({path}).");
+        log?.Invoke($"Tokenizer grown: {existing.Vocab.Size} -> {grown.Vocab.Size} tokens ({path}).");
         return grown.Vocab.Size;
     }
 
@@ -1656,7 +1656,7 @@ public static class TrainingRunner
 
             string smmPath = Path.Combine(dir, "model.smm");
             SmmTrainingExporter.Export(weights, tokenizer, smmPath, BuildEmbedOptions(job, "checkpoint", SourceHasher.Combined(job.Sources)), model: model);
-            log($"Checkpoint {Path.GetFileName(dir)} â†’ {Path.GetFileName(smmPath)} (step {meta.Step})");
+            log($"Checkpoint {Path.GetFileName(dir)} -> {Path.GetFileName(smmPath)} (step {meta.Step})");
         }
         catch (Exception ex)
         {

@@ -175,7 +175,7 @@ public static class TrainingModelOptions
     /// Pre-flight check of a QAT target against the planned model dimensions, run
     /// before the tokenizer and model are built so a bad target fails fast with a
     /// clear message. Returns null when the target is compatible or off, otherwise
-    /// a human-readable reason. Only <c>HiddenDim</c> can block a run â€” the vocab is
+    /// a human-readable reason. Only <c>HiddenDim</c> can block a run - the vocab is
     /// padded to fit (see <see cref="QatPaddedVocab"/>).
     /// </summary>
     public static string? ValidateQat(string? quantAwareTraining, int hiddenDim)
@@ -190,7 +190,7 @@ public static class TrainingModelOptions
 
         if (!IsKQuant(target))
             return $"QAT target {target} is not supported for training. "
-                 + "Supported targets: F16, Q8_0, Q4_0, Q2_Kâ€“Q8_K.";
+                 + "Supported targets: F16, Q8_0, Q4_0, Q2_K-Q8_K.";
 
         return hiddenDim % 128 == 0 ? null
             : $"QAT with {target} needs HiddenDim ({hiddenDim}) to be a multiple of 128. "
@@ -233,7 +233,7 @@ public static class TrainingModelOptions
 
     /// <summary>
     /// QAT target labels shown in the wizard, in menu order. The legacy block formats
-    /// (Q8_0/Q4_0) sit next to the K-quants so a job that chose one keeps it â€” the old
+    /// (Q8_0/Q4_0) sit next to the K-quants so a job that chose one keeps it - the old
     /// list only offered Q8/Q4 (K-quants) and silently rewrote a stored Q8_0/Q4_0 job to
     /// Q8_K/Q4_K on save.
     /// </summary>

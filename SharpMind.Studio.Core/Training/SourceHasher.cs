@@ -16,7 +16,7 @@ public static class SourceHasher
     /// <see cref="GlobResolver"/> (already deterministic, lexicographic) and
     /// returns a per-source SHA-256 over the sorted resolved files' content
     /// bytes, in lexicographic file order. Content-only, so the same corpus on
-    /// different machines (or paths) produces the same fingerprint â€” ideal for
+    /// different machines (or paths) produces the same fingerprint - ideal for
     /// stamping exported model metadata. Sources without a resolvable path
     /// (e.g. remote HuggingFace) are skipped entirely.
     /// </summary>

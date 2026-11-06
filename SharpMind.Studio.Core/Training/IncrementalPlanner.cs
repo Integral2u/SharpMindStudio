@@ -38,11 +38,11 @@ public static class IncrementalPlanner
     /// <summary>
     /// Builds the delta plan. For each configured source:
     ///  <list type="bullet">
-    ///   <item>No resolvable <c>path</c> arg (remote/generated) â†’ kept whole; the
+    ///   <item>No resolvable <c>path</c> arg (remote/generated) -> kept whole; the
     ///        run cannot attribute documents to files, so it retrains it all.</item>
-    ///   <item>File-based with a multi-path constructor (Text/JSONL/Fusechat) â†’ a
+    ///   <item>File-based with a multi-path constructor (Text/JSONL/Fusechat) -> a
     ///        new instance over exactly the new+changed files.</item>
-    ///   <item>Any other file-based source â†’ kept whole when at least one of its
+    ///   <item>Any other file-based source -> kept whole when at least one of its
     ///        files changed (per-file restriction unsupported), skipped otherwise.</item>
     ///  </list>
     /// Returns a plan with <see cref="IncrementalPlan.NothingToTrain"/> when
@@ -79,7 +79,7 @@ public static class IncrementalPlanner
 
             if (string.IsNullOrWhiteSpace(path))
             {
-                // Cannot attribute documents to files â€” keep the whole source.
+                // Cannot attribute documents to files - keep the whole source.
                 log($"Incremental: {key} is a non-file source; retraining it whole.");
                 sources.Add(BuildSource(js.Component, registry));
                 anyDelta = true;
@@ -89,16 +89,16 @@ public static class IncrementalPlanner
             bool hasDeltas = deltas.TryGetValue(key, out var deltaFiles) && deltaFiles.Length > 0;
             if (!hasDeltas)
             {
-                log($"Incremental: {key} â€” no new or changed files; skipping.");
+                log($"Incremental: {key} - no new or changed files; skipping.");
                 skip[i] = true;
                 continue;
             }
 
             var rebuilt = BuildDeltaSource(js.Component, deltaFiles!, registry, out var restricted);
             if (restricted)
-                log($"Incremental: {key} â€” training {deltaFiles!.Length} new/changed file(s) only.");
+                log($"Incremental: {key} - training {deltaFiles!.Length} new/changed file(s) only.");
             else
-                log($"Incremental: {key} â€” {deltaFiles!.Length} file(s) changed; source cannot be restricted per-file, retraining it whole.");
+                log($"Incremental: {key} - {deltaFiles!.Length} file(s) changed; source cannot be restricted per-file, retraining it whole.");
             sources.Add(rebuilt);
             anyDelta = true;
         }

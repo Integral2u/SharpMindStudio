@@ -5,7 +5,7 @@ using SharpMind.Studio.Core.Storage;
 
 namespace SharpMind.Studio.Core.Training;
 
-/// <summary>A configured training job Ã¢â‚¬â€ the persisted "what &amp; how to train" document.</summary>
+/// <summary>A configured training job - the persisted "what &amp; how to train" document.</summary>
 public sealed class TrainingJobSettings
 {
     /// <summary>File extension for saved training jobs (<c>*.smmt</c>).</summary>
@@ -34,9 +34,9 @@ public sealed class TrainingJobSettings
     public List<JobComponent> GlobalStages { get; set; } = [];
 
     /// <summary>
-    /// Content fingerprints for each configured source (display name Ã¢â€ â€™ SHA-256),
+    /// Content fingerprints for each configured source (display name -> SHA-256),
     /// recorded at the start of a run. Lets a later run detect that the corpus
-    /// changed Ã¢â‚¬â€ invalidating the path-only tokenizer cache Ã¢â‚¬â€ and stamps an
+    /// changed - invalidating the path-only tokenizer cache - and stamps an
     /// audit fingerprint onto exported models. Unhashable sources (remote) are
     /// absent. Empty for jobs that have never run.
     /// </summary>
@@ -55,7 +55,7 @@ public sealed class TrainingJobSettings
     public bool IncrementalMode { get; set; }
 
     /// <summary>
-    /// Per-source per-file content hashes (display name Ã¢â€ â€™ absolute file path Ã¢â€ â€™
+    /// Per-source per-file content hashes (display name -> absolute file path ->
     /// SHA-256), persisted after a successful incremental run. The next run
     /// diffs the current corpus against this map to decide what still needs
     /// training. Persisted on-disk alongside the checkpoints so it survives
@@ -145,7 +145,7 @@ public sealed class TrainingJobSettings
     /// <summary>
     /// Accelerator plugin name (<c>IAcceleratorPlugin.Name</c>, case-insensitive)
     /// that supplies the training engine; null/empty/"CPU" = the built-in CPU
-    /// engine. Resolved against the plugins folder at run time Ã¢â‚¬â€ a name that is
+    /// engine. Resolved against the plugins folder at run time - a name that is
     /// not found fails the run rather than silently training on the CPU.
     /// </summary>
     public string? Accelerator { get; set; }
@@ -185,7 +185,7 @@ public sealed class TrainingJobSettings
            && BatchingKind.Equals("RandomWindow", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Percentage of documents held out for validation (0–99), split by a stable
+    /// Percentage of documents held out for validation (0-99), split by a stable
     /// content hash so the same corpus always splits identically. 0 (default)
     /// disables validation and leaves the training corpus untouched. Validation
     /// runs at the logging cadence, so every logged step carries a val loss.
@@ -193,7 +193,7 @@ public sealed class TrainingJobSettings
     public double ValidationPercent { get; set; }
 
     /// <summary>
-    /// Percentage of documents reserved for the promotion exam (0–90). The exam
+    /// Percentage of documents reserved for the promotion exam (0-90). The exam
     /// slice is excluded from training and validation and is scored only after a
     /// run, so it can judge candidates honestly. The split uses the same stable
     /// content hash as <see cref="ValidationPercent"/> over a disjoint bucket
@@ -463,7 +463,7 @@ public sealed class TrainingJobSettings
     // --- Persistence -------------------------------------------------------
 
     /// <summary>
-    /// The file this job was loaded from, or last saved to Ã¢â‚¬â€ in-memory only,
+    /// The file this job was loaded from, or last saved to - in-memory only,
     /// never written into the job file or the dirty-tracking payload, so a
     /// loaded job keeps saving back to exactly where it came from across
     /// wizard round-trips. Null for a new job (its first save lands in
@@ -519,7 +519,7 @@ public sealed class TrainingJobSettings
 
                 if (version < CurrentFormatVersion)
                 {
-                    // Older wrapped container Ã¢â‚¬â€ the inner job shape is the same
+                    // Older wrapped container - the inner job shape is the same
                     // payload type, just deserialize it. (Future migrations hook
                     // in here.)
                 }
