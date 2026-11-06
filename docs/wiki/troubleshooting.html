@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Troubleshooting — SharpMind Studio Wiki</title>
+    <meta name="description" content="Fix SharpMind Compute problems: Docker pulls, SSH auth, firewall timeouts, accelerator refusals, 401 tokens and billing." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a class="active" href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#where">Where to look first</a>
+            <a href="#ssh">SSH</a>
+            <a href="#image">Images and pulls</a>
+            <a href="#network">Ports and network</a>
+            <a href="#gpu">GPU and accelerators</a>
+            <a href="#training">Training jobs</a>
+            <a href="#auth">Tokens and 401</a>
+            <a href="#billing">Billing</a>
+            <a href="#reset">Reset a host</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Troubleshooting</span></div>
+            <span class="eyebrow">Errors</span>
+            <h1>Troubleshooting</h1>
+            <p class="lead">
+                Most Compute failures are one of four things: the image cannot be pulled, SSH
+                cannot log in, the provider firewall blocks a port, or the model does not fit the
+                GPU engine. The messages below say which.
+            </p>
+
+            <h2 id="where">Where to look first</h2>
+            <ol class="steps">
+                <li><strong>Host card → Test.</strong> A timeout is usually network or firewall; a 401 is the token; a 503 is a missing container token.</li>
+                <li><strong>Host card → Container logs.</strong> This is the container's stdout: startup, model loading, training and crashes.</li>
+                <li><strong><span class="mono">/health</span></strong> on port 8080. It is open and lists the loaded accelerators and the inference backend.</li>
+                <li><strong>Training run panel.</strong> The log tail shows the job's own stages; the error line shows a refusal or upload failure.</li>
+                <li><strong>Studio → Settings → Providers → Compute → Edit.</strong> The image, token, SSH fields and ports are what the helper actually uses.</li>
+            </ol>
+
+            <h2 id="ssh">SSH</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Message</th><th>Cause and fix</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="mono">Could not reach host:22</span></td>
+                            <td>The instance is stopped, the IP changed, or the firewall blocks 22. Check the provider console.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">SSH login failed</span></td>
+                            <td>Wrong user, wrong key, or the public key is not in <span class="mono">authorized_keys</span>. Add it once from the web console; use the <strong>Copy public key</strong> button.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">The private key file was not found</span></td>
+                            <td>The path is local to this PC. Browse to it or press <strong>Create key</strong>.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">The passphrase for this key looks incorrect</span></td>
+                            <td>Enter the key passphrase, or use a key without one. A password below can be used instead.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">No SSH key or password was given</span></td>
+                            <td>No key path, password, or default <span class="mono">~/.ssh/id_ed25519</span> was found. Create a key in Edit.</td>
+                        </tr>
+                        <tr>
+                            <td>Host key warning</td>
+                            <td>The helper trusts the key on first use. For a stricter setup, pin the host key before exposing the host.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2 id="image">Images and pulls</h2>
+            <table>
+                <thead><tr><th>Message</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><span class="mono">pull access denied for sharpmind-server</span></td>
+                        <td>The image has no registry prefix. Use <span class="mono">your-name/sharpmind-server:gpu</span>. Setup now refuses local-only names before pulling.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="mono">repository does not exist</span></td>
+                        <td>Wrong Docker Hub user/repository, or it was never pushed. Check the tag in Edit against <span class="mono">docker images</span>.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="mono">unauthorized</span> / <span class="mono">denied</span></td>
+                        <td>A private repository. Make it public or run <span class="mono">docker login</span> on the host with credentials for the registry.</td>
+                    </tr>
+                    <tr>
+                        <td>Pull is slow or appears stuck</td>
+                        <td>The GPU image is about 1.6 GB. Watch the host card log; the first pull takes minutes depending on the region.</td>
+                    </tr>
+                    <tr>
+                        <td>No space left on device</td>
+                        <td>The image plus models need several GB. Grow the instance disk or remove old images/models.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2 id="network">Ports and network</h2>
+            <ul>
+                <li><span class="mono">8080</span> is the Compute API; <span class="mono">5117</span> is the remote Studio UI. Both must be allowed in the provider firewall.</li>
+                <li>A timeout from Studio while SSH works is almost always the firewall, not a dead container.</li>
+                <li><span class="mono">Port 8080 or 5117 is already used</span> means another container owns the port. Remove it or change the container name/ports.</li>
+                <li>The container binds <span class="mono">5118</span> for the LAN listener; it does not need to be public.</li>
+                <li>If the API answers on localhost but not from this PC, the host is bound to loopback or the firewall is local to the provider.</li>
+            </ul>
+
+            <h2 id="gpu">GPU and accelerators</h2>
+            <table>
+                <thead><tr><th>Message</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><span class="mono">No CUDA or OpenCL device is available</span></td>
+                        <td>The container was started without <span class="mono">--gpus all</span>, the driver is missing, or the toolkit is not configured. Tick GPU host and run setup again; verify <span class="mono">nvidia-smi</span> on the host.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="mono">No NVIDIA driver found</span></td>
+                        <td>The helper does not install drivers. Use a GPU provider image or install the driver and reboot.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="mono">LayerNorm, only RMSNorm</span></td>
+                        <td>Use a LLaMA/Qwen-style base for GPU fine-tuning. GPT-2/BERT bases can still use GPU inference.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="mono">only LoRA adapters are trainable</span></td>
+                        <td>The job is a from-scratch pretrain. It belongs on the CPU; drop the GPU requirement or accept the fallback.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="mono">MoE</span></td>
+                        <td>MoE training is not supported by the GPU engine. Use the CPU.</td>
+                    </tr>
+                    <tr>
+                        <td>GPU works but training is slow</td>
+                        <td>Check the engine line: <span class="mono">[Cuda]</span> means the device; a "Retrying on the CPU" line means the base was refused.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2 id="training">Training jobs</h2>
+            <ul>
+                <li><strong>Validation split produced no documents:</strong> the corpus is too small for a 64-token window; training continues without a curve.</li>
+                <li><strong>No output for a while:</strong> the run panel refreshes itself. If it does not, press Interrupt once to force a render, then update Studio; older builds could miss the notifications.</li>
+                <li><strong>Interrupted during download:</strong> the host finished but the local copy was cancelled. The export remains on the host; rerun or download again.</li>
+                <li><strong>Upload seems stuck:</strong> large base models dominate the first minutes. The log reports progress in 25% steps.</li>
+                <li><strong>Remote job keeps running after cancel:</strong> cancellation is best-effort. Use the run record's cancel or the host API; the process may finish its current step.</li>
+            </ul>
+
+            <h2 id="auth">Tokens and 401</h2>
+            <ul>
+                <li><span class="mono">/health</span> is open; every other API route needs <span class="mono">Authorization: Bearer &lt;token&gt;</span>.</li>
+                <li><span class="mono">401</span> means the token in Studio and the token in the container differ. Either update Studio or redeploy the container with the saved token.</li>
+                <li>After rotating a token, restart Studio so it reloads the encrypted value from <span class="mono">compute.json</span>.</li>
+                <li><span class="mono">503</span> with "SHARPMIND_TOKEN is not configured" means the container started without a token; redeploy.</li>
+                <li>Do not use <span class="mono">PASTE_YOUR_TOKEN</span> or a short word on an internet-facing host.</li>
+            </ul>
+
+            <h2 id="billing">Billing</h2>
+            <ul>
+                <li><strong>Vultr:</strong> stopping an instance does not stop billing. Destroy it. Snapshots are optional and billed separately.</li>
+                <li><strong>Runpod:</strong> terminate the pod; a stopped pod may still hold resources. A network volume bills separately.</li>
+                <li><strong>Local:</strong> free, but a GPU run still uses your power and desktop responsiveness.</li>
+            </ul>
+
+            <h2 id="reset">Reset a host</h2>
+            <ol class="steps">
+                <li><strong>Stop</strong> the container on the card (keeps <span class="mono">/data/SharpMind</span>).</li>
+                <li><strong>Set up &amp; deploy</strong> again to replace the container with the saved image and token.</li>
+                <li>If the image changed, publish/push it first; the host pulls the tag in the card.</li>
+                <li>To start completely fresh, remove the host's data folder or use a new volume; this deletes models, uploads and training output.</li>
+            </ol>
+            <div class="callout danger">
+                <strong>Deleting the host's data is permanent.</strong> Download models and exports
+                before removing a volume or destroying an instance.
+            </div>
+
+            <div class="hero-actions">
+                <a class="button primary" href="vultr.html">Vultr setup</a>
+                <a class="button" href="training.html">Training</a>
+                <a class="button" href="providers.html">Providers</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="../index.html">Home</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>

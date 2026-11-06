@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Training and fine-tuning — SharpMind Studio Wiki</title>
+    <meta name="description" content="Pretrain from scratch on the CPU, fine-tune with LoRA on a GPU, and run SFT with assistant-only loss masks." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a class="active" href="training.html">Training</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#modes">Three modes</a>
+            <a href="#gpu">GPU support</a>
+            <a href="#fine-tune">Fine-tune a base</a>
+            <a href="#sft">SFT</a>
+            <a href="#data">Choosing data</a>
+            <a href="#remote">Remote runs</a>
+            <a href="#progress">Progress and interrupt</a>
+            <a href="#errors">Accelerator errors</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Training</span></div>
+            <span class="eyebrow">Train</span>
+            <h1>Training and fine-tuning</h1>
+            <p class="lead">
+                SharpMind has three training jobs. They share the data pipeline, checkpoints and
+                export, but they train different things and use different devices.
+            </p>
+
+            <h2 id="modes">Three modes</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Mode</th><th>Starts from</th><th>Trains</th><th>GPU</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>New model</strong> (pretrain)</td>
+                            <td>Random weights</td>
+                            <td>Every weight</td>
+                            <td>No — CPU only</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Improve</strong> (LoRA)</td>
+                            <td>Packaged <span class="mono">.smm</span></td>
+                            <td>Small adapters</td>
+                            <td>Yes, when the base fits</td>
+                        </tr>
+                        <tr>
+                            <td><strong>SFT</strong></td>
+                            <td>Packaged <span class="mono">.smm</span> + chat JSONL</td>
+                            <td>LoRA adapters, assistant tokens only</td>
+                            <td>Yes, same shape rules</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="callout warn">
+                <strong>From-scratch pretraining cannot use the GPU engine.</strong> The GPU
+                trainer is LoRA-only by design. A pretrain that names <span class="mono">ilgpu</span>
+                is refused, then retried on the CPU with a loud log line.
+            </div>
+
+            <h2 id="gpu">GPU support</h2>
+            <p>The GPU training engine accepts a base model with all of these:</p>
+            <ul class="checklist">
+                <li>RMSNorm (not LayerNorm) — both in the blocks and the final norm.</li>
+                <li>RoPE or NoPE positional encoding.</li>
+                <li>Gated FFN (SwiGLU/GeGLU-style), not MoE.</li>
+                <li>An attention layout with <span class="mono">q_proj</span>, <span class="mono">k_proj</span>, <span class="mono">v_proj</span>, <span class="mono">o_proj</span> LoRA targets.</li>
+                <li>A packaged <span class="mono">.smm</span> base. Convert a GGUF first.</li>
+            </ul>
+            <p>
+                LLaMA/Qwen-style bases satisfy this. GPT-2/BERT-style bases (LayerNorm, dense
+                GELU) do <strong>not</strong> for training, although GPU <em>inference</em> now
+                covers them.
+            </p>
+            <p>
+                On a supported base the log shows:
+            </p>
+            <pre><code>Fine-tune: 8 adapters (rank 8, alpha 16).
+Engine: [Cuda] NVIDIA A16, 14962 MB, cuBLAS 12.6
+Training 100 steps (float32) — full backprop (loss → gradients → AdamW)…</code></pre>
+            <p>
+                On an unsupported base it shows the refusal and falls back:
+            </p>
+            <pre><code>Accelerator 'ilgpu' declined: GPU engine (M1) does not support a
+LayerNormLayer final norm — LayerNorm, only RMSNorm
+Retrying on the CPU. Set SHARPMIND_ACCELERATOR_FALLBACK=false to fail instead.</code></pre>
+            <p>
+                The fallback is a host policy. Set
+                <span class="mono">SHARPMIND_ACCELERATOR_FALLBACK=false</span> to fail the job
+                instead of retrying.
+            </p>
+
+            <h2 id="fine-tune">Fine-tune a base</h2>
+            <ol class="steps">
+                <li><strong>Training → Improve.</strong></li>
+                <li><strong>Base model:</strong> pick a packaged <span class="mono">.smm</span>. The model list is under Models; a GGUF must be converted first.</li>
+                <li><strong>Corpus:</strong> use Browse. With SFT off it filters <span class="mono">*.txt</span>; with SFT on, <span class="mono">*.jsonl</span>. A folder or glob also works.</li>
+                <li><strong>LoRA:</strong> rank 8–16, alpha 16–32, targets <span class="mono">q_proj k_proj v_proj o_proj</span>.</li>
+                <li><strong>Steps:</strong> 50–200 for a tiny test, 200–500+ for a real SFT run.</li>
+                <li><strong>Output:</strong> merged <span class="mono">.smm</span>, adapter <span class="mono">.smlora</span>, or both.</li>
+                <li><strong>Run on:</strong> This PC or a Compute host. The base and corpus upload with the job; the export downloads back.</li>
+                <li><strong>Start fine-tune</strong> and watch the engine line and loss curve.</li>
+            </ol>
+            <div class="callout ok">
+                <strong>Quick GPU check:</strong> a small LLaMA-preset base and a 1 MB text file
+                can finish 10–100 steps in under a minute on an A16, and proves the engine,
+                export and download path before you spend time on a real base.
+            </div>
+
+            <h2 id="sft">SFT</h2>
+            <p>
+                Tick <strong>Instruction tuning (SFT)</strong> to train on chat JSONL with
+                assistant-only loss. Each line is one record. Supported shapes:
+            </p>
+            <pre><code>{"messages":[{"role":"user","content":"…"},{"role":"assistant","content":"…"}]}
+{"conversations":[{"from":"human","value":"…"},{"from":"gpt","value":"…"}]}
+{"prompt":"…","response":"…"}
+{"instruction":"…","input":"…","output":"…"}</code></pre>
+            <p>
+                The base supplies the tokenizer and chat template. Use
+                <strong>Preview data</strong> before the run: it reports parsed, skipped,
+                truncated and train/val/exam counts, plus sample rendered conversations.
+            </p>
+            <ul>
+                <li>Blank lines, malformed JSON and records without an assistant turn are skipped.</li>
+                <li>Long conversations are truncated to the SFT sequence length.</li>
+                <li>FuseChat's original file is a root JSON array, not JSONL; convert one record per line first.</li>
+            </ul>
+
+            <h2 id="data">Choosing data</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Data</th><th>Use</th></tr></thead>
+                    <tbody>
+                        <tr><td>Plain <span class="mono">.txt</span></td><td>Plain LoRA fine-tune (SFT off). Shakespeare, stories, domain text.</td></tr>
+                        <tr><td>Text JSONL (<span class="mono">{"text":"…"}</span>)</td><td>Not for SFT — no assistant turn. Use the text file in plain mode.</td></tr>
+                        <tr><td>Chat JSONL</td><td>SFT. Use <span class="mono">messages</span>, <span class="mono">conversations</span>, prompt/response or instruction/output.</td></tr>
+                        <tr><td>Parquet</td><td>Not read by Studio. Convert to JSONL first.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>
+                For a quick test, a 1 MB text file is enough. For a useful instruction tune, a few
+                thousand chat records are enough to see behaviour; 20k+ is a small real run.
+                Prefer data that matches how you will use the model.
+            </p>
+
+            <h2 id="remote">Remote runs</h2>
+            <p>
+                Select a Compute host in <strong>Run on</strong>. Studio uploads the source files
+                and base, starts the job, polls its state and logs, then downloads the export back
+                to the path shown on the form. The host needs no chat model for a fine-tune.
+            </p>
+            <ul class="checklist">
+                <li>If the base is large, upload time dominates the first poll; the card logs progress in 25% steps.</li>
+                <li>The export is written under the host's <span class="mono">/data/SharpMind/Training/jobs/…</span>, then downloaded.</li>
+                <li><strong>Rehearse 30 steps</strong> runs locally and estimates step time; it is not the remote job.</li>
+                <li>An interrupted run may leave the host job running; cancel it from the run record or the host API.</li>
+            </ul>
+
+            <h2 id="progress">Progress and interrupt</h2>
+            <p>
+                The run panel follows the job: status, step, loss, validation loss, curve, log tail
+                and an <strong>Interrupt</strong> button. Starting a run scrolls it into view. The
+                panel repaints itself while the job is active, including remote jobs.
+            </p>
+            <div class="callout">
+                <strong>Do not interrupt during "Downloading the trained model…"</strong> unless
+                you mean it. The host has finished, but the local copy is cancelled. The export
+                remains on the host; rerun or download it again.
+            </div>
+
+            <h2 id="errors">Accelerator errors</h2>
+            <table>
+                <thead><tr><th>Message</th><th>Meaning</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="mono">only LoRA adapters are trainable in M1</span></td><td>The job is a pretrain. Use Improve/SFT for GPU, or let it fall back to CPU.</td></tr>
+                    <tr><td><span class="mono">LayerNorm, only RMSNorm</span></td><td>The base is GPT-2/BERT-style. Use a LLaMA/Qwen base for GPU training.</td></tr>
+                    <tr><td><span class="mono">No CUDA or OpenCL device</span></td><td>The container has no GPU access. Check <span class="mono">--gpus all</span>, the driver and the toolkit.</td></tr>
+                    <tr><td><span class="mono">MoE</span></td><td>MoE training is not supported by the GPU engine.</td></tr>
+                    <tr><td>Val split produced no documents</td><td>The corpus is too small for a 64-token window; training continues without a validation curve.</td></tr>
+                </tbody>
+            </table>
+
+            <div class="hero-actions">
+                <a class="button primary" href="vultr.html">Set up a GPU host →</a>
+                <a class="button" href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="../index.html">Home</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Providers — SharpMind Studio Wiki</title>
+    <meta name="description" content="Compare Local Docker, Runpod, Vultr and custom SharpMind Compute hosts. Ports, volume, token and who runs the setup." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a class="active" href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#compare">Compare hosts</a>
+            <a href="#contract">The shared contract</a>
+            <a href="#choose">Which one?</a>
+            <a href="#ssh">What SSH setup does</a>
+            <a href="#tokens">Tokens and security</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Providers</span></div>
+            <span class="eyebrow">Compute</span>
+            <h1>Providers</h1>
+            <p class="lead">
+                A SharpMind Compute host is the combined server image: the Studio web UI on
+                <span class="mono">5117</span> and the OpenAI-style API on
+                <span class="mono">8080</span>, sharing <span class="mono">/data/SharpMind</span>.
+                The provider only supplies the machine, Docker, ports and disk.
+            </p>
+
+            <h2 id="compare">Compare hosts</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>Host</th><th>Setup</th><th>GPU</th><th>Billing</th><th>Best for</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><a href="local-docker.html">Local Docker</a></td>
+                            <td>Studio starts the container</td>
+                            <td>Optional local NVIDIA GPU</td>
+                            <td>Free (your power)</td>
+                            <td>Privacy, small models, CPU pretraining</td>
+                        </tr>
+                        <tr>
+                            <td><a href="runpod.html">Runpod</a></td>
+                            <td>Studio deploys the pod via API</td>
+                            <td>Yes</td>
+                            <td>Per minute; balance required</td>
+                            <td>Short GPU jobs without a server to keep</td>
+                        </tr>
+                        <tr>
+                            <td><a href="vultr.html">Vultr</a></td>
+                            <td>Create instance; Studio sets up over SSH</td>
+                            <td>Yes, A16 class</td>
+                            <td>Hourly; <strong>also while stopped</strong></td>
+                            <td>A host you keep for a day of experiments</td>
+                        </tr>
+                        <tr>
+                            <td><a href="vultr.html#custom">Custom / bare Linux</a></td>
+                            <td>Your Docker + optional SSH</td>
+                            <td>Whatever the box has</td>
+                            <td>Your provider</td>
+                            <td>An existing server, workstation or lab machine</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2 id="contract">The shared contract</h2>
+            <p>Every host follows the same rules, which is why the workflow does not change:</p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Item</th><th>Value</th></tr></thead>
+                    <tbody>
+                        <tr><td>Studio UI</td><td><span class="mono">5117</span> (and <span class="mono">5118</span> for the LAN listener)</td></tr>
+                        <tr><td>Compute API</td><td><span class="mono">8080</span></td></tr>
+                        <tr><td>Data root</td><td><span class="mono">/data/SharpMind</span> mounted from the host</td></tr>
+                        <tr><td>Models</td><td><span class="mono">/data/SharpMind/Models</span></td></tr>
+                        <tr><td>Plugins</td><td><span class="mono">/app/plugins</span> (the GPU image carries <span class="mono">SharpMind.GPU</span>)</td></tr>
+                        <tr><td>Auth</td><td><span class="mono">SHARPMIND_TOKEN</span> on every API call; <span class="mono">/health</span> is open</td></tr>
+                        <tr><td>Default model</td><td>One active model per process; activate another from Studio or the API</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="callout">
+                <strong>Both ports must be reachable.</strong> Studio routes chat and training to
+                <span class="mono">8080</span>; the Studio URL on the card uses
+                <span class="mono">5117</span>. A card that says "timeout" is usually a provider
+                firewall, not a dead container.
+            </div>
+
+            <h2 id="choose">Which one?</h2>
+            <ul class="checklist">
+                <li><strong>Only trying the app:</strong> run Studio locally and use a packaged model. No host needed.</li>
+                <li><strong>Want a GPU for a fine-tune this week:</strong> <a href="vultr.html">Vultr</a>. Keep the instance for the session, destroy it when done.</li>
+                <li><strong>Want a GPU for a few minutes and already have credit:</strong> <a href="runpod.html">Runpod</a>, deployed from the card.</li>
+                <li><strong>Have a Linux box with Docker:</strong> <a href="vultr.html#custom">custom host</a>; point the card at it and press Test.</li>
+                <li><strong>Need full privacy:</strong> <a href="local-docker.html">Local Docker</a> or the local Studio process.</li>
+            </ul>
+
+            <h2 id="ssh">What SSH setup does</h2>
+            <p>
+                For Vultr and custom Linux hosts, Studio can log in over SSH and prepare the
+                machine. It is optional: a host that already runs the image only needs a Base URL,
+                token and <strong>Test</strong>.
+            </p>
+            <p>The helper performs these steps, one at a time, with streamed output:</p>
+            <ol class="steps">
+                <li><strong>Probe</strong> the host: OS, architecture, Docker version, NVIDIA GPU and free disk.</li>
+                <li><strong>Install Docker</strong> from <span class="mono">get.docker.com</span> when it is missing.</li>
+                <li><strong>Install the NVIDIA container toolkit</strong> when the GPU host checkbox is on and it is missing.</li>
+                <li><strong>Pull</strong> the server image. The image name must include a registry prefix, for example <span class="mono">integral2u/sharpmind-server:gpu</span>.</li>
+                <li><strong>Replace the container</strong>, mount <span class="mono">/data/SharpMind</span>, publish <span class="mono">5117</span> and <span class="mono">8080</span>, and pass the saved token.</li>
+                <li><strong>Inspect and test</strong> the container, then call <span class="mono">/health</span> from Studio.</li>
+            </ol>
+            <p>
+                It deliberately does <strong>not</strong> install the NVIDIA <em>driver</em>: that
+                needs a reboot and can break the session. If <span class="mono">nvidia-smi</span>
+                is missing, setup stops and says so. Use a provider GPU image that includes the
+                driver, or install it once and run setup again.
+            </p>
+
+            <h2 id="tokens">Tokens and security</h2>
+            <ul>
+                <li>The host token is generated in Studio and stored encrypted with the local key box.</li>
+                <li>SSH passwords and key passphrases use the same encryption; private keys stay on this PC.</li>
+                <li>The SSH host key is trusted on first use. If that matters for your environment, pin it manually.</li>
+                <li>Rotate the token before opening a host to the internet; a literal value such as <span class="mono">PASTE_YOUR_TOKEN</span> is not a secret.</li>
+                <li>Restrict the provider firewall to your own IP where possible. SSH <span class="mono">22</span>, API <span class="mono">8080</span>, Studio <span class="mono">5117</span>.</li>
+            </ul>
+
+            <div class="hero-actions">
+                <a class="button primary" href="vultr.html">Vultr guide →</a>
+                <a class="button" href="local-docker.html">Local Docker</a>
+                <a class="button" href="runpod.html">Runpod</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="index.html">Wiki</a> · <a href="../index.html">Home</a> · <a href="troubleshooting.html">Troubleshooting</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>

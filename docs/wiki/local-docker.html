@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local Docker — SharpMind Studio Wiki</title>
+    <meta name="description" content="Build and run a SharpMind Compute container on this PC, with or without a local NVIDIA GPU." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a class="active" href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#what">What runs locally</a>
+            <a href="#build">Build the image</a>
+            <a href="#add">Add the host</a>
+            <a href="#start">Start and test</a>
+            <a href="#gpu">Local GPU</a>
+            <a href="#model">Upload a model</a>
+            <a href="#api">Use the API</a>
+            <a href="#problems">Problems</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Local Docker</span></div>
+            <span class="eyebrow">Compute · local</span>
+            <h1>Local Docker</h1>
+            <p class="lead">
+                Run the Compute API in a container on this PC and let Studio start, stop and
+                inspect it. The local Studio remains the UI; the container supplies the API,
+                model hosting and training process.
+            </p>
+
+            <h2 id="what">What runs locally</h2>
+            <table>
+                <thead><tr><th>Image</th><th>Contains</th><th>Use</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="mono">sharpmind-compute:local</span></td><td>Compute API only</td><td>CPU local host; API on 8080.</td></tr>
+                    <tr><td><span class="mono">sharpmind-server:gpu</span></td><td>Studio + Compute + GPU plugin</td><td>Local NVIDIA GPU, also used on remote hosts.</td></tr>
+                </tbody>
+            </table>
+            <p>
+                Local Docker is optional. Chat, local inference and CPU training already work in
+                the Studio process. Use a container when you want the same API/host contract as a
+                remote machine, or when a local NVIDIA card should serve and train.
+            </p>
+
+            <h2 id="build">Build the image</h2>
+            <p>
+                Docker Desktop must be running. The local build uses the sibling
+                <span class="mono">SharpMind</span> source tree, so no packages need to be
+                published. Run from the folder that contains both repositories.
+            </p>
+            <pre><code>cd C:\path\to\repos
+Copy-Item SharpMind.Studio\docker\local-context.dockerignore .dockerignore
+
+<span class="comment"># CPU Compute API</span>
+docker build -f SharpMind.Studio/docker/compute/Dockerfile.local `
+  -t sharpmind-compute:local .
+
+<span class="comment"># GPU server image (Studio + Compute + ilgpu)</span>
+docker build -f SharpMind.Studio/docker/server/Dockerfile.gpu.local `
+  -t sharpmind-server:gpu .</code></pre>
+            <p>
+                The GPU image is about 1.6 GB; the CPU compute image is about 250 MB. The CUDA
+                libraries ship in the image, but the NVIDIA driver comes from the host runtime.
+            </p>
+
+            <h2 id="add">Add the host</h2>
+            <ol class="steps">
+                <li><strong>Settings → Providers → Compute → Add host → Local Docker.</strong></li>
+                <li>Name it, keep the Base URL <span class="mono">http://127.0.0.1:8080</span>, and press <strong>Generate</strong> for the token.</li>
+                <li>Set the image: <span class="mono">sharpmind-compute:local</span> for CPU, or <span class="mono">sharpmind-server:gpu</span> for a local GPU.</li>
+                <li>Set the port (default <span class="mono">8080</span>).</li>
+                <li>Tick <strong>GPU</strong> only when Docker has an NVIDIA runtime and you chose the GPU image.</li>
+                <li><strong>Save host.</strong></li>
+            </ol>
+
+            <h2 id="start">Start and test</h2>
+            <p>On the host card:</p>
+            <ol class="steps">
+                <li><strong>Check</strong> shows whether Docker Desktop is running and what the container is doing.</li>
+                <li><strong>Start container</strong> recreates it with the saved image, token, port and data folder.</li>
+                <li><strong>Test</strong> calls <span class="mono">/health</span> and loads the model list.</li>
+                <li><strong>Logs</strong> shows the last lines from the container; <strong>Stop</strong> keeps the data folder.</li>
+            </ol>
+            <p>
+                The data folder lives under the Studio root, next to
+                <span class="mono">Compute\&lt;container&gt;</span>. It is mounted at
+                <span class="mono">/data/SharpMind</span>, so models and uploads survive a
+                container recreation.
+            </p>
+            <div class="callout">
+                <strong>Port already allocated?</strong> The local Studio is on 5117 and the host
+                API on 8080. If another container or process owns 8080, choose another port in
+                Edit; Studio rewrites the Base URL to match.
+            </div>
+
+            <h2 id="gpu">Local GPU</h2>
+            <ul class="checklist">
+                <li>Docker Desktop with WSL2 and the NVIDIA driver installed on Windows.</li>
+                <li>The GPU server image built above, selected as the host image.</li>
+                <li><strong>GPU</strong> ticked, which adds <span class="mono">--gpus all</span>.</li>
+                <li><span class="mono">/health</span> should list <span class="mono">ilgpu</span> with a CUDA backend.</li>
+            </ul>
+            <p>
+                If the container fails with <span class="mono">could not select device driver</span>,
+                Docker does not have the NVIDIA runtime yet. Install/repair Docker Desktop's GPU
+                support or use a remote host. Inference is broader than training: it also covers
+                LayerNorm and dense-GELU models.
+            </p>
+
+            <h2 id="model">Upload a model</h2>
+            <ol class="steps">
+                <li>On the host card, <strong>Browse</strong> to a packaged <span class="mono">.smm</span> (or convert a GGUF first).</li>
+                <li><strong>Upload and use</strong> copies it to the host's Models folder and activates it.</li>
+                <li>Chat with the model, or send an API request to <span class="mono">/v1/chat/completions</span>.</li>
+            </ol>
+            <p>
+                Training from scratch does not need a model on the host. A fine-tune uploads its
+                base model with the job.
+            </p>
+
+            <h2 id="api">Use the API</h2>
+            <pre><code>curl http://127.0.0.1:8080/health
+
+curl http://127.0.0.1:8080/v1/models \
+  -H "Authorization: Bearer &lt;token&gt;"
+
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"default","messages":[{"role":"user","content":"Hello"}],"max_tokens":64}'</code></pre>
+            <p>
+                Streaming works with <span class="mono">"stream": true</span>. The host is
+                OpenAI-compatible for chat; tool calling on the Compute API is still on the
+                roadmap.
+            </p>
+
+            <h2 id="problems">Problems</h2>
+            <table>
+                <thead><tr><th>Message</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr><td>Docker Desktop is not running</td><td>Start Docker Desktop, then press Check again.</td></tr>
+                    <tr><td>Port 8080 is already in use</td><td>Change the host port in Edit; Studio rewrites the Base URL.</td></tr>
+                    <tr><td>GPU runtime is not available</td><td>Install the NVIDIA runtime for Docker, or untick GPU and use the CPU image.</td></tr>
+                    <tr><td>Container exits immediately</td><td>Press Logs. Usually a missing token, a broken image build, or an image built for the wrong architecture.</td></tr>
+                    <tr><td>Image not found</td><td>The image tag in the card does not match the built image. Rebuild or correct the tag.</td></tr>
+                </tbody>
+            </table>
+
+            <div class="hero-actions">
+                <a class="button primary" href="vultr.html">Need more GPU? →</a>
+                <a class="button" href="training.html">Training guide</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="../index.html">Home</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>

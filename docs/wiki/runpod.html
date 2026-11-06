@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Runpod — SharpMind Studio Wiki</title>
+    <meta name="description" content="Deploy a SharpMind GPU pod on Runpod from Studio: API key, image, ports, network volume and termination." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a class="active" href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#before">Before you start</a>
+            <a href="#image">Push the image</a>
+            <a href="#host">Create the host</a>
+            <a href="#deploy">Deploy the pod</a>
+            <a href="#use">Use the pod</a>
+            <a href="#stop">Terminate</a>
+            <a href="#problems">Problems</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Runpod</span></div>
+            <span class="eyebrow">Compute · cloud GPU</span>
+            <h1>Runpod</h1>
+            <p class="lead">
+                Studio can create and terminate a Runpod GPU pod through the Runpod API. The pod
+                pulls the same server image and exposes the Studio and API ports through Runpod's
+                proxy hosts.
+            </p>
+            <div class="badge-row">
+                <span class="badge blue">API deploy</span>
+                <span class="badge gpu">GPU</span>
+                <span class="badge warn">account balance required</span>
+            </div>
+
+            <h2 id="before">Before you start</h2>
+            <ul class="checklist">
+                <li>A <a href="https://runpod.io?ref=ltj4z1kb">Runpod account</a> with credit. Pod creation fails when the balance is too low, even if a card is on file.</li>
+                <li>The server image in a registry the pod can pull: Docker Hub is the simplest.</li>
+                <li>A Runpod API key (Settings → API Keys). Studio stores it encrypted.</li>
+            </ul>
+            <div class="callout warn">
+                <strong>"Your account balance is too low to rent a pod."</strong> Add credit in
+                the Runpod console. Studio surfaces the API error; it cannot top up the account.
+            </div>
+
+            <h2 id="image">Push the image</h2>
+            <p>
+                The pod runs the combined server image. Publish it from Studio's Publish panel,
+                or use Docker Hub directly:
+            </p>
+            <pre><code>docker tag sharpmind-server:gpu your-name/sharpmind-server:gpu
+docker push your-name/sharpmind-server:gpu</code></pre>
+            <p>
+                The repository can stay private if the pod is given registry credentials. The
+                simple path is a public repository. The tested reference image is
+                <span class="mono">integral2u/sharpmind-server:gpu</span>.
+            </p>
+
+            <h2 id="host">Create the host</h2>
+            <ol class="steps">
+                <li><strong>Settings → Providers → Compute → Add host → Runpod GPU.</strong></li>
+                <li>Paste the Runpod API key. It is encrypted with the local key box.</li>
+                <li>Set the <strong>Server image</strong> to <span class="mono">your-name/sharpmind-server:gpu</span>.</li>
+                <li>Pick a GPU type (RTX 4090, L4, A40, A100 …) and a container disk size.</li>
+                <li><strong>Save host.</strong></li>
+            </ol>
+            <p>
+                The pod needs the network volume mounted at <span class="mono">/data/SharpMind</span>
+                to keep models between restarts. Without it, the container disk is ephemeral.
+            </p>
+
+            <h2 id="deploy">Deploy the pod</h2>
+            <p>On the host card press <strong>Deploy pod</strong>. Studio:</p>
+            <ol class="steps">
+                <li>Creates a pod from the saved image, GPU type and disk.</li>
+                <li>Exposes HTTP ports <span class="mono">5117</span> (Studio) and <span class="mono">8080</span> (API).</li>
+                <li>Waits for the pod to reach <span class="mono">RUNNING</span>.</li>
+                <li>Fills the API and Studio URLs and runs <strong>Test</strong>.</li>
+            </ol>
+            <p>
+                The URLs look like
+                <span class="mono">https://&lt;pod-id&gt;-8080.proxy.runpod.net</span> and
+                <span class="mono">https://&lt;pod-id&gt;-5117.proxy.runpod.net</span>. The token
+                in the container is the one saved with the host.
+            </p>
+
+            <h2 id="use">Use the pod</h2>
+            <ul class="checklist">
+                <li>Upload a chat model from the card, or leave it empty for a fine-tune.</li>
+                <li>Chat or train with <strong>Run on = Runpod</strong>; sources and base models upload with the job.</li>
+                <li>Fine-tune exports download back to Studio; the pod does not need to stay alive afterwards.</li>
+                <li><strong>Refresh</strong> reads the pod state; <strong>Logs</strong> is available through the remote Studio or Runpod's web terminal.</li>
+            </ul>
+
+            <h2 id="stop">Terminate</h2>
+            <p>
+                Press <strong>Terminate</strong> on the card to stop billing. Runpod's proxy host
+                is tied to the pod; a new deploy gets a new URL. Keep the network volume if you
+                want the models to survive.
+            </p>
+            <div class="callout">
+                <strong>Network volume vs container disk.</strong> Models, uploads and training
+                exports live under <span class="mono">/data/SharpMind</span>. Only a network
+                volume survives pod replacement.
+            </div>
+
+            <h2 id="problems">Problems</h2>
+            <table>
+                <thead><tr><th>Message</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr><td>Balance too low</td><td>Add credit in the Runpod console, then Deploy again.</td></tr>
+                    <tr><td>Image pull fails</td><td>The image is private or the name/tag is wrong. Make it public or add registry credentials.</td></tr>
+                    <tr><td>Pod stays CREATED / not RUNNING</td><td>No capacity for that GPU in the region, or the image cannot start. Try another GPU type.</td></tr>
+                    <tr><td>API times out</td><td>Port 8080 was not exposed, or the pod is still starting. Check the pod's HTTP ports.</td></tr>
+                    <tr><td>401 from the API</td><td>The host token and container token differ. Re-enter the token and redeploy.</td></tr>
+                </tbody>
+            </table>
+
+            <div class="hero-actions">
+                <a class="button primary" href="training.html">Train on the pod →</a>
+                <a class="button" href="providers.html">Compare providers</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="../index.html">Home</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>

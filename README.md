@@ -8,8 +8,9 @@ terminal UI (CUI) as the primary front end.
 Studio is built on the published [SharpMind](https://github.com/Integral2u/SharpMind)
 libraries and shares their model, tokenizer and run formats.
 
-The static preview site and wiki live under [`docs/`](docs/index.html) and publish
-to GitHub Pages. Open `docs/index.html` locally to preview it without a server.
+The static site and wiki live under [`docs/`](docs/index.html) and publish to
+GitHub Pages. The guides start at [`docs/wiki/index.html`](docs/wiki/index.html);
+open `docs/index.html` locally to preview the site without a server.
 
 ## Modes
 
@@ -57,15 +58,21 @@ completions and background training jobs. Add one under **Settings → Providers
 
 **Start Docker Desktop** appears in the panel when the engine is not running.
 
-### Remote host (Runpod or any server)
+### Remote host (Runpod, Vultr or any server)
 
-1. Create the pod on the provider's site with the Compute image and expose
-   HTTP port `8080`.
-2. Paste the **Pod ID** (Runpod) and press **Build URL**, or paste the host URL
-   directly. Studio fills in `https://<pod>-8080.proxy.runpod.net`.
-3. Press **Generate**, then copy the token into the pod's
-   `SHARPMIND_TOKEN` environment variable.
+1. Create the pod or instance with the server image and expose HTTP ports
+   `8080` (Compute API) and `5117` (Studio UI).
+2. Runpod: paste the **Pod ID** and press **Build URL**. Vultr or any Linux
+   host: use the URL directly.
+3. Press **Generate**, then make sure the host container uses the same
+   `SHARPMIND_TOKEN`. For Vultr and custom hosts, **Edit → SSH setup** can log
+   in, install Docker and the NVIDIA toolkit, pull the image and start the
+   container for you. No terminal needed.
 4. Press **Test**; Studio reads the host's models and marks it online.
+
+The full guides are in the wiki: [Vultr + SSH](docs/wiki/vultr.html),
+[Runpod](docs/wiki/runpod.html), [Local Docker](docs/wiki/local-docker.html)
+and [Troubleshooting](docs/wiki/troubleshooting.html).
 
 ### Use it
 
@@ -73,10 +80,13 @@ completions and background training jobs. Add one under **Settings → Providers
 - **Training**: choose the host under **Run on**. Studio uploads the job's local
   sources, base model and resume checkpoints, polls the remote job, streams its
   log and downloads the exported `.smm` back into the normal Training folder.
+- **Fine-tune / SFT**: the same remote path; the export can be a merged `.smm`
+  or an adapter `.smlora`.
 
-Hosts are inference-only for now: Work tool calling needs a local model or
-OpenRouter. The GPU server image ships the ILGPU plugin, which reports its
-backend and any CPU fallback in `/health`.
+Work tool calling still needs a local model or OpenRouter. The GPU server image
+ships the ILGPU plugin, which reports its backend and any CPU fallback in
+`/health`. GPU training is LoRA-only for LLaMA/Qwen-style bases; from-scratch
+pretraining stays on the CPU.
 
 ## HuggingFace models
 

@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vultr + SSH setup — SharpMind Studio Wiki</title>
+    <meta name="description" content="Create a Vultr GPU instance and let SharpMind Studio install Docker, the NVIDIA toolkit and the server image over SSH." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a class="active" href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#before">Before you start</a>
+            <a href="#create">Create the instance</a>
+            <a href="#ssh-key">Add an SSH key</a>
+            <a href="#add-host">Add the host in Studio</a>
+            <a href="#deploy">Set up &amp; deploy</a>
+            <a href="#verify">Verify</a>
+            <a href="#first-run">Upload and train</a>
+            <a href="#cost">Cost and cleanup</a>
+            <a href="#custom">Custom Linux host</a>
+            <a href="#problems">Common problems</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Vultr</span></div>
+            <span class="eyebrow">Compute · GPU</span>
+            <h1>Vultr + SSH setup</h1>
+            <p class="lead">
+                A Vultr instance gives you a GPU host you keep for the session. Studio can log in
+                over SSH, install Docker and the NVIDIA container toolkit, pull the image and run
+                the combined Studio + Compute container. No terminal required.
+            </p>
+            <div class="badge-row">
+                <span class="badge gpu">NVIDIA A16 · 16 GB</span>
+                <span class="badge blue">ports 5117 + 8080</span>
+                <span class="badge">hourly billing</span>
+            </div>
+
+            <div class="callout warn">
+                <strong>Billing does not stop when the instance does.</strong> Vultr bills a
+                powered-off instance until it is <strong>destroyed</strong>. Snapshot it first only
+                if the host has data you cannot recreate.
+            </div>
+
+            <h2 id="before">Before you start</h2>
+            <ul class="checklist">
+                <li>A <a href="https://www.vultr.com/?ref=9933964">Vultr account</a> with billing enabled.</li>
+                <li>SharpMind Studio running on this PC, with the server image pushed to Docker Hub (or use <span class="mono">integral2u/sharpmind-server:gpu</span>).</li>
+                <li>A GPU plan and a region near you. The tested plan is <span class="mono">vcg-a16-6c-60g-16vram</span>.</li>
+                <li>An SSH key, or the instance root password. Studio can create a key for you.</li>
+            </ul>
+
+            <h2 id="create">Create the instance</h2>
+            <ol class="steps">
+                <li>
+                    <strong>Deploy a Cloud GPU instance.</strong>
+                    Pick Ubuntu 24.04 and a GPU image that already includes the NVIDIA driver.
+                    A plain Ubuntu image works too, but you must install the driver and reboot
+                    before GPU jobs can use the card.
+                </li>
+                <li>
+                    <strong>Add the SSH key at creation.</strong>
+                    This is the easiest moment to attach it. If you do not have one yet, open
+                    Studio first and use <strong>Edit → Create key</strong>; the public key is
+                    shown there.
+                </li>
+                <li>
+                    <strong>Open the ports.</strong>
+                    Allow <span class="mono">22</span> for setup, <span class="mono">8080</span> for
+                    the Compute API and <span class="mono">5117</span> for the remote Studio UI.
+                    Restrict them to your IP where possible. A firewall that only allows 22 will
+                    make the host card time out even while the container is healthy.
+                </li>
+                <li>
+                    <strong>Keep the data folder.</strong>
+                    The image uses <span class="mono">/data/SharpMind</span> on the instance. If
+                    you create a separate block volume, mount it there; otherwise the instance
+                    disk is fine for a one-day run.
+                </li>
+            </ol>
+            <div class="callout">
+                <strong>No SSH key at creation?</strong> You can add one once from the Vultr web
+                console. The console is the bootstrap step; everything after it can be done from
+                Studio:
+                <pre><code>mkdir -p /root/.ssh
+echo 'ssh-ed25519 AAAA...your-public-key... sharpmind-studio' \
+  &gt;&gt; /root/.ssh/authorized_keys
+chmod 700 /root/.ssh
+chmod 600 /root/.ssh/authorized_keys</code></pre>
+            </div>
+
+            <h2 id="ssh-key">Add an SSH key to Studio</h2>
+            <p>
+                In <strong>Settings → Providers → Compute → Edit</strong> on the Vultr host:
+            </p>
+            <ul class="checklist">
+                <li><strong>Create key</strong> generates <span class="mono">~/.ssh/sharpmind_ed25519</span> (ed25519, no passphrase) and shows the public key.</li>
+                <li><strong>Copy public key</strong> puts it on the clipboard for the Vultr console or the instance creation form.</li>
+                <li><strong>Browse</strong> selects an existing OpenSSH/PEM private key instead.</li>
+                <li>A root <strong>password</strong> also works; it is stored encrypted with the host token.</li>
+            </ul>
+            <p>
+                The private key never leaves this PC. The host key is trusted on first use; this is
+                a convenience for a fresh cloud box, not a substitute for pinning if you need it.
+            </p>
+
+            <h2 id="add-host">Add the host in Studio</h2>
+            <ol class="steps">
+                <li>
+                    <strong>Add host → Vultr cloud server.</strong>
+                    Base URL <span class="mono">http://&lt;public-ip&gt;:8080</span>; Studio URL
+                    <span class="mono">http://&lt;public-ip&gt;:5117</span>.
+                </li>
+                <li>
+                    <strong>Token.</strong>
+                    Press <strong>Generate</strong>. The same value is written into the container
+                    as <span class="mono">SHARPMIND_TOKEN</span>, so Studio and the host match.
+                </li>
+                <li>
+                    <strong>Server image.</strong>
+                    Use the full registry name, for example
+                    <span class="mono">integral2u/sharpmind-server:gpu</span> or
+                    <span class="mono">your-name/sharpmind-server:gpu</span>. A local tag such as
+                    <span class="mono">sharpmind-server:gpu</span> cannot be pulled; setup now
+                    refuses it before trying.
+                </li>
+                <li>
+                    <strong>SSH fields.</strong>
+                    Host (blank uses the Base URL host), port 22, user <span class="mono">root</span>,
+                    key or password, container name <span class="mono">sharpmind</span>.
+                </li>
+                <li>
+                    <strong>Tick GPU host.</strong>
+                    This adds <span class="mono">--gpus all</span> and installs the NVIDIA
+                    container toolkit when it is missing.
+                </li>
+                <li><strong>Save host.</strong></li>
+            </ol>
+
+            <h2 id="deploy">Set up &amp; deploy</h2>
+            <p>
+                On the host card press <strong>Test SSH</strong> first. You should see the OS,
+                Docker version, GPU name and free disk. Then press <strong>Set up &amp; deploy</strong>.
+                The helper streams each stage:
+            </p>
+            <pre><code>[connect] Connected to root@203.0.113.10:22.
+[probe]   Ubuntu 24.04 LTS · x86_64 · Docker 29.9.2 · NVIDIA A16 · 288G free
+[pull]    Pulling integral2u/sharpmind-server:gpu…
+[run]     Up 2 seconds | 0.0.0.0:5117-&gt;5117/tcp, 0.0.0.0:8080-&gt;8080/tcp
+[ready]   Container sharpmind: Up 2 seconds | integral2u/sharpmind-server:gpu</code></pre>
+            <p>
+                Setup replaces an existing container with the same name, so it is safe to run
+                again after changing the image or token. The data folder is preserved.
+            </p>
+
+            <h2 id="verify">Verify</h2>
+            <ul class="checklist">
+                <li>Press <strong>Test</strong> on the card: the dot turns on and the model list loads.</li>
+                <li>Open <span class="mono">http://&lt;public-ip&gt;:8080/health</span> in a browser; it is unauthenticated.</li>
+                <li>The health payload should list <span class="mono">ilgpu</span> with a backend such as <span class="mono">CUDA · cuBLAS</span>.</li>
+                <li>If the API answers but the Studio URL does not, port 5117 is still blocked.</li>
+            </ul>
+            <pre><code>{
+  "status": "ok",
+  "dataRoot": "/data/SharpMind",
+  "accelerators": [{
+    "name": "ilgpu",
+    "inference": true,
+    "backend": "CUDA · cuBLAS"
+  }]
+}</code></pre>
+
+            <h2 id="first-run">Upload and train</h2>
+            <ol class="steps">
+                <li>
+                    <strong>Chat model.</strong>
+                    Upload a packaged <span class="mono">.smm</span> from the card, or leave the
+                    host without a model: a fine-tune uploads its base with the job.
+                </li>
+                <li>
+                    <strong>Fine-tune.</strong>
+                    Training → Improve → base <span class="mono">.smm</span>, corpus, SFT if the
+                    data is chat JSONL, <strong>Run on = Vultr</strong>. The export downloads back
+                    to this PC.
+                </li>
+                <li>
+                    <strong>Watch the engine line.</strong>
+                    GPU success looks like
+                    <span class="mono">Engine: [Cuda] NVIDIA A16, 14962 MB, cuBLAS 12.6</span>.
+                    If you see <span class="mono">Retrying on the CPU</span>, the base did not
+                    satisfy the GPU engine; see <a href="training.html#gpu">Training</a>.
+                </li>
+            </ol>
+            <div class="callout ok">
+                <strong>Validated on this setup:</strong> GPU inference on <span class="mono">ilgpu</span>,
+                a 10-step LoRA fine-tune on an A16 with <span class="mono">Engine: [Cuda]</span>,
+                and the CPU fallback for a pretrain — all through the same container and token.
+            </div>
+
+            <h2 id="cost">Cost and cleanup</h2>
+            <ul>
+                <li>The A16 plan is roughly <span class="mono">$0.47/hour</span>; a day is about <span class="mono">$11</span>.</li>
+                <li><strong>Stopping is not enough.</strong> Destroy the instance to stop billing.</li>
+                <li>Download any exported model first. The host's <span class="mono">/data/SharpMind</span> is deleted with the instance unless it is a separate block volume.</li>
+                <li>A snapshot costs a small monthly storage fee and is only worth it for data you cannot recreate.</li>
+                <li>Rotate the host token if you shared it, and remove the instance's firewall rules with the instance.</li>
+            </ul>
+
+            <h2 id="custom">Custom Linux host</h2>
+            <p>
+                Any Linux machine with Docker can be a compute host. The fields are the same as
+                Vultr: Base URL, token, and optionally SSH. Use this for a workstation, a lab
+                server, or another cloud.
+            </p>
+            <ol class="steps">
+                <li><strong>Install Docker</strong> (the SSH helper can do this) and make sure the service starts at boot.</li>
+                <li><strong>Open the ports</strong> 5117 and 8080, and SSH 22 if you want Studio to manage it.</li>
+                <li><strong>Add host → Custom remote server</strong>, enter the URL and token, and press Test.</li>
+                <li>For GPU, install the NVIDIA driver and container toolkit; tick <strong>GPU host</strong> and let setup add <span class="mono">--gpus all</span>.</li>
+            </ol>
+            <p>
+                If the machine already runs the image, skip SSH entirely: Base URL, token,
+                <strong>Test</strong>. The host only needs to be reachable from this PC.
+            </p>
+
+            <h2 id="problems">Common problems</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Message</th><th>Meaning / fix</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="mono">pull access denied for sharpmind-server</span></td>
+                            <td>The image has no registry prefix. Enter <span class="mono">user/repo:tag</span> in Edit; setup now refuses local-only names before pulling.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">Could not reach host:22</span></td>
+                            <td>The instance is down, the IP changed, or the provider firewall blocks SSH.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">SSH login failed</span></td>
+                            <td>Wrong user, wrong key, or the public key was never added to the host. The console step is the bootstrap.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">No NVIDIA driver found</span></td>
+                            <td><span class="mono">nvidia-smi</span> is missing. Use a GPU image or install the driver and reboot; the helper does not install drivers.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">Port 8080 or 5117 is already used</span></td>
+                            <td>Another container owns the port. Remove it, or change the container name/ports.</td>
+                        </tr>
+                        <tr>
+                            <td>API times out but SSH works</td>
+                            <td>Provider firewall. Allow TCP 8080 and 5117, not just 22.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">401</span> after rotating a token</td>
+                            <td>Restart Studio so it reloads the encrypted token, then Test. The old token is invalid by design.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="hero-actions">
+                <a class="button" href="training.html">Training guide</a>
+                <a class="button" href="troubleshooting.html">All troubleshooting</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="../index.html">Home</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>

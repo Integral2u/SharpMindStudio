@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wiki — SharpMind Studio</title>
+    <meta name="description" content="SharpMind Studio guides: local Docker, Runpod, Vultr SSH setup, GPU LoRA training, SFT data, inference and troubleshooting." />
+    <meta property="og:title" content="SharpMind Studio Wiki" />
+    <meta property="og:description" content="Provider setup, GPU training and the exact errors you will see." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <section class="wiki-hero">
+        <div class="wrap">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><span>Wiki</span></div>
+            <span class="eyebrow">Documentation</span>
+            <h1>Set up SharpMind anywhere.</h1>
+            <p class="lead">
+                The same Studio, the same model format, four places to run it. Start with the
+                machine in front of you; add a GPU host when a fine-tune needs more memory.
+                Every guide includes the errors you are likely to see and what they mean.
+            </p>
+            <div class="hero-actions">
+                <a class="button primary" href="vultr.html">Set up a GPU host →</a>
+                <a class="button" href="local-docker.html">Start locally</a>
+                <a class="button" href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" style="padding-top:2.6rem;">
+        <div class="wrap">
+            <div class="guide-grid">
+                <a class="guide-card gpu" href="vultr.html">
+                    <span class="kicker">GPU · SSH</span>
+                    <h3>Vultr + SSH setup</h3>
+                    <p>Create the instance, add one key, and let Studio install Docker, the NVIDIA toolkit and the server image.</p>
+                    <span class="meta">recommended for a first GPU run</span>
+                </a>
+                <a class="guide-card" href="local-docker.html">
+                    <span class="kicker">Local</span>
+                    <h3>Local Docker</h3>
+                    <p>Build the Compute image on this PC (or the GPU server image) and start it from Settings.</p>
+                    <span class="meta">no account · CPU or local NVIDIA GPU</span>
+                </a>
+                <a class="guide-card" href="runpod.html">
+                    <span class="kicker">Cloud</span>
+                    <h3>Runpod</h3>
+                    <p>Deploy a GPU pod through the Runpod API and terminate it when the run is done.</p>
+                    <span class="meta">API key · Docker Hub · proxy URLs</span>
+                </a>
+                <a class="guide-card" href="providers.html">
+                    <span class="kicker">Overview</span>
+                    <h3>Compare providers</h3>
+                    <p>Local Docker, Runpod, Vultr or your own Linux box: cost, ports and who runs the setup.</p>
+                    <span class="meta">start here if you are unsure</span>
+                </a>
+                <a class="guide-card" href="training.html">
+                    <span class="kicker">Train</span>
+                    <h3>Pretrain, LoRA and SFT</h3>
+                    <p>Which jobs use the GPU, which stay on the CPU, and why a LayerNorm base falls back.</p>
+                    <span class="meta">GPU fine-tuning: LoRA only</span>
+                </a>
+                <a class="guide-card" href="troubleshooting.html">
+                    <span class="kicker">Errors</span>
+                    <h3>Troubleshooting</h3>
+                    <p>Pull access denied, accelerator declined, firewall timeouts, SSH auth, 401 after a token rotation.</p>
+                    <span class="meta">the exact messages</span>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" style="padding-top:1rem;">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">What works today</span>
+                <h2>The honest support matrix.</h2>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>Capability</th><th>This PC</th><th>Compute host</th><th>Notes</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Chat with a packaged model</td><td>Yes</td><td>Yes</td><td>One active model per process on a host.</td></tr>
+                        <tr><td>OpenAI-style API</td><td>—</td><td>Yes</td><td>Bearer token; <span class="mono">/v1/chat/completions</span>, models, files, training jobs.</td></tr>
+                        <tr><td>Pretrain from scratch</td><td>Yes (CPU)</td><td>Yes (CPU)</td><td>The GPU engine refuses whole-weight training by design.</td></tr>
+                        <tr><td>LoRA fine-tune</td><td>Yes (CPU)</td><td>Yes (GPU or CPU)</td><td>GPU needs RMSNorm + RoPE/NoPE + gated FFN.</td></tr>
+                        <tr><td>SFT (assistant-only loss)</td><td>Yes (CPU)</td><td>Yes (GPU or CPU)</td><td>Chat JSONL; the base supplies the tokenizer and template.</td></tr>
+                        <tr><td>GPU inference</td><td>With a local GPU</td><td>Yes</td><td>Also covers LayerNorm and dense-GELU models.</td></tr>
+                        <tr><td>Remote data and artifacts</td><td>—</td><td>Yes</td><td>Uploads with progress; exports download back to Studio.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="callout warn">
+                <strong>Preview status.</strong> The repository is the source of truth. The
+                server image contract is stable enough to use, but screens and CLI flags may
+                still change before the first packaged release.
+            </div>
+        </div>
+    </section>
+
+    <section class="section" style="padding-top:1rem;">
+        <div class="wrap split">
+            <article class="mode-card">
+                <span class="badge blue">FIVE-MINUTE PATH</span>
+                <h3>Just want to see it run?</h3>
+                <p>Build the app, pick a GGUF or <span class="mono">.smm</span>, and chat locally. No account and no host.</p>
+                <div class="hero-actions">
+                    <a class="button" href="../index.html#build">Build from source</a>
+                </div>
+            </article>
+            <article class="mode-card">
+                <span class="badge gpu">GPU PATH</span>
+                <h3>Want a real fine-tune?</h3>
+                <p>Rent an A16, add one SSH key, and let the Compute card install and deploy the GPU image.</p>
+                <div class="hero-actions">
+                    <a class="button primary" href="vultr.html">Vultr guide →</a>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="../index.html">Home</a> · <a href="providers.html">Providers</a> · <a href="https://github.com/Integral2u/SharpMindStudio">GitHub</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>
