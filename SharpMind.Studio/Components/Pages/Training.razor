@@ -202,8 +202,14 @@ else if (_tab == "improve")
                 </div>
                 <div class="field training-form-wide">
                     <label class="field-label" for="tune-corpus">@(_tuneSft ? "Chat JSONL corpus" : "New corpus")</label>
-                    <input id="tune-corpus" class="input" @bind="_tuneCorpusPath"
-                           placeholder="@(_tuneSft ? "C:\\path\\to\\chats.jsonl or C:\\path\\**\\*.jsonl" : "C:\\path\\to\\new-text or C:\\path\\**\\*.txt")" />
+                    <div class="row">
+                        <input id="tune-corpus" class="input" @bind="_tuneCorpusPath"
+                               placeholder="@(_tuneSft ? "C:\\path\\to\\chats.jsonl or C:\\path\\**\\*.jsonl" : "C:\\path\\to\\new-text or C:\\path\\**\\*.txt")" />
+                        <button type="button" class="button" @onclick="BrowseTuneCorpus"
+                                title="@(_tuneSft ? "Choose a chat JSONL file." : "Choose a text file.")">
+                            Browse
+                        </button>
+                    </div>
                     <label class="small faint training-check">
                         <input type="checkbox" @bind="_tuneSft" />
                         Instruction tuning (SFT) - train only on assistant tokens from chat JSONL
@@ -426,6 +432,29 @@ else if (_tab == "improve")
             </div>
 
             <div class="training-actions">
+                <div class="field" style="min-width: 16rem;">
+                    <label class="field-label" for="tune-compute">Run on</label>
+                    <select id="tune-compute" class="input" @bind="_computeProviderId"
+                            @bind:after="LoadRunTargetAsync"
+                            disabled="@(Lab.IsRunning || Rehearsal.IsRunning)">
+                        <option value="">This PC</option>
+                        @foreach (ComputeProviderSettings host in Compute.Providers)
+                        {
+                            <option value="@host.Id">@host.Name (@ComputeProviderPrefabs.Find(host.Prefab).Name)</option>
+                        }
+                    </select>
+                    @if (_computeProviderId is not null)
+                    {
+                        <span class="small faint">
+                            Uploads the base model and corpus, runs the fine-tune on the host,
+                            then downloads the export back here. The host needs no chat model.
+                        </span>
+                        @if (_remoteAcceleratorError is not null)
+                        {
+                            <div class="error-line">@_remoteAcceleratorError</div>
+                        }
+                    }
+                </div>
                 <button type="button" class="button primary" @onclick="StartFineTune"
                         disabled="@(Lab.IsRunning || Rehearsal.IsRunning || _tuning)">
                     @(Lab.IsRunning ? "Training..." : _tuneSft ? "Start SFT" : "Start fine-tune")
@@ -1402,6 +1431,35 @@ else if (_tab == "models")
         _tuneError = null;
         if (string.IsNullOrWhiteSpace(_tuneName) && File.Exists(_tuneBase))
             _tuneName = Path.GetFileNameWithoutExtension(_tuneBase) + "-lora";
+    }
+
+    private async Task BrowseTuneCorpus()
+    {
+        string pattern = _tuneSft ? "*.jsonl" : "*.txt";
+        string? folder = null;
+        try
+        {
+            string typed = _tuneCorpusPath.Trim();
+            if (typed.Length > 0) folder = Path.GetDirectoryName(typed);
+        }
+        catch
+        {
+            folder = null;
+        }
+
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            folder = Directory.Exists(StudioPaths.Corpus) ? StudioPaths.Corpus : null;
+
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            folder,
+            _tuneSft ? "Choose a chat JSONL corpus" : "Choose a text corpus",
+            pattern);
+        if (selection?.Path is { Length: > 0 } path)
+        {
+            _tuneCorpusPath = path;
+            _tuneError = null;
+        }
     }
 
     private void ToggleTarget(string id, ChangeEventArgs args)
