@@ -727,6 +727,26 @@ else if (_tab == "openrouter")
                             {
                                 <div class="error-line">@_runpodError</div>
                             }
+                            <div class="field training-form-wide">
+                                <label class="field-label" for="runpod-card-image-@provider.Id">Server image</label>
+                                <div class="row">
+                                    <input id="runpod-card-image-@provider.Id" class="input"
+                                           value="@(provider.RunpodImage ?? ComputeProviderPresets.DefaultServerImage)"
+                                           @onchange="e => SetRunpodImage(provider.Id, e.Value?.ToString())"
+                                           title="The Docker Hub image Runpod pulls, for example name/sharpmind-server:gpu." />
+                                    @if (Compute.RegistryImage is { Length: > 0 } published
+                                         && !string.Equals(provider.RunpodImage, published, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <button type="button" class="button"
+                                                @onclick="() => SetRunpodImage(provider.Id, published)"
+                                                title="Use the image last pushed from this panel.">Use published</button>
+                                    }
+                                </div>
+                                <span class="small faint">
+                                    Runpod pulls this image from Docker Hub. It must be pushed first;
+                                    <strong>Publish the server image</strong> above does that.
+                                </span>
+                            </div>
                             @if (_runpodBusy)
                             {
                                 <div class="row" style="align-items:center; gap:.5rem;">
@@ -1376,7 +1396,7 @@ else
             ComputeProviderPresets.LocalUrl(_computePort)) ?? "";
         _computeShowToken = false;
         _runpodKey = "";
-        _runpodImage = ComputeProviderPresets.DefaultServerImage;
+        _runpodImage = Compute.RegistryImage ?? ComputeProviderPresets.DefaultServerImage;
         _runpodGpu = ComputeProviderPresets.DefaultGpuType;
         _runpodDisk = ComputeProviderPresets.DefaultRunpodDiskGb;
         _runpodStatus = null;
@@ -1403,7 +1423,10 @@ else
             ?? "";
         _computeShowToken = false;
         _runpodKey = "";
-        _runpodImage = provider.RunpodImage ?? ComputeProviderPresets.DefaultServerImage;
+        _runpodImage = string.IsNullOrWhiteSpace(provider.RunpodImage)
+            || string.Equals(provider.RunpodImage, ComputeProviderPresets.DefaultServerImage, StringComparison.OrdinalIgnoreCase)
+                ? Compute.RegistryImage ?? provider.RunpodImage ?? ComputeProviderPresets.DefaultServerImage
+                : provider.RunpodImage;
         _runpodGpu = provider.RunpodGpuType ?? ComputeProviderPresets.DefaultGpuType;
         _runpodDisk = provider.RunpodDiskGb ?? ComputeProviderPresets.DefaultRunpodDiskGb;
         _runpodStatus = null;
@@ -1505,6 +1528,14 @@ else
             _runpodDisk);
     }
 
+    private void SetRunpodImage(string id, string? image)
+    {
+        if (string.IsNullOrWhiteSpace(image)) return;
+        Compute.SetRunpod(id, null, image.Trim(), null, null);
+        _runpodError = null;
+        _runpodStatus = $"Server image set to {image.Trim()}.";
+    }
+
     private void SyncRegistryTarget()
     {
         if (string.IsNullOrWhiteSpace(_registryUser)) return;
@@ -1538,6 +1569,7 @@ else
             _registryStatus = "Image published. Use it as the host's Server image.";
             _registryProgress = 1;
             _runpodImage = _registryTarget.Trim();
+            Compute.SetRegistryImage(_runpodImage);
             _registryLog = $"Target: {_runpodImage}";
 
             // Point remote hosts that still carry the default image at what was just pushed.

@@ -27,6 +27,15 @@ public sealed class ComputeProviderService
     public ComputeProviderSettings? DefaultProvider => _store.Find(_store.DefaultProviderId);
     public string SettingsFile => _store.Path;
 
+    /// <summary>The last image pushed from the Publish panel, if any.</summary>
+    public string? RegistryImage => _store.RegistryImage;
+
+    public void SetRegistryImage(string? image)
+    {
+        _store.SetRegistryImage(image);
+        Changed?.Invoke();
+    }
+
     public ComputeProviderSettings? Find(string? id) => _store.Find(id);
 
     public ComputeProvider? Resolve(string? id) => _store.Resolve(id);

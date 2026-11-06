@@ -119,6 +119,9 @@ public sealed class ComputeSettingsDocument
     public string Schema { get; init; } = CurrentSchema;
     public List<ComputeProviderSettings> Providers { get; set; } = [];
     public string? DefaultProviderId { get; set; }
+
+    /// <summary>The last image pushed by the Publish panel, reused by new hosts.</summary>
+    public string? RegistryImage { get; set; }
 }
 
 /// <summary>A settings entry resolved with its decrypted token, ready to call.</summary>
@@ -168,6 +171,20 @@ public sealed class ComputeSettingsStore
     public string? DefaultProviderId
     {
         get { lock (_gate) return _document.DefaultProviderId; }
+    }
+
+    public string? RegistryImage
+    {
+        get { lock (_gate) return _document.RegistryImage; }
+    }
+
+    public void SetRegistryImage(string? image)
+    {
+        lock (_gate)
+        {
+            _document.RegistryImage = string.IsNullOrWhiteSpace(image) ? null : image.Trim();
+            SaveLocked();
+        }
     }
 
     public ComputeProviderSettings? Find(string? id)

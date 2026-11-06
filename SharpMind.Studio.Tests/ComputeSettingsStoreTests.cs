@@ -180,6 +180,24 @@ public sealed class ComputeSettingsStoreTests
     }
 
     [Fact]
+    public void RegistryImage_IsRememberedForNewHosts()
+    {
+        using var temp = new TempDirectory();
+        string settings = temp.Combine("compute.json");
+        var store = new ComputeSettingsStore(settings, temp.Combine("compute.key"));
+        Assert.Null(store.RegistryImage);
+
+        store.SetRegistryImage("me/sharpmind-server:gpu");
+        Assert.Equal("me/sharpmind-server:gpu", store.RegistryImage);
+
+        var reopened = new ComputeSettingsStore(settings, temp.Combine("compute.key"));
+        Assert.Equal("me/sharpmind-server:gpu", reopened.RegistryImage);
+
+        store.SetRegistryImage(null);
+        Assert.Null(store.RegistryImage);
+    }
+
+    [Fact]
     public void RecordProbe_KeepsStatusAndHealth()
     {
         using var temp = new TempDirectory();

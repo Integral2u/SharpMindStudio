@@ -42,8 +42,19 @@ public sealed class RunpodService
 
         if (!LooksLikeRegistryImage(image))
         {
-            throw new RunpodException(
-                "Publish the image to Docker Hub first, then use <user>/sharpmind-server:gpu.");
+            // A host created after the Publish panel still holds the local default;
+            // reuse the last image that was actually pushed.
+            string? published = _compute.RegistryImage;
+            if (!string.IsNullOrWhiteSpace(published) && LooksLikeRegistryImage(published))
+            {
+                image = published;
+            }
+            else
+            {
+                throw new RunpodException(
+                    "Set the Runpod host's Server image to <dockerhub-user>/sharpmind-server:gpu "
+                    + "in the Runpod card, or push it once with Publish the server image.");
+            }
         }
 
         // The same token the provider will use; Studio must keep it to talk to the pod.
