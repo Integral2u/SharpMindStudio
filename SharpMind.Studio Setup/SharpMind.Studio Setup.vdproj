@@ -423,7 +423,7 @@
         {
             "{3C67513D-01DD-4637-8A68-80971EB9504F}:_022D59405EE94A88B1F346145FC04B54"
             {
-            "DefaultLocation" = "8:[ProgramFilesFolder][Manufacturer]\\[ProductName]"
+            "DefaultLocation" = "8:[LocalAppDataFolder]Programs\\[ProductName]"
             "Name" = "8:#1925"
             "AlwaysCreate" = "11:FALSE"
             "Condition" = "8:"
@@ -493,8 +493,8 @@
         {
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:SharpMind Studio"
-        "ProductCode" = "8:{7D2E4F6A-8B1C-4D3E-9F5A-6B7C8D9E0F12}"
-        "PackageCode" = "8:{1A2B3C4D-5E6F-4A7B-8C9D-0E1F2A3B4C5D}"
+        "ProductCode" = "8:{A3B4C5D6-E7F8-4A1B-8C2D-3E4F5A6B7C8D}"
+        "PackageCode" = "8:{C5D6E7F8-A1B2-4C3D-8E4F-5A6B7C8D9E0F}"
         "UpgradeCode" = "8:{2C9E7A5B-4D3F-4A1B-8C6D-9E0F1A2B3C4D}"
         "AspNetVersion" = "8:4.0.30319.0"
         "RestartWWWService" = "11:FALSE"

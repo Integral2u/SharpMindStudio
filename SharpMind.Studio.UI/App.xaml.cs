@@ -36,8 +36,73 @@ public partial class App : System.Windows.Application
 
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        EnsureInstalledShortcuts();
         _activationCts = new CancellationTokenSource();
         _ = ListenForActivationAsync(_activationCts.Token);
+    }
+
+    /// <summary>
+    /// The Visual Studio setup project creates advertised shortcuts whose target
+    /// is the installer stub, so Windows shows a generic icon. Replace those with
+    /// normal shortcuts to the installed wrapper once the app starts.
+    /// </summary>
+    private static void EnsureInstalledShortcuts()
+    {
+        string baseDirectory = AppContext.BaseDirectory.TrimEnd(
+            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (baseDirectory.Contains(@"\source\repos\", StringComparison.OrdinalIgnoreCase)
+            || baseDirectory.Contains(@"\bin\", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        string? executable = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable)) return;
+
+        Type? shellType = Type.GetTypeFromProgID("WScript.Shell");
+        if (shellType is null) return;
+        dynamic? shell = Activator.CreateInstance(shellType);
+        if (shell is null) return;
+
+        string iconPath = Path.Combine(baseDirectory, "SharpMind.ico");
+        string icon = File.Exists(iconPath) ? iconPath : executable;
+        string[] folders =
+        [
+            Environment.GetFolderPath(Environment.SpecialFolder.Programs),
+            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+        ];
+
+        foreach (string folder in folders)
+        {
+            if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)) continue;
+
+            try
+            {
+                string linkPath = Path.Combine(folder, "SharpMind Studio.lnk");
+                string? existingTarget = null;
+                if (File.Exists(linkPath))
+                {
+                    dynamic existing = shell.CreateShortcut(linkPath);
+                    existingTarget = (string?)existing.TargetPath;
+                    if (string.Equals(existingTarget, executable, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    // An advertised shortcut cannot be retargeted in place; replace it.
+                    File.Delete(linkPath);
+                }
+
+                dynamic link = shell.CreateShortcut(linkPath);
+                link.TargetPath = executable;
+                link.WorkingDirectory = baseDirectory;
+                link.IconLocation = icon + ",0";
+                link.Description = "SharpMind Studio";
+                link.Save();
+            }
+            catch
+            {
+                // Shortcuts are a convenience; startup must not fail because of them.
+            }
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

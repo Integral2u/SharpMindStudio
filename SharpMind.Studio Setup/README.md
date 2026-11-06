@@ -34,6 +34,9 @@ The project builds the UI and web host, then packages:
   System entries.
 - If you replace an already installed test build, bump `ProductCode` and
   `PackageCode` (or uninstall first). Keep `UpgradeCode` fixed.
+- Visual Studio creates advertised shortcuts whose target is its installer stub.
+  The app replaces them with normal shortcuts to the wrapper on first launch, so
+  the correct icon and target appear after the first run.
 
 ## Adding static files
 
