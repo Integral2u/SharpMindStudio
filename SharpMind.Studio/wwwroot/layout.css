@@ -390,13 +390,21 @@
     font-weight: 600;
 }
 
-.project-path {
-    overflow: hidden;
-    color: var(--muted);
-    font-family: var(--mono);
-    font-size: .67rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.sidebar-workspaces {
+    align-self: flex-start;
+    margin-top: .15rem;
+    padding: .22rem .55rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: .68rem;
+    text-decoration: none;
+}
+
+.sidebar-workspaces:hover,
+.sidebar-workspaces.active {
+    border-color: rgba(var(--accent-rgb), .55);
+    color: var(--accent);
 }
 
 .local-pill {

@@ -150,7 +150,10 @@
             <div class="sidebar-foot">
                 <div class="eyebrow">Project</div>
                 <div class="project-name">@Workspace.Project.Document.Name</div>
-                <div class="project-path">@Workspace.Project.Root</div>
+                <NavLink class="sidebar-workspaces" href="work"
+                         title="Switch or create a workspace">
+                    Workspaces
+                </NavLink>
                 <div class="local-pill">local-first</div>
                 <div class="studio-version">
                     v@(typeof(SharpMind.Studio.Components.Layout.MainLayout).Assembly.GetName().Version?.ToString(3) ?? "1.1.0")
