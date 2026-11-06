@@ -13,7 +13,7 @@
         WindowStartupLocation="Manual"
         Background="#0B1016"
         Closing="OnClosing"
-        StateChanged="OnStateChanged">
+        StateChanged="OnStateChanged" WindowState="Maximized">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
                             ResizeBorderThickness="6"

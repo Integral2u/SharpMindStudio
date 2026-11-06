@@ -373,6 +373,48 @@
             "IsolateTo" = "8:"
             }
 
+            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_F1A2B3C4D5E64F789A1B2C3D4E5F6071"
+            {
+            "SourcePath" = "8:..\\SharpMind.Studio\\bin\\Release\\net10.0\\SharpMind.Studio.staticwebassets.endpoints.json"
+            "TargetName" = "8:SharpMind.Studio.staticwebassets.endpoints.json"
+            "Tag" = "8:"
+            "Folder" = "8:_022D59405EE94A88B1F346145FC04B54"
+            "Condition" = "8:"
+            "Transitive" = "11:FALSE"
+            "Vital" = "11:TRUE"
+            "ReadOnly" = "11:FALSE"
+            "Hidden" = "11:FALSE"
+            "System" = "11:FALSE"
+            "Permanent" = "11:FALSE"
+            "SharedLegacy" = "11:FALSE"
+            "PackageAs" = "3:1"
+            "Register" = "3:1"
+            "Exclude" = "11:FALSE"
+            "IsDependency" = "11:FALSE"
+            "IsolateTo" = "8:"
+            }
+
+            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_F2B3C4D5E6F74A889A1B2C3D4E5F6071"
+            {
+            "SourcePath" = "8:..\\SharpMind.Studio\\bin\\Release\\net10.0\\SharpMind.Studio.staticwebassets.runtime.json"
+            "TargetName" = "8:SharpMind.Studio.staticwebassets.runtime.json"
+            "Tag" = "8:"
+            "Folder" = "8:_022D59405EE94A88B1F346145FC04B54"
+            "Condition" = "8:"
+            "Transitive" = "11:FALSE"
+            "Vital" = "11:TRUE"
+            "ReadOnly" = "11:FALSE"
+            "Hidden" = "11:FALSE"
+            "System" = "11:FALSE"
+            "Permanent" = "11:FALSE"
+            "SharedLegacy" = "11:FALSE"
+            "PackageAs" = "3:1"
+            "Register" = "3:1"
+            "Exclude" = "11:FALSE"
+            "IsDependency" = "11:FALSE"
+            "IsolateTo" = "8:"
+            }
+
         }
         "FileType"
         {
@@ -451,8 +493,8 @@
         {
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:SharpMind Studio"
-        "ProductCode" = "8:{5A1B3C5D-7E9F-4A2B-8C4D-6E8F0A1B2C3D}"
-        "PackageCode" = "8:{9F8E7D6C-5B4A-4392-8170-6F5E4D3C2B1A}"
+        "ProductCode" = "8:{7D2E4F6A-8B1C-4D3E-9F5A-6B7C8D9E0F12}"
+        "PackageCode" = "8:{1A2B3C4D-5E6F-4A7B-8C9D-0E1F2A3B4C5D}"
         "UpgradeCode" = "8:{2C9E7A5B-4D3F-4A1B-8C6D-9E0F1A2B3C4D}"
         "AspNetVersion" = "8:4.0.30319.0"
         "RestartWWWService" = "11:FALSE"

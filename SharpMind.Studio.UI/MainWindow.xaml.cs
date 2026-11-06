@@ -21,6 +21,15 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        try
+        {
+            Icon = new System.Windows.Media.Imaging.BitmapImage(
+                new Uri(Path.Combine(AppContext.BaseDirectory, "SharpMind.ico")));
+        }
+        catch
+        {
+            // The executable icon is still used if the file is missing.
+        }
         FitToWorkArea();
         StudioPaths.EnsureCreated();
         Browser.CreationProperties = new CoreWebView2CreationProperties
