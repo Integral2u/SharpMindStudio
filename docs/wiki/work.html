@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Work mode — SharpMind Studio Wiki</title>
+    <meta name="description" content="Use SharpMind Work with project context, scoped file and web tools, skills, permissions and local or OpenRouter models." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="inference.html">Models &amp; chat</a>
+        <a href="huggingface.html">HuggingFace</a>
+        <a href="openrouter.html">OpenRouter</a>
+        <a class="active" href="work.html">Work</a>
+        <a href="pairing.html">Phone pairing</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#what">What Work is</a>
+            <a href="#project">Create a project</a>
+            <a href="#context">Context and permissions</a>
+            <a href="#skills">Skills</a>
+            <a href="#loop">The work loop</a>
+            <a href="#providers">Local or OpenRouter</a>
+            <a href="#safety">Safety</a>
+            <a href="#problems">Problems</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Work</span></div>
+            <span class="eyebrow">Projects</span>
+            <h1>Work mode</h1>
+            <p class="lead">
+                Work gives a model project context and a small set of scoped tools. The model
+                can read, search and edit only what the project allows, and every permission is
+                explicit.
+            </p>
+
+            <h2 id="what">What Work is</h2>
+            <ul class="checklist">
+                <li>A project folder with its own system prompt, memory, skills and runs.</li>
+                <li>Context locations with read, write and delete permissions.</li>
+                <li>A web permission that is off until you enable it.</li>
+                <li>A send gate: if the tool probe fails, the project cannot quietly run tools.</li>
+                <li>Works with a local model or OpenRouter; Compute-host tool calling is not supported yet.</li>
+            </ul>
+
+            <h2 id="project">Create a project</h2>
+            <ol class="steps">
+                <li><strong>Work → New project.</strong> Give it a name and a folder. The folder is the project's boundary.</li>
+                <li><strong>Write the system prompt.</strong> Say what the project is for, what the model may change and what it must not touch.</li>
+                <li><strong>Pick a provider.</strong> A local model is best for private files and reliable tool calls; OpenRouter works when the local model is too small.</li>
+                <li><strong>Add context.</strong> Point at the folders and files the project actually needs. Start read-only.</li>
+                <li><strong>Enable write/delete only after a read run.</strong> The permission is per location, not global.</li>
+            </ol>
+
+            <h2 id="context">Context and permissions</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Permission</th><th>What it allows</th></tr></thead>
+                    <tbody>
+                        <tr><td>Read</td><td>List, search and open files under the context location.</td></tr>
+                        <tr><td>Write</td><td>Create and edit files under that location.</td></tr>
+                        <tr><td>Delete</td><td>Remove files under that location. Keep this off unless the task needs it.</td></tr>
+                        <tr><td>Web</td><td>Fetch pages for the project. Off by default.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>
+                Paths outside the declared context are not reachable through the project tools.
+                The project folder itself is not a substitute for an explicit context location.
+            </p>
+
+            <h2 id="skills">Skills</h2>
+            <p>
+                Skills are reusable instructions with a name, description and body. They can be
+                global or overridden per project. Use them for repeatable procedures: review a
+                dataset, prepare a model card, run a release checklist.
+            </p>
+            <ul>
+                <li>The skill list shows the effective source (global or project).</li>
+                <li>A skill can be previewed before it is used.</li>
+                <li>Skills do not grant permissions; the project's context locations still decide what tools can touch.</li>
+            </ul>
+
+            <h2 id="loop">The work loop</h2>
+            <ol class="steps">
+                <li>Ask for the outcome, not the exact keystrokes. Mention constraints and files.</li>
+                <li>The model proposes tool calls; Studio shows them and applies the permission gate.</li>
+                <li>Review file changes in the session before accepting destructive work.</li>
+                <li>Keep the useful decisions in the project memory so the next session starts informed.</li>
+                <li>Use <strong>runs</strong> and the project's <span class="mono">models</span> folder for artifacts you want to keep.</li>
+            </ol>
+
+            <h2 id="providers">Local or OpenRouter</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th></th><th>Local model</th><th>OpenRouter</th></tr></thead>
+                    <tbody>
+                        <tr><td>Privacy</td><td>Files stay on this PC</td><td>Prompt and tool results go to the provider</td></tr>
+                        <tr><td>Tool reliability</td><td>Depends on the model; smaller models are weaker</td><td>Stronger models available, still model-dependent</td></tr>
+                        <tr><td>Cost</td><td>Free</td><td>Per token</td></tr>
+                        <tr><td>Setup</td><td>Download a model and pick it</td><td>API key and a model</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>
+                A SharpMind Compute host is currently inference-only for Chat. It does not expose
+                Work's tool calling, so Work should use a local model or OpenRouter.
+            </p>
+            <div class="callout">
+                <strong>Tool-call recovery.</strong> Studio can be strict, lenient or loose about
+                malformed tool calls. A small local model may need Lenient; a hosted model is
+                usually fine with Strict.
+            </div>
+
+            <h2 id="safety">Safety</h2>
+            <ul class="checklist">
+                <li>Start with read-only context. Add write after the model has shown it understands the project.</li>
+                <li>Leave delete off for source trees, model folders and anything under version control.</li>
+                <li>Keep secrets out of context locations; the model can read every file it is given.</li>
+                <li>The send gate exists to stop a broken tool probe from becoming a silent failure. Fix the probe rather than bypassing it.</li>
+                <li>Review remote-model prompts: OpenRouter sees the conversation and any tool output you send.</li>
+            </ul>
+
+            <h2 id="problems">Problems</h2>
+            <table>
+                <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr><td>Send is disabled</td><td>The tool probe failed. Fix the provider or model, then retry; the gate is intentional.</td></tr>
+                    <tr><td>Tool says permission denied</td><td>The path is outside the declared context, or the location lacks that permission.</td></tr>
+                    <tr><td>Model ignores tools</td><td>Use a tool-capable model, lower the recovery strictness, or restate the task.</td></tr>
+                    <tr><td>File change missing</td><td>Check the context path and whether the model wrote to a different project folder.</td></tr>
+                    <tr><td>Remote model is slow or refuses</td><td>Switch to a local model for private or tool-heavy work; OpenRouter models vary in tool support.</td></tr>
+                </tbody>
+            </table>
+
+            <div class="hero-actions">
+                <a class="button primary" href="openrouter.html">OpenRouter setup →</a>
+                <a class="button" href="inference.html">Models &amp; chat</a>
+                <a class="button" href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="../index.html">Home</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>
+

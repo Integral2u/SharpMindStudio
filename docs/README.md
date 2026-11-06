@@ -17,6 +17,11 @@ docs/
     runpod.html
     vultr.html               GPU host setup over SSH (also #custom)
     training.html            pretrain, LoRA, SFT, GPU rules
+    inference.html           models, local chat, GPU inference, Compute API
+    huggingface.html         GGUF browser, token, conversion, quantisation
+    openrouter.html          remote models for Chat and Work
+    work.html                projects, context, tools, permissions
+    pairing.html             phone/LAN pairing and remote Studio approval
     troubleshooting.html     exact error messages and fixes
   404.html
   styles.css

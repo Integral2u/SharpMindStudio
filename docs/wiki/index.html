@@ -25,6 +25,11 @@
         <a href="vultr.html">Vultr + SSH</a>
         <span class="nav-group">Use</span>
         <a href="training.html">Training</a>
+        <a href="inference.html">Models &amp; chat</a>
+        <a href="huggingface.html">HuggingFace</a>
+        <a href="openrouter.html">OpenRouter</a>
+        <a href="work.html">Work</a>
+        <a href="pairing.html">Phone pairing</a>
         <a href="troubleshooting.html">Troubleshooting</a>
     </nav>
     <div class="sidebar-foot">
@@ -74,6 +79,30 @@
                     <p>Deploy a GPU pod through the Runpod API and terminate it when the run is done.</p>
                     <span class="meta">API key · Docker Hub · proxy URLs</span>
                 </a>
+                <a class="guide-card" href="huggingface.html">
+                    <span class="kicker">Models</span>
+                    <h3>HuggingFace</h3>
+                    <p>Browse GGUF repositories, check licence and size, download with resume and convert to <span class="mono">.smm</span>.</p>
+                    <span class="meta">public downloads · token for gated</span>
+                </a>
+                <a class="guide-card" href="openrouter.html">
+                    <span class="kicker">Remote models</span>
+                    <h3>OpenRouter</h3>
+                    <p>Connect hosted models for Chat and Work with an encrypted key and local tool permissions.</p>
+                    <span class="meta">inference only · per token</span>
+                </a>
+                <a class="guide-card" href="work.html">
+                    <span class="kicker">Projects</span>
+                    <h3>Work mode</h3>
+                    <p>Project context, scoped file and web tools, skills and explicit read/write/delete permissions.</p>
+                    <span class="meta">local or OpenRouter</span>
+                </a>
+                <a class="guide-card" href="pairing.html">
+                    <span class="kicker">Access</span>
+                    <h3>Phone pairing</h3>
+                    <p>Open the local Studio from a phone on your LAN with a QR or PIN, then revoke the device when you are done.</p>
+                    <span class="meta">LAN only · revocable tokens</span>
+                </a>
                 <a class="guide-card" href="providers.html">
                     <span class="kicker">Overview</span>
                     <h3>Compare providers</h3>
@@ -100,20 +129,25 @@
         <div class="wrap">
             <div class="section-head">
                 <span class="eyebrow">What works today</span>
-                <h2>The honest support matrix.</h2>
+                <h2>The support matrix.</h2>
+                <p>
+                    <strong>This PC</strong> covers the Studio process and an optional Local Docker
+                    host on the same machine. A local NVIDIA GPU is used only when the GPU image
+                    and Docker runtime are present. A Compute host always brings its own device.
+                </p>
             </div>
             <div class="table-wrap">
                 <table>
                     <thead>
-                        <tr><th>Capability</th><th>This PC</th><th>Compute host</th><th>Notes</th></tr>
+                        <tr><th>Capability</th><th>This PC / Local Docker</th><th>Compute host</th><th>Notes</th></tr>
                     </thead>
                     <tbody>
                         <tr><td>Chat with a packaged model</td><td>Yes</td><td>Yes</td><td>One active model per process on a host.</td></tr>
                         <tr><td>OpenAI-style API</td><td>—</td><td>Yes</td><td>Bearer token; <span class="mono">/v1/chat/completions</span>, models, files, training jobs.</td></tr>
                         <tr><td>Pretrain from scratch</td><td>Yes (CPU)</td><td>Yes (CPU)</td><td>The GPU engine refuses whole-weight training by design.</td></tr>
-                        <tr><td>LoRA fine-tune</td><td>Yes (CPU)</td><td>Yes (GPU or CPU)</td><td>GPU needs RMSNorm + RoPE/NoPE + gated FFN.</td></tr>
-                        <tr><td>SFT (assistant-only loss)</td><td>Yes (CPU)</td><td>Yes (GPU or CPU)</td><td>Chat JSONL; the base supplies the tokenizer and template.</td></tr>
-                        <tr><td>GPU inference</td><td>With a local GPU</td><td>Yes</td><td>Also covers LayerNorm and dense-GELU models.</td></tr>
+                        <tr><td>LoRA fine-tune</td><td>Yes (GPU or CPU)</td><td>Yes (GPU or CPU)</td><td>GPU needs RMSNorm + RoPE/NoPE + gated FFN; otherwise the CPU retry runs.</td></tr>
+                        <tr><td>SFT (assistant-only loss)</td><td>Yes (GPU or CPU)</td><td>Yes (GPU or CPU)</td><td>Chat JSONL; the base supplies the tokenizer and template.</td></tr>
+                        <tr><td>GPU inference</td><td>With a supported local GPU</td><td>Yes (GPU or CPU)</td><td>Also covers LayerNorm and dense-GELU models.</td></tr>
                         <tr><td>Remote data and artifacts</td><td>—</td><td>Yes</td><td>Uploads with progress; exports download back to Studio.</td></tr>
                     </tbody>
                 </table>
@@ -156,3 +190,5 @@
 </main>
 </body>
 </html>
+
+

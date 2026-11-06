@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HuggingFace models — SharpMind Studio Wiki</title>
+    <meta name="description" content="Browse HuggingFace GGUF repositories, inspect licence and quantisation, download with resume, and convert to .smm for SharpMind Studio." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="inference.html">Models &amp; chat</a>
+        <a class="active" href="huggingface.html">HuggingFace</a>
+        <a href="openrouter.html">OpenRouter</a>
+        <a href="work.html">Work</a>
+        <a href="pairing.html">Phone pairing</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#what">What the browser does</a>
+            <a href="#token">Token</a>
+            <a href="#browse">Browse and download</a>
+            <a href="#convert">Convert to .smm</a>
+            <a href="#quant">Pick a quantisation</a>
+            <a href="#use">Use the model</a>
+            <a href="#problems">Problems</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>HuggingFace</span></div>
+            <span class="eyebrow">Model source</span>
+            <h1>HuggingFace models</h1>
+            <p class="lead">
+                Studio can search the HuggingFace Hub for GGUF repositories, inspect what is
+                inside, download with resume, and convert the result to a packaged
+                <span class="mono">.smm</span>. Public downloads need no account.
+            </p>
+            <div class="badge-row">
+                <span class="badge blue">GGUF browser</span>
+                <span class="badge">licence + gated status</span>
+                <span class="badge">resume</span>
+                <span class="badge gpu">convert to .smm</span>
+            </div>
+
+            <h2 id="what">What the browser does</h2>
+            <ul class="checklist">
+                <li>Search the Hub for GGUF repositories instead of guessing URLs.</li>
+                <li>Show licence, gated status, files, quantisation and size before downloading.</li>
+                <li>Download to <span class="mono">%USERPROFILE%\SharpMind\Models</span> with progress and resume.</li>
+                <li>Convert a downloaded GGUF to <span class="mono">.smm</span> from the same panel.</li>
+            </ul>
+            <p>
+                The browser is under <strong>Training → Models</strong>. It does not install a
+                separate package or require a HuggingFace account for public files.
+            </p>
+
+            <h2 id="token">Token</h2>
+            <p>
+                A token is only needed for <strong>gated</strong> repositories. Add it under
+                <strong>Settings → Providers → HuggingFace Model source</strong>. It is stored
+                encrypted with the same local key box as the Compute and OpenRouter secrets.
+            </p>
+            <ul>
+                <li>Public GGUF downloads work with no token and no username.</li>
+                <li>A gated repository also requires accepting its terms on the Hub with the same account.</li>
+                <li>Delete the token from the same panel; it is not written to model files.</li>
+            </ul>
+
+            <h2 id="browse">Browse and download</h2>
+            <ol class="steps">
+                <li><strong>Training → Models → Find GGUF models.</strong></li>
+                <li>Search by repository or model name. Filter by what you need: size, quantisation, licence.</li>
+                <li>Open a result to see the file list. Pick the quantisation that fits this machine or host.</li>
+                <li>Download. If it stops, press download again; the partial file resumes.</li>
+                <li>Convert to <span class="mono">.smm</span> when you want the full SharpMind path, a Compute host upload or a fine-tune base.</li>
+            </ol>
+
+            <h2 id="convert">Convert to .smm</h2>
+            <p>
+                The converter sits directly under the browser. It suggests the destination,
+                verifies the packaged result and refuses to overwrite without confirmation.
+            </p>
+            <pre><code>source:      model-Q4_K_M.gguf
+destination: model-Q4_K_M.smm
+verify:      read back config, weights and tokenizer metadata</code></pre>
+            <p>
+                A Host upload and a fine-tune base both need <span class="mono">.smm</span>. For a
+                local chat that already loads the GGUF, conversion is optional.
+            </p>
+
+            <h2 id="quant">Pick a quantisation</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Quantisation</th><th>Trade-off</th><th>Use when</th></tr></thead>
+                    <tbody>
+                        <tr><td>Q8</td><td>Largest, closest to full precision</td><td>You have memory to spare and want quality.</td></tr>
+                        <tr><td>Q5 / Q6</td><td>Good balance</td><td>The model fits but Q8 is tight.</td></tr>
+                        <tr><td>Q4</td><td>Smallest useful files</td><td>Laptop inference, quick evaluation.</td></tr>
+                        <tr><td>Q2 / Q3</td><td>Very small, visibly degraded</td><td>Only when nothing else fits.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>
+                Context length also costs memory. A model that "fits" at a short context may fail
+                at a longer one; the chat badge is advisory.
+            </p>
+
+            <h2 id="use">Use the model</h2>
+            <ul class="checklist">
+                <li><strong>Local chat:</strong> pick the model in Chat; no upload.</li>
+                <li><strong>Compute host:</strong> host card → Browse → Upload and use.</li>
+                <li><strong>Fine-tune:</strong> the base must be <span class="mono">.smm</span>, so convert first.</li>
+                <li><strong>Work:</strong> use a tool-capable local model; small quantised models are weaker at tool calls.</li>
+            </ul>
+
+            <h2 id="problems">Problems</h2>
+            <table>
+                <thead><tr><th>Message / symptom</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="mono">401</span> or "gated repository"</td><td>Add a token and accept the repository terms on the Hub with that account.</td></tr>
+                    <tr><td><span class="mono">403</span> forbidden</td><td>The licence is not accepted or the account lacks access. Check the repo page on the Hub.</td></tr>
+                    <tr><td>Download restarts from zero</td><td>The server did not return a range, or the partial file was removed. Resume needs the same destination path.</td></tr>
+                    <tr><td>No space left on device</td><td>Models are large; free disk in <span class="mono">Models</span> or download to another drive.</td></tr>
+                    <tr><td>Conversion fails</td><td>The file may be corrupt or an unsupported GGUF variant. Re-download or try another quantisation.</td></tr>
+                    <tr><td>Model downloads but quality is poor</td><td>Try a higher quantisation; Q2/Q3 can be visibly degraded.</td></tr>
+                </tbody>
+            </table>
+
+            <div class="hero-actions">
+                <a class="button primary" href="inference.html">Models &amp; chat →</a>
+                <a class="button" href="training.html">Fine-tune a base</a>
+                <a class="button" href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="../index.html">Home</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>

@@ -328,7 +328,8 @@ Pairing, device tokens and the QR/Local-Global helpers live under
 non-loopback requests are rejected so the toggle takes effect immediately.
 
 Paired phones get Chat plus a bare-bones Work scope, enforced server-side from
-signed claims.
+signed claims. The full guide is in the wiki:
+[Phone pairing](docs/wiki/pairing.html).
 
 ## License
 

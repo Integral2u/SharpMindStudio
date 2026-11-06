@@ -790,6 +790,60 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
     color: var(--text);
 }
 
+.signup-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+    margin: 1rem 0 .45rem;
+}
+.signup-row .referral-label {
+    font-family: var(--mono);
+    font-size: .62rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--faint);
+}
+.signup-row .button { font-size: .78rem; }
+.referral-note {
+    margin: 0 0 1rem;
+    color: var(--faint);
+    font-size: .68rem;
+}
+.referral-note a { color: var(--faint); text-decoration: underline; }
+.referral-note a:hover { color: var(--text); }
+
+.brief-section { padding-top: 1rem; padding-bottom: 0; }
+.brief {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 1.6rem;
+    padding: 1.4rem 1.5rem;
+    border: 1px solid var(--line);
+    border-radius: 1rem;
+    background:
+        radial-gradient(600px 200px at 10% 0%, rgba(96, 165, 250, .08), transparent 70%),
+        linear-gradient(180deg, rgba(16, 24, 34, .62), rgba(9, 14, 21, .5));
+}
+.brief h2 { margin: .4rem 0 .5rem; font-size: clamp(1.35rem, 2.2vw, 1.9rem); letter-spacing: -.03em; line-height: 1.12; }
+.brief p { margin: 0; color: var(--muted); font-size: .84rem; }
+.brief-grid { display: grid; gap: .7rem; align-content: center; }
+.brief-item { display: grid; grid-template-columns: 2rem 1fr; gap: .6rem; align-items: start; }
+.brief-num {
+    display: grid;
+    place-items: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: .45rem;
+    border: 1px solid var(--line-2);
+    color: var(--blue);
+    background: rgba(96, 165, 250, .06);
+    font-family: var(--mono);
+    font-size: .6rem;
+}
+.brief-item h3 { margin: .15rem 0 .2rem; font-size: .88rem; }
+.brief-item p { font-size: .78rem; }
+
 .anchor-list { display: grid; gap: .35rem; margin: .8rem 0 1.4rem; padding: 0; list-style: none; }
 .anchor-list a { color: var(--muted); font-size: .84rem; }
 .anchor-list a:hover { color: var(--text); }
@@ -813,6 +867,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
 
 @media (max-width: 1100px) {
     .guide-grid { grid-template-columns: repeat(2, 1fr); }
+    .brief { grid-template-columns: 1fr; }
 }
 @media (max-width: 820px) {
     .nav-group { display: none; }

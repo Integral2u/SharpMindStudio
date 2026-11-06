@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phone pairing — SharpMind Studio Wiki</title>
+    <meta name="description" content="Pair a phone or LAN device with SharpMind Studio safely: QR/PIN, trusted devices, the LAN listener and the remote Studio pairing path." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="inference.html">Models &amp; chat</a>
+        <a href="huggingface.html">HuggingFace</a>
+        <a href="openrouter.html">OpenRouter</a>
+        <a href="work.html">Work</a>
+        <a class="active" href="pairing.html">Phone pairing</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#what">What pairing is</a>
+            <a href="#enable">Enable LAN pairing</a>
+            <a href="#pair">Pair a device</a>
+            <a href="#manage">Manage devices</a>
+            <a href="#remote">Remote Studio</a>
+            <a href="#security">Security</a>
+            <a href="#problems">Problems</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Phone pairing</span></div>
+            <span class="eyebrow">Access · LAN</span>
+            <h1>Phone pairing</h1>
+            <p class="lead">
+                Pairing lets a phone or another device on your network open the Studio web UI
+                without exposing it to the internet. Approve one device, keep it in the trusted
+                list, revoke it when you are done.
+            </p>
+            <div class="badge-row">
+                <span class="badge">QR or PIN</span>
+                <span class="badge blue">LAN only</span>
+                <span class="badge">revocable devices</span>
+                <span class="badge gpu">mobile scope</span>
+            </div>
+
+            <h2 id="what">What pairing is</h2>
+            <ul class="checklist">
+                <li>The local Studio keeps listening on <span class="mono">127.0.0.1:5117</span> and a LAN listener on <span class="mono">5118</span>.</li>
+                <li>A non-loopback browser is refused until LAN access is on and the device is paired.</li>
+                <li>Pairing uses a QR code or a short PIN; the resulting device token is stored hashed.</li>
+                <li>A paired phone gets the mobile scope, not the full desktop admin surface.</li>
+                <li>Pairing is for the Studio UI. The Compute API has its own bearer token.</li>
+            </ul>
+            <p>
+                This is not a reverse proxy or a public tunnel. Both devices must be on the same
+                network, or connected through a VPN you trust.
+            </p>
+
+            <h2 id="enable">Enable LAN pairing</h2>
+            <ol class="steps">
+                <li><strong>Settings → Phone pairing</strong> (the tab id is <span class="mono">pair</span>).</li>
+                <li>Turn on <strong>Allow LAN device pairing</strong>. The change takes effect immediately; no restart.</li>
+                <li>Keep the admin surface on loopback. Pairing setup is still loopback-only.</li>
+                <li>If Windows asks, allow the Studio process on <strong>private</strong> networks only.</li>
+            </ol>
+            <div class="callout warn">
+                <strong>Do not port-forward 5118.</strong> Pairing is a LAN convenience, not an
+                internet-facing login. For remote access, use a VPN or an SSH tunnel.
+            </div>
+
+            <h2 id="pair">Pair a device</h2>
+            <ol class="steps">
+                <li>Open the pairing panel on the desktop Studio. It shows a QR code and a short PIN.</li>
+                <li>On the phone, open the LAN address shown (for example <span class="mono">http://192.168.1.20:5118</span>) and scan the QR or enter the PIN.</li>
+                <li>Confirm the device on the desktop. The phone receives a device token and is added to the trusted list.</li>
+                <li>The phone now opens the mobile Studio. Sessions, chats and saved models are the same local data.</li>
+            </ol>
+            <p>
+                A one-time login QR is also available when you want a short-lived session rather
+                than a long-lived trusted device.
+            </p>
+
+            <h2 id="manage">Manage devices</h2>
+            <ul>
+                <li><strong>Trusted devices</strong> lists what has been approved; revoke anything you no longer use.</li>
+                <li>Revoking a device invalidates its token immediately; the phone must pair again.</li>
+                <li>Turning LAN pairing off stops new pairings and refuses non-loopback browsers.</li>
+                <li>A lost phone should be revoked first, then rotate any provider keys it could see.</li>
+            </ul>
+
+            <h2 id="remote">Remote Studio</h2>
+            <p>
+                The combined server image serves Studio on <span class="mono">5117</span> and sets
+                <span class="mono">Studio__LanEnabled=true</span>, so a browser on another machine
+                is redirected to <span class="mono">/pair</span>. The same pairing rules apply.
+            </p>
+            <p>
+                If you cannot reach the pairing UI, the container can create an offer and approve
+                it locally. From the host:
+            </p>
+            <pre><code>docker exec &lt;container&gt; curl -s -X POST http://127.0.0.1:5117/gateway/api/pairing/new
+
+# open http://&lt;public-ip&gt;:5117/pair, enter the token and PIN, then:
+docker exec &lt;container&gt; curl -s -X POST \
+  http://127.0.0.1:5117/gateway/api/pairings/&lt;ID&gt;/approve \
+  -H "Content-Type: application/json" -d "{\"mode\":\"desktop\"}"</code></pre>
+            <p>
+                On Runpod, use the pod's web terminal for the same commands. Keep the Studio port
+                restricted in the provider firewall; pairing is not a substitute for that.
+            </p>
+
+            <h2 id="security">Security</h2>
+            <ul class="checklist">
+                <li>Device and pairing tokens are stored hashed; PINs are salted and deliberately slow.</li>
+                <li>Secrets are AES-GCM encrypted with the local key box.</li>
+                <li>The mobile scope is enforced by the server, not just hidden in the UI.</li>
+                <li>Admin pairing setup stays on loopback.</li>
+                <li>Use a trusted private network; guest Wi-Fi with client isolation will not reach the LAN listener.</li>
+            </ul>
+
+            <h2 id="problems">Problems</h2>
+            <table>
+                <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr><td>Phone gets a 404</td><td>LAN pairing is off, or the browser is not on the paired device list. Enable it and pair again.</td></tr>
+                    <tr><td>QR opens but the PIN is rejected</td><td>The offer expired; create a new pairing offer.</td></tr>
+                    <tr><td>Device disappears after a restart</td><td>Trusted devices persist; a revoked or one-time login does not. Pair again if needed.</td></tr>
+                    <tr><td>Phone cannot reach the desktop</td><td>Different network/VLAN, guest Wi-Fi isolation, or Windows Firewall blocking the private network.</td></tr>
+                    <tr><td>Pairing works but chat does not</td><td>The mobile scope is narrower, and a model must be available locally. Check the model selection on the phone.</td></tr>
+                    <tr><td>Remote Studio redirects to /pair repeatedly</td><td>Finish the pairing approval, or open the Studio URL from a browser that already holds a valid device token.</td></tr>
+                </tbody>
+            </table>
+
+            <div class="hero-actions">
+                <a class="button primary" href="inference.html">Models &amp; chat →</a>
+                <a class="button" href="work.html">Work mode</a>
+                <a class="button" href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="../index.html">Home</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenRouter — SharpMind Studio Wiki</title>
+    <meta name="description" content="Connect OpenRouter to SharpMind Studio for remote chat and Work models, with an encrypted API key and local tool permissions." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="inference.html">Models &amp; chat</a>
+        <a href="huggingface.html">HuggingFace</a>
+        <a class="active" href="openrouter.html">OpenRouter</a>
+        <a href="work.html">Work</a>
+        <a href="pairing.html">Phone pairing</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1 preview</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#what">What OpenRouter adds</a>
+            <a href="#setup">Connect it</a>
+            <a href="#chat">Use it in Chat</a>
+            <a href="#work">Use it in Work</a>
+            <a href="#cost">Cost and privacy</a>
+            <a href="#problems">Problems</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>OpenRouter</span></div>
+            <span class="eyebrow">Remote models</span>
+            <h1>OpenRouter</h1>
+            <p class="lead">
+                OpenRouter gives Chat and Work access to hosted models when your hardware is not
+                the right tool. The API key stays on this PC, encrypted; the rest of Studio —
+                sessions, projects, tools and permissions — behaves the same.
+            </p>
+
+            <h2 id="what">What OpenRouter adds</h2>
+            <ul class="checklist">
+                <li>A large catalogue of hosted models without downloading weights.</li>
+                <li>Streaming chat completions and OpenAI-style tool calls.</li>
+                <li>A fallback when a local model is too large, too slow or not tool-capable.</li>
+                <li>No local GPU or Compute host required.</li>
+            </ul>
+            <p>
+                It is inference-only. You cannot fine-tune an OpenRouter model from Studio, and
+                your prompts leave this PC. For private data, use a local model or your own
+                Compute host.
+            </p>
+
+            <h2 id="setup">Connect it</h2>
+            <ol class="steps">
+                <li>
+                    <strong>Create an API key</strong> at
+                    <a href="https://openrouter.ai/keys">openrouter.ai/keys</a>.
+                </li>
+                <li>
+                    <strong>Settings → Providers → OpenRouter.</strong>
+                    Paste the key and save. The base URL is already set to the OpenAI-compatible
+                    endpoint; only change it for a compatible gateway.
+                </li>
+                <li>
+                    <strong>Load models.</strong>
+                    Studio fetches the active model list, including free models. Press the
+                    refresh control if the list is stale.
+                </li>
+                <li>
+                    <strong>Pick a chat model.</strong>
+                    The provider picker on the welcome and chat screens lists OpenRouter models
+                    alongside local ones.
+                </li>
+            </ol>
+            <p>
+                The key is encrypted with the same local key box as the Compute and HuggingFace
+                secrets. It is never written into chats or exported model files.
+            </p>
+
+            <h2 id="chat">Use it in Chat</h2>
+            <ul>
+                <li>Choose OpenRouter in the provider picker, then a model.</li>
+                <li>Streaming, stop generation, saved sessions and system prompts work as with a local model.</li>
+                <li>Model badges and "won't fit" checks do not apply; the model runs remotely.</li>
+                <li>Tool calls use the model's OpenAI-style tool support. Studio's tool-call recovery setting (<strong>Strict</strong>, <strong>Lenient</strong>, <strong>Loose</strong>) controls how forgiving it is when a model emits malformed calls.</li>
+                <li>Free models may be rate-limited or unavailable at peak times; the error is shown in the chat.</li>
+            </ul>
+
+            <h2 id="work">Use it in Work</h2>
+            <p>
+                Work can use an OpenRouter model for reasoning while the project's files and
+                tools stay local. The permission gate still applies:
+            </p>
+            <ul class="checklist">
+                <li>Context locations are explicitly added with read, write and delete permissions.</li>
+                <li>Web access is a per-project permission.</li>
+                <li>Skills and memory come from the project folder, not the provider.</li>
+                <li>The send action is gated when the tool probe failed, so a misconfigured model cannot silently run tools.</li>
+            </ul>
+            <div class="callout">
+                <strong>Remote model, local consequences.</strong> The provider sees the prompt
+                and tool results you send. Keep secrets out of context, and review write/delete
+                permissions before enabling them.
+            </div>
+
+            <h2 id="cost">Cost and privacy</h2>
+            <ul>
+                <li>OpenRouter bills per token on your account. Studio does not add a margin.</li>
+                <li>Free models are useful for evaluation; read their data-use terms.</li>
+                <li>Prompt, completion and tool payloads go to the provider; the API key stays encrypted locally.</li>
+                <li>For regulated or private data, prefer local inference or a Compute host you control.</li>
+            </ul>
+
+            <h2 id="problems">Problems</h2>
+            <table>
+                <thead><tr><th>Message</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="mono">401</span> / invalid key</td><td>The key was revoked or pasted with whitespace. Create a new one and save it.</td></tr>
+                    <tr><td><span class="mono">402</span> / insufficient credits</td><td>Add credit or switch to a free model.</td></tr>
+                    <tr><td>Model not found</td><td>Refresh the model list; the provider may have retired the id.</td></tr>
+                    <tr><td>Rate limited</td><td>Wait or choose another model. Free tiers are shared.</td></tr>
+                    <tr><td>Tool call not executed</td><td>The model may not support tools, or the tool probe failed. Check the project permissions and try Strict recovery.</td></tr>
+                    <tr><td>Slow first token</td><td>The provider is queuing the request; a smaller model or another provider route is faster.</td></tr>
+                </tbody>
+            </table>
+
+            <div class="hero-actions">
+                <a class="button primary" href="work.html">Work mode →</a>
+                <a class="button" href="inference.html">Local chat</a>
+                <a class="button" href="troubleshooting.html">Troubleshooting</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · pre-release 1.1</span>
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="../index.html">Home</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>
+
