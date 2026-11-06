@@ -567,7 +567,21 @@ else if (_tab == "openrouter")
                         </div>
                     </summary>
                     <div class="settings-subgroup-body stack">
-                    <div class="spread small mono"><span>@provider.BaseUrl</span><span>@(Compute.HasToken(provider.Id) ? "token saved" : "no token")</span></div>
+                    <div class="spread small mono">
+                        <span>@provider.BaseUrl</span>
+                        <span class="row" style="gap:.4rem; align-items:center;">
+                            @(Compute.HasToken(provider.Id) ? "token saved" : "no token")
+                            @if (Compute.HasToken(provider.Id))
+                            {
+                                <button type="button" class="button"
+                                        style="min-height:1.6rem; padding:.1rem .45rem;"
+                                        @onclick="() => CopyProviderTokenAsync(provider.Id)"
+                                        title="Copy the bearer token to use as SHARPMIND_TOKEN on the host.">
+                                    Copy token
+                                </button>
+                            }
+                        </span>
+                    </div>
                     @if (provider.StudioUrl is { Length: > 0 })
                     {
                         <div class="spread small mono"><span>Studio</span><span>@provider.StudioUrl</span></div>
@@ -1990,6 +2004,26 @@ else
     {
         Docker.StartDockerDesktop();
         _dockerStatus = "Starting Docker Desktop. Press Check again in a moment.";
+    }
+
+    private async Task CopyProviderTokenAsync(string id)
+    {
+        string? token = Compute.Token(id);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            _computeStatus = "This host has no token yet. Generate one in Edit.";
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", token);
+            _computeStatus = "Token copied. Use it as SHARPMIND_TOKEN on the host.";
+        }
+        catch (Exception ex)
+        {
+            _computeStatus = $"Could not copy the token: {ex.Message}";
+        }
     }
 
     private async Task TestComputeAsync(string id)
