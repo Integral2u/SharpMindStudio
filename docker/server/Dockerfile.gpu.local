@@ -33,6 +33,20 @@ FROM nvidia/cuda:12.6.3-runtime-ubuntu24.04 AS cuda
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
+# Bump these when building a different release so the published image is
+# self-describing (docker inspect -> Config.Labels).
+ARG SHARPMIND_VERSION=1.1.0
+ARG SHARPMIND_REVISION=1979e76
+ARG SHARPMIND_CORE_REVISION=34f90f7
+LABEL org.opencontainers.image.title="SharpMind Server (GPU)" \
+      org.opencontainers.image.description="SharpMind Studio web UI and Compute host with the ILGPU CUDA accelerator plugin." \
+      org.opencontainers.image.version="${SHARPMIND_VERSION}" \
+      org.opencontainers.image.revision="${SHARPMIND_REVISION}" \
+      org.opencontainers.image.source="https://github.com/Integral2u/SharpMindStudio" \
+      org.opencontainers.image.vendor="Integral2u" \
+      org.opencontainers.image.licenses="MIT" \
+      com.integral2u.sharpmind.core.revision="${SHARPMIND_CORE_REVISION}"
+
 # Only the CUDA user-space libraries the ILGPU plugin actually loads. The full
 # /usr/local/cuda/lib64 tree is ~1.8 GB; cuBLAS + cudart + nvJitLink are ~620 MB.
 COPY --from=cuda /usr/local/cuda/lib64/libcublas.so.12* /usr/local/cuda/lib64/
