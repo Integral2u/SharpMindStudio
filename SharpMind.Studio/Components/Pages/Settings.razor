@@ -381,7 +381,7 @@ else if (_tab == "openrouter")
 
             @if (_computeEditing)
             {
-                <div class="training-subsection">
+                <div class="training-subsection" id="compute-editor">
                     <div class="training-subsection-head">
                         <label class="field-label">@(_editingComputeId is null ? "New Compute host" : "Edit Compute host")</label>
                     </div>
@@ -553,16 +553,21 @@ else if (_tab == "openrouter")
                             @if (!string.Equals(provider.Id, Compute.DefaultProviderId, StringComparison.OrdinalIgnoreCase))
                             {
                                 <button type="button" class="button" @onclick="() => SetDefaultCompute(provider.Id)"
+                                        @onclick:preventDefault="true"
                                         title="Use this host by default for Chat and Training.">Make default</button>
                             }
                             <button type="button" class="button" @onclick="() => TestComputeAsync(provider.Id)"
+                                    @onclick:preventDefault="true"
                                     disabled="@_computeBusy"
                                     title="Check the host and load its model list.">Test</button>
                             <button type="button" class="button" @onclick="() => EditCompute(provider)"
+                                    @onclick:preventDefault="true"
                                     title="Change this host's prefab, URL, token and model settings.">Edit</button>
                             <button type="button" class="button" @onclick="() => DuplicateCompute(provider)"
+                                    @onclick:preventDefault="true"
                                     title="Create another host from this one's settings.">Duplicate</button>
                             <button type="button" class="button danger" @onclick="() => RemoveCompute(provider)"
+                                    @onclick:preventDefault="true"
                                     title="Remove this host from Studio. The remote pod or container is not affected.">Delete</button>
                         </div>
                     </summary>
@@ -1449,7 +1454,7 @@ else
         _serverStatus = "Local defaults restored: 127.0.0.1:5117";
     }
 
-    private void NewCompute()
+    private async Task NewCompute()
     {
         _computeEditing = true;
         _editingComputeId = null;
@@ -1473,9 +1478,10 @@ else
         _computeStatus = null;
         _computeError = null;
         _computeErrorHostId = null;
+        await ScrollToEditorAsync();
     }
 
-    private void EditCompute(ComputeProviderSettings provider)
+    private async Task EditCompute(ComputeProviderSettings provider)
     {
         _computeEditing = true;
         _editingComputeId = provider.Id;
@@ -1503,6 +1509,22 @@ else
         _computeStatus = null;
         _computeError = null;
         _computeErrorHostId = null;
+        await ScrollToEditorAsync();
+    }
+
+    private async Task ScrollToEditorAsync()
+    {
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+            await JS.InvokeVoidAsync(
+                "eval",
+                "document.getElementById('compute-editor')?.scrollIntoView({behavior:'smooth',block:'start'})");
+        }
+        catch
+        {
+            // Scrolling is a convenience; the editor is still rendered above the list.
+        }
     }
 
     private void CancelCompute()
