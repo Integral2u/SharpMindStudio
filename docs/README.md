@@ -9,6 +9,7 @@ Jekyll and rewriting paths.
 ```text
 docs/
   index.html                 hero / product page
+  chat-view.png              redacted chat screenshot used on the landing page
   wiki.html                  redirect for old /wiki.html links
   wiki/
     index.html               wiki hub and support matrix
@@ -37,6 +38,8 @@ docs/
 - Do not add external fonts, analytics, or CDN scripts. The site is self-contained.
 - Keep the support claims honest: GPU training is LoRA-only; pretraining is CPU;
   unsupported accelerators fall back to the CPU with a log line.
+- Redact local paths, usernames, tokens and host addresses from screenshots before
+  adding them. The landing-page chat shot is already redacted.
 
 ## Preview
 

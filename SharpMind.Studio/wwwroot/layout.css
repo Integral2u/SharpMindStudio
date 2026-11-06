@@ -412,6 +412,13 @@
     text-transform: uppercase;
 }
 
+.studio-version {
+    margin-top: .2rem;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: .6rem;
+}
+
 .main {
     min-width: 0;
 }

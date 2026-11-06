@@ -812,7 +812,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
 .referral-note a:hover { color: var(--text); }
 
 .top-links {
-    position: fixed;
+    position: absolute;
     top: .9rem;
     right: 1.1rem;
     z-index: 60;
@@ -871,6 +871,29 @@ a.phone:focus-visible { outline: 2px solid var(--teal); outline-offset: 6px; }
 }
 .brief-item h3 { margin: .15rem 0 .2rem; font-size: .88rem; }
 .brief-item p { font-size: .78rem; }
+
+.shot {
+    margin: 1.4rem 0 0;
+    border: 1px solid var(--line);
+    border-radius: 1rem;
+    overflow: hidden;
+    background: #070c12;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .45);
+}
+.shot img { display: block; width: 100%; height: auto; }
+.shot figcaption {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: .65rem 1rem;
+    border-top: 1px solid var(--line);
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: .66rem;
+}
+.shot figcaption a { color: var(--faint); }
+.shot figcaption a:hover { color: var(--text); }
 
 .anchor-list { display: grid; gap: .35rem; margin: .8rem 0 1.4rem; padding: 0; list-style: none; }
 .anchor-list a { color: var(--muted); font-size: .84rem; }

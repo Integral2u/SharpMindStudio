@@ -152,6 +152,7 @@
                 <div class="project-name">@Workspace.Project.Document.Name</div>
                 <div class="project-path">@Workspace.Project.Root</div>
                 <div class="local-pill">local-first</div>
+                <div class="studio-version">v@(typeof(SharpMind.Studio.Components.Layout.MainLayout).Assembly.GetName().Version?.ToString(3) ?? "1.1.0")</div>
             </div>
         }
     </aside>
