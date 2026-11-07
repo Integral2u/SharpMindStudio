@@ -16,7 +16,7 @@ public sealed class JobComponent
     /// <summary>Assembly-qualified type name used to resolve the component descriptor.</summary>
     public required string TypeName { get; set; }
 
-    /// <summary>Parameter name â†’ string value as entered/reflected by the wizard.</summary>
+    /// <summary>Parameter name -> string value as entered/reflected by the wizard.</summary>
     public Dictionary<string, string> Args { get; set; } = new(StringComparer.Ordinal);
 }
 
