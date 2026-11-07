@@ -494,7 +494,7 @@
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:SharpMind Studio"
         "ProductCode" = "8:{A3B4C5D6-E7F8-4A1B-8C2D-3E4F5A6B7C8D}"
-        "PackageCode" = "8:{C5D6E7F8-A1B2-4C3D-8E4F-5A6B7C8D9E0F}"
+        "PackageCode" = "8:{48876601-7496-4B08-BC6D-F710D94CA935}"
         "UpgradeCode" = "8:{2C9E7A5B-4D3F-4A1B-8C6D-9E0F1A2B3C4D}"
         "AspNetVersion" = "8:4.0.30319.0"
         "RestartWWWService" = "11:FALSE"
