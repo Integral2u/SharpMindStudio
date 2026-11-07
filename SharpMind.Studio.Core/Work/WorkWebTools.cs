@@ -40,6 +40,7 @@ public sealed class WorkWebTools(Func<WorkToolAccess, Task<bool>>? permission = 
         if (!await IsAllowedAsync(uri))
             return $"Permission denied: FetchUrl may not access '{uri}' with the current project permission.";
 
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         try
         {
             Uri current = uri;
@@ -48,7 +49,8 @@ public sealed class WorkWebTools(Func<WorkToolAccess, Task<bool>>? permission = 
                 using var request = new HttpRequestMessage(HttpMethod.Get, current);
                 using HttpResponseMessage response = await Client.SendAsync(
                     request,
-                    HttpCompletionOption.ResponseHeadersRead);
+                    HttpCompletionOption.ResponseHeadersRead,
+                    timeout.Token);
 
                 if (IsRedirect(response.StatusCode) && response.Headers.Location is { } location)
                 {
@@ -62,12 +64,16 @@ public sealed class WorkWebTools(Func<WorkToolAccess, Task<bool>>? permission = 
                 }
 
                 response.EnsureSuccessStatusCode();
-                return await ReadLimitedAsync(response);
+                return await ReadLimitedAsync(response, timeout.Token);
             }
 
             return $"Error fetching URL: more than {MaxRedirects} redirects.";
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
+        catch (OperationCanceledException)
+        {
+            return "Error fetching URL: the request timed out.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
         {
             return $"Error fetching URL: {ex.Message}";
         }
@@ -207,12 +213,18 @@ public sealed class WorkWebTools(Func<WorkToolAccess, Task<bool>>? permission = 
             or HttpStatusCode.TemporaryRedirect
             or HttpStatusCode.PermanentRedirect;
 
-    private static async Task<string> ReadLimitedAsync(HttpResponseMessage response)
+    private static async Task<string> ReadLimitedAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
     {
-        await using Stream stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+        await using Stream stream = await response.Content
+            .ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         char[] buffer = new char[MaxCharacters + 1];
-        int read = await reader.ReadBlockAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+        int read = await reader
+            .ReadBlockAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)
+            .ConfigureAwait(false);
         string text = new(buffer, 0, read);
         return read > MaxCharacters
             ? text[..MaxCharacters] + "\n\n[truncated at 512 KB]"
