@@ -35,9 +35,9 @@ WORKDIR /app
 
 # Bump these when building a different release so the published image is
 # self-describing (docker inspect -> Config.Labels).
-ARG SHARPMIND_VERSION=1.1.0
-ARG SHARPMIND_REVISION=4bddc92
-ARG SHARPMIND_CORE_REVISION=30f0ead
+ARG SHARPMIND_VERSION=1.1.1
+ARG SHARPMIND_REVISION=537f9de
+ARG SHARPMIND_CORE_REVISION=cbcdd40
 LABEL org.opencontainers.image.title="SharpMind Server (GPU)" \
       org.opencontainers.image.description="SharpMind Studio web UI and Compute host with the ILGPU CUDA accelerator plugin." \
       org.opencontainers.image.version="${SHARPMIND_VERSION}" \
