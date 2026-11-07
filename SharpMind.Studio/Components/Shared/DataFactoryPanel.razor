@@ -147,6 +147,14 @@
                 </div>
             }
             <div class="field training-form-wide">
+                <p class="small faint">
+                    Check the provider's terms before training on generated data. Many
+                    hosted models limit using their outputs to train other models, and
+                    open models carry their own licences. Each output line records the
+                    provider and model so the dataset can be traced.
+                </p>
+            </div>
+            <div class="field training-form-wide">
                 <label class="field-label" for="factory-system">Generator system prompt</label>
                 <textarea id="factory-system" class="textarea" rows="3" @bind="Factory.Recipe.SystemPrompt"></textarea>
             </div>

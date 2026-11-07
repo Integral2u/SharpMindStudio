@@ -191,6 +191,7 @@ public sealed class DataFactoryTests
             OutputFormat = DataFactoryOutputFormat.TextJsonl,
             OutputPath = output,
             MaxRecords = 5,
+            RemoteModel = "test/model",
         };
 
         var generator = new FakeGenerator(_ => "A polished training document.");
@@ -199,6 +200,8 @@ public sealed class DataFactoryTests
         Assert.Equal(1, result.Written);
         using JsonDocument document = JsonDocument.Parse(Assert.Single(await File.ReadAllLinesAsync(output)));
         Assert.Equal("A polished training document.", document.RootElement.GetProperty("text").GetString());
+        Assert.Equal("openrouter", document.RootElement.GetProperty("provider").GetString());
+        Assert.Equal("test/model", document.RootElement.GetProperty("model").GetString());
     }
 
     [Fact]

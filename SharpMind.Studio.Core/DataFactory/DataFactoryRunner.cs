@@ -176,7 +176,7 @@ public static class DataFactoryRunner
                         }
                         else
                         {
-                            line = DataFactoryOutput.BuildTextLine(document, variant, response);
+                            line = DataFactoryOutput.BuildTextLine(recipe, document, variant, response);
                         }
 
                         await writer.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
@@ -469,11 +469,17 @@ public static class DataFactoryOutput
             ["source"] = document.Source,
             ["id"] = document.Index,
             ["variant"] = variant,
+            ["provider"] = ProviderName(recipe),
+            ["model"] = ModelName(recipe),
         };
         return line.ToJsonString();
     }
 
-    public static string BuildTextLine(DataFactoryDocument document, int variant, string text)
+    public static string BuildTextLine(
+        DataFactoryRecipe recipe,
+        DataFactoryDocument document,
+        int variant,
+        string text)
     {
         var line = new JsonObject
         {
@@ -481,9 +487,19 @@ public static class DataFactoryOutput
             ["source"] = document.Source,
             ["id"] = document.Index,
             ["variant"] = variant,
+            ["provider"] = ProviderName(recipe),
+            ["model"] = ModelName(recipe),
         };
         return line.ToJsonString();
     }
+
+    private static string ProviderName(DataFactoryRecipe recipe) =>
+        recipe.Provider == DataFactoryProviderKind.Local ? "local" : "openrouter";
+
+    private static string? ModelName(DataFactoryRecipe recipe) =>
+        recipe.Provider == DataFactoryProviderKind.Local
+            ? recipe.LocalModelPath is { Length: > 0 } path ? Path.GetFileName(path) : null
+            : recipe.RemoteModel;
 
     private static string StripCodeFence(string text)
     {
