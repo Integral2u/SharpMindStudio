@@ -299,6 +299,7 @@ public sealed class DataFactoryTests
         Assert.True(resumed.Resumed);
         Assert.Equal(1, resumedGenerator.Calls);
         Assert.Equal(2, resumed.Written);
+        Assert.Equal(2, resumed.Processed);
 
         string[] lines = await File.ReadAllLinesAsync(output);
         Assert.Equal(2, lines.Length);

@@ -91,6 +91,7 @@ public static class DataFactoryRunner
         int lastId = checkpoint?.LastId ?? -1;
         int lastVariant = checkpoint?.LastVariant ?? -1;
         var samples = new List<string>(SampleCount);
+        int currentDocumentIndex = -1;
 
         await using (var stream = new FileStream(
             partialPath,
@@ -120,6 +121,7 @@ public static class DataFactoryRunner
                     if (written >= limit) break;
                     if (resumed && document.Index < checkpoint!.LastId) continue;
 
+                    currentDocumentIndex = document.Index;
                     int startVariant = 0;
                     if (resumed && document.Index == checkpoint!.LastId)
                     {
@@ -197,9 +199,13 @@ public static class DataFactoryRunner
                 try
                 {
                     await writer.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                    int snapshotProcessed = processed;
+                    if (currentDocumentIndex >= 0 && lastId != currentDocumentIndex)
+                        snapshotProcessed = Math.Max(0, processed - 1);
+
                     await SaveProgressAsync(
                         writer, stream, checkpointPath, recipeHash,
-                        processed, written, skipped, parseFailures,
+                        snapshotProcessed, written, skipped, parseFailures,
                         lastId, lastVariant).ConfigureAwait(false);
                 }
                 catch
