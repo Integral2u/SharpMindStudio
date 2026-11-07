@@ -54,6 +54,11 @@ public sealed class TrainingRunRecord
     /// <summary>Held-out exam loss, once the run's exported model has been scored.</summary>
     public double? ExamLoss { get; set; }
     public double? ExamPerplexity { get; set; }
+
+    /// <summary>UTF-8 bytes and bits-per-byte for the exam slice; comparable across tokenizers.</summary>
+    public long ExamBytes { get; set; }
+    public double? ExamBitsPerByte { get; set; }
+
     public int ExamBatches { get; set; }
     public long ExamTokens { get; set; }
     public DateTime? ExamEvaluatedUtc { get; set; }

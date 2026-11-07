@@ -897,6 +897,10 @@ else if (_tab == "runs")
                                         {
                                             <span> / ppl @perplexity.ToString("0.00")</span>
                                         }
+                                        @if (run.Record.ExamBitsPerByte is { } bpb)
+                                        {
+                                            <span> / bpb @bpb.ToString("0.0000")</span>
+                                        }
                                     </span>
                                 }
                                 @if (ForkLabel(run.Record) is { } forkLabel)
@@ -991,6 +995,11 @@ else if (_tab == "runs")
                                 <td class="@(Lower(b.ExamLoss, a.ExamLoss))">
                                     @Fmt(b.ExamLoss)@PerplexityAt(b.ExamPerplexity)
                                 </td>
+                            </tr>
+                            <tr>
+                                <td>Exam bits/byte</td>
+                                <td class="@(Lower(a.ExamBitsPerByte, b.ExamBitsPerByte))">@Fmt(a.ExamBitsPerByte)</td>
+                                <td class="@(Lower(b.ExamBitsPerByte, a.ExamBitsPerByte))">@Fmt(b.ExamBitsPerByte)</td>
                             </tr>
                             <tr>
                                 <td>Validation split</td>

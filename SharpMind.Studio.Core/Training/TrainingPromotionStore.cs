@@ -21,12 +21,14 @@ public sealed class TrainingPromotionReport
     public string? CandidateRunPath { get; set; }
     public double CandidateExamLoss { get; set; }
     public double CandidateExamPerplexity { get; set; }
+    public double? CandidateExamBitsPerByte { get; set; }
 
     public string? BaselineName { get; set; }
     public string? BaselineModelPath { get; set; }
     public string? BaselineRunPath { get; set; }
     public double BaselineExamLoss { get; set; }
     public double BaselineExamPerplexity { get; set; }
+    public double? BaselineExamBitsPerByte { get; set; }
 
     /// <summary>better / worse / inconclusive; a report can record all three.</summary>
     public string Verdict { get; set; } = Inconclusive;
@@ -37,9 +39,10 @@ public sealed class TrainingPromotionReport
     public string Summary { get; set; } = "";
 
     /// <summary>
-    /// Builds the candidate/baseline report. Lower exam loss wins; a change
-    /// within half a percent is called inconclusive rather than overclaiming a
-    /// difference the exam cannot resolve.
+    /// Builds the candidate/baseline report. Lower bits-per-byte wins when both
+    /// runs have it, because it stays comparable after a tokenizer change; raw
+    /// exam loss is the fallback. A change within half a percent is called
+    /// inconclusive rather than overclaiming a difference the exam cannot resolve.
     /// </summary>
     public static TrainingPromotionReport Compare(
         TrainingRunRecord candidate,
@@ -56,7 +59,17 @@ public sealed class TrainingPromotionReport
         if (baseline.ExamLoss is not { } baselineLoss || !double.IsFinite(baselineLoss) || baselineLoss <= 0)
             throw new InvalidOperationException($"'{baseline.Name}' has no usable held-out exam result.");
 
-        double delta = (candidateLoss - baselineLoss) / baselineLoss;
+        bool useBitsPerByte =
+            candidate.ExamBitsPerByte is { } candidateBpb
+            && double.IsFinite(candidateBpb) && candidateBpb > 0
+            && baseline.ExamBitsPerByte is { } baselineBpb
+            && double.IsFinite(baselineBpb) && baselineBpb > 0;
+
+        double candidateScore = useBitsPerByte ? candidate.ExamBitsPerByte!.Value : candidateLoss;
+        double baselineScore = useBitsPerByte ? baseline.ExamBitsPerByte!.Value : baselineLoss;
+        string metric = useBitsPerByte ? "bits/byte" : "loss";
+
+        double delta = (candidateScore - baselineScore) / baselineScore;
         string verdict = delta < -threshold ? Better
             : delta > threshold ? Worse
             : Inconclusive;
@@ -64,11 +77,11 @@ public sealed class TrainingPromotionReport
         string summary = verdict switch
         {
             Better => $"{candidate.Name} beats {baseline.Name} on the held-out exam "
-                      + $"({candidateLoss:0.0000} vs {baselineLoss:0.0000} loss, {delta:P2}).",
+                      + $"({candidateScore:0.0000} vs {baselineScore:0.0000} {metric}, {delta:P2}).",
             Worse => $"{candidate.Name} trails {baseline.Name} on the held-out exam "
-                     + $"({candidateLoss:0.0000} vs {baselineLoss:0.0000} loss, {delta:P2}).",
+                     + $"({candidateScore:0.0000} vs {baselineScore:0.0000} {metric}, {delta:P2}).",
             _ => $"{candidate.Name} and {baseline.Name} are within the exam's resolution "
-                 + $"({candidateLoss:0.0000} vs {baselineLoss:0.0000} loss, {delta:P2}).",
+                 + $"({candidateScore:0.0000} vs {baselineScore:0.0000} {metric}, {delta:P2}).",
         };
 
         return new TrainingPromotionReport
@@ -78,11 +91,13 @@ public sealed class TrainingPromotionReport
             CandidateRunPath = candidateRunPath,
             CandidateExamLoss = candidateLoss,
             CandidateExamPerplexity = candidate.ExamPerplexity ?? double.NaN,
+            CandidateExamBitsPerByte = candidate.ExamBitsPerByte,
             BaselineName = baseline.Name,
             BaselineModelPath = baseline.ExportPath,
             BaselineRunPath = baselineRunPath,
             BaselineExamLoss = baselineLoss,
             BaselineExamPerplexity = baseline.ExamPerplexity ?? double.NaN,
+            BaselineExamBitsPerByte = baseline.ExamBitsPerByte,
             Verdict = verdict,
             DeltaPercent = delta * 100.0,
             Summary = summary,
@@ -131,6 +146,7 @@ public static class TrainingPromotionStore
             | Model | `{report.CandidateModelPath ?? "(none)"}` | `{report.BaselineModelPath ?? "(none)"}` |
             | Exam loss | {report.CandidateExamLoss:0.0000} | {report.BaselineExamLoss:0.0000} |
             | Exam perplexity | {report.CandidateExamPerplexity:0.00} | {report.BaselineExamPerplexity:0.00} |
+            | Exam bits/byte | {report.CandidateExamBitsPerByte:0.0000} | {report.BaselineExamBitsPerByte:0.0000} |
             | Delta | {report.DeltaPercent:+0.00;-0.00;0.00}% | |
 
             **Verdict:** {report.Verdict}

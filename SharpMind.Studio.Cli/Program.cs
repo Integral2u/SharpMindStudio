@@ -524,14 +524,20 @@ internal static class StudioCli
             Console.WriteLine();
             Console.WriteLine($"Loss     {result.Loss:0.0000}");
             Console.WriteLine($"PPL      {result.Perplexity:0.00}");
+            Console.WriteLine($"BPB      {result.BitsPerByte:0.0000}");
             Console.WriteLine($"Batches  {result.Batches}");
             Console.WriteLine($"Tokens   {result.Tokens:N0}");
+            Console.WriteLine($"Bytes    {result.Bytes:N0}");
             Console.WriteLine($"At       {result.EvaluatedUtc.ToLocalTime():g}");
 
             if (record is not null && recordPath is not null)
             {
                 record.ExamLoss = result.Loss;
                 record.ExamPerplexity = result.Perplexity;
+                record.ExamBytes = result.Bytes;
+                record.ExamBitsPerByte = double.IsFinite(result.BitsPerByte)
+                    ? result.BitsPerByte
+                    : null;
                 record.ExamBatches = result.Batches;
                 record.ExamTokens = result.Tokens;
                 record.ExamEvaluatedUtc = result.EvaluatedUtc;

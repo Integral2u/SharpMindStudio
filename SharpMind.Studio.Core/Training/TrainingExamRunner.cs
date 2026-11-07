@@ -1,3 +1,4 @@
+using System.Text;
 using SharpMind.Data;
 using SharpMind.Data.Batching;
 using SharpMind.Data.Pipeline;
@@ -17,6 +18,8 @@ public sealed class TrainingExamResult
     public double Perplexity { get; init; }
     public int Batches { get; init; }
     public long Tokens { get; init; }
+    public long Bytes { get; init; }
+    public double BitsPerByte { get; init; }
     public DateTime EvaluatedUtc { get; init; } = DateTime.UtcNow;
 }
 
@@ -74,7 +77,12 @@ public static class TrainingExamRunner
             batchSize: Math.Max(1, job.BatchSize),
             seqLen: Math.Max(1, seqLen),
             seed: TrainingRunner.Seed + 2);
-        var loader = new DataLoader(testNode, s => tokenizer.Encode(s), batcher, prefetchBuffer: 1);
+        long textBytes = 0;
+        var loader = new DataLoader(testNode, text =>
+        {
+            Interlocked.Add(ref textBytes, Encoding.UTF8.GetByteCount(text));
+            return tokenizer.Encode(text);
+        }, batcher, prefetchBuffer: 1);
 
         var batches = new List<TrainingBatch>();
         try
@@ -93,9 +101,10 @@ public static class TrainingExamRunner
             var evaluator = new Evaluator(model, new CrossEntropyLoss());
             (float loss, float perplexity) = evaluator.Evaluate(batches);
             long tokens = batches.Sum(batch => (long)batch.RealTokenCount);
+            double bitsPerByte = ExamMetrics.BitsPerByte(loss, tokens, textBytes);
 
-            log?.Invoke($"Exam: loss {loss:0.0000}, ppl {perplexity:0.00} "
-                + $"on {batches.Count} batch(es), {tokens:N0} tokens.");
+            log?.Invoke($"Exam: loss {loss:0.0000}, ppl {perplexity:0.00}, "
+                + $"{bitsPerByte:0.0000} bits/byte on {batches.Count} batch(es), {tokens:N0} tokens.");
 
             return new TrainingExamResult
             {
@@ -104,6 +113,8 @@ public static class TrainingExamRunner
                 Perplexity = perplexity,
                 Batches = batches.Count,
                 Tokens = tokens,
+                Bytes = textBytes,
+                BitsPerByte = bitsPerByte,
             };
         }
         finally
@@ -146,7 +157,12 @@ public static class TrainingExamRunner
             batchSize: Math.Max(1, job.BatchSize),
             maxSeqLen: seqLen,
             padTokenId: tokenizer.PadId);
-        var loader = new RecordDataLoader(examSource, batcher, conversation.Encode);
+        long textBytes = 0;
+        var loader = new RecordDataLoader(examSource, batcher, record =>
+        {
+            Interlocked.Add(ref textBytes, Encoding.UTF8.GetByteCount(record.Text));
+            return conversation.Encode(record);
+        });
 
         var batches = new List<TrainingBatch>();
         try
@@ -165,9 +181,10 @@ public static class TrainingExamRunner
             var evaluator = new Evaluator(model, new CrossEntropyLoss());
             (float loss, float perplexity) = evaluator.Evaluate(batches);
             long tokens = batches.Sum(batch => (long)batch.RealTokenCount);
+            double bitsPerByte = ExamMetrics.BitsPerByte(loss, tokens, textBytes);
 
-            log?.Invoke($"Exam: loss {loss:0.0000}, ppl {perplexity:0.00} "
-                + $"on {batches.Count} batch(es), {tokens:N0} tokens.");
+            log?.Invoke($"Exam: loss {loss:0.0000}, ppl {perplexity:0.00}, "
+                + $"{bitsPerByte:0.0000} bits/byte on {batches.Count} batch(es), {tokens:N0} tokens.");
 
             return new TrainingExamResult
             {
@@ -176,6 +193,8 @@ public static class TrainingExamRunner
                 Perplexity = perplexity,
                 Batches = batches.Count,
                 Tokens = tokens,
+                Bytes = textBytes,
+                BitsPerByte = bitsPerByte,
             };
         }
         finally

@@ -67,13 +67,46 @@ public sealed class TrainingPromotionStoreTests
                 Record("baseline", examLoss: 2.5, examPpl: 12.2)));
     }
 
-    private static TrainingRunRecord Record(string name, double? examLoss, double? examPpl) => new()
+    [Fact]
+    public void Compare_PrefersBitsPerByteWhenTokenizerChanged()
+    {
+        TrainingRunRecord candidate = Record(
+            "candidate", examLoss: 3.0, examPpl: 20.1, examBpb: 1.0);
+        TrainingRunRecord baseline = Record(
+            "baseline", examLoss: 2.5, examPpl: 12.2, examBpb: 1.1);
+
+        TrainingPromotionReport report = TrainingPromotionReport.Compare(candidate, baseline);
+
+        Assert.Equal(TrainingPromotionReport.Better, report.Verdict);
+        Assert.Contains("bits/byte", report.Summary);
+        Assert.Equal(1.0, report.CandidateExamBitsPerByte!.Value, 4);
+        Assert.Equal(1.1, report.BaselineExamBitsPerByte!.Value, 4);
+    }
+
+    [Fact]
+    public void BitsPerByte_NormalisesLossByTokensAndBytes()
+    {
+        Assert.Equal(1.0, ExamMetrics.BitsPerByte(Math.Log(2), tokens: 1, bytes: 1), 6);
+        Assert.Equal(
+            2.0,
+            ExamMetrics.BitsPerByte(Math.Log(2) * 2, tokens: 1, bytes: 1),
+            6);
+        Assert.True(double.IsNaN(ExamMetrics.BitsPerByte(1.0, tokens: 0, bytes: 1)));
+        Assert.True(double.IsNaN(ExamMetrics.BitsPerByte(1.0, tokens: 1, bytes: 0)));
+    }
+
+    private static TrainingRunRecord Record(
+        string name,
+        double? examLoss,
+        double? examPpl,
+        double? examBpb = null) => new()
     {
         Name = name,
         Success = true,
         ExportPath = $@"C:\models\{name}.smm",
         ExamLoss = examLoss,
         ExamPerplexity = examPpl,
+        ExamBitsPerByte = examBpb,
         ExamEvaluatedUtc = examLoss is null ? null : DateTime.UtcNow,
     };
 }

@@ -77,6 +77,8 @@ public sealed class StudioExamService(StudioTrainingService training)
 
             run.Record.ExamLoss = result.Loss;
             run.Record.ExamPerplexity = result.Perplexity;
+            run.Record.ExamBytes = result.Bytes;
+            run.Record.ExamBitsPerByte = double.IsFinite(result.BitsPerByte) ? result.BitsPerByte : null;
             run.Record.ExamBatches = result.Batches;
             run.Record.ExamTokens = result.Tokens;
             run.Record.ExamEvaluatedUtc = result.EvaluatedUtc;
@@ -86,7 +88,8 @@ public sealed class StudioExamService(StudioTrainingService training)
             lock (_gate)
             {
                 _result = result;
-                _status = $"Exam: loss {result.Loss:0.0000}, ppl {result.Perplexity:0.00}.";
+                _status = $"Exam: loss {result.Loss:0.0000}, ppl {result.Perplexity:0.00}, "
+                    + $"bpb {result.BitsPerByte:0.0000}.";
             }
         }
         catch (Exception ex)
