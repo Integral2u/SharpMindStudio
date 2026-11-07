@@ -1,0 +1,20 @@
+name: package-build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # No sibling SharpMind checkout: Studio must compile against the
+      # published NuGet packages, exactly like a clean clone.
+      - name: Build against NuGet packages
+        run: dotnet build SharpMind.Studio.slnx -c Release -p:SharpMindSource=package
