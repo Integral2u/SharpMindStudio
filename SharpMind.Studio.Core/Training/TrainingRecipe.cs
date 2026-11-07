@@ -97,6 +97,7 @@ public static class TrainingRecipeHash
             job.ValidationPercent,
             job.TestPercent,
             job.SftMode,
+            job.Seed,
             SftFormatter = SftFormatterKey(job),
         });
     }
@@ -160,6 +161,7 @@ public static class TrainingRecipeHash
             job.SeqLen,
             job.GradAccumSteps,
             job.BatchingKind,
+            job.Seed,
             job.SftMode,
             SftFormatter = SftFormatterKey(job),
             job.Optimizer,
@@ -227,6 +229,7 @@ public static class TrainingRecipeHash
             job.SeqLen,
             job.GradAccumSteps,
             job.BatchingKind,
+            job.Seed,
             job.SftMode,
             SftFormatter = SftFormatterKey(job),
             job.Optimizer,

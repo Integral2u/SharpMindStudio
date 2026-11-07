@@ -44,6 +44,9 @@ public sealed class TrainingRunRecord
     /// <summary>Configured number of steps.</summary>
     public int TotalSteps { get; set; }
 
+    /// <summary>Seed used for the splits, batching and weight initialisation.</summary>
+    public int Seed { get; set; }
+
     /// <summary>Last step the loop actually reached.</summary>
     public int FinalStep { get; set; }
 
@@ -126,6 +129,7 @@ public sealed class TrainingRunRecord
             PlanId = job.PlanId,
             RuleSetVersion = job.RuleSetVersion,
             TotalSteps = job.TotalSteps,
+            Seed = job.Seed,
             FinalStep = result.FinalStep,
             ValidationPercent = job.ValidationPercent,
             BestValLoss = result.BestValLoss,

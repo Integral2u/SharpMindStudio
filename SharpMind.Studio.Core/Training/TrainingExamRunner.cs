@@ -68,7 +68,7 @@ public static class TrainingExamRunner
         double fraction = Math.Clamp(job.TestPercent, 0, 90) / 100.0;
         int threshold = (int)Math.Round(fraction * DeterministicSplit.Buckets);
         var (testNode, _) = pipeline.Branch(
-            "exam", doc => DeterministicSplit.Bucket(doc, TrainingRunner.Seed) < threshold);
+            "exam", doc => DeterministicSplit.Bucket(doc, job.Seed) < threshold);
 
         int seqLen = job.SeqLen > 0 ? job.SeqLen : 64;
         if (config.MaxSeqLen > 0) seqLen = Math.Min(seqLen, config.MaxSeqLen);
@@ -76,7 +76,7 @@ public static class TrainingExamRunner
         var batcher = new RandomWindowBatcher(
             batchSize: Math.Max(1, job.BatchSize),
             seqLen: Math.Max(1, seqLen),
-            seed: TrainingRunner.Seed + 2);
+            seed: job.Seed + 2);
         long textBytes = 0;
         var loader = new DataLoader(testNode, text =>
         {
@@ -144,7 +144,7 @@ public static class TrainingExamRunner
         int threshold = (int)Math.Round(fraction * DeterministicSplit.Buckets);
         IRecordSource examSource = new WhereRecordSource(
             source,
-            record => DeterministicSplit.Bucket(RecordGrouping.SplitKey(record), TrainingRunner.Seed) < threshold,
+            record => DeterministicSplit.Bucket(RecordGrouping.SplitKey(record), job.Seed) < threshold,
             "exam");
 
         int seqLen = job.SeqLen > 0 ? job.SeqLen : 64;

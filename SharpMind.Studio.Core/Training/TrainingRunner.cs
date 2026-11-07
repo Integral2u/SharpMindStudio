@@ -468,7 +468,7 @@ public static class TrainingRunner
                         records,
                         record =>
                         {
-                            int bucket = DeterministicSplit.Bucket(RecordGrouping.SplitKey(record), Seed);
+                            int bucket = DeterministicSplit.Bucket(RecordGrouping.SplitKey(record), job.Seed);
                             return bucket >= examThreshold && bucket < valThreshold;
                         },
                         "val");
@@ -514,7 +514,7 @@ public static class TrainingRunner
                 {
                     trainRecords = new WhereRecordSource(
                         records,
-                        record => DeterministicSplit.Bucket(RecordGrouping.SplitKey(record), Seed) >= valThreshold,
+                        record => DeterministicSplit.Bucket(RecordGrouping.SplitKey(record), job.Seed) >= valThreshold,
                         "train");
                 }
 
@@ -581,7 +581,7 @@ public static class TrainingRunner
             {
                 int examThreshold = (int)Math.Round(testFraction * DeterministicSplit.Buckets);
                 var (_, trainVal) = pipeline.Branch(
-                    "exam", doc => DeterministicSplit.Bucket(doc, Seed) < examThreshold);
+                    "exam", doc => DeterministicSplit.Bucket(doc, job.Seed) < examThreshold);
                 pipeline = trainVal;
                 Log($"Exam: {job.TestPercent:0.#}% of documents held out for the promotion exam "
                     + "(excluded from training and validation).");
@@ -593,11 +593,11 @@ public static class TrainingRunner
                 // disjoint even though both are keyed by the same content hash.
                 int valThreshold = (int)Math.Round((testFraction + valFraction) * DeterministicSplit.Buckets);
                 var (valNode, trainNode) = pipeline.Branch(
-                    "val", doc => DeterministicSplit.Bucket(doc, Seed) < valThreshold);
+                    "val", doc => DeterministicSplit.Bucket(doc, job.Seed) < valThreshold);
                 pipeline = trainNode;
 
                 IBatchStrategy valBatcher = job.UsesRandomWindowBatching
-                    ? new RandomWindowBatcher(batchSize: job.BatchSize, seqLen: job.SeqLen, seed: Seed + 1)
+                    ? new RandomWindowBatcher(batchSize: job.BatchSize, seqLen: job.SeqLen, seed: job.Seed + 1)
                     : new PackingBatcher(
                         batchSize: job.BatchSize,
                         maxSeqLen: job.SeqLen,
@@ -639,7 +639,7 @@ public static class TrainingRunner
             }
 
             IBatchStrategy batcher = job.UsesRandomWindowBatching
-                ? new RandomWindowBatcher(batchSize: job.BatchSize, seqLen: job.SeqLen, seed: Seed)
+                ? new RandomWindowBatcher(batchSize: job.BatchSize, seqLen: job.SeqLen, seed: job.Seed)
                 : new PackingBatcher(
                     batchSize: job.BatchSize,
                     maxSeqLen: job.SeqLen,
@@ -865,7 +865,7 @@ public static class TrainingRunner
                         Rank = rank,
                         Alpha = alpha,
                         TargetModules = job.LoRATargetModules.Count > 0 ? [.. job.LoRATargetModules] : null,
-                    }, seed: Seed);
+                    }, seed: job.Seed);
                     Log($"Fine-tune: {lora.AdapterCount} adapters (rank {rank}, alpha {alpha}).");
                 }
 
@@ -878,13 +878,13 @@ public static class TrainingRunner
                 weights = pretrainWeights!;
                 if (resumeDir is null)
                 {
-                    WeightInitializer.InitializeRandomly(weights, Seed);
+                    WeightInitializer.InitializeRandomly(weights, job.Seed);
                     Log("Weights initialised.");
                 }
                 model = ModelFactory.CreateTrainingTransformer(weights, sharpConfig);
                 if (resumeDir is null && model.Config.NumExperts > 0)
                 {
-                    WeightInitializer.InitializeModelMoE(model, Seed + 1013);
+                    WeightInitializer.InitializeModelMoE(model, job.Seed + 1013);
                     Log("MoE router/expert weights initialised.");
                 }
                 parameters = model.Parameters().ToList();
@@ -924,7 +924,7 @@ public static class TrainingRunner
                 // out-of-distribution corner of the embedding space.
                 var emb = weights.EmbeddingWeight;
                 if (priorVocab > 0 && emb.Shape.Rows > priorVocab)
-                    WeightInitializer.InitializeNewEmbeddingRows(emb, priorVocab, Seed + 7919);
+                    WeightInitializer.InitializeNewEmbeddingRows(emb, priorVocab, job.Seed + 7919);
 
                 Log(priorVocab > 0
                     ? $"Warm restart: reused weights (checkpoint vocab {priorVocab} -> model vocab {modelConfig.VocabSize}); "
@@ -1055,7 +1055,7 @@ public static class TrainingRunner
                     // the sources changed, in which case the old cursor no longer
                     // indexes this corpus and replaying it would silently stall.
                     ResumeDataCursor = !job.IncrementalMode && !changed,
-                    DataSeed = Seed,
+                    DataSeed = job.Seed,
                     DataFingerprint = dataFingerprint,
                     KeepRecent = job.KeepRecent,
                     QuantAwareTraining = qat,

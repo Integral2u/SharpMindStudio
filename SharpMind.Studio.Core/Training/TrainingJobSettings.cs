@@ -166,6 +166,12 @@ public sealed class TrainingJobSettings
     public int GradAccumSteps { get; set; } = 1;
 
     /// <summary>
+    /// Seed for the train/validation/exam split, batch sampling and random weight
+    /// initialisation. The default preserves the split and init of existing jobs.
+    /// </summary>
+    public int Seed { get; set; } = TrainingRunner.Seed;
+
+    /// <summary>
     /// Batch strategy, an additive choice. "RandomWindow" samples each batch of
     /// <see cref="SeqLen"/>-token windows at random offsets from one flat corpus
     /// stream (nanoGPT-style); "Packing" (or null/empty) uses the default

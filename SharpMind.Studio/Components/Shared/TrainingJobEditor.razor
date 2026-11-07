@@ -172,6 +172,11 @@
             <input id="job-steps" class="input" type="number" min="1" @bind="Job.TotalSteps" />
         </div>
         <div class="field">
+            <label class="field-label" for="job-seed">Seed</label>
+            <input id="job-seed" class="input" type="number" min="0" @bind="Job.Seed"
+                   title="Used for the train/validation/exam split, batching and weight initialisation." />
+        </div>
+        <div class="field">
             <label class="field-label" for="job-log">Log every</label>
             <input id="job-log" class="input" type="number" min="1" @bind="Job.LogInterval" />
         </div>

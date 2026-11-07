@@ -77,6 +77,9 @@ public static class TrainingJobValidation
         if (job.TotalSteps <= 0)
             warnings.Add("Total steps must be positive.");
 
+        if (job.Seed < 0)
+            warnings.Add("Seed must be zero or positive.");
+
         return warnings;
     }
 

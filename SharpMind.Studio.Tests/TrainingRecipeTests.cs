@@ -41,6 +41,25 @@ public sealed class TrainingRecipeTests
     }
 
     [Fact]
+    public void Hashes_ChangeWhenTheSeedChanges()
+    {
+        TrainingJobSettings job = Job("model", @"C:\data\corpus.txt", learningRate: 3e-4f);
+        string data = TrainingRecipeHash.Data(job);
+        string tokenizer = TrainingRecipeHash.Tokenizer(job, data);
+        string train = TrainingRecipeHash.Train(job, data, tokenizer);
+        string trainBase = TrainingRecipeHash.TrainBase(job, data, tokenizer);
+
+        job.Seed += 1;
+        string seededData = TrainingRecipeHash.Data(job);
+        string seededTokenizer = TrainingRecipeHash.Tokenizer(job, seededData);
+
+        Assert.NotEqual(data, seededData);
+        Assert.NotEqual(tokenizer, seededTokenizer);
+        Assert.NotEqual(train, TrainingRecipeHash.Train(job, seededData, seededTokenizer));
+        Assert.NotEqual(trainBase, TrainingRecipeHash.TrainBase(job, seededData, seededTokenizer));
+    }
+
+    [Fact]
     public void Data_ChangesWhenSftModeOrFormatterChanges()
     {
         TrainingJobSettings job = Job("model", @"C:\data\corpus.txt", learningRate: 3e-4f);
