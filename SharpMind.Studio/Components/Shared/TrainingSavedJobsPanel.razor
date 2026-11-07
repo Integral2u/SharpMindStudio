@@ -1,0 +1,44 @@
+@using SharpMind.Studio.Services
+@inject StudioTrainingService Lab
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Saved jobs</div>
+            <h2>Runs</h2>
+        </div>
+        <span class="faint small mono">@Lab.Folder</span>
+    </div>
+    <div class="panel-body stack">
+        @if (Lab.SavedJobs.Count == 0)
+        {
+            <div class="empty">
+                No training runs yet. Start one from <a href="/training?tab=new">New model</a>;
+                every run will stream loss, learning rate, grad norm, tokens/s, memory and ETA here.
+            </div>
+        }
+        else
+        {
+            <div class="training-jobs">
+                @foreach (string path in Lab.SavedJobs)
+                {
+                    <div class="training-job">
+                        <div>
+                            <strong class="mono">@Path.GetFileNameWithoutExtension(path)</strong>
+                            <div class="small faint">@path</div>
+                        </div>
+                        <div class="row">
+                            <span class="small faint mono">@File.GetLastWriteTime(path).ToString("dd MMM HH:mm")</span>
+                            <button type="button" class="button" @onclick="() => OnLoad.InvokeAsync(path)"
+                                    disabled="@Lab.IsRunning">Load</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter] public EventCallback<string> OnLoad { get; set; }
+}

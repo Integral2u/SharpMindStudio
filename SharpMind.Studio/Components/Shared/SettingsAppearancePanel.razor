@@ -1,0 +1,51 @@
+@using SharpMind.Studio.Services
+@inject ThemeService Theme
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Appearance</div>
+            <h2>Accent colour</h2>
+        </div>
+        <span class="faint small mono">@ThemeService.Label(Theme.Theme)</span>
+    </div>
+    <div class="panel-body stack">
+        <div class="theme-grid">
+            @foreach (string theme in new[] { "green", "blue", "purple", "red" })
+            {
+                <a class="theme-option @(Theme.Theme == theme ? "selected" : "")"
+                   href="/settings?tab=appearance&theme=@theme"
+                   data-enhance-nav="false">
+                    <span class="theme-swatch @theme"></span>
+                    <span>@ThemeService.Label(theme)</span>
+                </a>
+            }
+
+            <a class="theme-option theme-option-custom @(Theme.Theme == "custom" ? "selected" : "")"
+               href="/settings?tab=appearance&theme=custom"
+               data-enhance-nav="false">
+                <span class="theme-swatch custom" style="background:@Theme.CustomColor"></span>
+                <span>Custom</span>
+            </a>
+        </div>
+
+        <div class="custom-color-row">
+            <div class="field">
+                <label class="field-label" for="custom-color">Custom accent</label>
+                <input id="custom-color" class="color-input" type="color"
+                       value="@Theme.CustomColor" title="Custom accent"
+                       @onchange="ApplyCustomColorAsync" />
+            </div>
+            <span class="small faint">Choosing a custom colour switches the theme to Custom.</span>
+        </div>
+    </div>
+</section>
+
+@code {
+    private async Task ApplyCustomColorAsync(ChangeEventArgs args)
+    {
+        string? color = ThemeService.NormalizeColor(args.Value?.ToString());
+        if (color is null) return;
+        await Theme.SetThemeAsync("custom", color);
+    }
+}
