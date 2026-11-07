@@ -41,10 +41,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Chat attachments are local-only; remote providers do not receive content
   parts yet, and the local engine does not encode image/audio tensors.
-- LFM3 chat-template quality validation is pending.
-- ASR/TTS is not enabled: the LFM3-Audio GGUF is a text backbone plus
-  ASR/TTS templates, without the audio encoder/codec tensors. The Nemotron
-  `asr` architecture needs an encoder-decoder audio frontend.
+- LFM3 text chat is validated with a templated `2+2` smoke run; broader
+  quality evaluation is still pending.
+- ASR/TTS is not enabled: the main LFM3-Audio GGUF is a text backbone plus
+  ASR/TTS templates. The audio encoder and codec live in the separate
+  `mmproj` file, which the engine does not load yet. The Nemotron `asr`
+  architecture needs an encoder-decoder audio frontend.
 
 ## [1.1.0.0]
 
