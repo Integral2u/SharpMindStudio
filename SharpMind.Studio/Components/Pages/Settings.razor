@@ -197,71 +197,7 @@ else if (_tab == "openrouter")
                 <span class="small faint">Default host is used by Chat and Training when you pick Compute.</span>
             </div>
 
-            <details class="settings-subgroup">
-                <summary class="settings-subgroup-head">
-                    <div>
-                        <div class="eyebrow">Registry</div>
-                        <h3>Image</h3>
-                    </div>
-                    <span class="faint small">push the server image once</span>
-                </summary>
-                <div class="settings-subgroup-body stack">
-                <p class="small faint">
-                    A remote host has to pull the image from a registry. Build
-                    <span class="mono">docker/server/Dockerfile.gpu.local</span> once, then push it
-                    here. Studio runs the Docker commands; the access token is only used for this push
-                    and is not saved.
-                </p>
-                <div class="training-form">
-                    <div class="field">
-                        <label class="field-label" for="registry-user">Docker Hub user</label>
-                        <input id="registry-user" class="input" @bind="_registryUser"
-                               @bind:after="SyncRegistryTarget" placeholder="your-dockerhub-name" />
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="registry-token">Access token</label>
-                        <input id="registry-token" class="input" type="password"
-                               @bind="_registryToken" autocomplete="off"
-                               placeholder="Docker Hub read/write token" />
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="registry-source">Local image</label>
-                        <input id="registry-source" class="input" @bind="_registrySource" />
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="registry-target">Target image</label>
-                        <input id="registry-target" class="input" @bind="_registryTarget"
-                               placeholder="your-name/sharpmind-server:gpu" />
-                    </div>
-                </div>
-                <div class="row">
-                    <button type="button" class="button primary" @onclick="PublishImageAsync"
-                            disabled="@_registryBusy"
-                            title="Run docker login, tag and push for this image. The token is not stored.">
-                        @(_registryBusy ? "Pushing..." : "Push image")
-                    </button>
-                    <span class="small faint">The first GPU push is about 2 GB.</span>
-                </div>
-                @if (_registryStatus is { Length: > 0 })
-                {
-                    <div class="status-line">@_registryStatus</div>
-                }
-                @if (_registryBusy)
-                {
-                    <div class="row" style="align-items:center; gap:.6rem;">
-                        <span class="spinner-ring"></span>
-                        <div class="progress-track" style="flex:1;">
-                            <div class="progress-fill" style="width:@((_registryProgress ?? 0) * 100)%"></div>
-                        </div>
-                        <span class="mono small">@(_registryProgress is { } fraction ? $"{fraction * 100:0}%" : "…")</span>
-                    </div>
-                }
-                @if (_registryLog is { Length: > 0 })
-                {
-                    <pre class="small mono" style="max-height:10rem;overflow:auto;">@_registryLog</pre>
-                }
-                </div>
-            </details>
+            <SettingsRegistryPanel />
 
             @if (_computeStatus is { Length: > 0 })
             {

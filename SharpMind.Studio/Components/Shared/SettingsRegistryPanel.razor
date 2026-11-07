@@ -1,0 +1,145 @@
+@using SharpMind.Studio.Core.Compute
+@using SharpMind.Studio.Services
+@inject DockerHostService Docker
+@inject ComputeProviderService Compute
+
+<details class="settings-subgroup">
+    <summary class="settings-subgroup-head">
+        <div>
+            <div class="eyebrow">Registry</div>
+            <h3>Image</h3>
+        </div>
+        <span class="faint small">push the server image once</span>
+    </summary>
+    <div class="settings-subgroup-body stack">
+        <p class="small faint">
+            A remote host has to pull the image from a registry. Build
+            <span class="mono">docker/server/Dockerfile.gpu.local</span> once, then push it
+            here. Studio runs the Docker commands; the access token is only used for this push
+            and is not saved.
+        </p>
+        <div class="training-form">
+            <div class="field">
+                <label class="field-label" for="registry-user">Docker Hub user</label>
+                <input id="registry-user" class="input" @bind="_user"
+                       @bind:after="SyncTarget" placeholder="your-dockerhub-name" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="registry-token">Access token</label>
+                <input id="registry-token" class="input" type="password"
+                       @bind="_token" autocomplete="off"
+                       placeholder="Docker Hub read/write token" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="registry-source">Local image</label>
+                <input id="registry-source" class="input" @bind="_source" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="registry-target">Target image</label>
+                <input id="registry-target" class="input" @bind="_target"
+                       placeholder="your-name/sharpmind-server:gpu" />
+            </div>
+        </div>
+        <div class="row">
+            <button type="button" class="button primary" @onclick="PublishAsync"
+                    disabled="@_busy"
+                    title="Run docker login, tag and push for this image. The token is not stored.">
+                @(_busy ? "Pushing..." : "Push image")
+            </button>
+            <span class="small faint">The first GPU push is about 2 GB.</span>
+        </div>
+        @if (_status is { Length: > 0 })
+        {
+            <div class="status-line">@_status</div>
+        }
+        @if (_busy)
+        {
+            <div class="row" style="align-items:center; gap:.6rem;">
+                <span class="spinner-ring"></span>
+                <div class="progress-track" style="flex:1;">
+                    <div class="progress-fill" style="width:@((_progress ?? 0) * 100)%"></div>
+                </div>
+                <span class="mono small">@(_progress is { } fraction ? $"{fraction * 100:0}%" : "...")</span>
+            </div>
+        }
+        @if (_log is { Length: > 0 })
+        {
+            <pre class="small mono" style="max-height:10rem;overflow:auto;">@_log</pre>
+        }
+    </div>
+</details>
+
+@code {
+    private string _user = "";
+    private string _token = "";
+    private string _source = ComputeProviderPresets.DefaultServerImage;
+    private string _target = "";
+    private string? _status;
+    private string? _log;
+    private bool _busy;
+    private double? _progress;
+
+    private void SyncTarget()
+    {
+        if (string.IsNullOrWhiteSpace(_user)) return;
+        _target = $"{_user.Trim().ToLowerInvariant()}/sharpmind-server:gpu";
+    }
+
+    private async Task PublishAsync()
+    {
+        _busy = true;
+        _status = "Publishing the image...";
+        _log = null;
+        _progress = null;
+        StateHasChanged();
+        try
+        {
+            var progress = new Progress<DockerPublishProgress>(value =>
+            {
+                _status = value.Message;
+                if (value.Fraction is { } fraction) _progress = fraction;
+                _ = InvokeAsync(StateHasChanged);
+            });
+
+            await Docker.PublishAsync(new DockerPublishRequest
+            {
+                DockerHubUser = _user.Trim(),
+                AccessToken = _token,
+                SourceImage = _source.Trim(),
+                TargetImage = _target.Trim(),
+            }, progress);
+
+            _status = "Image published. Use it as the host's Server image.";
+            _progress = 1;
+            string image = _target.Trim();
+            Compute.SetRegistryImage(image);
+            _log = $"Target: {image}";
+
+            // Point remote hosts that still carry the default image at what was just pushed.
+            foreach (ComputeProviderSettings host in Compute.Providers)
+            {
+                if (host.NormalizedKind != ComputeProviderKinds.Remote) continue;
+                if (!string.IsNullOrWhiteSpace(host.RunpodImage)
+                    && !string.Equals(
+                        host.RunpodImage,
+                        ComputeProviderPresets.DefaultServerImage,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                Compute.SetRunpod(host.Id, null, image, null, null);
+            }
+        }
+        catch (Exception ex)
+        {
+            _status = null;
+            _log = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+}

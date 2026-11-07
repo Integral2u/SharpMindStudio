@@ -51,14 +51,6 @@ public partial class Settings
     private string? _runpodStatus;
     private string? _runpodError;
     private bool _runpodBusy;
-    private string _registryUser = "";
-    private string _registryToken = "";
-    private string _registrySource = ComputeProviderPresets.DefaultServerImage;
-    private string _registryTarget = "";
-    private string? _registryStatus;
-    private string? _registryLog;
-    private bool _registryBusy;
-    private double? _registryProgress;
     private string _computeImage = ComputeProviderPresets.DefaultImage;
     private int _computePort = ComputeProviderPresets.DefaultPort;
     private bool _computeUseGpu;
@@ -806,69 +798,6 @@ public partial class Settings
         Compute.SetRunpod(id, null, image.Trim(), null, null);
         _runpodError = null;
         _runpodStatus = $"Server image set to {image.Trim()}.";
-    }
-
-    private void SyncRegistryTarget()
-    {
-        if (string.IsNullOrWhiteSpace(_registryUser)) return;
-        _registryTarget = $"{_registryUser.Trim().ToLowerInvariant()}/sharpmind-server:gpu";
-    }
-
-    private async Task PublishImageAsync()
-    {
-        _registryBusy = true;
-        _registryStatus = "Publishing the image...";
-        _registryLog = null;
-        _registryProgress = null;
-        StateHasChanged();
-        try
-        {
-            var progress = new Progress<DockerPublishProgress>(value =>
-            {
-                _registryStatus = value.Message;
-                if (value.Fraction is { } fraction) _registryProgress = fraction;
-                _ = InvokeAsync(StateHasChanged);
-            });
-
-            await Docker.PublishAsync(new DockerPublishRequest
-            {
-                DockerHubUser = _registryUser.Trim(),
-                AccessToken = _registryToken,
-                SourceImage = _registrySource.Trim(),
-                TargetImage = _registryTarget.Trim(),
-            }, progress);
-
-            _registryStatus = "Image published. Use it as the host's Server image.";
-            _registryProgress = 1;
-            _runpodImage = _registryTarget.Trim();
-            Compute.SetRegistryImage(_runpodImage);
-            _registryLog = $"Target: {_runpodImage}";
-
-            // Point remote hosts that still carry the default image at what was just pushed.
-            foreach (ComputeProviderSettings host in Compute.Providers)
-            {
-                if (host.NormalizedKind != ComputeProviderKinds.Remote) continue;
-                if (!string.IsNullOrWhiteSpace(host.RunpodImage)
-                    && !string.Equals(
-                        host.RunpodImage,
-                        ComputeProviderPresets.DefaultServerImage,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                Compute.SetRunpod(host.Id, null, _runpodImage, null, null);
-            }
-        }
-        catch (Exception ex)
-        {
-            _registryStatus = null;
-            _registryLog = ex.Message;
-        }
-        finally
-        {
-            _registryBusy = false;
-        }
     }
 
     private async Task DeployRunpodAsync(string id)
