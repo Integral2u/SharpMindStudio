@@ -121,10 +121,13 @@ public sealed class SftJsonlSourceTests
 
         List<DataRecord> records = await ReadAll(new SftJsonlSource(path));
 
-        Assert.Equal(@"C:\docs\one.txt#3", records[0].GroupId);
-        Assert.Equal(records[0].GroupId, records[1].GroupId);
-        Assert.Equal(@"C:\docs\two.txt#0", records[2].GroupId);
-        Assert.Null(records[3].GroupId);
+        Assert.Equal(@"C:\docs\one.txt#3", RecordGrouping.GroupKey(records[0]));
+        Assert.Equal(RecordGrouping.GroupKey(records[0]), RecordGrouping.GroupKey(records[1]));
+        Assert.Equal(@"C:\docs\two.txt#0", RecordGrouping.GroupKey(records[2]));
+        Assert.Null(RecordGrouping.GroupKey(records[3]));
+        Assert.Equal(@"C:\docs\one.txt#3", RecordGrouping.SplitKey(records[0]));
+        Assert.Equal(records[3].Text, RecordGrouping.SplitKey(records[3]));
+        Assert.Contains(records[0].Tags, tag => tag.StartsWith(RecordGrouping.TagPrefix, StringComparison.Ordinal));
         Assert.All(records, record => Assert.Equal(path, record.Source));
     }
 

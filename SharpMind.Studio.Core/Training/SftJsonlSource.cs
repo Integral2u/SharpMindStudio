@@ -174,13 +174,16 @@ public sealed class SftJsonlSource : IRecordSource
 
             // Keep the transcript deterministic and useful to text-only stages.
             string text = string.Join('\n', turns.Select(turn => $"{turn.Role}: {turn.Content}"));
+            var tags = new List<string> { $"layout:{LayoutName(usedLayout)}" };
+            if (ReadGroupId(root) is { } groupId)
+                tags.Add(RecordGrouping.TagPrefix + groupId);
+
             return new DataRecord
             {
                 Text = text,
                 Turns = turns,
-                Tags = [$"layout:{LayoutName(usedLayout)}"],
+                Tags = tags,
                 Source = path,
-                GroupId = ReadGroupId(root),
             };
         }
         catch (JsonException)
