@@ -343,6 +343,10 @@ else
                             {
                                 <div class="chat-text">@message.Content</div>
                             }
+                            @if (message.Artifacts is { Length: > 0 })
+                            {
+                                <ChatArtifacts Artifacts="message.Artifacts" />
+                            }
                         </div>
                     }
                 }
@@ -463,6 +467,26 @@ else
                           disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"></textarea>
                 <div class="chat-composer-actions">
                     <span class="status-line">@ChatService.Status</span>
+                    @if (_pendingArtifacts.Count > 0)
+                    {
+                        <div class="chat-attachment-list">
+                            @foreach (ChatArtifact artifact in _pendingArtifacts)
+                            {
+                                <span class="chat-attachment-chip">
+                                    @(artifact.FileName ?? artifact.Type)
+                                    <button type="button" title="Remove attachment"
+                                            @onclick="() => _pendingArtifacts.Remove(artifact)">&times;</button>
+                                </span>
+                            }
+                        </div>
+                    }
+                    @if (!ChatService.IsStreaming && !ChatService.IsLoading && !ChatService.IsRemote)
+                    {
+                        <label class="button chat-attach-button" title="Attach an image, audio file or document">
+                            Attach
+                            <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
+                        </label>
+                    }
                     @if (ChatService.IsLoading)
                     {
                         <button type="button" class="button danger" @onclick="ChatService.Interrupt">Interrupt</button>
@@ -522,6 +546,7 @@ else
     private string _remoteModel = "";
     private string? _selectedModelPath;
     private string _input = "";
+    private readonly List<ChatArtifact> _pendingArtifacts = [];
 
     private bool RemoteReady => _remoteChat
         && !string.IsNullOrWhiteSpace(_remoteModel)
@@ -945,8 +970,56 @@ else
         string text = _input;
         if (string.IsNullOrWhiteSpace(text)) return;
         _input = "";
-        await ChatService.SendAsync(text);
+        ChatArtifact[] artifacts = [.. _pendingArtifacts];
+        _pendingArtifacts.Clear();
+        await ChatService.SendAsync(text, artifacts);
         await FocusComposerAsync();
+    }
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs args)
+    {
+        const long maxBytes = 25L * 1024 * 1024;
+        foreach (IBrowserFile file in args.GetMultipleFiles(maximumFileCount: 8))
+        {
+            if (file.Size <= 0 || file.Size > maxBytes) continue;
+            try
+            {
+                await using Stream source = file.OpenReadStream(maxBytes);
+                using var buffer = new MemoryStream();
+                await source.CopyToAsync(buffer);
+                _pendingArtifacts.Add(new ChatArtifact
+                {
+                    Type = ArtifactType(file.ContentType, file.Name),
+                    Content = buffer.ToArray(),
+                    FileName = file.Name,
+                });
+            }
+            catch
+            {
+                // An unreadable browser file must not take the composer down.
+            }
+        }
+    }
+
+    private static string ArtifactType(string? contentType, string fileName)
+    {
+        if (!string.IsNullOrWhiteSpace(contentType))
+        {
+            if (contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) return "image";
+            if (contentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)) return "audio";
+            if (contentType.Contains("json", StringComparison.OrdinalIgnoreCase)) return "json";
+            if (contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase)) return "text";
+        }
+
+        string ext = Path.GetExtension(fileName).ToLowerInvariant();
+        return ext switch
+        {
+            ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".bmp" => "image",
+            ".wav" or ".mp3" or ".ogg" or ".m4a" or ".flac" => "audio",
+            ".json" => "json",
+            ".txt" or ".md" or ".csv" or ".log" => "text",
+            _ => "file",
+        };
     }
 
     private void TrySendPendingPrompt()

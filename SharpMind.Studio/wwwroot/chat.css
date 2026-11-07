@@ -570,3 +570,75 @@
 
 
 
+
+.chat-attach-input {
+    display: none;
+}
+
+.chat-attach-button {
+    cursor: pointer;
+}
+
+.chat-attachment-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    width: 100%;
+}
+
+.chat-attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .15rem .45rem;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    background: var(--panel-2);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: .65rem;
+}
+
+.chat-attachment-chip button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: .8rem;
+    line-height: 1;
+}
+
+.chat-artifacts {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    margin-top: .6rem;
+}
+
+.chat-artifact-image {
+    max-width: min(100%, 34rem);
+    border-radius: 8px;
+    border: 1px solid var(--line);
+}
+
+.chat-artifact-audio {
+    width: 100%;
+    max-width: 34rem;
+}
+
+.chat-artifact-text {
+    max-height: 18rem;
+    overflow: auto;
+    margin: 0;
+    padding: .65rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-2);
+    font-family: var(--mono);
+    font-size: .72rem;
+    white-space: pre-wrap;
+}
+
+.chat-artifact-file {
+    align-self: flex-start;
+}

@@ -265,13 +265,21 @@ public sealed class StudioChatService : IAsyncDisposable
         }
     }
 
-    public async Task SendAsync(string text)
+    public async Task SendAsync(string text, IReadOnlyList<ChatArtifact>? artifacts = null)
     {
         if (string.IsNullOrWhiteSpace(text) || _document is null || _streaming) return;
 
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (IsRemote && artifacts is { Count: > 0 })
+            {
+                _error = "Attachments are only supported for local models right now.";
+                _status = "Attachments are not available on remote chats yet.";
+                Notify();
+                return;
+            }
+
             if (IsOpenRouter)
             {
                 await SendRemoteTurnAsync(text.Trim(), _openRouterBackend).ConfigureAwait(false);
@@ -298,7 +306,9 @@ public sealed class StudioChatService : IAsyncDisposable
             _error = null;
             _status = "Thinking...";
             _streamCts = new CancellationTokenSource();
-            _document.Messages.Add(ChatMessage.User(text.Trim(), "You"));
+            ChatMessage userMessage = ChatMessage.User(text.Trim(), "You");
+            userMessage.Artifacts = artifacts?.ToArray();
+            _document.Messages.Add(userMessage);
             ChatMessage assistant = ChatMessage.Agent("");
             _document.Messages.Add(assistant);
             Notify();
@@ -310,14 +320,20 @@ public sealed class StudioChatService : IAsyncDisposable
             try
             {
                 await foreach (ChatStreamEntry entry in _session
-                    .GetResponseStreamAsync(text.Trim(), ct: _streamCts.Token)
+                    .GetResponseStreamAsync(
+                        text.Trim(), artifacts?.ToArray(), ct: _streamCts.Token)
                     .WithCancellation(_streamCts.Token).ConfigureAwait(false))
                 {
                     if (!string.IsNullOrEmpty(entry.Error))
                         _error = entry.Error;
                     if (entry.TokensPerSecond is { } entryTps) lastTps = entryTps;
 
-                    if (entry.Status == ChatStatus.Responding && entry.Token is not null)
+                    if (entry.Artifact is { } artifact)
+                    {
+                        assistant.Artifacts = [.. (assistant.Artifacts ?? []), artifact];
+                        _status = "Artifact ready.";
+                    }
+                    else if (entry.Status == ChatStatus.Responding && entry.Token is not null)
                     {
                         assistant.Content += entry.Token;
                         _status = entry.TokensPerSecond is { } tps
@@ -902,6 +918,7 @@ public sealed class StudioChatService : IAsyncDisposable
             loaded.Tokenizer,
             loaded.Meta,
             agentBuilder: agent,
+            postProcessor: new StudioArtifactPostProcessor(),
             formatter: ChatFormatterFactory.Create(profile.Formatter, loaded.Meta),
             seed: profile.Seed);
     }
