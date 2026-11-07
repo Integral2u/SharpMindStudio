@@ -1,0 +1,87 @@
+@using SharpMind.Studio.Core.Storage
+@using SharpMind.Studio.Services
+@inject HuggingFaceService HuggingFace
+@inject IJSRuntime JS
+
+<details class="settings-subgroup">
+    <summary class="settings-subgroup-head">
+        <div>
+            <div class="eyebrow">Model source</div>
+            <h3>HuggingFace</h3>
+        </div>
+        <div class="row" style="align-items:center; gap:.45rem;">
+            <span class="provider-dot @(HuggingFace.HasToken ? "on" : "off")"></span>
+            <span class="faint small mono">@(HuggingFace.HasToken ? "token configured" : "no token")</span>
+        </div>
+    </summary>
+    <div class="settings-subgroup-body stack">
+        <p class="small faint">
+            Browse and download GGUF models under <strong>Training -> Models</strong>.
+            Public GGUF downloads work without a token; a token is only needed for
+            gated repositories. The token is encrypted with the same local key box as
+            the other provider secrets.
+        </p>
+        <div class="field">
+            <label class="field-label" for="huggingface-token">Access token (optional)</label>
+            <input id="huggingface-token" class="input" type="password" @bind="_token"
+                   placeholder="@(HuggingFace.HasToken ? "Leave blank to keep the saved token" : "hf_...")"
+                   autocomplete="off" />
+            <span class="small faint">Stored encrypted under <span class="mono">@StudioPaths.HuggingFaceFile</span>.</span>
+        </div>
+        <div class="row">
+            <button type="button" class="button primary" @onclick="SaveAsync">Save token</button>
+            <button type="button" class="button danger" @onclick="DeleteAsync"
+                    disabled="@(!HuggingFace.HasToken)">Delete token</button>
+            <a class="button" href="/training?tab=models">Find GGUF models</a>
+        </div>
+        @if (_status is { Length: > 0 })
+        {
+            <div class="status-line">@_status</div>
+        }
+        @if (_error is not null)
+        {
+            <div class="error-line">@_error</div>
+        }
+    </div>
+</details>
+
+@code {
+    private string _token = "";
+    private string? _status;
+    private string? _error;
+
+    private void SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_token))
+        {
+            _status = "Enter a HuggingFace token first.";
+            _error = null;
+            return;
+        }
+
+        try
+        {
+            HuggingFace.SaveToken(_token);
+            _token = "";
+            _status = "HuggingFace token saved.";
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _status = "Could not save the HuggingFace token.";
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm", "Delete the saved HuggingFace token?");
+        if (!confirmed) return;
+
+        HuggingFace.ClearToken();
+        _token = "";
+        _status = "HuggingFace token deleted.";
+        _error = null;
+    }
+}

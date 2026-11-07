@@ -32,14 +32,6 @@ public partial class Settings
     private string _serverStatus = "";
     private bool _lanEnabled;
     private string _lanStatus = "";
-    private string _openRouterKey = "";
-    private string _openRouterBaseUrl = "";
-    private string _openRouterModel = "";
-    private string _fetchedModelChoice = "";
-    private string? _openRouterStatus;
-    private string? _openRouterError;
-    private bool _openRouterTesting;
-    private IReadOnlyList<OpenRouterModel> _openRouterModels = [];
     private string? _computeStatus;
     private string? _computeError;
     private string? _computeErrorHostId;
@@ -95,9 +87,6 @@ public partial class Settings
     private string _computeModelPath = "";
     private double _computeUploadProgress;
     private string? _uploadingId;
-    private string _hfToken = "";
-    private string? _hfStatus;
-    private string? _hfError;
     private InferenceOverrides _system = new();
     private IReadOnlyList<ModelFamily> _families = [];
     private IReadOnlyList<ModelDescriptor> _models = [];
@@ -118,7 +107,6 @@ public partial class Settings
         _studioPort = Theme.StudioPort;
         _closeToTray = Theme.CloseToTray;
         _lanEnabled = Gateway.Config.LanEnabled;
-        if (_tab == "openrouter") LoadOpenRouterFields();
         if (_tab is "system" or "families" or "models") await LoadCatalogAsync();
 
         if (!string.IsNullOrWhiteSpace(ThemeQuery))
@@ -154,161 +142,6 @@ public partial class Settings
             _selectedModelPath = _models.FirstOrDefault()?.Path;
             LoadModelDraft();
         }
-    }
-
-    private void LoadOpenRouterFields()
-    {
-        _openRouterBaseUrl = OpenRouter.BaseUrl;
-        _openRouterModel = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
-    }
-
-    private void SaveOpenRouter()
-    {
-        try
-        {
-            OpenRouter.Save(
-                string.IsNullOrWhiteSpace(_openRouterKey) ? null : _openRouterKey,
-                _openRouterBaseUrl,
-                _openRouterModel);
-            _openRouterKey = "";
-            _openRouterStatus = "OpenRouter settings saved.";
-            _openRouterError = null;
-        }
-        catch (Exception ex)
-        {
-            _openRouterError = ex.Message;
-        }
-    }
-
-    private void SaveOpenRouterDefaultModel()
-    {
-        OpenRouter.SetDefaultModel(_openRouterModel);
-        _openRouterStatus = $"Default model set to {_openRouterModel}.";
-    }
-
-    private bool IsActiveModel(string modelId) =>
-        OpenRouter.ActiveModels.Any(value =>
-            value.Equals(modelId, StringComparison.OrdinalIgnoreCase));
-
-    private async Task FetchOpenRouterModels()
-    {
-        _openRouterError = null;
-        _openRouterStatus = "";
-        _openRouterTesting = true;
-        try
-        {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            _openRouterModels = await OpenRouter.FetchModelsAsync(timeout.Token);
-            int free = _openRouterModels.Count(model => model.IsFree);
-            _openRouterStatus = $"Fetched {_openRouterModels.Count:N0} model(s), {free:N0} free.";
-        }
-        catch (Exception ex)
-        {
-            _openRouterError = ex.Message;
-        }
-        finally
-        {
-            _openRouterTesting = false;
-        }
-    }
-
-    private async Task EnsureFetchedModels()
-    {
-        if (_openRouterModels.Count > 0 || _openRouterTesting) return;
-        await FetchOpenRouterModels();
-    }
-
-    private void AddFetchedModel()
-    {
-        if (string.IsNullOrWhiteSpace(_fetchedModelChoice)) return;
-        string model = _fetchedModelChoice;
-        _fetchedModelChoice = "";
-        if (OpenRouter.AddActiveModel(model))
-            _openRouterStatus = $"Added {model} to active models.";
-        else
-            _openRouterStatus = $"{model} is already active.";
-        if (string.IsNullOrWhiteSpace(_openRouterModel))
-            _openRouterModel = model;
-    }
-
-    private async Task AddAllFreeModels()
-    {
-        _openRouterError = null;
-        _openRouterTesting = true;
-        try
-        {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            _openRouterModels = await OpenRouter.FetchModelsAsync(timeout.Token);
-            int added = OpenRouter.AddActiveModels(
-                _openRouterModels.Where(model => model.IsFree).Select(model => model.Id));
-            OpenRouter.MarkFreeModelsSeeded();
-            _openRouterStatus = added == 0
-                ? "All free models are already active."
-                : $"Added {added:N0} free model(s) to active models.";
-        }
-        catch (Exception ex)
-        {
-            _openRouterError = ex.Message;
-        }
-        finally
-        {
-            _openRouterTesting = false;
-        }
-    }
-
-    private void RemoveActiveModel(string model)
-    {
-        if (!OpenRouter.RemoveActiveModel(model)) return;
-        if (string.Equals(_openRouterModel, model, StringComparison.OrdinalIgnoreCase))
-            _openRouterModel = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
-        _openRouterStatus = $"Removed {model} from active models.";
-    }
-
-    private async Task DeleteOpenRouterKey()
-    {
-        bool confirmed = await JS.InvokeAsync<bool>(
-            "confirm", "Delete the saved OpenRouter API key?");
-        if (!confirmed) return;
-
-        OpenRouter.ClearApiKey();
-        _openRouterKey = "";
-        _openRouterStatus = "OpenRouter API key deleted.";
-        _openRouterError = null;
-    }
-
-    private void SaveHuggingFaceToken()
-    {
-        if (string.IsNullOrWhiteSpace(_hfToken))
-        {
-            _hfStatus = "Enter a HuggingFace token first.";
-            _hfError = null;
-            return;
-        }
-
-        try
-        {
-            HuggingFace.SaveToken(_hfToken);
-            _hfToken = "";
-            _hfStatus = "HuggingFace token saved.";
-            _hfError = null;
-        }
-        catch (Exception ex)
-        {
-            _hfError = ex.Message;
-            _hfStatus = "Could not save the HuggingFace token.";
-        }
-    }
-
-    private async Task DeleteHuggingFaceToken()
-    {
-        bool confirmed = await JS.InvokeAsync<bool>(
-            "confirm", "Delete the saved HuggingFace token?");
-        if (!confirmed) return;
-
-        HuggingFace.ClearToken();
-        _hfToken = "";
-        _hfStatus = "HuggingFace token deleted.";
-        _hfError = null;
     }
 
     private async Task LoadCatalogAsync()
