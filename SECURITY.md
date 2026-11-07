@@ -19,7 +19,7 @@ Only the latest release and `main` are supported. Fixes land as new builds rathe
 - The LAN listener (`5118`) is bound but returns 404 until pairing is enabled. Paired devices are limited to Chat and Work.
 - Do not expose the admin port directly to the internet. Use pairing, a private tunnel, or the Compute host's token-protected API instead.
 - Cross-site browser requests to `/gateway` and `/_blazor` are rejected using Fetch Metadata. Non-browser clients do not send those headers and are unaffected.
-- Host filtering is intentionally unrestricted in 1.1.0 so LAN and container deployments keep working. A same-origin page that DNS-rebinds to `127.0.0.1` is a known residual risk; do not browse untrusted domains on a machine hosting an unlocked Studio instance.
+- Host filtering is intentionally unrestricted in 1.1.1 so LAN and container deployments keep working. A same-origin page that DNS-rebinds to `127.0.0.1` is a known residual risk; do not browse untrusted domains on a machine hosting an unlocked Studio instance.
 
 ## Security-relevant design
 
@@ -33,7 +33,7 @@ OpenRouter, HuggingFace, Compute/SSH and Gateway secrets are encrypted with AES-
 
 ### Installer and updates
 
-The 1.1.0 MSI is not code-signed, so Windows SmartScreen shows an unknown publisher. Verify the SHA-256 published with the release. Updates are manual in 1.1.0; a signed installer is a prerequisite for automatic updates.
+The 1.1.1 MSI is not code-signed, so Windows SmartScreen shows an unknown publisher. Verify the SHA-256 published with the release. Updates are manual in 1.1.1; a signed installer is a prerequisite for automatic updates.
 
 ### Models, plugins and containers
 

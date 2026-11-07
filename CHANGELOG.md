@@ -4,6 +4,48 @@ All notable changes to SharpMind Studio are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.1.0] - 2026-11-08
+
+### Added
+
+- **Chat artifacts** - attach images, audio, text and other files from the
+  composer; render returned images, audio, text/code and download links.
+  Generated data-URL media and fenced code blocks are captured as artifacts.
+- **LFM3 text support** - tri-hybrid layer metadata (13 short-conv, 5
+  sliding-window, 6 global layers) and the per-head `attn_gate` path.
+- **Training experiment controls** - configurable seed across splits,
+  batching and weight init; bits-per-byte exam and promotion metric;
+  tokens-per-parameter advisory.
+- **Data Factory durability** - retry/backoff, `.partial` output with
+  checkpoint/resume, variant identity, provider/model provenance and a
+  terms notice.
+
+### Changed
+
+- Extracted OpenRouter and Compute chat turns behind `IChatBackend`.
+- Split `Settings.razor` / `Training.razor` markup and code, and extracted
+  the appearance, OpenRouter, HuggingFace, registry and saved-jobs panels.
+- Split `TrainingRunner.RunAsync` into input, tokenizer, data, resume,
+  model, train-loop and export stages.
+- Version bumped to **1.1.1.0**. The Studio source still references the
+  published **SharpMind 1.1.0** packages for clean-clone builds.
+
+### Fixed
+
+- `FetchUrl` SSRF hardening, DPAPI-wrapped secret keys and the cross-site
+  Fetch Metadata guard.
+- Data Factory variants now share a split group through `GroupId`.
+- Remaining mojibake in comments, logs and UI strings.
+
+### Known limitations
+
+- Chat attachments are local-only; remote providers do not receive content
+  parts yet, and the local engine does not encode image/audio tensors.
+- LFM3 chat-template quality validation is pending.
+- ASR/TTS is not enabled: the LFM3-Audio GGUF is a text backbone plus
+  ASR/TTS templates, without the audio encoder/codec tensors. The Nemotron
+  `asr` architecture needs an encoder-decoder audio frontend.
+
 ## [1.1.0.0]
 
 First public repository release.
