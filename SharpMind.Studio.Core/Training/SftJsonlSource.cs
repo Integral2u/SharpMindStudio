@@ -180,6 +180,7 @@ public sealed class SftJsonlSource : IRecordSource
                 Turns = turns,
                 Tags = [$"layout:{LayoutName(usedLayout)}"],
                 Source = path,
+                GroupId = ReadGroupId(root),
             };
         }
         catch (JsonException)
@@ -301,6 +302,29 @@ public sealed class SftJsonlSource : IRecordSource
         => element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+
+    /// <summary>
+    /// Data Factory (and similar exporters) write <c>source</c> plus a document
+    /// <c>id</c>; every variant of one document keeps those two values. Group on
+    /// them so a held-out split cannot put a rewrite of a training document on
+    /// the exam side. Files without that provenance stay ungrouped.
+    /// </summary>
+    private static string? ReadGroupId(JsonElement root)
+    {
+        string? source = ReadString(root, "source");
+        if (string.IsNullOrWhiteSpace(source)) return null;
+
+        string? id = root.TryGetProperty("id", out JsonElement idElement)
+            ? idElement.ValueKind switch
+            {
+                JsonValueKind.String => idElement.GetString(),
+                JsonValueKind.Number => idElement.GetRawText(),
+                _ => null,
+            }
+            : null;
+
+        return string.IsNullOrWhiteSpace(id) ? null : $"{source.Trim()}#{id.Trim()}";
+    }
 
     private static string NormalizeRole(string role) => role.Trim().ToLowerInvariant() switch
     {

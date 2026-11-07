@@ -468,7 +468,7 @@ public static class TrainingRunner
                         records,
                         record =>
                         {
-                            int bucket = DeterministicSplit.Bucket(record.Text, Seed);
+                            int bucket = DeterministicSplit.Bucket(record.GroupId ?? record.Text, Seed);
                             return bucket >= examThreshold && bucket < valThreshold;
                         },
                         "val");
@@ -514,7 +514,7 @@ public static class TrainingRunner
                 {
                     trainRecords = new WhereRecordSource(
                         records,
-                        record => DeterministicSplit.Bucket(record.Text, Seed) >= valThreshold,
+                        record => DeterministicSplit.Bucket(record.GroupId ?? record.Text, Seed) >= valThreshold,
                         "train");
                 }
 

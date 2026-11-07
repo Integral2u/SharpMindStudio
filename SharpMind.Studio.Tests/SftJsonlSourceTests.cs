@@ -107,6 +107,27 @@ public sealed class SftJsonlSourceTests
         Assert.Equal(["1", "2"], records.Select(record => record.Turns![1].Content).OrderBy(value => value).ToArray());
     }
 
+    [Fact]
+    public async Task ProvenanceSourceAndId_BecomeTheSplitGroup()
+    {
+        using var temp = new TempDirectory();
+        string path = temp.Combine("factory.jsonl");
+        await File.WriteAllTextAsync(path, string.Join('\n', [
+            """{"messages":[{"role":"user","content":"one"},{"role":"assistant","content":"a"}],"source":"C:\\docs\\one.txt","id":3}""",
+            """{"messages":[{"role":"user","content":"two"},{"role":"assistant","content":"b"}],"source":"C:\\docs\\one.txt","id":3}""",
+            """{"messages":[{"role":"user","content":"three"},{"role":"assistant","content":"c"}],"source":"C:\\docs\\two.txt","id":0}""",
+            """{"prompt":"q","response":"a"}""",
+        ]));
+
+        List<DataRecord> records = await ReadAll(new SftJsonlSource(path));
+
+        Assert.Equal(@"C:\docs\one.txt#3", records[0].GroupId);
+        Assert.Equal(records[0].GroupId, records[1].GroupId);
+        Assert.Equal(@"C:\docs\two.txt#0", records[2].GroupId);
+        Assert.Null(records[3].GroupId);
+        Assert.All(records, record => Assert.Equal(path, record.Source));
+    }
+
     private static async Task<List<DataRecord>> ReadAll(SftJsonlSource source)
     {
         var records = new List<DataRecord>();

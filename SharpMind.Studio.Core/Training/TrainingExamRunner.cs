@@ -133,7 +133,7 @@ public static class TrainingExamRunner
         int threshold = (int)Math.Round(fraction * DeterministicSplit.Buckets);
         IRecordSource examSource = new WhereRecordSource(
             source,
-            record => DeterministicSplit.Bucket(record.Text, TrainingRunner.Seed) < threshold,
+            record => DeterministicSplit.Bucket(record.GroupId ?? record.Text, TrainingRunner.Seed) < threshold,
             "exam");
 
         int seqLen = job.SeqLen > 0 ? job.SeqLen : 64;

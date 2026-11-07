@@ -119,7 +119,7 @@ public static class SftDatasetAnalyzer
             }
 
             records++;
-            int bucket = DeterministicSplit.Bucket(record.Text, TrainingRunner.Seed);
+            int bucket = DeterministicSplit.Bucket(record.GroupId ?? record.Text, TrainingRunner.Seed);
             if (bucket < examThreshold) examRecords++;
             else if (bucket < valThreshold) validationRecords++;
             else trainRecords++;
