@@ -559,6 +559,7 @@ public static class TrainingRunner
             if (TrainingModelOptions.ValidateQat(job.QuantAwareTraining, modelConfig.HiddenDim) is { } fineTuneQatProblem)
             {
                 log(fineTuneQatProblem);
+                fineTuneModel?.Dispose();
                 return new TrainingTokenizerPlan(
                     null!, null!, null, null, false, "", "", "", null,
                     new TrainingRunResult { Success = false, Error = fineTuneQatProblem });
@@ -631,6 +632,359 @@ public static class TrainingRunner
         return new TrainingTokenizerPlan(
             tokenizer, modelConfig, fineTuneModel, baseChatTemplate, grewTokenizer,
             recipeDataHash, recipeTokenizerHash, recipeTrainBaseHash, recipeTrainHash, null);
+    }
+    private sealed record TrainingResumePlan(
+        string CheckpointDir,
+        string? ResumeDir,
+        string? WarmRestartDir,
+        int? WarmRestartPriorVocab,
+        int WarmRestartStartStep,
+        string? AdapterResumeFile,
+        int AdapterResumeStep,
+        bool RecipeCheckpointReused,
+        int ResumeStep,
+        double? ResumeValLoss,
+        bool ReuseCompletedCheckpoint);
+
+    /// <summary>
+    /// Resolves where this run starts: strict resume, warm restart, adapter
+    /// resume or random weights. Also decides whether a cached checkpoint already
+    /// covers the requested horizon.
+    /// </summary>
+    private static TrainingResumePlan ResolveResumePlan(
+        TrainingJobSettings job,
+        ModelConfig modelConfig,
+        bool grewTokenizer,
+        string recipeTrainBaseHash,
+        string? recipeFolder,
+        Action<int>? onResume,
+        Action<string> log)
+    {
+        string checkpointDir = job.Rehearsal
+            ? Path.Combine(Path.GetTempPath(), "sharpmind-rehearsal-" + Guid.NewGuid().ToString("N"))
+            : job.CheckpointDir;
+
+        // A cached checkpoint carries the train phase. Prefer a job-local
+        // checkpoint when one exists; otherwise fall through to the recipe
+        // checkpoint so a different job name or export folder can still
+        // continue the same weights.
+        string? recipeCheckpointDir = null;
+        if (!job.IsFineTune
+            && !job.IncrementalMode
+            && !job.Rehearsal
+            && !job.StartFresh
+            && string.IsNullOrWhiteSpace(job.ResumeFrom)
+            && string.IsNullOrWhiteSpace(job.WarmRestartFrom)
+            && TrainingRecipeStore.TryGet(
+                "checkpoint", recipeTrainBaseHash, out TrainingRecipeArtifact recipeCheckpoint, recipeFolder)
+            && Directory.Exists(recipeCheckpoint.ArtifactPath))
+        {
+            recipeCheckpointDir = recipeCheckpoint.ArtifactPath;
+        }
+
+        string? resumeDir;
+        string? warmRestartDir = null;
+        int? warmRestartPriorVocab = null;
+        int warmRestartStartStep = 0;
+        string? adapterResumeFile = null;
+        int adapterResumeStep = 0;
+        if (job.IsFineTune)
+        {
+            resumeDir = null;
+            if (job.StartFresh)
+            {
+                log("Fine-tune: starting from the base model (fresh run).");
+            }
+            else
+            {
+                adapterResumeFile = ResolveAdapterResume(job, checkpointDir, out adapterResumeStep);
+                if (adapterResumeFile is null)
+                {
+                    log("Fine-tune: no adapter checkpoint found - starting from the base model.");
+                }
+                else
+                {
+                    if (adapterResumeStep > 0 && job.TotalSteps <= adapterResumeStep)
+                        throw new InvalidOperationException(
+                            $"Total steps ({job.TotalSteps}) must be greater than the resumed adapter step "
+                            + $"({adapterResumeStep}). Raise the step count to continue training.");
+                    warmRestartStartStep = adapterResumeStep;
+                    log(adapterResumeStep > 0
+                        ? $"Fine-tune: resuming adapters from step {adapterResumeStep} ({Path.GetFileName(adapterResumeFile)}). "
+                          + "Weights continue; the optimizer and data cursor restart."
+                        : $"Fine-tune: resuming adapters from {Path.GetFileName(adapterResumeFile)} (step unknown; fresh schedule).");
+                }
+            }
+        }
+        else if (job.IncrementalMode)
+        {
+            resumeDir = Checkpoint.FindLatest(checkpointDir);
+            if (resumeDir is null)
+                log("Incremental: no prior checkpoint found - starting from random weights on the new/changed files only.");
+        }
+        else if (!job.StartFresh && !string.IsNullOrWhiteSpace(job.WarmRestartFrom)
+                 && Directory.Exists(job.WarmRestartFrom))
+        {
+            // Warm restart: reuse the weights as an initialisation under a
+            // fresh schedule. Never a strict resume - the embedding may have
+            // been widened by an append-only tokenizer grow, and the optimizer
+            // state is intentionally dropped.
+            resumeDir = null;
+            warmRestartDir = job.WarmRestartFrom;
+            log($"Warm restart from {Path.GetFileName(warmRestartDir)} - reusing weights, fresh optimizer (step 0).");
+        }
+        else
+        {
+            resumeDir = job.StartFresh ? null
+                : !string.IsNullOrWhiteSpace(job.ResumeFrom) ? job.ResumeFrom
+                : Checkpoint.FindLatest(checkpointDir);
+        }
+
+        bool recipeCheckpointReused = false;
+        if (resumeDir is null && warmRestartDir is null && recipeCheckpointDir is not null)
+        {
+            resumeDir = recipeCheckpointDir;
+            recipeCheckpointReused = true;
+            int reusedStep = Checkpoint.ReadMeta(resumeDir).Step;
+            log($"Recipe: reusing checkpoint at step {reusedStep} for "
+                + $"{TrainingRecipeHash.Short(recipeTrainBaseHash)}; requested {job.TotalSteps} steps.");
+        }
+
+        // A grown tokenizer widens the embedding, so a strict resume cannot load
+        // a checkpoint built at the old size. Reuse those weights as a warm
+        // restart instead (fresh optimizer, step 0). Deliberately not persisted
+        // to job.WarmRestartFrom: this run writes new checkpoints at the grown
+        // vocab, and later runs should resume those normally.
+        if (grewTokenizer && resumeDir is not null && Directory.Exists(resumeDir))
+        {
+            warmRestartDir = resumeDir;
+            resumeDir = null;
+            job.ResumeFrom = null; // this run writes new-vocab checkpoints; later runs resume those
+            log($"Warm restart from {Path.GetFileName(warmRestartDir)} - embedding widened, fresh optimizer (step 0).");
+        }
+
+        // Safety net: a checkpoint built for a different vocabulary cannot be
+        // strictly resumed (the embedding shape differs). This happens when a
+        // tokenizer grew on an earlier run that failed before writing a
+        // checkpoint. Reuse those weights as a warm restart instead of failing.
+        if (resumeDir is not null && Directory.Exists(resumeDir))
+        {
+            var meta = Checkpoint.ReadMeta(resumeDir);
+            int? recordedVocab = null;
+            if (meta.Extra.TryGetValue("vocabSize", out var recordedText)
+                && int.TryParse(recordedText, System.Globalization.NumberStyles.Integer,
+                       System.Globalization.CultureInfo.InvariantCulture, out int parsedVocab))
+            {
+                recordedVocab = parsedVocab;
+            }
+            else
+            {
+                // Older checkpoints predate the vocabSize metadata. Recover
+                // the embedding width from model.bin so they warm-restart too.
+                long? elements = Checkpoint.ReadTensorElementCount(resumeDir, "EmbeddingTable.weight");
+                if (elements is > 0 && elements.Value % modelConfig.HiddenDim == 0)
+                    recordedVocab = (int)(elements.Value / modelConfig.HiddenDim);
+            }
+
+            if (recordedVocab is int priorVocab && priorVocab != modelConfig.VocabSize)
+            {
+                warmRestartDir = resumeDir;
+                warmRestartPriorVocab = priorVocab;
+                resumeDir = null;
+                job.ResumeFrom = null; // see the grown-tokenizer case above
+                log($"Checkpoint vocab {priorVocab} -> model vocab {modelConfig.VocabSize} "
+                    + "- warm restart instead of strict resume.");
+            }
+        }
+
+        int resumeStep = 0;
+        double? resumeValLoss = null;
+        if (resumeDir is not null)
+        {
+            // A recipe checkpoint is a cache pointer, not a job setting; do not
+            // persist it into the .smmt, where a later cleanup could break it.
+            if (!recipeCheckpointReused) job.ResumeFrom = resumeDir;
+            var resumeMeta = Checkpoint.ReadMeta(resumeDir);
+            resumeStep = resumeMeta.Step;
+            if (resumeMeta.Extra.TryGetValue("valLoss", out string? valText)
+                && double.TryParse(valText, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double parsedValLoss))
+            {
+                resumeValLoss = parsedValLoss;
+            }
+            log($"Resuming from checkpoint {Path.GetFileName(resumeDir)} (step {resumeMeta.Step})");
+            onResume?.Invoke(resumeMeta.Step);
+        }
+        else
+        {
+            onResume?.Invoke(warmRestartStartStep);
+        }
+
+        bool reuseCompletedCheckpoint = recipeCheckpointReused
+            && resumeDir is not null
+            && resumeStep >= job.TotalSteps;
+
+        return new TrainingResumePlan(
+            checkpointDir, resumeDir, warmRestartDir, warmRestartPriorVocab,
+            warmRestartStartStep, adapterResumeFile, adapterResumeStep,
+            recipeCheckpointReused, resumeStep, resumeValLoss, reuseCompletedCheckpoint);
+    }
+    private sealed record TrainingExportResult(string? ExportPath, string? AdapterPath);
+
+    /// <summary>Writes the adapter and/or merged .smm and records the recipe artifact.</summary>
+    private static TrainingExportResult ExportModel(
+        TrainingJobSettings job,
+        Transformer model,
+        TransformerWeights weights,
+        Tokenizer tokenizer,
+        LoRAModel? lora,
+        string? baseChatTemplate,
+        string? recipeTrainHash,
+        bool grewTokenizer,
+        string? recipeFolder,
+        Action<string> log)
+    {
+        // 6. A fine-tune can keep the adapters as a portable file and/or fold
+        // them into the base weights. Save the adapter before merging: Merge
+        // detaches it.
+        string? adapterPath = null;
+        if (lora is not null && job.SaveAdapterFile)
+        {
+            adapterPath = job.AdapterFilePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(adapterPath)!);
+            lora.SaveAdapter(adapterPath);
+            log($"Adapter saved: {adapterPath} ({new FileInfo(adapterPath).Length:N0} bytes)");
+        }
+
+        if (lora is not null && job.MergeOnExport)
+        {
+            lora.Merge();
+            log("Fine-tune: adapters merged into the base weights.");
+        }
+        else if (job.IsFineTune)
+        {
+            log("Fine-tune: merged export skipped (adapter-only run).");
+        }
+
+        // 7. Export the trained weights + tokenizer to .SMM.
+        string? exportPath = null;
+        if (!job.IsFineTune || job.MergeOnExport)
+        {
+            exportPath = job.ExportFilePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(exportPath)!);
+            SmmTrainingExporter.Export(
+                weights,
+                tokenizer,
+                exportPath,
+                BuildEmbedOptions(job, job.IsSft ? "sft" : job.IsFineTune ? "fine-tune" : "training", SourceHasher.Combined(job.Sources)),
+                chatTemplate: baseChatTemplate,
+                model: model);
+            // Keep the resolved location on the job (and therefore in the wizard
+            // field when this live job is shown again), matching how the tokenizer
+            // path is anchored to the job rather than a shared folder.
+            job.ExportPath = exportPath;
+            if (recipeTrainHash is not null && !grewTokenizer)
+            {
+                TrainingRecipeStore.Save(new TrainingRecipeArtifact(
+                    "train", recipeTrainHash, exportPath, job.Name, DateTime.UtcNow), recipeFolder);
+            }
+            log($"Saved: {exportPath} ({new FileInfo(exportPath).Length:N0} bytes)");
+        }
+
+        return new TrainingExportResult(exportPath, adapterPath);
+    }
+
+    /// <summary>Owns the pretrain weights/model and the LoRA adapters for one run.</summary>
+    private sealed class TrainingModelSet(
+        TransformerWeights weights,
+        Transformer model,
+        IReadOnlyList<Parameter> parameters,
+        LoRAModel? lora,
+        TransformerWeights? pretrainWeights,
+        bool ownsModel) : IDisposable
+    {
+        public TransformerWeights Weights { get; } = weights;
+        public Transformer Model { get; } = model;
+        public IReadOnlyList<Parameter> Parameters { get; } = parameters;
+        public LoRAModel? Lora { get; } = lora;
+
+        public void Dispose()
+        {
+            Lora?.Dispose();
+            if (ownsModel) Model.Dispose();
+            pretrainWeights?.Dispose();
+        }
+    }
+
+    private static TrainingModelSet CreateTrainingModel(
+        TrainingJobSettings job,
+        ModelConfig modelConfig,
+        SharpMindConfig sharpConfig,
+        Transformer? fineTuneModel,
+        string? adapterResumeFile,
+        string? resumeDir,
+        Action<string> log)
+    {
+        TransformerWeights? pretrainWeights = job.IsFineTune
+            ? null
+            : ModelFactory.CreateForTraining(modelConfig, sharpConfig);
+        TransformerWeights weights;
+        Transformer model;
+        IReadOnlyList<Parameter> parameters;
+        LoRAModel? lora = null;
+
+        if (job.IsFineTune)
+        {
+            model = fineTuneModel!;
+            weights = model.Weights;
+            if (adapterResumeFile is not null)
+            {
+                // The adapter file carries rank, alpha, targets and a base
+                // fingerprint; LoadAdapter rebuilds the LoRA model from those
+                // and refuses a base it was not trained against.
+                lora = LoRAModel.LoadAdapter(model, adapterResumeFile);
+                log($"Fine-tune: loaded {lora.AdapterCount} adapters (rank {lora.Config.Rank}, "
+                    + $"alpha {lora.Config.Alpha}) from {Path.GetFileName(adapterResumeFile)}; "
+                    + "the adapter file defines the targets.");
+            }
+            else
+            {
+                int rank = Math.Max(1, job.LoRARank);
+                float alpha = job.LoRAAlpha > 0 ? job.LoRAAlpha : rank * 2f;
+                lora = new LoRAModel(model, new LoRAConfig
+                {
+                    Rank = rank,
+                    Alpha = alpha,
+                    TargetModules = job.LoRATargetModules.Count > 0 ? [.. job.LoRATargetModules] : null,
+                }, seed: job.Seed);
+                log($"Fine-tune: {lora.AdapterCount} adapters (rank {rank}, alpha {alpha}).");
+            }
+
+            parameters = lora.LoRAParameters();
+            log($"{parameters.Sum(p => p.Data.ElementCount):N0} trainable values "
+                + $"({lora.TrainableRatio():P2} of the base).");
+        }
+        else
+        {
+            weights = pretrainWeights!;
+            if (resumeDir is null)
+            {
+                WeightInitializer.InitializeRandomly(weights, job.Seed);
+                log("Weights initialised.");
+            }
+            model = ModelFactory.CreateTrainingTransformer(weights, sharpConfig);
+            if (resumeDir is null && model.Config.NumExperts > 0)
+            {
+                WeightInitializer.InitializeModelMoE(model, job.Seed + 1013);
+                log("MoE router/expert weights initialised.");
+            }
+            parameters = model.Parameters().ToList();
+        }
+
+        // The pretrain transformer is ours to dispose; the fine-tune model is
+        // owned by fineTuneOwner above.
+        return new TrainingModelSet(
+            weights, model, parameters, lora, pretrainWeights, ownsModel: !job.IsFineTune);
     }
     public static async Task<TrainingRunResult> RunAsync(
         TrainingJobSettings job,
@@ -776,230 +1130,27 @@ public static class TrainingRunner
             // "force resume latest" - ignoring StartFresh/ResumeFrom, because
             // the delta pipeline only delivers unseen data: building on top of
             // the latest weights is the entire point.
-            string checkpointDir = job.Rehearsal
-                ? Path.Combine(Path.GetTempPath(), "sharpmind-rehearsal-" + Guid.NewGuid().ToString("N"))
-                : job.CheckpointDir;
+            TrainingResumePlan resume = ResolveResumePlan(
+                job, modelConfig, grewTokenizer, recipeTrainBaseHash, recipeFolder, onResume, Log);
 
-            // A cached checkpoint carries the train phase. Prefer a job-local
-            // checkpoint when one exists; otherwise fall through to the recipe
-            // checkpoint so a different job name or export folder can still
-            // continue the same weights.
-            string? recipeCheckpointDir = null;
-            if (!job.IsFineTune
-                && !job.IncrementalMode
-                && !job.Rehearsal
-                && !job.StartFresh
-                && string.IsNullOrWhiteSpace(job.ResumeFrom)
-                && string.IsNullOrWhiteSpace(job.WarmRestartFrom)
-                && TrainingRecipeStore.TryGet(
-                    "checkpoint", recipeTrainBaseHash, out TrainingRecipeArtifact recipeCheckpoint, recipeFolder)
-                && Directory.Exists(recipeCheckpoint.ArtifactPath))
-            {
-                recipeCheckpointDir = recipeCheckpoint.ArtifactPath;
-            }
+            string checkpointDir = resume.CheckpointDir;
+            string? resumeDir = resume.ResumeDir;
+            string? warmRestartDir = resume.WarmRestartDir;
+            int? warmRestartPriorVocab = resume.WarmRestartPriorVocab;
+            int warmRestartStartStep = resume.WarmRestartStartStep;
+            string? adapterResumeFile = resume.AdapterResumeFile;
+            int adapterResumeStep = resume.AdapterResumeStep;
+            bool recipeCheckpointReused = resume.RecipeCheckpointReused;
+            int resumeStep = resume.ResumeStep;
+            double? resumeValLoss = resume.ResumeValLoss;
+            bool reuseCompletedCheckpoint = resume.ReuseCompletedCheckpoint;
 
-            string? resumeDir;
-            string? warmRestartDir = null;
-            int? warmRestartPriorVocab = null;
-            int warmRestartStartStep = 0;
-            string? adapterResumeFile = null;
-            int adapterResumeStep = 0;
-            if (job.IsFineTune)
-            {
-                resumeDir = null;
-                if (job.StartFresh)
-                {
-                    Log("Fine-tune: starting from the base model (fresh run).");
-                }
-                else
-                {
-                    adapterResumeFile = ResolveAdapterResume(job, checkpointDir, out adapterResumeStep);
-                    if (adapterResumeFile is null)
-                    {
-                        Log("Fine-tune: no adapter checkpoint found - starting from the base model.");
-                    }
-                    else
-                    {
-                        if (adapterResumeStep > 0 && job.TotalSteps <= adapterResumeStep)
-                            throw new InvalidOperationException(
-                                $"Total steps ({job.TotalSteps}) must be greater than the resumed adapter step "
-                                + $"({adapterResumeStep}). Raise the step count to continue training.");
-                        warmRestartStartStep = adapterResumeStep;
-                        Log(adapterResumeStep > 0
-                            ? $"Fine-tune: resuming adapters from step {adapterResumeStep} ({Path.GetFileName(adapterResumeFile)}). "
-                              + "Weights continue; the optimizer and data cursor restart."
-                            : $"Fine-tune: resuming adapters from {Path.GetFileName(adapterResumeFile)} (step unknown; fresh schedule).");
-                    }
-                }
-            }
-            else if (job.IncrementalMode)
-            {
-                resumeDir = Checkpoint.FindLatest(checkpointDir);
-                if (resumeDir is null)
-                    Log("Incremental: no prior checkpoint found - starting from random weights on the new/changed files only.");
-            }
-            else if (!job.StartFresh && !string.IsNullOrWhiteSpace(job.WarmRestartFrom)
-                     && Directory.Exists(job.WarmRestartFrom))
-            {
-                // Warm restart: reuse the weights as an initialisation under a
-                // fresh schedule. Never a strict resume - the embedding may have
-                // been widened by an append-only tokenizer grow, and the optimizer
-                // state is intentionally dropped.
-                resumeDir = null;
-                warmRestartDir = job.WarmRestartFrom;
-                Log($"Warm restart from {Path.GetFileName(warmRestartDir)} - reusing weights, fresh optimizer (step 0).");
-            }
-            else
-            {
-                resumeDir = job.StartFresh ? null
-                    : !string.IsNullOrWhiteSpace(job.ResumeFrom) ? job.ResumeFrom
-                    : Checkpoint.FindLatest(checkpointDir);
-            }
-
-            bool recipeCheckpointReused = false;
-            if (resumeDir is null && warmRestartDir is null && recipeCheckpointDir is not null)
-            {
-                resumeDir = recipeCheckpointDir;
-                recipeCheckpointReused = true;
-                int reusedStep = Checkpoint.ReadMeta(resumeDir).Step;
-                Log($"Recipe: reusing checkpoint at step {reusedStep} for "
-                    + $"{TrainingRecipeHash.Short(recipeTrainBaseHash)}; requested {job.TotalSteps} steps.");
-            }
-
-            // A grown tokenizer widens the embedding, so a strict resume cannot load
-            // a checkpoint built at the old size. Reuse those weights as a warm
-            // restart instead (fresh optimizer, step 0). Deliberately not persisted
-            // to job.WarmRestartFrom: this run writes new checkpoints at the grown
-            // vocab, and later runs should resume those normally.
-            if (grewTokenizer && resumeDir is not null && Directory.Exists(resumeDir))
-            {
-                warmRestartDir = resumeDir;
-                resumeDir = null;
-                job.ResumeFrom = null; // this run writes new-vocab checkpoints; later runs resume those
-                Log($"Warm restart from {Path.GetFileName(warmRestartDir)} - embedding widened, fresh optimizer (step 0).");
-            }
-
-            // Safety net: a checkpoint built for a different vocabulary cannot be
-            // strictly resumed (the embedding shape differs). This happens when a
-            // tokenizer grew on an earlier run that failed before writing a
-            // checkpoint. Reuse those weights as a warm restart instead of failing.
-            if (resumeDir is not null && Directory.Exists(resumeDir))
-            {
-                var meta = Checkpoint.ReadMeta(resumeDir);
-                int? recordedVocab = null;
-                if (meta.Extra.TryGetValue("vocabSize", out var recordedText)
-                    && int.TryParse(recordedText, System.Globalization.NumberStyles.Integer,
-                           System.Globalization.CultureInfo.InvariantCulture, out int parsedVocab))
-                {
-                    recordedVocab = parsedVocab;
-                }
-                else
-                {
-                    // Older checkpoints predate the vocabSize metadata. Recover
-                    // the embedding width from model.bin so they warm-restart too.
-                    long? elements = Checkpoint.ReadTensorElementCount(resumeDir, "EmbeddingTable.weight");
-                    if (elements is > 0 && elements.Value % modelConfig.HiddenDim == 0)
-                        recordedVocab = (int)(elements.Value / modelConfig.HiddenDim);
-                }
-
-                if (recordedVocab is int priorVocab && priorVocab != modelConfig.VocabSize)
-                {
-                    warmRestartDir = resumeDir;
-                    warmRestartPriorVocab = priorVocab;
-                    resumeDir = null;
-                    job.ResumeFrom = null; // see the grown-tokenizer case above
-                    Log($"Checkpoint vocab {priorVocab} -> model vocab {modelConfig.VocabSize} "
-                        + "- warm restart instead of strict resume.");
-                }
-            }
-
-            int resumeStep = 0;
-            double? resumeValLoss = null;
-            if (resumeDir is not null)
-            {
-                // A recipe checkpoint is a cache pointer, not a job setting; do not
-                // persist it into the .smmt, where a later cleanup could break it.
-                if (!recipeCheckpointReused) job.ResumeFrom = resumeDir;
-                var resumeMeta = Checkpoint.ReadMeta(resumeDir);
-                resumeStep = resumeMeta.Step;
-                if (resumeMeta.Extra.TryGetValue("valLoss", out string? valText)
-                    && double.TryParse(valText, System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture, out double parsedValLoss))
-                {
-                    resumeValLoss = parsedValLoss;
-                }
-                Log($"Resuming from checkpoint {Path.GetFileName(resumeDir)} (step {resumeMeta.Step})");
-                onResume?.Invoke(resumeMeta.Step);
-            }
-            else
-            {
-                onResume?.Invoke(warmRestartStartStep);
-            }
-
-            bool reuseCompletedCheckpoint = recipeCheckpointReused
-                && resumeDir is not null
-                && resumeStep >= job.TotalSteps;
-
-            using TransformerWeights? pretrainWeights = job.IsFineTune
-                ? null
-                : ModelFactory.CreateForTraining(modelConfig, sharpConfig);
-            TransformerWeights weights;
-            Transformer model;
-            IReadOnlyList<Parameter> parameters;
-            LoRAModel? lora = null;
-
-            if (job.IsFineTune)
-            {
-                model = fineTuneModel!;
-                weights = model.Weights;
-                if (adapterResumeFile is not null)
-                {
-                    // The adapter file carries rank, alpha, targets and a base
-                    // fingerprint; LoadAdapter rebuilds the LoRA model from those
-                    // and refuses a base it was not trained against.
-                    lora = LoRAModel.LoadAdapter(model, adapterResumeFile);
-                    Log($"Fine-tune: loaded {lora.AdapterCount} adapters (rank {lora.Config.Rank}, "
-                        + $"alpha {lora.Config.Alpha}) from {Path.GetFileName(adapterResumeFile)}; "
-                        + "the adapter file defines the targets.");
-                }
-                else
-                {
-                    int rank = Math.Max(1, job.LoRARank);
-                    float alpha = job.LoRAAlpha > 0 ? job.LoRAAlpha : rank * 2f;
-                    lora = new LoRAModel(model, new LoRAConfig
-                    {
-                        Rank = rank,
-                        Alpha = alpha,
-                        TargetModules = job.LoRATargetModules.Count > 0 ? [.. job.LoRATargetModules] : null,
-                    }, seed: job.Seed);
-                    Log($"Fine-tune: {lora.AdapterCount} adapters (rank {rank}, alpha {alpha}).");
-                }
-
-                parameters = lora.LoRAParameters();
-                Log($"{parameters.Sum(p => p.Data.ElementCount):N0} trainable values "
-                    + $"({lora.TrainableRatio():P2} of the base).");
-            }
-            else
-            {
-                weights = pretrainWeights!;
-                if (resumeDir is null)
-                {
-                    WeightInitializer.InitializeRandomly(weights, job.Seed);
-                    Log("Weights initialised.");
-                }
-                model = ModelFactory.CreateTrainingTransformer(weights, sharpConfig);
-                if (resumeDir is null && model.Config.NumExperts > 0)
-                {
-                    WeightInitializer.InitializeModelMoE(model, job.Seed + 1013);
-                    Log("MoE router/expert weights initialised.");
-                }
-                parameters = model.Parameters().ToList();
-            }
-
-            // The pretrain transformer is ours to dispose; the fine-tune model is
-            // owned by fineTuneOwner above.
-            using var pretrainModel = job.IsFineTune ? null : model;
-            using var loraOwner = lora;
+            using TrainingModelSet modelSet = CreateTrainingModel(
+                job, modelConfig, sharpConfig, fineTuneModel, adapterResumeFile, resumeDir, Log);
+            TransformerWeights weights = modelSet.Weights;
+            Transformer model = modelSet.Model;
+            IReadOnlyList<Parameter> parameters = modelSet.Parameters;
+            LoRAModel? lora = modelSet.Lora;
 
             var ops = TrainingOpsFactory.Create(sharpConfig);
             using IOptimizer optimizer = TrainingModelOptions.UsesSgd(job)
@@ -1282,52 +1433,11 @@ public static class TrainingRunner
                 };
             }
 
-            // 6. A fine-tune can keep the adapters as a portable file and/or fold
-            // them into the base weights. Save the adapter before merging: Merge
-            // detaches it.
-            string? adapterPath = null;
-            if (lora is not null && job.SaveAdapterFile)
-            {
-                adapterPath = job.AdapterFilePath;
-                Directory.CreateDirectory(Path.GetDirectoryName(adapterPath)!);
-                lora.SaveAdapter(adapterPath);
-                Log($"Adapter saved: {adapterPath} ({new FileInfo(adapterPath).Length:N0} bytes)");
-            }
-
-            if (lora is not null && job.MergeOnExport)
-            {
-                lora.Merge();
-                Log("Fine-tune: adapters merged into the base weights.");
-            }
-            else if (job.IsFineTune)
-            {
-                Log("Fine-tune: merged export skipped (adapter-only run).");
-            }
-
-            // 7. Export the trained weights + tokenizer to .SMM.
-            string? exportPath = null;
-            if (!job.IsFineTune || job.MergeOnExport)
-            {
-                exportPath = job.ExportFilePath;
-                Directory.CreateDirectory(Path.GetDirectoryName(exportPath)!);
-                SmmTrainingExporter.Export(
-                    weights,
-                    tokenizer,
-                    exportPath,
-                    BuildEmbedOptions(job, job.IsSft ? "sft" : job.IsFineTune ? "fine-tune" : "training", SourceHasher.Combined(job.Sources)),
-                    chatTemplate: baseChatTemplate,
-                    model: model);
-                // Keep the resolved location on the job (and therefore in the wizard
-                // field when this live job is shown again), matching how the tokenizer
-                // path is anchored to the job rather than a shared folder.
-                job.ExportPath = exportPath;
-                if (recipeTrainHash is not null && !grewTokenizer)
-                {
-                    TrainingRecipeStore.Save(new TrainingRecipeArtifact(
-                        "train", recipeTrainHash, exportPath, job.Name, DateTime.UtcNow), recipeFolder);
-                }
-                Log($"Saved: {exportPath} ({new FileInfo(exportPath).Length:N0} bytes)");
-            }
+            TrainingExportResult exported = ExportModel(
+                job, model, weights, tokenizer, lora, baseChatTemplate,
+                recipeTrainHash, grewTokenizer, recipeFolder, Log);
+            string? adapterPath = exported.AdapterPath;
+            string? exportPath = exported.ExportPath;
 
             progress.Report(1f);
 
