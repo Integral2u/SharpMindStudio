@@ -53,15 +53,23 @@ public sealed class OpenRouterRequest
 
 public sealed class OpenRouterException : Exception
 {
-    public OpenRouterException(string message, int? statusCode = null, int? errorCode = null)
+    public OpenRouterException(
+        string message,
+        int? statusCode = null,
+        int? errorCode = null,
+        TimeSpan? retryAfter = null)
         : base(message)
     {
         StatusCode = statusCode;
         ErrorCode = errorCode;
+        RetryAfter = retryAfter;
     }
 
     public int? StatusCode { get; }
     public int? ErrorCode { get; }
+
+    /// <summary>Provider-suggested wait before retrying, when the response carried one.</summary>
+    public TimeSpan? RetryAfter { get; }
 }
 
 /// <summary>
@@ -353,7 +361,20 @@ public sealed class OpenRouterClient
                 ? $"OpenRouter returned HTTP {statusCode} ({response.ReasonPhrase})."
                 : body.Trim();
 
-        return new OpenRouterException(message, statusCode, errorCode);
+        return new OpenRouterException(message, statusCode, errorCode, ReadRetryAfter(response));
+    }
+
+    private static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+    {
+        TimeSpan? delay = response.Headers.RetryAfter switch
+        {
+            { Delta: { } delta } => delta,
+            { Date: { } date } => date - DateTimeOffset.UtcNow,
+            _ => null,
+        };
+
+        if (delay is { } wait && wait < TimeSpan.Zero) return TimeSpan.Zero;
+        return delay;
     }
 
     private static void ApplyHeaders(HttpRequestMessage request, OpenRouterConnection connection)

@@ -72,6 +72,15 @@ public sealed record DataFactoryRecipe
     public float Temperature { get; set; } = 0.7f;
     public int MaxTokens { get; set; } = 512;
     public int? Seed { get; set; }
+
+    /// <summary>Attempts per generation, including the first.</summary>
+    public int RetryAttempts { get; set; } = 3;
+
+    /// <summary>Base delay for exponential backoff on transient provider errors.</summary>
+    public int RetryDelayMs { get; set; } = 1_000;
+
+    /// <summary>Resume a matching <c>.partial</c> output rather than starting over.</summary>
+    public bool ResumePartial { get; set; } = true;
 }
 
 /// <summary>Saved recipe files under <see cref="StudioPaths.DataFactory"/>.</summary>

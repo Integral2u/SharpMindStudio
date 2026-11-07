@@ -1,5 +1,6 @@
 using System.Text.Json;
 using SharpMind.Studio.Core.DataFactory;
+using SharpMind.Studio.Core.OpenRouter;
 using Xunit;
 
 namespace SharpMind.Studio.Tests;
@@ -224,6 +225,136 @@ public sealed class DataFactoryTests
 
         Assert.Equal(0, result.Written);
         Assert.Equal(1, result.ParseFailures);
+    }
+
+    [Fact]
+    public async Task Runner_RetriesTransientOpenRouterErrors()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("source.txt");
+        await File.WriteAllTextAsync(source,
+            "A long enough source document about the forest and its animals.");
+        string output = temp.Combine("retry.jsonl");
+
+        var recipe = new DataFactoryRecipe
+        {
+            SourcePath = source,
+            SourceFormat = DataFactorySourceFormat.Text,
+            MinChars = 20,
+            OutputFormat = DataFactoryOutputFormat.TextJsonl,
+            OutputPath = output,
+            MaxRecords = 5,
+            RetryAttempts = 2,
+            RetryDelayMs = 0,
+        };
+
+        var generator = new ScriptedGenerator(call => call == 1
+            ? throw new OpenRouterException("busy", 429, retryAfter: TimeSpan.Zero)
+            : "A polished line.");
+
+        DataFactoryRunResult result = await DataFactoryRunner.RunAsync(recipe, generator);
+
+        Assert.Equal(1, result.Written);
+        Assert.Equal(2, generator.Calls);
+    }
+
+    [Fact]
+    public async Task Runner_ResumesAPartialOutputAfterAFailure()
+    {
+        using var temp = new TempDirectory();
+        await File.WriteAllTextAsync(
+            temp.Combine("a.txt"),
+            "A sufficiently long source document about rivers and valleys.");
+        await File.WriteAllTextAsync(
+            temp.Combine("b.txt"),
+            "A sufficiently long source document about mountains and snow.");
+        string output = temp.Combine("resume.jsonl");
+
+        var recipe = new DataFactoryRecipe
+        {
+            SourcePath = temp.Path,
+            SourceFormat = DataFactorySourceFormat.Text,
+            MinChars = 20,
+            OutputFormat = DataFactoryOutputFormat.TextJsonl,
+            OutputPath = output,
+            MaxRecords = 10,
+            RetryAttempts = 1,
+            Variants = 1,
+        };
+
+        var failing = new ScriptedGenerator(call => call == 1
+            ? "first result"
+            : throw new InvalidOperationException("boom"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => DataFactoryRunner.RunAsync(recipe, failing));
+
+        Assert.True(File.Exists(output + ".partial"));
+        Assert.True(File.Exists(output + ".partial.json"));
+        Assert.False(File.Exists(output));
+
+        var resumedGenerator = new ScriptedGenerator(_ => "second result");
+        DataFactoryRunResult resumed = await DataFactoryRunner.RunAsync(recipe, resumedGenerator);
+
+        Assert.True(resumed.Resumed);
+        Assert.Equal(1, resumedGenerator.Calls);
+        Assert.Equal(2, resumed.Written);
+
+        string[] lines = await File.ReadAllLinesAsync(output);
+        Assert.Equal(2, lines.Length);
+        Assert.Contains("first result", lines[0]);
+        Assert.Contains("second result", lines[1]);
+        Assert.False(File.Exists(output + ".partial"));
+        Assert.False(File.Exists(output + ".partial.json"));
+    }
+
+    [Fact]
+    public async Task Runner_RecordsTheVariantIndex()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("source.txt");
+        await File.WriteAllTextAsync(source,
+            "A long enough source document about the garden and its flowers.");
+        string output = temp.Combine("variants.jsonl");
+
+        var recipe = new DataFactoryRecipe
+        {
+            SourcePath = source,
+            SourceFormat = DataFactorySourceFormat.Text,
+            MinChars = 20,
+            OutputFormat = DataFactoryOutputFormat.TextJsonl,
+            OutputPath = output,
+            MaxRecords = 10,
+            Variants = 2,
+        };
+
+        DataFactoryRunResult result = await DataFactoryRunner.RunAsync(
+            recipe, new FakeGenerator(_ => "A polished line."));
+
+        Assert.Equal(2, result.Written);
+        string[] lines = await File.ReadAllLinesAsync(output);
+        int[] variants = [.. lines.Select(line =>
+            JsonDocument.Parse(line).RootElement.GetProperty("variant").GetInt32())];
+        Assert.Equal([0, 1], variants);
+    }
+
+    private sealed class ScriptedGenerator(Func<int, string> generate) : IDataFactoryGenerator
+    {
+        public int Calls { get; private set; }
+
+        public string Description => "scripted";
+
+        public Task<string> GenerateAsync(
+            string systemPrompt,
+            string userPrompt,
+            DataFactoryRecipe recipe,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(generate(Calls));
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class FakeGenerator(Func<string, string> generate) : IDataFactoryGenerator

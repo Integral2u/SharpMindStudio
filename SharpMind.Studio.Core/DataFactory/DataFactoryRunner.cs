@@ -1,7 +1,9 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using SharpMind.Studio.Core.OpenRouter;
 
 namespace SharpMind.Studio.Core.DataFactory;
 
@@ -18,7 +20,8 @@ public sealed record DataFactoryRunResult(
     int Skipped,
     int ParseFailures,
     string OutputPath,
-    IReadOnlyList<string> Samples);
+    IReadOnlyList<string> Samples,
+    bool Resumed = false);
 
 /// <summary>One provider-backed text generator for a Data Factory run.</summary>
 public interface IDataFactoryGenerator : IAsyncDisposable
@@ -59,70 +62,335 @@ public static class DataFactoryRunner
         if (limit <= 0) limit = int.MaxValue;
         int variants = Math.Clamp(recipe.Variants, 1, 10);
 
-        int processed = 0;
-        int written = 0;
-        int skipped = 0;
-        int parseFailures = 0;
-        var samples = new List<string>(SampleCount);
+        string recipeHash = DataFactoryRecipeHash.Compute(recipe);
+        string partialPath = outputPath + ".partial";
+        string checkpointPath = partialPath + ".json";
 
-        await using var stream = new FileStream(
-            outputPath, FileMode.Create, FileAccess.Write, FileShare.Read,
-            bufferSize: 65_536, useAsync: true);
-        await using var writer = new StreamWriter(stream, new UTF8Encoding(false));
-        writer.NewLine = "\n";
-
-        await foreach (DataFactoryDocument document in DataFactoryInput
-            .ReadAsync(recipe, cancellationToken)
-            .WithCancellation(cancellationToken)
-            .ConfigureAwait(false))
+        DataFactoryCheckpoint? checkpoint = recipe.ResumePartial
+            ? DataFactoryCheckpointStore.TryLoad(checkpointPath, recipeHash)
+            : null;
+        if (checkpoint is not null
+            && (!File.Exists(partialPath)
+                || new FileInfo(partialPath).Length < checkpoint.Bytes))
         {
-            if (written >= limit) break;
-            processed++;
-
-            string prompt = DataFactoryPrompt.Render(recipe.UserPromptTemplate, document);
-
-            for (int variant = 0; variant < variants && written < limit; variant++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                string? response = await generator
-                    .GenerateAsync(recipe.SystemPrompt, prompt, recipe, cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (string.IsNullOrWhiteSpace(response))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                string? line;
-                if (recipe.OutputFormat == DataFactoryOutputFormat.ChatJsonl)
-                {
-                    if (!DataFactoryOutput.TryParseChat(response, out string instruction, out string answer))
-                    {
-                        parseFailures++;
-                        skipped++;
-                        continue;
-                    }
-                    line = DataFactoryOutput.BuildChatLine(recipe, document, instruction, answer);
-                }
-                else
-                {
-                    line = DataFactoryOutput.BuildTextLine(document, response);
-                }
-
-                await writer.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
-                written++;
-                if (samples.Count < SampleCount) samples.Add(line);
-            }
-
-            progress?.Report(new DataFactoryRunProgress(
-                processed, written, skipped, parseFailures, document.Source));
+            checkpoint = null;
         }
 
-        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        if (checkpoint is null)
+        {
+            DataFactoryCheckpointStore.TryDelete(partialPath);
+            DataFactoryCheckpointStore.TryDelete(checkpointPath);
+        }
+
+        bool resumed = checkpoint is not null;
+        int processed = checkpoint?.Processed ?? 0;
+        if (checkpoint is { LastId: < 0 }) processed = 0;
+        int written = checkpoint?.Written ?? 0;
+        int skipped = checkpoint?.Skipped ?? 0;
+        int parseFailures = checkpoint?.ParseFailures ?? 0;
+        int lastId = checkpoint?.LastId ?? -1;
+        int lastVariant = checkpoint?.LastVariant ?? -1;
+        var samples = new List<string>(SampleCount);
+
+        await using (var stream = new FileStream(
+            partialPath,
+            resumed ? FileMode.Open : FileMode.Create,
+            FileAccess.Write,
+            FileShare.Read,
+            bufferSize: 65_536,
+            useAsync: true))
+        await using (var writer = new StreamWriter(
+            stream, new UTF8Encoding(false), bufferSize: 65_536, leaveOpen: true))
+        {
+            writer.NewLine = "\n";
+
+            if (resumed)
+            {
+                stream.SetLength(Math.Min(stream.Length, checkpoint!.Bytes));
+                stream.Seek(0, SeekOrigin.End);
+            }
+
+            try
+            {
+                await foreach (DataFactoryDocument document in DataFactoryInput
+                    .ReadAsync(recipe, cancellationToken)
+                    .WithCancellation(cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    if (written >= limit) break;
+                    if (resumed && document.Index < checkpoint!.LastId) continue;
+
+                    int startVariant = 0;
+                    if (resumed && document.Index == checkpoint!.LastId)
+                    {
+                        startVariant = checkpoint.LastVariant + 1;
+                    }
+                    else
+                    {
+                        processed++;
+                    }
+
+                    string prompt = DataFactoryPrompt.Render(recipe.UserPromptTemplate, document);
+
+                    for (int variant = startVariant; variant < variants && written < limit; variant++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        string? response = await GenerateWithRetryAsync(
+                            generator,
+                            recipe.SystemPrompt,
+                            prompt,
+                            recipe,
+                            cancellationToken).ConfigureAwait(false);
+
+                        lastId = document.Index;
+                        lastVariant = variant;
+
+                        if (string.IsNullOrWhiteSpace(response))
+                        {
+                            skipped++;
+                            await SaveProgressAsync(
+                                writer, stream, checkpointPath, recipeHash,
+                                processed, written, skipped, parseFailures,
+                                lastId, lastVariant).ConfigureAwait(false);
+                            continue;
+                        }
+
+                        string? line;
+                        if (recipe.OutputFormat == DataFactoryOutputFormat.ChatJsonl)
+                        {
+                            if (!DataFactoryOutput.TryParseChat(
+                                response, out string instruction, out string answer))
+                            {
+                                parseFailures++;
+                                skipped++;
+                                await SaveProgressAsync(
+                                    writer, stream, checkpointPath, recipeHash,
+                                    processed, written, skipped, parseFailures,
+                                    lastId, lastVariant).ConfigureAwait(false);
+                                continue;
+                            }
+                            line = DataFactoryOutput.BuildChatLine(
+                                recipe, document, variant, instruction, answer);
+                        }
+                        else
+                        {
+                            line = DataFactoryOutput.BuildTextLine(document, variant, response);
+                        }
+
+                        await writer.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
+                        written++;
+                        if (samples.Count < SampleCount) samples.Add(line);
+                        await SaveProgressAsync(
+                            writer, stream, checkpointPath, recipeHash,
+                            processed, written, skipped, parseFailures,
+                            lastId, lastVariant).ConfigureAwait(false);
+                    }
+
+                    progress?.Report(new DataFactoryRunProgress(
+                        processed, written, skipped, parseFailures, document.Source));
+                }
+
+                await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                try
+                {
+                    await writer.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                    await SaveProgressAsync(
+                        writer, stream, checkpointPath, recipeHash,
+                        processed, written, skipped, parseFailures,
+                        lastId, lastVariant).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Keep the original failure; the last good checkpoint stays.
+                }
+                throw;
+            }
+        }
+
+        File.Move(partialPath, outputPath, overwrite: true);
+        DataFactoryCheckpointStore.TryDelete(checkpointPath);
 
         return new DataFactoryRunResult(
-            processed, written, skipped, parseFailures, outputPath, samples);
+            processed, written, skipped, parseFailures, outputPath, samples, resumed);
+    }
+
+    private static async Task<string> GenerateWithRetryAsync(
+        IDataFactoryGenerator generator,
+        string systemPrompt,
+        string userPrompt,
+        DataFactoryRecipe recipe,
+        CancellationToken cancellationToken)
+    {
+        int attempts = Math.Max(1, recipe.RetryAttempts);
+
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await generator
+                    .GenerateAsync(systemPrompt, userPrompt, recipe, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (attempt < attempts && DataFactoryRetry.IsTransient(ex))
+            {
+                TimeSpan delay = DataFactoryRetry.Delay(ex, recipe.RetryDelayMs, attempt);
+                if (delay > TimeSpan.Zero)
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task SaveProgressAsync(
+        StreamWriter writer,
+        FileStream stream,
+        string checkpointPath,
+        string recipeHash,
+        int processed,
+        int written,
+        int skipped,
+        int parseFailures,
+        int lastId,
+        int lastVariant)
+    {
+        await writer.FlushAsync().ConfigureAwait(false);
+        DataFactoryCheckpointStore.Save(
+            checkpointPath,
+            new DataFactoryCheckpoint(
+                recipeHash,
+                stream.Position,
+                processed,
+                written,
+                skipped,
+                parseFailures,
+                lastId,
+                lastVariant));
+    }
+
+    /// <summary>Progress marker for one output file; written atomically after every variant.</summary>
+    internal sealed record DataFactoryCheckpoint(
+        string RecipeHash,
+        long Bytes,
+        int Processed,
+        int Written,
+        int Skipped,
+        int ParseFailures,
+        int LastId,
+        int LastVariant);
+
+    internal static class DataFactoryCheckpointStore
+    {
+        public static DataFactoryCheckpoint? TryLoad(string path, string recipeHash)
+        {
+            try
+            {
+                if (!File.Exists(path)) return null;
+                DataFactoryCheckpoint? checkpoint =
+                    JsonSerializer.Deserialize<DataFactoryCheckpoint>(File.ReadAllText(path));
+                if (checkpoint is null
+                    || !string.Equals(checkpoint.RecipeHash, recipeHash, StringComparison.Ordinal)
+                    || checkpoint.Bytes < 0
+                    || checkpoint.LastId < -1
+                    || checkpoint.LastVariant < -1)
+                {
+                    return null;
+                }
+                return checkpoint;
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
+
+        public static void Save(string path, DataFactoryCheckpoint checkpoint)
+        {
+            string temp = path + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(checkpoint));
+            File.Move(temp, path, overwrite: true);
+        }
+
+        public static void TryDelete(string path)
+        {
+            try
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    /// <summary>
+    /// Identity of a run's inputs. Volatile fields (name, output path, retry
+    /// settings) are excluded so a resumed run keeps its partial output, while a
+    /// prompt, model, source or output-format change starts a fresh file.
+    /// </summary>
+    internal static class DataFactoryRecipeHash
+    {
+        public static string Compute(DataFactoryRecipe recipe)
+        {
+            var canonical = new
+            {
+                recipe.SourcePath,
+                recipe.SourceFormat,
+                recipe.TextField,
+                recipe.StripHtml,
+                recipe.NormalizeText,
+                recipe.Deduplicate,
+                recipe.MinChars,
+                recipe.MaxChars,
+                recipe.DropPattern,
+                recipe.Provider,
+                recipe.LocalModelPath,
+                recipe.RemoteModel,
+                recipe.SystemPrompt,
+                recipe.UserPromptTemplate,
+                recipe.OutputFormat,
+                recipe.ChatSystemPrompt,
+                recipe.Temperature,
+                recipe.MaxTokens,
+                recipe.Seed,
+                recipe.Variants,
+            };
+
+            return Convert.ToHexString(
+                SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(canonical)));
+        }
+    }
+
+    internal static class DataFactoryRetry
+    {
+        public static bool IsTransient(Exception ex)
+        {
+            if (ex is OpenRouterException { StatusCode: int status })
+                return status is 408 or 429 || status >= 500;
+
+            return ex is HttpRequestException or TaskCanceledException or IOException;
+        }
+
+        public static TimeSpan Delay(Exception ex, int baseDelayMs, int attempt)
+        {
+            if (ex is OpenRouterException { RetryAfter: { } retryAfter }
+                && retryAfter > TimeSpan.Zero)
+            {
+                return retryAfter > TimeSpan.FromMinutes(5)
+                    ? TimeSpan.FromMinutes(5)
+                    : retryAfter;
+            }
+
+            double milliseconds = Math.Min(
+                30_000,
+                Math.Max(0, baseDelayMs) * Math.Pow(2, Math.Max(0, attempt - 1)));
+            return TimeSpan.FromMilliseconds(milliseconds);
+        }
     }
 }
 
@@ -182,6 +450,7 @@ public static class DataFactoryOutput
     public static string BuildChatLine(
         DataFactoryRecipe recipe,
         DataFactoryDocument document,
+        int variant,
         string instruction,
         string answer)
     {
@@ -193,17 +462,19 @@ public static class DataFactoryOutput
                 new JsonObject { ["role"] = "assistant", ["content"] = answer }),
             ["source"] = document.Source,
             ["id"] = document.Index,
+            ["variant"] = variant,
         };
         return line.ToJsonString();
     }
 
-    public static string BuildTextLine(DataFactoryDocument document, string text)
+    public static string BuildTextLine(DataFactoryDocument document, int variant, string text)
     {
         var line = new JsonObject
         {
             ["text"] = text,
             ["source"] = document.Source,
             ["id"] = document.Index,
+            ["variant"] = variant,
         };
         return line.ToJsonString();
     }
