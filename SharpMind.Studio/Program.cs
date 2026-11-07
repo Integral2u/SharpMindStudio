@@ -1,6 +1,7 @@
 ﻿using SharpMind.Studio;
 using SharpMind.Studio.Components;
 using SharpMind.Studio.Services;
+using SharpMind.Studio.Services.Chat;
 using SharpMind.Studio.Core.Storage;
 using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Gateway;
@@ -27,7 +28,9 @@ builder.Services.AddSingleton<StudioCanaryService>();
 builder.Services.AddSingleton<ModelCatalogService>();
 builder.Services.AddSingleton<InferenceSettingsService>();
 builder.Services.AddSingleton<OpenRouterSettingsService>();
+builder.Services.AddSingleton<OpenRouterChatBackend>();
 builder.Services.AddSingleton<ComputeProviderService>();
+builder.Services.AddSingleton<ComputeChatBackend>();
 builder.Services.AddSingleton<DockerHostService>();
 builder.Services.AddSingleton<RunpodService>();
 builder.Services.AddSingleton<SshHostService>();

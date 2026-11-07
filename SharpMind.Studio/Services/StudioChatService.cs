@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using SharpMind.Inference.Agent;
@@ -8,6 +8,7 @@ using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.OpenRouter;
 using SharpMind.Studio.Core.Runs;
+using SharpMind.Studio.Services.Chat;
 
 namespace SharpMind.Studio.Services;
 
@@ -17,8 +18,9 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly ModelCatalogService _catalog;
     private readonly InferenceSettingsService _inference;
     private readonly OpenRouterSettingsService _openRouter;
-    private readonly OpenRouterClient _openRouterClient;
+    private readonly OpenRouterChatBackend _openRouterBackend;
     private readonly ComputeProviderService _compute;
+    private readonly ComputeChatBackend _computeBackend;
     private readonly StudioModelHost _host;
     private readonly StudioWorkService _work;
     private readonly StudioDeviceAccess _device;
@@ -44,8 +46,9 @@ public sealed class StudioChatService : IAsyncDisposable
         ModelCatalogService catalog,
         InferenceSettingsService inference,
         OpenRouterSettingsService openRouter,
-        OpenRouterClient openRouterClient,
+        OpenRouterChatBackend openRouterBackend,
         ComputeProviderService compute,
+        ComputeChatBackend computeBackend,
         StudioModelHost host,
         StudioWorkService work,
         StudioDeviceAccess device)
@@ -54,8 +57,9 @@ public sealed class StudioChatService : IAsyncDisposable
         _catalog = catalog;
         _inference = inference;
         _openRouter = openRouter;
-        _openRouterClient = openRouterClient;
+        _openRouterBackend = openRouterBackend;
         _compute = compute;
+        _computeBackend = computeBackend;
         _host = host;
         _work = work;
         _device = device;
@@ -270,13 +274,13 @@ public sealed class StudioChatService : IAsyncDisposable
         {
             if (IsOpenRouter)
             {
-                await SendRemoteCoreAsync(text.Trim()).ConfigureAwait(false);
+                await SendRemoteTurnAsync(text.Trim(), _openRouterBackend).ConfigureAwait(false);
                 return;
             }
 
             if (IsCompute)
             {
-                await SendComputeCoreAsync(text.Trim()).ConfigureAwait(false);
+                await SendRemoteTurnAsync(text.Trim(), _computeBackend).ConfigureAwait(false);
                 return;
             }
 
@@ -370,6 +374,81 @@ public sealed class StudioChatService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Shared turn setup for the remote backends: validate, append the user row
+    /// and the empty assistant row, stream through the provider, then persist.
+    /// </summary>
+    private async Task SendRemoteTurnAsync(string text, IChatBackend backend)
+    {
+        if (_document is null) return;
+
+        string? validation = backend.Validate(_document);
+        if (validation is not null)
+        {
+            _error = validation;
+            _status = validation;
+            Notify();
+            return;
+        }
+
+        _streaming = true;
+        _error = null;
+        _status = "Thinking...";
+        _streamCts = new CancellationTokenSource();
+
+        _document.Messages.Add(ChatMessage.User(text, "You"));
+        ChatMessage assistant = ChatMessage.Agent("");
+        _document.Messages.Add(assistant);
+        Notify();
+        await Task.Yield();
+
+        var context = new ChatBackendContext
+        {
+            Document = _document,
+            Assistant = assistant,
+            UserText = text,
+            Agent = IsWorkMode ? _work.CreateAgent("work") : null,
+            SetStatus = status => _status = status,
+            Notify = Notify,
+        };
+
+        try
+        {
+            await backend.RunTurnAsync(context, _streamCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            RemoveEmptyAssistant(assistant);
+            _status = "Stopped.";
+        }
+        catch (Exception ex)
+        {
+            RemoveEmptyAssistant(assistant);
+            _error = ex.Message;
+            _status = "Generation failed.";
+        }
+        finally
+        {
+            _streamCts?.Dispose();
+            _streamCts = null;
+            _streaming = false;
+            _store.Save(_document);
+            Notify();
+        }
+    }
+
+    /// <summary>
+    /// Removes the placeholder row when a turn produced neither text nor tool
+    /// metadata. ChatMessage.Metadata is init-only, so the row is replaced in
+    /// place when tool calls are attached.
+    /// </summary>
+    private void RemoveEmptyAssistant(ChatMessage assistant)
+    {
+        if (_document is null) return;
+        if (string.IsNullOrWhiteSpace(assistant.Content) && assistant.Metadata is null)
+            _document.Messages.Remove(assistant);
+    }
+
     public void Stop()
     {
         _streamCts?.Cancel();
@@ -384,460 +463,6 @@ public sealed class StudioChatService : IAsyncDisposable
             _loadCts?.Cancel();
         else
             Stop();
-    }
-
-    /// <summary>
-    /// Runs the OpenRouter turn: stream assistant text, execute any tool calls
-    /// against the Work agent, feed the results back, and repeat until the model
-    /// answers or the per-turn tool budget is spent. The caller holds _gate.
-    /// </summary>
-    private async Task SendRemoteCoreAsync(string text)
-    {
-        if (_document is null) return;
-
-        OpenRouterConnection connection = _openRouter.Connection;
-        if (!connection.IsUsable)
-        {
-            _error = "OpenRouter is not configured. Add an API key in Settings.";
-            _status = "OpenRouter is not configured.";
-            Notify();
-            return;
-        }
-
-        string model = string.IsNullOrWhiteSpace(_document.RemoteModel)
-            ? _openRouter.DefaultModel ?? ""
-            : _document.RemoteModel!;
-        if (string.IsNullOrWhiteSpace(model))
-        {
-            _error = "Choose an OpenRouter model id first.";
-            _status = "No OpenRouter model selected.";
-            Notify();
-            return;
-        }
-
-        IAgentBuilder? agent = string.Equals(_document.Mode, "work", StringComparison.OrdinalIgnoreCase)
-            ? _work.CreateAgent("work")
-            : null;
-        if (agent is not null)
-        {
-            // OpenAI tool calling is native here; do not also teach a JSON call shape.
-            agent.CallFormat = ToolCallFormat.None;
-            agent.ToolListInPrompt = false;
-            agent.WithCustomRule(
-                "When a UI tool returns a choice, treat it as the person's answer and continue "
-                + "from it. Do not repeat the option list unless they ask.");
-        }
-
-        IReadOnlyList<JsonObject>? tools = agent is null
-            ? null
-            : OpenRouterMessageBuilder.BuildTools(agent);
-
-        _streaming = true;
-        _error = null;
-        _status = "Thinking...";
-        _streamCts = new CancellationTokenSource();
-
-        _document.Messages.Add(ChatMessage.User(text, "You"));
-        ChatMessage assistant = ChatMessage.Agent("");
-        _document.Messages.Add(assistant);
-        Notify();
-        await Task.Yield();
-
-        List<JsonObject> messages = OpenRouterMessageBuilder.BuildMessages(
-            [.. _document.Messages.Take(_document.Messages.Count - 1)],
-            _document.SystemPrompt,
-            agent);
-
-        int maxToolCalls = 10;
-        int toolCallsUsed = 0;
-        var stopwatch = Stopwatch.StartNew();
-        int? promptTokens = null;
-        int? completionTokens = null;
-        decimal? cost = null;
-        double? lastTps = null;
-
-        try
-        {
-            while (true)
-            {
-                var accumulators = new Dictionary<int, ToolCallAccumulator>();
-                var lastNotify = TimeSpan.Zero;
-
-                await foreach (OpenRouterStreamEvent entry in _openRouterClient.StreamAsync(
-                    new OpenRouterRequest
-                    {
-                        Model = model,
-                        Messages = messages,
-                        Tools = tools,
-                        Temperature = _document.Overrides.Temperature,
-                        TopP = _document.Overrides.TopP,
-                        TopK = _document.Overrides.TopK,
-                        RepetitionPenalty = _document.Overrides.RepetitionPenalty,
-                        MaxTokens = _document.Overrides.MaxNewTokens,
-                        Seed = _document.Overrides.Seed,
-                    },
-                    connection,
-                    _streamCts.Token).WithCancellation(_streamCts.Token).ConfigureAwait(false))
-                {
-                    if (!string.IsNullOrWhiteSpace(entry.Error))
-                        throw new OpenRouterException(entry.Error);
-
-                    if (entry.PromptTokens is int prompt) promptTokens = prompt;
-                    if (entry.CompletionTokens is int completion) completionTokens = completion;
-                    if (entry.Cost is decimal entryCost) cost = entryCost;
-
-                    if (entry.ToolCalls is { Count: > 0 })
-                    {
-                        foreach (OpenRouterToolCallDelta delta in entry.ToolCalls)
-                            AccumulateToolCall(accumulators, delta);
-                    }
-
-                    if (!string.IsNullOrEmpty(entry.Delta))
-                    {
-                        assistant.Content += entry.Delta;
-                        _status = "Writing...";
-                        if (lastNotify == TimeSpan.Zero ||
-                            stopwatch.Elapsed - lastNotify > TimeSpan.FromMilliseconds(40))
-                        {
-                            lastNotify = stopwatch.Elapsed;
-                            Notify();
-                        }
-                    }
-                }
-
-                if (accumulators.Count == 0) break;
-
-                if (toolCallsUsed >= maxToolCalls)
-                {
-                    assistant.Content += "\n\n[Tool-call limit reached for this turn.]";
-                    break;
-                }
-
-                List<OpenRouterCompletedToolCall> completed = [.. accumulators.Values
-                    .OrderBy(call => call.Index)
-                    .Select(call => call.ToCall())];
-                JsonArray toolCallsJson = OpenRouterMessageBuilder.ToToolCallsJson(completed);
-
-                AttachToolCalls(_document.Messages, assistant, toolCallsJson);
-                messages.Add(new JsonObject
-                {
-                    ["role"] = "assistant",
-                    ["content"] = string.IsNullOrWhiteSpace(assistant.Content) ? null : assistant.Content,
-                    ["tool_calls"] = toolCallsJson.DeepClone(),
-                });
-
-                foreach (OpenRouterCompletedToolCall call in completed)
-                {
-                    toolCallsUsed++;
-                    _status = $"Running {call.Name}...";
-                    Notify();
-
-                    JsonObject arguments;
-                    try
-                    {
-                        arguments = JsonNode.Parse(call.Arguments) as JsonObject ?? new JsonObject();
-                    }
-                    catch
-                    {
-                        arguments = new JsonObject();
-                    }
-
-                    JsonObject result = agent is null
-                        ? new JsonObject
-                        {
-                            ["status"] = "error",
-                            ["message"] = "Tools are only available in Work mode.",
-                        }
-                        : await Task.Run(
-                            () => agent.CallToolAsync(
-                                new JsonObject
-                                {
-                                    ["tool"] = call.Name,
-                                    ["arguments"] = arguments,
-                                },
-                                _streamCts.Token),
-                            _streamCts.Token).ConfigureAwait(false);
-
-                    string resultText = OpenRouterMessageBuilder.FormatToolResult(
-                        call.Name, arguments, result);
-                    messages.Add(OpenRouterMessageBuilder.ToolResult(call.Id, resultText));
-                    _document.Messages.Add(new ChatMessage
-                    {
-                        Role = ChatRole.Tool,
-                        Content = resultText,
-                        Metadata = new Dictionary<string, string>
-                        {
-                            [OpenRouterMetadata.ToolCallId] = call.Id,
-                        },
-                    });
-                }
-
-                assistant = ChatMessage.Agent("");
-                _document.Messages.Add(assistant);
-                Notify();
-            }
-
-            if (string.IsNullOrWhiteSpace(assistant.Content) && assistant.Metadata is null)
-                _document.Messages.Remove(assistant);
-
-            if (completionTokens is int generated && stopwatch.Elapsed.TotalSeconds > 0.1)
-            {
-                lastTps = generated / stopwatch.Elapsed.TotalSeconds;
-            }
-            else if (assistant.Content.Length > 0 && stopwatch.Elapsed.TotalSeconds > 0.1)
-            {
-                lastTps = (assistant.Content.Length / 4.0) / stopwatch.Elapsed.TotalSeconds;
-            }
-
-            _document.LastTokensPerSecond = lastTps;
-            _document.LastCost = cost;
-            _document.LastPromptTokens = promptTokens;
-            _document.LastCompletionTokens = completionTokens;
-            _document.LastToolCalls = toolCallsUsed;
-            _status = cost is { } spent
-                ? $"Ready. OpenRouter cost {spent:0.000000}."
-                : promptTokens is int promptUsed && completionTokens is int completionUsed
-                    ? $"Ready. {promptUsed:N0} prompt / {completionUsed:N0} completion tokens."
-                    : "Ready.";
-        }
-        catch (OperationCanceledException)
-        {
-            RemoveEmptyAssistant(assistant);
-            _status = "Stopped.";
-        }
-        catch (OpenRouterException ex)
-        {
-            RemoveEmptyAssistant(assistant);
-            _error = ex.Message;
-            _status = "OpenRouter request failed.";
-        }
-        catch (Exception ex)
-        {
-            RemoveEmptyAssistant(assistant);
-            _error = $"{ex.GetType().Name}: {ex.Message}";
-            _status = "Generation failed.";
-        }
-        finally
-        {
-            _streamCts?.Dispose();
-            _streamCts = null;
-            _streaming = false;
-            _store.Save(_document);
-            Notify();
-        }
-    }
-
-    /// <summary>
-    /// Runs a turn against a SharpMind Compute host. Those hosts expose plain
-    /// OpenAI chat completions and are inference-only, so this path streams text
-    /// without the OpenRouter tool loop.
-    /// </summary>
-    private async Task SendComputeCoreAsync(string text)
-    {
-        if (_document is null) return;
-
-        ComputeProvider? provider = _compute.Resolve(_document.RemoteProvider);
-        if (provider is null || !provider.IsUsable)
-        {
-            _error = "The Compute host is not configured. Add its URL and token in Settings → Providers.";
-            _status = "Compute host is not configured.";
-            Notify();
-            return;
-        }
-
-        string model = string.IsNullOrWhiteSpace(_document.RemoteModel)
-            ? provider.DefaultModel ?? provider.Models.FirstOrDefault() ?? ""
-            : _document.RemoteModel!;
-        if (string.IsNullOrWhiteSpace(model))
-        {
-            _error = "The Compute host has no model. Upload one in Settings → Providers.";
-            _status = "No model on the Compute host.";
-            Notify();
-            return;
-        }
-
-        _streaming = true;
-        _error = null;
-        _status = "Thinking...";
-        _streamCts = new CancellationTokenSource();
-
-        _document.Messages.Add(ChatMessage.User(text, "You"));
-        ChatMessage assistant = ChatMessage.Agent("");
-        _document.Messages.Add(assistant);
-        Notify();
-        await Task.Yield();
-
-        var messages = new List<JsonObject>();
-        if (!string.IsNullOrWhiteSpace(_document.SystemPrompt))
-        {
-            messages.Add(new JsonObject
-            {
-                ["role"] = "system",
-                ["content"] = _document.SystemPrompt,
-            });
-        }
-
-        foreach (ChatMessage message in _document.Messages.Take(_document.Messages.Count - 1))
-        {
-            if (message.Role == ChatRole.System) continue;
-            if (string.IsNullOrWhiteSpace(message.Content)) continue;
-
-            string role = message.Role switch
-            {
-                ChatRole.Agent => "assistant",
-                ChatRole.Tool => "assistant",
-                _ => "user",
-            };
-            messages.Add(new JsonObject
-            {
-                ["role"] = role,
-                ["content"] = message.Content,
-            });
-        }
-
-        var stopwatch = Stopwatch.StartNew();
-        var lastNotify = TimeSpan.Zero;
-        int? promptTokens = null;
-        int? completionTokens = null;
-
-        try
-        {
-            await foreach (ComputeStreamEvent entry in _compute.Client.StreamChatAsync(
-                provider,
-                model,
-                messages,
-                _document.Overrides.Temperature,
-                _document.Overrides.TopP,
-                _document.Overrides.MaxNewTokens,
-                _streamCts.Token).WithCancellation(_streamCts.Token).ConfigureAwait(false))
-            {
-                if (!string.IsNullOrWhiteSpace(entry.Error))
-                    throw new ComputeException(entry.Error);
-
-                if (entry.PromptTokens is int prompt) promptTokens = prompt;
-                if (entry.CompletionTokens is int completion) completionTokens = completion;
-
-                if (!string.IsNullOrEmpty(entry.Delta))
-                {
-                    assistant.Content += entry.Delta;
-                    _status = "Writing...";
-                    if (lastNotify == TimeSpan.Zero ||
-                        stopwatch.Elapsed - lastNotify > TimeSpan.FromMilliseconds(40))
-                    {
-                        lastNotify = stopwatch.Elapsed;
-                        Notify();
-                    }
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(assistant.Content) && assistant.Metadata is null)
-                _document.Messages.Remove(assistant);
-
-            double? tps = null;
-            if (completionTokens is int generated && stopwatch.Elapsed.TotalSeconds > 0.1)
-                tps = generated / stopwatch.Elapsed.TotalSeconds;
-            else if (assistant.Content.Length > 0 && stopwatch.Elapsed.TotalSeconds > 0.1)
-                tps = (assistant.Content.Length / 4.0) / stopwatch.Elapsed.TotalSeconds;
-
-            _document.LastTokensPerSecond = tps;
-            _document.LastCost = null;
-            _document.LastPromptTokens = promptTokens;
-            _document.LastCompletionTokens = completionTokens;
-            _document.LastToolCalls = 0;
-            _status = tps is { } speed ? $"Ready. {speed:F1} tok/s." : "Ready.";
-        }
-        catch (OperationCanceledException)
-        {
-            RemoveEmptyAssistant(assistant);
-            _status = "Stopped.";
-        }
-        catch (ComputeException ex)
-        {
-            RemoveEmptyAssistant(assistant);
-            _error = ex.Message;
-            _status = "Compute request failed.";
-        }
-        catch (Exception ex)
-        {
-            RemoveEmptyAssistant(assistant);
-            _error = $"{ex.GetType().Name}: {ex.Message}";
-            _status = "Generation failed.";
-        }
-        finally
-        {
-            _streamCts?.Dispose();
-            _streamCts = null;
-            _streaming = false;
-            _store.Save(_document);
-            Notify();
-        }
-    }
-
-    private static void AccumulateToolCall(
-        Dictionary<int, ToolCallAccumulator> accumulators,
-        OpenRouterToolCallDelta delta)
-    {
-        if (!accumulators.TryGetValue(delta.Index, out ToolCallAccumulator? call))
-        {
-            call = new ToolCallAccumulator { Index = delta.Index };
-            accumulators[delta.Index] = call;
-        }
-
-        if (!string.IsNullOrWhiteSpace(delta.Id)) call.Id = delta.Id;
-        if (!string.IsNullOrWhiteSpace(delta.Name)) call.Name = delta.Name;
-        if (!string.IsNullOrEmpty(delta.Arguments)) call.Arguments.Append(delta.Arguments);
-    }
-
-    /// <summary>
-    /// ChatMessage.Metadata is init-only, so attach the tool-call payload by
-    /// replacing the row in place. The transcript filter hides the empty
-    /// assistant row; the message builder reads the metadata on reload.
-    /// </summary>
-    private void RemoveEmptyAssistant(ChatMessage assistant)
-    {
-        if (_document is null) return;
-        if (string.IsNullOrWhiteSpace(assistant.Content) && assistant.Metadata is null)
-            _document.Messages.Remove(assistant);
-    }
-
-    private static void AttachToolCalls(
-        List<ChatMessage> messages,
-        ChatMessage assistant,
-        JsonArray toolCalls)
-    {
-        int index = messages.IndexOf(assistant);
-        if (index < 0) return;
-
-        var metadata = assistant.Metadata is null
-            ? new Dictionary<string, string>()
-            : new Dictionary<string, string>(assistant.Metadata);
-        metadata[OpenRouterMetadata.ToolCalls] = toolCalls.ToJsonString();
-
-        messages[index] = new ChatMessage
-        {
-            Role = assistant.Role,
-            Content = assistant.Content,
-            Name = assistant.Name,
-            Artifacts = assistant.Artifacts,
-            Timestamp = assistant.Timestamp,
-            Metadata = metadata,
-            IsPinned = assistant.IsPinned,
-            Ignore = assistant.Ignore,
-        };
-    }
-
-    private sealed class ToolCallAccumulator
-    {
-        public required int Index { get; init; }
-        public string Id { get; set; } = "";
-        public string Name { get; set; } = "";
-        public StringBuilder Arguments { get; } = new();
-
-        public OpenRouterCompletedToolCall ToCall() => new(
-            Index,
-            string.IsNullOrWhiteSpace(Id) ? $"call_{Guid.NewGuid():n}" : Id,
-            Name,
-            Arguments.ToString());
     }
 
     public async Task ApplyOptionsAsync(InferenceOverrides overrides)
