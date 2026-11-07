@@ -84,9 +84,15 @@ build step. Open `docs/index.html` directly or serve the folder.
 
 ## Security
 
+See [SECURITY.md](SECURITY.md) for the threat model and private reporting.
+
 Provider keys, host tokens and SSH passwords are encrypted with a local key box.
-Pairing tokens are hashed, PINs are salted, and the mobile scope is enforced by the
-server. Pairing is a LAN feature; do not forward its port to the internet.
+On Windows the key itself is wrapped with DPAPI (current user), so backups restore
+only as the same user on the same machine; Linux/Docker keeps owner-only key
+files. Pairing tokens are hashed, PINs are salted, and the mobile scope is enforced
+by the server. Cross-site browser requests to the admin gateway and Blazor circuit
+are rejected using Fetch Metadata. Pairing is a LAN feature; do not forward its
+port to the internet.
 
 ## License
 
