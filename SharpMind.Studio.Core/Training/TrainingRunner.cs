@@ -986,6 +986,347 @@ public static class TrainingRunner
         return new TrainingModelSet(
             weights, model, parameters, lora, pretrainWeights, ownsModel: !job.IsFineTune);
     }
+    private sealed record TrainingLoopOutcome(
+        int LastStep,
+        double? BestValLoss,
+        int BestValStep,
+        TrainingRunResult? EarlyResult);
+
+    private sealed class TrainingLoopContext
+    {
+        public required TrainingJobSettings Job { get; init; }
+        public required ModelConfig ModelConfig { get; init; }
+        public required SharpMindConfig SharpConfig { get; init; }
+        public required Transformer Model { get; init; }
+        public required TransformerWeights Weights { get; init; }
+        public required IReadOnlyList<Parameter> Parameters { get; init; }
+        public LoRAModel? Lora { get; init; }
+        public required Tokenizer Tokenizer { get; init; }
+        public required ITrainingBatchSource Loader { get; init; }
+        public required List<TrainingBatch> ValidationBatches { get; init; }
+        public required TrainingResumePlan Resume { get; init; }
+        public required string RecipeTrainBaseHash { get; init; }
+        public string? RecipeFolder { get; init; }
+        public required bool GrewTokenizer { get; init; }
+        public required string PluginsFolder { get; init; }
+        public string? DataFingerprint { get; init; }
+        public required bool SourcesChanged { get; init; }
+        public required IProgress<float> Progress { get; init; }
+        public Action<TrainStepResult>? OnStep { get; init; }
+        public required Action<string> Log { get; init; }
+        public required CancellationToken CancellationToken { get; init; }
+    }
+
+    private static async Task<TrainingLoopOutcome> RunTrainLoopAsync(TrainingLoopContext c)
+    {
+        TrainingJobSettings job = c.Job;
+        ModelConfig modelConfig = c.ModelConfig;
+        SharpMindConfig sharpConfig = c.SharpConfig;
+        Transformer model = c.Model;
+        TransformerWeights weights = c.Weights;
+        IReadOnlyList<Parameter> parameters = c.Parameters;
+        LoRAModel? lora = c.Lora;
+        Tokenizer tokenizer = c.Tokenizer;
+        ITrainingBatchSource loader = c.Loader;
+        List<TrainingBatch> validationBatches = c.ValidationBatches;
+        TrainingResumePlan resume = c.Resume;
+        string checkpointDir = resume.CheckpointDir;
+        string? resumeDir = resume.ResumeDir;
+        string? warmRestartDir = resume.WarmRestartDir;
+        int? warmRestartPriorVocab = resume.WarmRestartPriorVocab;
+        int warmRestartStartStep = resume.WarmRestartStartStep;
+        bool recipeCheckpointReused = resume.RecipeCheckpointReused;
+        int resumeStep = resume.ResumeStep;
+        double? resumeValLoss = resume.ResumeValLoss;
+        bool reuseCompletedCheckpoint = resume.ReuseCompletedCheckpoint;
+        string recipeTrainBaseHash = c.RecipeTrainBaseHash;
+        string? recipeFolder = c.RecipeFolder;
+        bool grewTokenizer = c.GrewTokenizer;
+        string pluginsFolder = c.PluginsFolder;
+        string? dataFingerprint = c.DataFingerprint;
+        bool sourcesChanged = c.SourcesChanged;
+        IProgress<float> progress = c.Progress;
+        Action<TrainStepResult>? onStep = c.OnStep;
+        Action<string> Log = c.Log;
+        CancellationToken cancellationToken = c.CancellationToken;
+
+        var ops = TrainingOpsFactory.Create(sharpConfig);
+        using IOptimizer optimizer = TrainingModelOptions.UsesSgd(job)
+            ? new SGD(parameters, lr: job.LearningRate, momentum: job.SgdMomentum, weightDecay: job.WeightDecay)
+            : new AdamW(parameters, ops, lr: job.LearningRate, weightDecay: job.WeightDecay);
+
+        if (warmRestartDir is not null)
+        {
+            if (warmRestartPriorVocab is null)
+            {
+                long? elements = Checkpoint.ReadTensorElementCount(warmRestartDir, "EmbeddingTable.weight");
+                if (elements is > 0 && elements.Value % modelConfig.HiddenDim == 0)
+                    warmRestartPriorVocab = (int)(elements.Value / modelConfig.HiddenDim);
+            }
+
+            int priorVocab = warmRestartPriorVocab ?? 0;
+            var warmMeta = Checkpoint.LoadForWarmRestart(
+                warmRestartDir, parameters, "EmbeddingTable.weight", optimizer);
+            warmRestartStartStep = warmMeta.Step;
+            if (warmRestartPriorVocab is null
+                && warmMeta.Extra.TryGetValue("vocabSize", out var rv)
+                && int.TryParse(rv, System.Globalization.NumberStyles.Integer,
+                       System.Globalization.CultureInfo.InvariantCulture, out int parsed))
+                priorVocab = parsed;
+
+            // Newly-added token rows start blank; initialise them from the
+            // statistics of the reused rows so growth does not begin from an
+            // out-of-distribution corner of the embedding space.
+            var emb = weights.EmbeddingWeight;
+            if (priorVocab > 0 && emb.Shape.Rows > priorVocab)
+                WeightInitializer.InitializeNewEmbeddingRows(emb, priorVocab, job.Seed + 7919);
+
+            Log(priorVocab > 0
+                ? $"Warm restart: reused weights (checkpoint vocab {priorVocab} -> model vocab {modelConfig.VocabSize}); "
+                  + $"{Math.Max(0, modelConfig.VocabSize - priorVocab)} new embedding rows initialised."
+                : $"Warm restart: reused weights; embedding rows beyond the checkpoint initialised.");
+        }
+
+        // Accelerator plugins live in the same folder as data-pipeline plugins.
+        // An explicit accelerator that cannot be honoured (no device, unsupported shape) is
+        // reported back to the UI, which shows a consent picker (CPU + every other capable
+        // plugin) rather than failing the run - never a silent CPU fallback. Only genuinely
+        // unfindable/non-capable names fail here with an error.
+        var accelerators = AcceleratorLoader.LoadFrom(pluginsFolder, out var acceleratorWarnings);
+        foreach (var w in acceleratorWarnings) Log($"Accelerator: {w}");
+        var loss = new CrossEntropyLoss(labelSmoothing: job.LabelSmoothing);
+        var mapping = GradientMappingFactory.Create(sharpConfig);
+
+        (ITrainingEngine? Engine, string? Refusal, string Name) ResolveEngine()
+        {
+            string name = job.Accelerator?.Trim() ?? "";
+            try
+            {
+                var engine = TrainingEngineResolver.Resolve(name, accelerators,
+                    new TrainingEngineContext(model, parameters, mapping, sharpConfig, loss,
+                        BatchSize: job.BatchSize, SeqLen: job.SeqLen, LabelSmoothing: job.LabelSmoothing));
+                return (engine, null, name);
+            }
+            catch (AcceleratorUnavailableException ex)
+            {
+                return (null, ex.Reason, name);
+            }
+        }
+
+        ITrainingEngine? engine = null;
+        if (!reuseCompletedCheckpoint)
+        {
+            var resolved = ResolveEngine();
+            if (resolved.Refusal is not null)
+                return new TrainingLoopOutcome(
+                    0, null, 0,
+                    new TrainingRunResult
+                    {
+                        Success = false,
+                        AcceleratorRequested = resolved.Name,
+                        AcceleratorReason = resolved.Refusal,
+                    });
+
+            engine = resolved.Engine;
+            if (engine is not null)
+            {
+                // Re-derived from the same name Resolve just matched - FirstOrDefault
+                // rather than First so a future drift between the two lookups logs
+                // nothing instead of throwing "Sequence contains no matching element"
+                // into the generic catch around this run.
+                var chosen = accelerators.FirstOrDefault(p => string.Equals(p.Name, resolved.Name, StringComparison.OrdinalIgnoreCase));
+                if (chosen is not null)
+                    Log($"Accelerator: {chosen.Name} - {chosen.Description}");
+                Log($"Engine: {engine.Description}");
+            }
+        }
+
+        using var engineOwner = engine;
+
+        // 5. Scheduler + loop (the optimizer was created before the warm restart).
+        var scheduler = new CosineWithWarmup(
+            maxLr: job.LearningRate, minLr: job.MinLr,
+            warmupSteps: job.WarmupSteps, decaySteps: job.TotalSteps);
+
+        // "Start fresh" must also ignore (and clear) an earlier run's adapter
+        // checkpoints for this job, otherwise a later un-tick would pick up a
+        // stale higher step from a longer previous run.
+        if (job.IsFineTune && job.StartFresh && Directory.Exists(checkpointDir))
+        {
+            try
+            {
+                Directory.Delete(checkpointDir, recursive: true);
+                Log("Fine-tune: cleared earlier adapter checkpoints (start fresh).");
+            }
+            catch (Exception ex)
+            {
+                Log($"Fine-tune: could not clear earlier checkpoints ({ex.Message}); they are ignored this run.");
+            }
+        }
+
+        Directory.CreateDirectory(checkpointDir);
+
+        var qat = TrainingModelOptions.ParseQat(job.QuantAwareTraining);
+
+        // Validation is evaluated at the logging cadence so every step the UI
+        // receives carries a val loss, and the loop's own best-checkpoint
+        // tracking sees the same points.
+        Evaluator? evaluator = validationBatches.Count > 0 ? new Evaluator(model, loss) : null;
+        double? bestValLoss = null;
+        int bestValStep = 0;
+
+        EvalResult Evaluate(int step)
+        {
+            var (valLossValue, perplexity) = evaluator!.Evaluate(validationBatches);
+            if (float.IsFinite(valLossValue) && (bestValLoss is null || valLossValue < bestValLoss))
+            {
+                bestValLoss = valLossValue;
+                bestValStep = step;
+            }
+            Log($"Validation step {step}: loss {valLossValue:0.0000}, ppl {perplexity:0.00}");
+            return new EvalResult { Loss = valLossValue, Perplexity = perplexity };
+        }
+
+        var loop = new TrainLoop(
+            model: model,
+            parameters: parameters,
+            loader: loader,
+            optimizer: optimizer,
+            scheduler: scheduler,
+            ops: ops,
+            loss: loss,
+            engine: engine,
+            smmConfig: sharpConfig,
+            config: new TrainConfig
+            {
+                TotalSteps = job.TotalSteps,
+                StartStep = warmRestartStartStep,
+                GradAccumSteps = job.GradAccumSteps,
+                GradClipNorm = job.GradClipNorm,
+                LabelSmoothing = job.LabelSmoothing,
+                LogInterval = Math.Max(1, job.LogInterval),
+                EvalInterval = evaluator is null ? 0 : Math.Max(1, job.LogInterval),
+                CheckpointInterval = job.CheckpointInterval,
+                CheckpointDir = checkpointDir,
+                ResumeFrom = resumeDir,
+                // An incremental run's stream is the delta only, so the cursor
+                // recorded by the previous run points into data this run never
+                // sees - applying it would discard exactly the new files the run
+                // exists to train on. A plain resume replays the same stream, so
+                // it picks the cursor up and continues where it stopped - unless
+                // the sources changed, in which case the old cursor no longer
+                // indexes this corpus and replaying it would silently stall.
+                ResumeDataCursor = !job.IncrementalMode && !sourcesChanged,
+                DataSeed = job.Seed,
+                DataFingerprint = dataFingerprint,
+                KeepRecent = job.KeepRecent,
+                QuantAwareTraining = qat,
+                // Guard a strict resume against a vocabulary change (the model's
+                // padded vocab is what the checkpoint recorded). Zero during a
+                // warm restart so the guard is skipped - the whole point there
+                // is a deliberately widened embedding.
+                ExpectedVocabSize = warmRestartDir is null ? modelConfig.VocabSize : 0,
+            });
+
+        int lastStep = warmRestartStartStep;
+        if (reuseCompletedCheckpoint)
+        {
+            // The cached checkpoint already covers the requested horizon. Load
+            // its weights and optimizer state, then go straight to export; the
+            // train phase is fully reused.
+            Checkpoint.Load(resumeDir!, parameters, optimizer);
+            lastStep = resumeStep;
+            if (resumeValLoss is { } reusedValLoss)
+            {
+                bestValLoss = reusedValLoss;
+                bestValStep = resumeStep;
+            }
+            progress.Report(0.9f);
+            Log($"Recipe: train phase reused at step {resumeStep}; "
+                + $"requested {job.TotalSteps} step(s), exporting without more training.");
+        }
+        else
+        {
+            string stepPlan = warmRestartStartStep > 0
+                ? $"Continuing to step {job.TotalSteps} (from {warmRestartStartStep})"
+                : $"Training {job.TotalSteps} steps";
+            Log(qat is { } q
+                ? $"{stepPlan} with QAT [{q}] - full backprop (loss -> gradients -> AdamW)..."
+                : $"{stepPlan} (float32) - full backprop (loss -> gradients -> AdamW)...");
+            progress.Report(0.12f);
+        }
+
+        try
+        {
+            if (!reuseCompletedCheckpoint)
+            {
+                await loop.RunAsync(
+                    onStep: r =>
+                    {
+                        lastStep = r.Step;
+                        onStep?.Invoke(r);
+                    },
+                    progress: new Progress<float>(p => progress.Report(0.12f + 0.78f * p)),
+                    cancellationToken: cancellationToken,
+                    onCheckpoint: dir =>
+                    {
+                        if (job.Rehearsal) return;
+                        if (job.IsFineTune)
+                        {
+                            // The generic checkpoint holds the adapter parameters and
+                            // optimizer state; the sidecar .smlora is the portable,
+                            // base-fingerprinted form a later run can load.
+                            if (lora is not null)
+                            {
+                                try
+                                {
+                                    lora.SaveAdapter(Path.Combine(dir, "adapters.smlora"));
+                                }
+                                catch (Exception ex)
+                                {
+                                    Log($"Fine-tune: could not save the adapter checkpoint ({ex.Message}).");
+                                }
+                            }
+                            Log($"Fine-tune: checkpoint {Path.GetFileName(dir)} saved (adapters only).");
+                            return;
+                        }
+                        ExportCheckpoint(dir, job, modelConfig, sharpConfig, tokenizer, Log);
+                    },
+                    evaluate: evaluator is null ? null : Evaluate);
+            }
+        }
+        finally
+        {
+            // Held-out batches hold native tensors and are reused for every
+            // evaluation, so they outlive the loop and must be freed here.
+            foreach (TrainingBatch held in validationBatches) held.Dispose();
+            if (job.Rehearsal) DeleteDirectoryQuietly(checkpointDir);
+        }
+
+        if (!reuseCompletedCheckpoint && lastStep <= warmRestartStartStep)
+        {
+            string? latestCheckpoint = Checkpoint.FindLatest(checkpointDir);
+            if (latestCheckpoint is not null)
+            {
+                int checkpointStep = Checkpoint.ReadMeta(latestCheckpoint).Step;
+                if (checkpointStep > lastStep) lastStep = checkpointStep;
+            }
+        }
+
+        if (!job.Rehearsal && !job.IsFineTune && !job.IncrementalMode && !grewTokenizer)
+        {
+            string? checkpointPath = Checkpoint.FindLatest(checkpointDir);
+            if (checkpointPath is not null)
+            {
+                TrainingRecipeStore.Save(new TrainingRecipeArtifact(
+                    "checkpoint", recipeTrainBaseHash, checkpointPath, job.Name, DateTime.UtcNow), recipeFolder);
+                Log($"Recipe: checkpoint phase {TrainingRecipeHash.Short(recipeTrainBaseHash)} "
+                    + $"saved from step {lastStep}.");
+            }
+        }
+
+        return new TrainingLoopOutcome(lastStep, bestValLoss, bestValStep, null);
+    }
     public static async Task<TrainingRunResult> RunAsync(
         TrainingJobSettings job,
         string pluginsFolder,
@@ -1152,274 +1493,34 @@ public static class TrainingRunner
             IReadOnlyList<Parameter> parameters = modelSet.Parameters;
             LoRAModel? lora = modelSet.Lora;
 
-            var ops = TrainingOpsFactory.Create(sharpConfig);
-            using IOptimizer optimizer = TrainingModelOptions.UsesSgd(job)
-                ? new SGD(parameters, lr: job.LearningRate, momentum: job.SgdMomentum, weightDecay: job.WeightDecay)
-                : new AdamW(parameters, ops, lr: job.LearningRate, weightDecay: job.WeightDecay);
-
-            if (warmRestartDir is not null)
+            TrainingLoopOutcome loopOutcome = await RunTrainLoopAsync(new TrainingLoopContext
             {
-                if (warmRestartPriorVocab is null)
-                {
-                    long? elements = Checkpoint.ReadTensorElementCount(warmRestartDir, "EmbeddingTable.weight");
-                    if (elements is > 0 && elements.Value % modelConfig.HiddenDim == 0)
-                        warmRestartPriorVocab = (int)(elements.Value / modelConfig.HiddenDim);
-                }
-
-                int priorVocab = warmRestartPriorVocab ?? 0;
-                var warmMeta = Checkpoint.LoadForWarmRestart(
-                    warmRestartDir, parameters, "EmbeddingTable.weight", optimizer);
-                warmRestartStartStep = warmMeta.Step;
-                if (warmRestartPriorVocab is null
-                    && warmMeta.Extra.TryGetValue("vocabSize", out var rv)
-                    && int.TryParse(rv, System.Globalization.NumberStyles.Integer,
-                           System.Globalization.CultureInfo.InvariantCulture, out int parsed))
-                    priorVocab = parsed;
-
-                // Newly-added token rows start blank; initialise them from the
-                // statistics of the reused rows so growth does not begin from an
-                // out-of-distribution corner of the embedding space.
-                var emb = weights.EmbeddingWeight;
-                if (priorVocab > 0 && emb.Shape.Rows > priorVocab)
-                    WeightInitializer.InitializeNewEmbeddingRows(emb, priorVocab, job.Seed + 7919);
-
-                Log(priorVocab > 0
-                    ? $"Warm restart: reused weights (checkpoint vocab {priorVocab} -> model vocab {modelConfig.VocabSize}); "
-                      + $"{Math.Max(0, modelConfig.VocabSize - priorVocab)} new embedding rows initialised."
-                    : $"Warm restart: reused weights; embedding rows beyond the checkpoint initialised.");
-            }
-
-            // Accelerator plugins live in the same folder as data-pipeline plugins.
-            // An explicit accelerator that cannot be honoured (no device, unsupported shape) is
-            // reported back to the UI, which shows a consent picker (CPU + every other capable
-            // plugin) rather than failing the run - never a silent CPU fallback. Only genuinely
-            // unfindable/non-capable names fail here with an error.
-            var accelerators = AcceleratorLoader.LoadFrom(pluginsFolder, out var acceleratorWarnings);
-            foreach (var w in acceleratorWarnings) Log($"Accelerator: {w}");
-            var loss = new CrossEntropyLoss(labelSmoothing: job.LabelSmoothing);
-            var mapping = GradientMappingFactory.Create(sharpConfig);
-
-            (ITrainingEngine? Engine, string? Refusal, string Name) ResolveEngine()
-            {
-                string name = job.Accelerator?.Trim() ?? "";
-                try
-                {
-                    var engine = TrainingEngineResolver.Resolve(name, accelerators,
-                        new TrainingEngineContext(model, parameters, mapping, sharpConfig, loss,
-                            BatchSize: job.BatchSize, SeqLen: job.SeqLen, LabelSmoothing: job.LabelSmoothing));
-                    return (engine, null, name);
-                }
-                catch (AcceleratorUnavailableException ex)
-                {
-                    return (null, ex.Reason, name);
-                }
-            }
-
-            ITrainingEngine? engine = null;
-            if (!reuseCompletedCheckpoint)
-            {
-                var resolved = ResolveEngine();
-                if (resolved.Refusal is not null)
-                    return new TrainingRunResult { Success = false, AcceleratorRequested = resolved.Name, AcceleratorReason = resolved.Refusal };
-
-                engine = resolved.Engine;
-                if (engine is not null)
-                {
-                    // Re-derived from the same name Resolve just matched - FirstOrDefault
-                    // rather than First so a future drift between the two lookups logs
-                    // nothing instead of throwing "Sequence contains no matching element"
-                    // into the generic catch around this run.
-                    var chosen = accelerators.FirstOrDefault(p => string.Equals(p.Name, resolved.Name, StringComparison.OrdinalIgnoreCase));
-                    if (chosen is not null)
-                        Log($"Accelerator: {chosen.Name} - {chosen.Description}");
-                    Log($"Engine: {engine.Description}");
-                }
-            }
-
-            using var engineOwner = engine;
-
-            // 5. Scheduler + loop (the optimizer was created before the warm restart).
-            var scheduler = new CosineWithWarmup(
-                maxLr: job.LearningRate, minLr: job.MinLr,
-                warmupSteps: job.WarmupSteps, decaySteps: job.TotalSteps);
-
-            // "Start fresh" must also ignore (and clear) an earlier run's adapter
-            // checkpoints for this job, otherwise a later un-tick would pick up a
-            // stale higher step from a longer previous run.
-            if (job.IsFineTune && job.StartFresh && Directory.Exists(checkpointDir))
-            {
-                try
-                {
-                    Directory.Delete(checkpointDir, recursive: true);
-                    Log("Fine-tune: cleared earlier adapter checkpoints (start fresh).");
-                }
-                catch (Exception ex)
-                {
-                    Log($"Fine-tune: could not clear earlier checkpoints ({ex.Message}); they are ignored this run.");
-                }
-            }
-
-            Directory.CreateDirectory(checkpointDir);
-
-            var qat = TrainingModelOptions.ParseQat(job.QuantAwareTraining);
-
-            // Validation is evaluated at the logging cadence so every step the UI
-            // receives carries a val loss, and the loop's own best-checkpoint
-            // tracking sees the same points.
-            Evaluator? evaluator = validationBatches.Count > 0 ? new Evaluator(model, loss) : null;
-            double? bestValLoss = null;
-            int bestValStep = 0;
-
-            EvalResult Evaluate(int step)
-            {
-                var (valLossValue, perplexity) = evaluator!.Evaluate(validationBatches);
-                if (float.IsFinite(valLossValue) && (bestValLoss is null || valLossValue < bestValLoss))
-                {
-                    bestValLoss = valLossValue;
-                    bestValStep = step;
-                }
-                Log($"Validation step {step}: loss {valLossValue:0.0000}, ppl {perplexity:0.00}");
-                return new EvalResult { Loss = valLossValue, Perplexity = perplexity };
-            }
-
-            var loop = new TrainLoop(
-                model: model,
-                parameters: parameters,
-                loader: loader,
-                optimizer: optimizer,
-                scheduler: scheduler,
-                ops: ops,
-                loss: loss,
-                engine: engine,
-                smmConfig: sharpConfig,
-                config: new TrainConfig
-                {
-                    TotalSteps = job.TotalSteps,
-                    StartStep = warmRestartStartStep,
-                    GradAccumSteps = job.GradAccumSteps,
-                    GradClipNorm = job.GradClipNorm,
-                    LabelSmoothing = job.LabelSmoothing,
-                    LogInterval = Math.Max(1, job.LogInterval),
-                    EvalInterval = evaluator is null ? 0 : Math.Max(1, job.LogInterval),
-                    CheckpointInterval = job.CheckpointInterval,
-                    CheckpointDir = checkpointDir,
-                    ResumeFrom = resumeDir,
-                    // An incremental run's stream is the delta only, so the cursor
-                    // recorded by the previous run points into data this run never
-                    // sees - applying it would discard exactly the new files the run
-                    // exists to train on. A plain resume replays the same stream, so
-                    // it picks the cursor up and continues where it stopped - unless
-                    // the sources changed, in which case the old cursor no longer
-                    // indexes this corpus and replaying it would silently stall.
-                    ResumeDataCursor = !job.IncrementalMode && !input.SourcesChanged,
-                    DataSeed = job.Seed,
-                    DataFingerprint = dataFingerprint,
-                    KeepRecent = job.KeepRecent,
-                    QuantAwareTraining = qat,
-                    // Guard a strict resume against a vocabulary change (the model's
-                    // padded vocab is what the checkpoint recorded). Zero during a
-                    // warm restart so the guard is skipped - the whole point there
-                    // is a deliberately widened embedding.
-                    ExpectedVocabSize = warmRestartDir is null ? modelConfig.VocabSize : 0,
-                });
-
-            int lastStep = warmRestartStartStep;
-            if (reuseCompletedCheckpoint)
-            {
-                // The cached checkpoint already covers the requested horizon. Load
-                // its weights and optimizer state, then go straight to export; the
-                // train phase is fully reused.
-                Checkpoint.Load(resumeDir!, parameters, optimizer);
-                lastStep = resumeStep;
-                if (resumeValLoss is { } reusedValLoss)
-                {
-                    bestValLoss = reusedValLoss;
-                    bestValStep = resumeStep;
-                }
-                progress.Report(0.9f);
-                Log($"Recipe: train phase reused at step {resumeStep}; "
-                    + $"requested {job.TotalSteps} step(s), exporting without more training.");
-            }
-            else
-            {
-                string stepPlan = warmRestartStartStep > 0
-                    ? $"Continuing to step {job.TotalSteps} (from {warmRestartStartStep})"
-                    : $"Training {job.TotalSteps} steps";
-                Log(qat is { } q
-                    ? $"{stepPlan} with QAT [{q}] - full backprop (loss -> gradients -> AdamW)..."
-                    : $"{stepPlan} (float32) - full backprop (loss -> gradients -> AdamW)...");
-                progress.Report(0.12f);
-            }
-
-            try
-            {
-                if (!reuseCompletedCheckpoint)
-                {
-                    await loop.RunAsync(
-                        onStep: r =>
-                        {
-                            lastStep = r.Step;
-                            onStep?.Invoke(r);
-                        },
-                        progress: new Progress<float>(p => progress.Report(0.12f + 0.78f * p)),
-                        cancellationToken: cancellationToken,
-                        onCheckpoint: dir =>
-                        {
-                            if (job.Rehearsal) return;
-                            if (job.IsFineTune)
-                            {
-                                // The generic checkpoint holds the adapter parameters and
-                                // optimizer state; the sidecar .smlora is the portable,
-                                // base-fingerprinted form a later run can load.
-                                if (lora is not null)
-                                {
-                                    try
-                                    {
-                                        lora.SaveAdapter(Path.Combine(dir, "adapters.smlora"));
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Log($"Fine-tune: could not save the adapter checkpoint ({ex.Message}).");
-                                    }
-                                }
-                                Log($"Fine-tune: checkpoint {Path.GetFileName(dir)} saved (adapters only).");
-                                return;
-                            }
-                            ExportCheckpoint(dir, job, modelConfig, sharpConfig, tokenizer, Log);
-                        },
-                        evaluate: evaluator is null ? null : Evaluate);
-                }
-            }
-            finally
-            {
-                // Held-out batches hold native tensors and are reused for every
-                // evaluation, so they outlive the loop and must be freed here.
-                foreach (TrainingBatch held in validationBatches) held.Dispose();
-                if (job.Rehearsal) DeleteDirectoryQuietly(checkpointDir);
-            }
-
-            if (!reuseCompletedCheckpoint && lastStep <= warmRestartStartStep)
-            {
-                string? latestCheckpoint = Checkpoint.FindLatest(checkpointDir);
-                if (latestCheckpoint is not null)
-                {
-                    int checkpointStep = Checkpoint.ReadMeta(latestCheckpoint).Step;
-                    if (checkpointStep > lastStep) lastStep = checkpointStep;
-                }
-            }
-
-            if (!job.Rehearsal && !job.IsFineTune && !job.IncrementalMode && !grewTokenizer)
-            {
-                string? checkpointPath = Checkpoint.FindLatest(checkpointDir);
-                if (checkpointPath is not null)
-                {
-                    TrainingRecipeStore.Save(new TrainingRecipeArtifact(
-                        "checkpoint", recipeTrainBaseHash, checkpointPath, job.Name, DateTime.UtcNow), recipeFolder);
-                    Log($"Recipe: checkpoint phase {TrainingRecipeHash.Short(recipeTrainBaseHash)} "
-                        + $"saved from step {lastStep}.");
-                }
-            }
-
+                Job = job,
+                ModelConfig = modelConfig,
+                SharpConfig = sharpConfig,
+                Model = model,
+                Weights = weights,
+                Parameters = parameters,
+                Lora = lora,
+                Tokenizer = tokenizer,
+                Loader = loader,
+                ValidationBatches = validationBatches,
+                Resume = resume,
+                RecipeTrainBaseHash = recipeTrainBaseHash,
+                RecipeFolder = recipeFolder,
+                GrewTokenizer = grewTokenizer,
+                PluginsFolder = pluginsFolder,
+                DataFingerprint = dataFingerprint,
+                SourcesChanged = input.SourcesChanged,
+                Progress = progress,
+                OnStep = onStep,
+                Log = Log,
+                CancellationToken = cancellationToken,
+            }).ConfigureAwait(false);
+            if (loopOutcome.EarlyResult is not null) return loopOutcome.EarlyResult;
+            int lastStep = loopOutcome.LastStep;
+            double? bestValLoss = loopOutcome.BestValLoss;
+            int bestValStep = loopOutcome.BestValStep;
             if (job.Rehearsal)
             {
                 progress.Report(1f);
