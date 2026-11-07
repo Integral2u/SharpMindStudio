@@ -74,6 +74,42 @@ public sealed class TrainingEstimatorTests
         Assert.Equal("F32", estimate.Precision);
     }
 
+    [Fact]
+    public void Estimator_WarnsWhenTokensPerParameterIsFarFromThePretrainingTarget()
+    {
+        var job = new TrainingJobSettings
+        {
+            TokenizerKind = "Char",
+            HiddenDim = 32,
+            NumLayers = 1,
+            NumHeads = 4,
+            NumKvHeads = 4,
+            FfnDim = 64,
+            MaxSeqLen = 16,
+            SeqLen = 8,
+            BatchSize = 2,
+            TokenizerVocabSize = 256,
+        };
+
+        TrainingEstimate low = TrainingEstimator.Estimate(
+            job, new TrainingCorpusEstimate(1, 400, 100));
+        Assert.NotEmpty(low.Warnings);
+
+        TrainingEstimate high = TrainingEstimator.Estimate(
+            job, new TrainingCorpusEstimate(1, 40_000_000, 10_000_000));
+        Assert.NotEmpty(high.Warnings);
+
+        job.SftMode = true;
+        job.BaseModelPath = @"C:\models\base.smm";
+        TrainingEstimate sft = TrainingEstimator.Estimate(
+            job, new TrainingCorpusEstimate(1, 400, 100));
+        Assert.Empty(sft.Warnings);
+    }
+
+    [Fact]
+    public void Job_DefaultsToTheLegacySeed()
+        => Assert.Equal(TrainingRunner.Seed, new TrainingJobSettings().Seed);
+
     [Theory]
     [InlineData(null, 4.0)]
     [InlineData("F32", 4.0)]

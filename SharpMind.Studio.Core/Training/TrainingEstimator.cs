@@ -17,6 +17,9 @@ public sealed record TrainingEstimate(
     double? TokensPerParameter,
     string Precision)
 {
+    /// <summary>Advisory checks that do not block a run.</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
     public static TrainingEstimate Empty { get; } = new(null, null, null, null, null, "F32");
 }
 
@@ -92,7 +95,42 @@ public static class TrainingEstimator
             sizeMb,
             corpus.Tokens,
             tokensPerParameter,
-            PrecisionLabel(job.QuantAwareTraining));
+            PrecisionLabel(job.QuantAwareTraining))
+        {
+            Warnings = BuildWarnings(job, tokensPerParameter),
+        };
+    }
+
+    private static IReadOnlyList<string> BuildWarnings(
+        TrainingJobSettings job,
+        double? tokensPerParameter)
+    {
+        if (tokensPerParameter is not { } ratio
+            || !double.IsFinite(ratio)
+            || ratio <= 0
+            || job.IsSft
+            || job.IsFineTune)
+        {
+            return [];
+        }
+
+        if (ratio < 10)
+        {
+            return [
+                "About 20 tokens per parameter is the usual pretraining target; "
+                + "this corpus is well below that, so the model may be undertrained.",
+            ];
+        }
+
+        if (ratio > 200)
+        {
+            return [
+                "This corpus is far above the usual 20:1 tokens-per-parameter target; "
+                + "a larger model may use the compute better.",
+            ];
+        }
+
+        return [];
     }
 
     public static string PrecisionLabel(string? quantAwareTraining)

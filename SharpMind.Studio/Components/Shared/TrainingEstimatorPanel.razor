@@ -58,6 +58,11 @@
             not export or merge anything.
         </div>
 
+        @foreach (string warning in _estimate.Warnings)
+        {
+            <div class="small faint">Note: @warning</div>
+        }
+
         @if (Rehearsal.IsRunning || Rehearsal.Progress > 0)
         {
             <div class="progress-track">
