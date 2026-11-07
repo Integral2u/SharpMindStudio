@@ -90,6 +90,548 @@ public static class TrainingRunner
     /// overall completion figure; <paramref name="onStep"/> receives each logged
     /// optimizer step. Returns the export path on success.
     /// </summary>
+    /// <summary>Source tree and fingerprints this run trains on.</summary>
+    private sealed record TrainingInputPlan(
+        IReadOnlyList<IDataSource> Sources,
+        PipelineNode Pipeline,
+        IDataSource CompositeSource,
+        string? DataFingerprint,
+        bool SourcesChanged,
+        Dictionary<string, Dictionary<string, string>> CurrentFileHashes,
+        TrainingRunResult? EarlyResult);
+
+    /// <summary>
+    /// Resolves the incremental source plan, builds the cleaning pipeline and
+    /// records source fingerprints. Returns an early result for "nothing to train"
+    /// so the caller can stop before touching the tokenizer or model.
+    /// </summary>
+    private static TrainingInputPlan BuildInputPlan(
+        TrainingJobSettings job,
+        IReadOnlyList<ComponentDescriptor> components,
+        Action<string> log)
+    {
+        if (job.Sources.Count == 0)
+            throw new InvalidOperationException("No data sources configured for this job.");
+
+        // Incremental mode decides which sources (and which files within a
+        // file-based source) feed this run. The plan carries, per source, the
+        // rebuilt IDataSource restricted to its new+changed files; unchanged
+        // sources contribute no node at all. Deltas are computed by diffing the
+        // current per-file hashes against the previous run's map.
+        if (job.IncrementalMode && job.SourceFileHashes.Count == 0)
+        {
+            var persisted = IncrementalStore.Load(job);
+            if (persisted.Count > 0)
+            {
+                job.SourceFileHashes = persisted;
+                log($"Incremental: loaded {persisted.Count} source hash map(s) recorded by a previous run.");
+            }
+        }
+
+        var plan = IncrementalPlanner.Build(job, components, log);
+        if (plan.NothingToTrain)
+        {
+            log("Incremental: no new or changed files since the last run - nothing to train.");
+            return new TrainingInputPlan(
+                [], null!, null!, null, false, [], 
+                new TrainingRunResult { Success = true, NothingToTrain = true });
+        }
+
+        var sources = plan.Sources;
+        var sourceNodes = new List<PipelineNode>();
+        for (int i = 0; i < job.Sources.Count; i++)
+        {
+            if (plan.SkipSource[i]) continue;
+            var node = PipelineNode.From(sources[i]);
+            foreach (var stage in job.Sources[i].Stages)
+            {
+                var descriptor = ComponentRegistry.Find(stage.TypeName, components)
+                    ?? throw new InvalidOperationException($"Unknown stage '{stage.TypeName}'.");
+                node = node.Pipe((ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, stage.Args));
+            }
+            sourceNodes.Add(node);
+        }
+
+        PipelineNode pipeline = sourceNodes.Count == 1
+            ? sourceNodes[0]
+            : CleaningPipeline.Merge(sourceNodes);
+        foreach (var g in job.GlobalStages)
+        {
+            var descriptor = ComponentRegistry.Find(g.TypeName, components)
+                ?? throw new InvalidOperationException($"Unknown stage '{g.TypeName}'.");
+            pipeline = pipeline.Pipe((ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, g.Args));
+        }
+
+        var compositeSource = sources.Count == 1 ? sources[0] : new CompositeSource(sources);
+        log(job.IsSft
+            ? $"Sources: {sources.Count} chat JSONL source(s): "
+              + string.Join(", ", job.Sources.Select(source =>
+                  source.Component.Args.TryGetValue("path", out string? sourcePath) ? sourcePath : "?"))
+            : $"Sources: {string.Join(", ", sources.Select(s => s.Description))}");
+
+        // Source fingerprints: record what this job trains on, warn when it has
+        // changed since the last run, and remember them for stamping the exported
+        // model's metadata.
+        var sourceHashes = SourceHasher.Compute(job.Sources);
+        var changed = job.SourceHashes.Count > 0
+            && sourceHashes.Count > 0
+            && !job.SourceHashes.OrderBy(kv => kv.Key).SequenceEqual(sourceHashes.OrderBy(kv => kv.Key));
+        string? dataFingerprint = SourceHasher.Combined(sourceHashes);
+        foreach (var kv in sourceHashes.Where(kv => kv.Value is not null))
+            log($"Source hash {kv.Key}: {kv.Value![..Math.Min(12, kv.Value.Length)]}...");
+        if (changed)
+            log("WARNING: training sources changed since the last run - the cached tokenizer may be stale "
+                + "for this corpus. The data cursor is reset, so this run starts at the head of the new corpus.");
+        if (sourceHashes.Count > 0)
+            job.SourceHashes = sourceHashes;
+
+        return new TrainingInputPlan(
+            sources, pipeline, compositeSource, dataFingerprint, changed, plan.CurrentFileHashes, null);
+    }
+
+    private sealed record TrainingDataPlan(
+        List<TrainingBatch> ValidationBatches,
+        ITrainingBatchSource Loader,
+        string LoaderDescription,
+        TrainingRunResult? EarlyResult);
+
+    /// <summary>Builds the train loader and fixed validation batches for SFT or packed text.</summary>
+    private static async Task<TrainingDataPlan> BuildDataPlanAsync(
+        TrainingJobSettings job,
+        IReadOnlyList<ComponentDescriptor> components,
+        PipelineNode pipeline,
+        Tokenizer tokenizer,
+        ModelConfig modelConfig,
+        string? baseChatTemplate,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        List<TrainingBatch> validationBatches = [];
+        ITrainingBatchSource? sftLoader = null;
+        DataLoader? stringLoader = null;
+        string? loaderDescription = null;
+        double testFraction = Math.Clamp(job.TestPercent, 0, 90) / 100.0;
+        double valFraction = Math.Clamp(job.ValidationPercent, 0, 90) / 100.0;
+        if (job.IsSft)
+        {
+            int sftSeqLen = Math.Max(1, job.SeqLen);
+            if (modelConfig.MaxSeqLen > 0)
+                sftSeqLen = Math.Min(sftSeqLen, modelConfig.MaxSeqLen);
+
+            IRecordSource records = BuildSftRecordSource(job, components);
+            IRecordSource trainRecords = records;
+            int examThreshold = (int)Math.Round(testFraction * DeterministicSplit.Buckets);
+            int valThreshold = (int)Math.Round((testFraction + valFraction) * DeterministicSplit.Buckets);
+
+            if (testFraction > 0)
+            {
+                log($"Exam: {job.TestPercent:0.#}% of conversations held out for the promotion exam "
+                    + "(excluded from training and validation).");
+            }
+
+            var conversation = new ConversationTokenizer(
+                ResolveSftFormatter(job.SftFormatter, baseChatTemplate), tokenizer);
+
+            if (valFraction > 0)
+            {
+                IRecordSource valRecords = new WhereRecordSource(
+                    records,
+                    record =>
+                    {
+                        int bucket = DeterministicSplit.Bucket(RecordGrouping.SplitKey(record), job.Seed);
+                        return bucket >= examThreshold && bucket < valThreshold;
+                    },
+                    "val");
+
+                var valBatcher = new SftBatcher(
+                    batchSize: Math.Max(1, job.BatchSize),
+                    maxSeqLen: sftSeqLen,
+                    padTokenId: tokenizer.PadId);
+                var valLoader = new RecordDataLoader(valRecords, valBatcher, conversation.Encode);
+                try
+                {
+                    await foreach (TrainingBatch held in valLoader.LoadAsync(cancellationToken: cancellationToken))
+                    {
+                        validationBatches.Add(held);
+                        if (validationBatches.Count >= 4) break;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    log($"Validation: could not read the held-out split ({ex.Message}) - "
+                        + "training will run without a val curve.");
+                    foreach (TrainingBatch held in validationBatches) held.Dispose();
+                    validationBatches.Clear();
+                }
+
+                if (validationBatches.Count == 0)
+                {
+                    log($"Validation: {job.ValidationPercent:0.#}% requested but the split produced no held-out "
+                        + "conversations - training will run without a val curve.");
+                }
+                else
+                {
+                    log($"Validation: {job.ValidationPercent:0.#}% of conversations held out, "
+                        + $"{validationBatches.Count} batch(es) fixed for every evaluation.");
+                }
+            }
+
+            if (examThreshold > 0 || valThreshold > 0)
+            {
+                trainRecords = new WhereRecordSource(
+                    records,
+                    record => DeterministicSplit.Bucket(RecordGrouping.SplitKey(record), job.Seed) >= valThreshold,
+                    "train");
+            }
+
+            // Fail early with a clear message instead of running zero steps
+            // and exporting an untrained adapter when the JSONL has no usable
+            // assistant turns.
+            int probeAll = 0;
+            await foreach (DataRecord _ in records.ReadRecordsAsync(cancellationToken))
+            {
+                probeAll++;
+                break;
+            }
+            if (probeAll == 0)
+            {
+                foreach (TrainingBatch held in validationBatches) held.Dispose();
+                return new TrainingDataPlan([], null!, "", new TrainingRunResult
+                {
+                    Success = false,
+                    Error = "The SFT corpus produced no conversation records. Each JSONL line needs an "
+                        + "assistant turn (messages, conversations, prompt/response or instruction/output).",
+                });
+            }
+
+            int probe = 0;
+            await foreach (DataRecord _ in trainRecords.ReadRecordsAsync(cancellationToken))
+            {
+                probe++;
+                break;
+            }
+            if (probe == 0)
+            {
+                foreach (TrainingBatch held in validationBatches) held.Dispose();
+                return new TrainingDataPlan([], null!, "", new TrainingRunResult
+                {
+                    Success = false,
+                    Error = "Every usable conversation landed in the validation or exam split. "
+                        + "Lower the held-out percentages or add more chat records.",
+                });
+            }
+
+            var sftBatcher = new SftBatcher(
+                batchSize: Math.Max(1, job.BatchSize),
+                maxSeqLen: sftSeqLen,
+                padTokenId: tokenizer.PadId);
+            sftLoader = new RecordDataLoader(
+                trainRecords,
+                sftBatcher,
+                conversation.Encode,
+                maxBatches: job.TotalSteps * job.GradAccumSteps,
+                skipProgress: (done, total) =>
+                    log($"Data cursor: replayed {done:N0}/{total:N0} batches..."));
+            loaderDescription = $"{trainRecords.Description} -> {sftBatcher.GetType().Name} "
+                + $"(batch {job.BatchSize} x {sftSeqLen}, assistant-only loss)";
+            log($"SFT: assistant-only loss over {sftSeqLen}-token conversations.");
+        }
+        else
+        {
+        // RandomWindowBatcher concatenates documents; PackingBatcher inserts
+        // EOS itself. Give the concatenating batcher the tokenizer's boundary
+        // so JSONL/text sources never need a literal <|endoftext|> marker.
+        bool appendDocumentBoundary = job.UsesRandomWindowBatching;
+        Func<string, int[]> tokenise = text =>
+            TrainingTokenization.EncodeDocument(tokenizer, text, appendDocumentBoundary);
+
+        if (testFraction > 0)
+        {
+            int examThreshold = (int)Math.Round(testFraction * DeterministicSplit.Buckets);
+            var (_, trainVal) = pipeline.Branch(
+                "exam", doc => DeterministicSplit.Bucket(doc, job.Seed) < examThreshold);
+            pipeline = trainVal;
+            log($"Exam: {job.TestPercent:0.#}% of documents held out for the promotion exam "
+                + "(excluded from training and validation).");
+        }
+
+        if (valFraction > 0)
+        {
+            // The val range starts above the exam's, so the two slices stay
+            // disjoint even though both are keyed by the same content hash.
+            int valThreshold = (int)Math.Round((testFraction + valFraction) * DeterministicSplit.Buckets);
+            var (valNode, trainNode) = pipeline.Branch(
+                "val", doc => DeterministicSplit.Bucket(doc, job.Seed) < valThreshold);
+            pipeline = trainNode;
+
+            IBatchStrategy valBatcher = job.UsesRandomWindowBatching
+                ? new RandomWindowBatcher(batchSize: job.BatchSize, seqLen: job.SeqLen, seed: job.Seed + 1)
+                : new PackingBatcher(
+                    batchSize: job.BatchSize,
+                    maxSeqLen: job.SeqLen,
+                    eosTokenId: tokenizer.EosId,
+                    padTokenId: tokenizer.PadId);
+            var valLoader = new DataLoader(valNode, tokenise, valBatcher, prefetchBuffer: 1);
+            try
+            {
+                await foreach (TrainingBatch held in valLoader.LoadAsync(cancellationToken: cancellationToken))
+                {
+                    validationBatches.Add(held);
+                    if (validationBatches.Count >= 4) break;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // A source that cannot be read a second time (a remote stream,
+                // for example) must not sink the run: train without a val curve.
+                log($"Validation: could not read the held-out split ({ex.Message}) - "
+                    + "training will run without a val curve.");
+                foreach (TrainingBatch held in validationBatches) held.Dispose();
+                validationBatches.Clear();
+            }
+
+            if (validationBatches.Count == 0)
+            {
+                log($"Validation: {job.ValidationPercent:0.#}% requested but the split produced no held-out "
+                    + "documents - training will run without a val curve.");
+            }
+            else
+            {
+                log($"Validation: {job.ValidationPercent:0.#}% of documents held out, "
+                    + $"{validationBatches.Count} batch(es) fixed for every evaluation.");
+            }
+        }
+
+        IBatchStrategy batcher = job.UsesRandomWindowBatching
+            ? new RandomWindowBatcher(batchSize: job.BatchSize, seqLen: job.SeqLen, seed: job.Seed)
+            : new PackingBatcher(
+                batchSize: job.BatchSize,
+                maxSeqLen: job.SeqLen,
+                eosTokenId: tokenizer.EosId,
+                padTokenId: tokenizer.PadId);
+        var dataLoader = new DataLoader(pipeline, tokenise, batcher, prefetchBuffer: 4,
+            maxBatches: job.TotalSteps * job.GradAccumSteps,
+            skipProgress: (done, total) =>
+                log($"Data cursor: replayed {done:N0}/{total:N0} batches..."));
+        stringLoader = dataLoader;
+        loaderDescription = dataLoader.Describe();
+        }
+
+        ITrainingBatchSource loader = sftLoader ?? stringLoader!;
+        return new TrainingDataPlan(validationBatches, loader, loaderDescription ?? "", null);
+    }
+    private sealed record TrainingTokenizerPlan(
+        Tokenizer Tokenizer,
+        ModelConfig ModelConfig,
+        Transformer? FineTuneModel,
+        string? BaseChatTemplate,
+        bool GrewTokenizer,
+        string RecipeDataHash,
+        string RecipeTokenizerHash,
+        string RecipeTrainBaseHash,
+        string? RecipeTrainHash,
+        TrainingRunResult? EarlyResult);
+
+    /// <summary>
+    /// Loads or trains the tokenizer and base model, and resolves the recipe
+    /// hashes used by the data, train and export phases.
+    /// </summary>
+    private static async Task<TrainingTokenizerPlan> PrepareTokenizerAsync(
+        TrainingJobSettings job,
+        IReadOnlyList<ComponentDescriptor> components,
+        IDataSource compositeSource,
+        string? dataFingerprint,
+        string pluginsFolder,
+        IProgress<float> progress,
+        Action<string> log,
+        string? recipeFolder,
+        CancellationToken cancellationToken)
+    {
+        Tokenizer tokenizer = null!;
+        ModelConfig modelConfig;
+        bool grewTokenizer = false;
+        Transformer? fineTuneModel = null;
+        string? baseChatTemplate = null;
+
+        // Content-addressed recipe check before loading a base or tokenizer:
+        // identical data + settings return the existing packaged model. The
+        // package phase is separate: if only the destination moved, copy the
+        // cached .smm instead of training again.
+        string recipeDataHash = TrainingRecipeHash.Data(job, dataFingerprint ?? "none");
+        string recipeTokenizerHash = TrainingRecipeHash.Tokenizer(job, recipeDataHash);
+        string recipeTrainBaseHash = !job.Rehearsal && !job.IncrementalMode && !job.IsFineTune
+            ? TrainingRecipeHash.TrainBase(job, recipeDataHash, recipeTokenizerHash)
+            : "";
+        string? recipeTrainHash = null;
+        if (!job.IncrementalMode && !job.Rehearsal && job.MergeOnExport && !job.SaveAdapterFile)
+        {
+            recipeTrainHash = TrainingRecipeHash.Train(job, recipeDataHash, recipeTokenizerHash);
+            if (TrainingRecipeStore.TryGet("train", recipeTrainHash, out TrainingRecipeArtifact cached, recipeFolder))
+            {
+                string requestedExport = Path.GetFullPath(job.ExportFilePath);
+                string cachedExport = Path.GetFullPath(cached.ArtifactPath);
+                if (!string.Equals(requestedExport, cachedExport, StringComparison.OrdinalIgnoreCase))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(requestedExport)!);
+                    File.Copy(cachedExport, requestedExport, overwrite: true);
+                    log($"Recipe: cache hit {TrainingRecipeHash.Short(recipeTrainHash)} - "
+                        + $"package phase copied {Path.GetFileName(cachedExport)} to {requestedExport}.");
+                    progress.Report(1f);
+                    return new TrainingTokenizerPlan(
+                        null!, null!, null, null, false, "", "", "", null,
+                        new TrainingRunResult
+                        {
+                            Success = true,
+                            ExportPath = requestedExport,
+                            FinalStep = job.TotalSteps,
+                            Cached = true,
+                            CachedPhase = "package",
+                            RecipeHash = recipeTrainHash,
+                        });
+                }
+
+                log($"Recipe: cache hit {TrainingRecipeHash.Short(recipeTrainHash)} - "
+                    + $"reusing {Path.GetFileName(cachedExport)}.");
+                progress.Report(1f);
+                return new TrainingTokenizerPlan(
+                    null!, null!, null, null, false, "", "", "", null,
+                    new TrainingRunResult
+                    {
+                        Success = true,
+                        ExportPath = cachedExport,
+                        FinalStep = job.TotalSteps,
+                        Cached = true,
+                        CachedPhase = "train",
+                        RecipeHash = recipeTrainHash,
+                    });
+            }
+            log($"Recipe: {TrainingRecipeHash.Short(recipeTrainHash)} - no cached model.");
+        }
+
+        bool tokenizerFromCache = false;
+        if (!job.IsFineTune && !job.UsesCharacterTokenizer && !job.IncrementalMode && !job.Rehearsal
+            && TrainingRecipeStore.TryGet("tokenizer", recipeTokenizerHash, out TrainingRecipeArtifact tokenizerArtifact, recipeFolder))
+        {
+            tokenizer = TokenizationPipeline.Load(tokenizerArtifact.ArtifactPath);
+            tokenizerFromCache = true;
+            log($"Recipe: reused tokenizer {TrainingRecipeHash.Short(recipeTokenizerHash)}.");
+        }
+
+        if (job.IsFineTune)
+        {
+            string basePath = job.BaseModelPath!;
+            if (!File.Exists(basePath))
+                throw new InvalidOperationException($"Base model not found: {basePath}");
+            if (job.IncrementalMode)
+                throw new InvalidOperationException(
+                    "A LoRA fine-tune cannot use incremental mode; point it at the new corpus directly.");
+
+            log($"Fine-tune: loading base {Path.GetFileName(basePath)}...");
+            int lastLoadPct = -1;
+            fineTuneModel = SmmTrainingPipeline.LoadForTraining(
+                basePath,
+                new TrainingLoadOptions
+                {
+                    Progress = new Progress<float>(p =>
+                    {
+                        int pct = (int)(p * 10);
+                        if (pct == lastLoadPct) return;
+                        lastLoadPct = pct;
+                        log($"Fine-tune: base weights {pct * 10}%");
+                    }),
+                },
+                out tokenizer,
+                out modelConfig);
+            baseChatTemplate = SmmTrainingPipeline.LoadChatTemplate(basePath);
+            log($"Fine-tune: base vocab={tokenizer.VocabSize}, H={modelConfig.HiddenDim}, "
+                + $"L={modelConfig.NumLayers}, context={modelConfig.MaxSeqLen}. "
+                + "Base weights are frozen; only the adapters train.");
+            job.TrainedTokenizerVocab = tokenizer.VocabSize;
+
+            if (TrainingModelOptions.ValidateQat(job.QuantAwareTraining, modelConfig.HiddenDim) is { } fineTuneQatProblem)
+            {
+                log(fineTuneQatProblem);
+                return new TrainingTokenizerPlan(
+                    null!, null!, null, null, false, "", "", "", null,
+                    new TrainingRunResult { Success = false, Error = fineTuneQatProblem });
+            }
+        }
+        else
+        {
+            if (!tokenizerFromCache)
+            {
+            if (job.UsesCharacterTokenizer)
+            {
+                tokenizer = await TokenizationPipeline.TrainCharacterAsync(
+                    job.IncrementalMode ? FullCorpusComposite(job, components) : compositeSource);
+            }
+            else
+            {
+                string tokenizerPath = job.TokenizerFilePath;
+                bool existed = File.Exists(tokenizerPath);
+                tokenizer = existed
+                    ? TokenizationPipeline.Load(tokenizerPath)
+                    : await TokenizationPipeline.TrainAndSaveAsync(
+                        job.IncrementalMode ? FullCorpusComposite(job, components) : compositeSource,
+                        tokenizerPath, job.TokenizerVocabSize);
+
+                // A larger Vocab target than the cached tokenizer means growth is
+                // required, so do it automatically rather than making the user press
+                // a button. Grow is append-only: old token IDs are preserved, only
+                // new merges are appended. The widened embedding then forces a warm
+                // restart (handled during resume resolution below).
+                if (existed && job.TokenizerVocabSize > tokenizer.VocabSize)
+                {
+                    int priorVocab = tokenizer.VocabSize;
+                    log($"Tokenizer: target {job.TokenizerVocabSize} > cached {priorVocab} - growing append-only.");
+                    int grown = await GrowTokenizerAsync(job, pluginsFolder, job.TokenizerVocabSize, log, cancellationToken);
+                    if (grown > priorVocab)
+                    {
+                        tokenizer = TokenizationPipeline.Load(tokenizerPath);
+                        grewTokenizer = true;
+                        log($"Tokenizer: grew {priorVocab} -> {tokenizer.VocabSize} tokens (old IDs unchanged).");
+                    }
+                    else
+                    {
+                        log($"Tokenizer: could not grow beyond {priorVocab} (the corpus offers no further merges).");
+                    }
+                }
+            }
+            }
+
+            if (!tokenizerFromCache && !job.UsesCharacterTokenizer)
+            {
+                string tokenizerPath = job.TokenizerFilePath;
+                if (File.Exists(tokenizerPath))
+                {
+                    TrainingRecipeStore.Save(new TrainingRecipeArtifact(
+                        "tokenizer", recipeTokenizerHash, tokenizerPath, job.Name, DateTime.UtcNow), recipeFolder);
+                }
+            }
+
+            log($"Tokenizer: vocab={tokenizer.VocabSize} ({(job.UsesCharacterTokenizer ? "char" : "bpe")})");
+            job.TrainedTokenizerVocab = tokenizer.VocabSize;
+
+            // 2. Model config.
+            modelConfig = TrainingModelOptions.ResolveModelConfig(job, tokenizer.VocabSize);
+            if (modelConfig.VocabSize != tokenizer.VocabSize)
+                log($"QAT: padded model vocab {tokenizer.VocabSize} -> {modelConfig.VocabSize} "
+                    + $"for {TrainingModelOptions.ParseQat(job.QuantAwareTraining)} block alignment.");
+            log($"Model: H={job.HiddenDim} L={job.NumLayers} heads={job.NumHeads} ffn={job.FfnDim}");
+        }
+
+        return new TrainingTokenizerPlan(
+            tokenizer, modelConfig, fineTuneModel, baseChatTemplate, grewTokenizer,
+            recipeDataHash, recipeTokenizerHash, recipeTrainBaseHash, recipeTrainHash, null);
+    }
     public static async Task<TrainingRunResult> RunAsync(
         TrainingJobSettings job,
         string pluginsFolder,
@@ -108,82 +650,11 @@ public static class TrainingRunner
             var components = ComponentRegistry.ScanFolder(pluginsFolder, out var pluginWarnings);
             foreach (var w in pluginWarnings) Log($"Plugin: {w}");
 
-            if (job.Sources.Count == 0)
-                throw new InvalidOperationException("No data sources configured for this job.");
-
-            // Incremental mode decides which sources (and which files within a
-            // file-based source) feed this run. The plan carries, per source, the
-            // rebuilt IDataSource restricted to its new+changed files; unchanged
-            // sources contribute no node at all. Deltas are computed by diffing
-            // the current per-file hashes against the previous run's map.
-            // "Force resume latest" is applied later in the resume-resolution.
-            if (job.IncrementalMode && job.SourceFileHashes.Count == 0)
-            {
-                var persisted = IncrementalStore.Load(job);
-                if (persisted.Count > 0)
-                {
-                    job.SourceFileHashes = persisted;
-                    Log($"Incremental: loaded {persisted.Count} source hash map(s) recorded by a previous run.");
-                }
-            }
-
-            var plan = IncrementalPlanner.Build(job, components, Log);
-            if (plan.NothingToTrain)
-            {
-                Log($"Incremental: no new or changed files since the last run - nothing to train.");
-                return new TrainingRunResult { Success = true, NothingToTrain = true };
-            }
-
-            var sources = plan.Sources;
-            var sourceNodes = new List<PipelineNode>();
-            for (int i = 0; i < job.Sources.Count; i++)
-            {
-                if (plan.SkipSource[i]) continue;
-                var node = PipelineNode.From(sources[i]);
-                foreach (var stage in job.Sources[i].Stages)
-                {
-                    var descriptor = ComponentRegistry.Find(stage.TypeName, components)
-                        ?? throw new InvalidOperationException($"Unknown stage '{stage.TypeName}'.");
-                    node = node.Pipe((ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, stage.Args));
-                }
-                sourceNodes.Add(node);
-            }
-            PipelineNode pipeline = sourceNodes.Count == 1
-                ? sourceNodes[0]
-                : CleaningPipeline.Merge(sourceNodes);
-            foreach (var g in job.GlobalStages)
-            {
-                var descriptor = ComponentRegistry.Find(g.TypeName, components)
-                    ?? throw new InvalidOperationException($"Unknown stage '{g.TypeName}'.");
-                pipeline = pipeline.Pipe((ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, g.Args));
-            }
-
-            var compositeSource = sources.Count == 1 ? sources[0] : new CompositeSource(sources);
-            Log(job.IsSft
-                ? $"Sources: {sources.Count} chat JSONL source(s): "
-                  + string.Join(", ", job.Sources.Select(source =>
-                      source.Component.Args.TryGetValue("path", out string? sourcePath) ? sourcePath : "?"))
-                : $"Sources: {string.Join(", ", sources.Select(s => s.Description))}");
-
-            // Source fingerprints: record what this job trains on, warn when it
-            // has changed since the last run (the tokenizer cache is reused on
-            // path alone, so a stale corpus would silently poison the mapping),
-            // and remember them for stamping the exported model's metadata.
-            var sourceHashes = SourceHasher.Compute(job.Sources);
-            var changed = job.SourceHashes.Count > 0
-                && sourceHashes.Count > 0
-                && !job.SourceHashes.OrderBy(kv => kv.Key).SequenceEqual(sourceHashes.OrderBy(kv => kv.Key));
-            // Compact identity for the corpus this run trains on; stamped into every
-            // checkpoint so a later resume can tell whether its batch cursor still
-            // indexes the same stream (see TrainConfig.DataFingerprint).
-            string? dataFingerprint = SourceHasher.Combined(sourceHashes);
-            foreach (var kv in sourceHashes.Where(kv => kv.Value is not null))
-                Log($"Source hash {kv.Key}: {kv.Value![..Math.Min(12, kv.Value == null ? 0 : kv.Value.Length)]}...");
-            if (changed)
-                Log("WARNING: training sources changed since the last run - the cached tokenizer may be stale "
-                    + "for this corpus. The data cursor is reset, so this run starts at the head of the new corpus.");
-            if (sourceHashes.Count > 0)
-                job.SourceHashes = sourceHashes;
+            TrainingInputPlan input = BuildInputPlan(job, components, Log);
+            if (input.EarlyResult is not null) return input.EarlyResult;
+            PipelineNode pipeline = input.Pipeline;
+            IDataSource compositeSource = input.CompositeSource;
+            string? dataFingerprint = input.DataFingerprint;
 
             progress.Report(0.05f);
 
@@ -241,173 +712,20 @@ public static class TrainingRunner
                     Error = "The adapter and merged model resolve to the same file. Pick different destinations.",
                 };
 
-            Tokenizer tokenizer = null!;
-            ModelConfig modelConfig;
-            bool grewTokenizer = false;
-            Transformer? fineTuneModel = null;
-            string? baseChatTemplate = null;
+            TrainingTokenizerPlan tokenPlan = await PrepareTokenizerAsync(
+                job, components, compositeSource, dataFingerprint, pluginsFolder,
+                progress, Log, recipeFolder, cancellationToken).ConfigureAwait(false);
+            if (tokenPlan.EarlyResult is not null) return tokenPlan.EarlyResult;
 
-            // Content-addressed recipe check before loading a base or tokenizer:
-            // identical data + settings return the existing packaged model. The
-            // package phase is separate: if only the destination moved, copy the
-            // cached .smm instead of training again.
-            string recipeDataHash = TrainingRecipeHash.Data(job, dataFingerprint ?? "none");
-            string recipeTokenizerHash = TrainingRecipeHash.Tokenizer(job, recipeDataHash);
-            string recipeTrainBaseHash = !job.Rehearsal && !job.IncrementalMode && !job.IsFineTune
-                ? TrainingRecipeHash.TrainBase(job, recipeDataHash, recipeTokenizerHash)
-                : "";
-            string? recipeTrainHash = null;
-            if (!job.IncrementalMode && !job.Rehearsal && job.MergeOnExport && !job.SaveAdapterFile)
-            {
-                recipeTrainHash = TrainingRecipeHash.Train(job, recipeDataHash, recipeTokenizerHash);
-                if (TrainingRecipeStore.TryGet("train", recipeTrainHash, out TrainingRecipeArtifact cached, recipeFolder))
-                {
-                    string requestedExport = Path.GetFullPath(job.ExportFilePath);
-                    string cachedExport = Path.GetFullPath(cached.ArtifactPath);
-                    if (!string.Equals(requestedExport, cachedExport, StringComparison.OrdinalIgnoreCase))
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(requestedExport)!);
-                        File.Copy(cachedExport, requestedExport, overwrite: true);
-                        Log($"Recipe: cache hit {TrainingRecipeHash.Short(recipeTrainHash)} - "
-                            + $"package phase copied {Path.GetFileName(cachedExport)} to {requestedExport}.");
-                        progress.Report(1f);
-                        return new TrainingRunResult
-                        {
-                            Success = true,
-                            ExportPath = requestedExport,
-                            FinalStep = job.TotalSteps,
-                            Cached = true,
-                            CachedPhase = "package",
-                            RecipeHash = recipeTrainHash,
-                        };
-                    }
-
-                    Log($"Recipe: cache hit {TrainingRecipeHash.Short(recipeTrainHash)} - "
-                        + $"reusing {Path.GetFileName(cachedExport)}.");
-                    progress.Report(1f);
-                    return new TrainingRunResult
-                    {
-                        Success = true,
-                        ExportPath = cachedExport,
-                        FinalStep = job.TotalSteps,
-                        Cached = true,
-                        CachedPhase = "train",
-                        RecipeHash = recipeTrainHash,
-                    };
-                }
-                Log($"Recipe: {TrainingRecipeHash.Short(recipeTrainHash)} - no cached model.");
-            }
-
-            bool tokenizerFromCache = false;
-            if (!job.IsFineTune && !job.UsesCharacterTokenizer && !job.IncrementalMode && !job.Rehearsal
-                && TrainingRecipeStore.TryGet("tokenizer", recipeTokenizerHash, out TrainingRecipeArtifact tokenizerArtifact, recipeFolder))
-            {
-                tokenizer = TokenizationPipeline.Load(tokenizerArtifact.ArtifactPath);
-                tokenizerFromCache = true;
-                Log($"Recipe: reused tokenizer {TrainingRecipeHash.Short(recipeTokenizerHash)}.");
-            }
-
-            if (job.IsFineTune)
-            {
-                string basePath = job.BaseModelPath!;
-                if (!File.Exists(basePath))
-                    throw new InvalidOperationException($"Base model not found: {basePath}");
-                if (job.IncrementalMode)
-                    throw new InvalidOperationException(
-                        "A LoRA fine-tune cannot use incremental mode; point it at the new corpus directly.");
-
-                Log($"Fine-tune: loading base {Path.GetFileName(basePath)}...");
-                int lastLoadPct = -1;
-                fineTuneModel = SmmTrainingPipeline.LoadForTraining(
-                    basePath,
-                    new TrainingLoadOptions
-                    {
-                        Progress = new Progress<float>(p =>
-                        {
-                            int pct = (int)(p * 10);
-                            if (pct == lastLoadPct) return;
-                            lastLoadPct = pct;
-                            Log($"Fine-tune: base weights {pct * 10}%");
-                        }),
-                    },
-                    out tokenizer,
-                    out modelConfig);
-                baseChatTemplate = SmmTrainingPipeline.LoadChatTemplate(basePath);
-                Log($"Fine-tune: base vocab={tokenizer.VocabSize}, H={modelConfig.HiddenDim}, "
-                    + $"L={modelConfig.NumLayers}, context={modelConfig.MaxSeqLen}. "
-                    + "Base weights are frozen; only the adapters train.");
-                job.TrainedTokenizerVocab = tokenizer.VocabSize;
-
-                if (TrainingModelOptions.ValidateQat(job.QuantAwareTraining, modelConfig.HiddenDim) is { } fineTuneQatProblem)
-                {
-                    Log(fineTuneQatProblem);
-                    return new TrainingRunResult { Success = false, Error = fineTuneQatProblem };
-                }
-            }
-            else
-            {
-                if (!tokenizerFromCache)
-                {
-                if (job.UsesCharacterTokenizer)
-                {
-                    tokenizer = await TokenizationPipeline.TrainCharacterAsync(
-                        job.IncrementalMode ? FullCorpusComposite(job, components) : compositeSource);
-                }
-                else
-                {
-                    string tokenizerPath = job.TokenizerFilePath;
-                    bool existed = File.Exists(tokenizerPath);
-                    tokenizer = existed
-                        ? TokenizationPipeline.Load(tokenizerPath)
-                        : await TokenizationPipeline.TrainAndSaveAsync(
-                            job.IncrementalMode ? FullCorpusComposite(job, components) : compositeSource,
-                            tokenizerPath, job.TokenizerVocabSize);
-
-                    // A larger Vocab target than the cached tokenizer means growth is
-                    // required, so do it automatically rather than making the user press
-                    // a button. Grow is append-only: old token IDs are preserved, only
-                    // new merges are appended. The widened embedding then forces a warm
-                    // restart (handled during resume resolution below).
-                    if (existed && job.TokenizerVocabSize > tokenizer.VocabSize)
-                    {
-                        int priorVocab = tokenizer.VocabSize;
-                        Log($"Tokenizer: target {job.TokenizerVocabSize} > cached {priorVocab} - growing append-only.");
-                        int grown = await GrowTokenizerAsync(job, pluginsFolder, job.TokenizerVocabSize, Log, cancellationToken);
-                        if (grown > priorVocab)
-                        {
-                            tokenizer = TokenizationPipeline.Load(tokenizerPath);
-                            grewTokenizer = true;
-                            Log($"Tokenizer: grew {priorVocab} -> {tokenizer.VocabSize} tokens (old IDs unchanged).");
-                        }
-                        else
-                        {
-                            Log($"Tokenizer: could not grow beyond {priorVocab} (the corpus offers no further merges).");
-                        }
-                    }
-                }
-                }
-
-                if (!tokenizerFromCache && !job.UsesCharacterTokenizer)
-                {
-                    string tokenizerPath = job.TokenizerFilePath;
-                    if (File.Exists(tokenizerPath))
-                    {
-                        TrainingRecipeStore.Save(new TrainingRecipeArtifact(
-                            "tokenizer", recipeTokenizerHash, tokenizerPath, job.Name, DateTime.UtcNow), recipeFolder);
-                    }
-                }
-
-                Log($"Tokenizer: vocab={tokenizer.VocabSize} ({(job.UsesCharacterTokenizer ? "char" : "bpe")})");
-                job.TrainedTokenizerVocab = tokenizer.VocabSize;
-
-                // 2. Model config.
-                modelConfig = TrainingModelOptions.ResolveModelConfig(job, tokenizer.VocabSize);
-                if (modelConfig.VocabSize != tokenizer.VocabSize)
-                    Log($"QAT: padded model vocab {tokenizer.VocabSize} -> {modelConfig.VocabSize} "
-                        + $"for {TrainingModelOptions.ParseQat(job.QuantAwareTraining)} block alignment.");
-                Log($"Model: H={job.HiddenDim} L={job.NumLayers} heads={job.NumHeads} ffn={job.FfnDim}");
-            }
-
+            Tokenizer tokenizer = tokenPlan.Tokenizer;
+            ModelConfig modelConfig = tokenPlan.ModelConfig;
+            Transformer? fineTuneModel = tokenPlan.FineTuneModel;
+            string? baseChatTemplate = tokenPlan.BaseChatTemplate;
+            bool grewTokenizer = tokenPlan.GrewTokenizer;
+            string recipeDataHash = tokenPlan.RecipeDataHash;
+            string recipeTokenizerHash = tokenPlan.RecipeTokenizerHash;
+            string recipeTrainBaseHash = tokenPlan.RecipeTrainBaseHash;
+            string? recipeTrainHash = tokenPlan.RecipeTrainHash;
             using var fineTuneOwner = fineTuneModel;
             progress.Report(0.1f);
 
@@ -436,225 +754,13 @@ public static class TrainingRunner
             // never in two slices, and every point on a curve scores a fixed set.
             // The tokenizer still trains over the full corpus: it learns the token
             // inventory, not the loss being measured.
-            List<TrainingBatch> validationBatches = [];
-            ITrainingBatchSource? sftLoader = null;
-            DataLoader? stringLoader = null;
-            string? loaderDescription = null;
-            double testFraction = Math.Clamp(job.TestPercent, 0, 90) / 100.0;
-            double valFraction = Math.Clamp(job.ValidationPercent, 0, 90) / 100.0;
-            if (job.IsSft)
-            {
-                int sftSeqLen = Math.Max(1, job.SeqLen);
-                if (modelConfig.MaxSeqLen > 0)
-                    sftSeqLen = Math.Min(sftSeqLen, modelConfig.MaxSeqLen);
-
-                IRecordSource records = BuildSftRecordSource(job, components);
-                IRecordSource trainRecords = records;
-                int examThreshold = (int)Math.Round(testFraction * DeterministicSplit.Buckets);
-                int valThreshold = (int)Math.Round((testFraction + valFraction) * DeterministicSplit.Buckets);
-
-                if (testFraction > 0)
-                {
-                    Log($"Exam: {job.TestPercent:0.#}% of conversations held out for the promotion exam "
-                        + "(excluded from training and validation).");
-                }
-
-                var conversation = new ConversationTokenizer(
-                    ResolveSftFormatter(job.SftFormatter, baseChatTemplate), tokenizer);
-
-                if (valFraction > 0)
-                {
-                    IRecordSource valRecords = new WhereRecordSource(
-                        records,
-                        record =>
-                        {
-                            int bucket = DeterministicSplit.Bucket(RecordGrouping.SplitKey(record), job.Seed);
-                            return bucket >= examThreshold && bucket < valThreshold;
-                        },
-                        "val");
-
-                    var valBatcher = new SftBatcher(
-                        batchSize: Math.Max(1, job.BatchSize),
-                        maxSeqLen: sftSeqLen,
-                        padTokenId: tokenizer.PadId);
-                    var valLoader = new RecordDataLoader(valRecords, valBatcher, conversation.Encode);
-                    try
-                    {
-                        await foreach (TrainingBatch held in valLoader.LoadAsync(cancellationToken: cancellationToken))
-                        {
-                            validationBatches.Add(held);
-                            if (validationBatches.Count >= 4) break;
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"Validation: could not read the held-out split ({ex.Message}) - "
-                            + "training will run without a val curve.");
-                        foreach (TrainingBatch held in validationBatches) held.Dispose();
-                        validationBatches.Clear();
-                    }
-
-                    if (validationBatches.Count == 0)
-                    {
-                        Log($"Validation: {job.ValidationPercent:0.#}% requested but the split produced no held-out "
-                            + "conversations - training will run without a val curve.");
-                    }
-                    else
-                    {
-                        Log($"Validation: {job.ValidationPercent:0.#}% of conversations held out, "
-                            + $"{validationBatches.Count} batch(es) fixed for every evaluation.");
-                    }
-                }
-
-                if (examThreshold > 0 || valThreshold > 0)
-                {
-                    trainRecords = new WhereRecordSource(
-                        records,
-                        record => DeterministicSplit.Bucket(RecordGrouping.SplitKey(record), job.Seed) >= valThreshold,
-                        "train");
-                }
-
-                // Fail early with a clear message instead of running zero steps
-                // and exporting an untrained adapter when the JSONL has no usable
-                // assistant turns.
-                int probeAll = 0;
-                await foreach (DataRecord _ in records.ReadRecordsAsync(cancellationToken))
-                {
-                    probeAll++;
-                    break;
-                }
-                if (probeAll == 0)
-                {
-                    return new TrainingRunResult
-                    {
-                        Success = false,
-                        Error = "The SFT corpus produced no conversation records. Each JSONL line needs an "
-                            + "assistant turn (messages, conversations, prompt/response or instruction/output).",
-                    };
-                }
-
-                int probe = 0;
-                await foreach (DataRecord _ in trainRecords.ReadRecordsAsync(cancellationToken))
-                {
-                    probe++;
-                    break;
-                }
-                if (probe == 0)
-                {
-                    return new TrainingRunResult
-                    {
-                        Success = false,
-                        Error = "Every usable conversation landed in the validation or exam split. "
-                            + "Lower the held-out percentages or add more chat records.",
-                    };
-                }
-
-                var sftBatcher = new SftBatcher(
-                    batchSize: Math.Max(1, job.BatchSize),
-                    maxSeqLen: sftSeqLen,
-                    padTokenId: tokenizer.PadId);
-                sftLoader = new RecordDataLoader(
-                    trainRecords,
-                    sftBatcher,
-                    conversation.Encode,
-                    maxBatches: job.TotalSteps * job.GradAccumSteps,
-                    skipProgress: (done, total) =>
-                        Log($"Data cursor: replayed {done:N0}/{total:N0} batches..."));
-                loaderDescription = $"{trainRecords.Description} -> {sftBatcher.GetType().Name} "
-                    + $"(batch {job.BatchSize} x {sftSeqLen}, assistant-only loss)";
-                Log($"SFT: assistant-only loss over {sftSeqLen}-token conversations.");
-            }
-            else
-            {
-            // RandomWindowBatcher concatenates documents; PackingBatcher inserts
-            // EOS itself. Give the concatenating batcher the tokenizer's boundary
-            // so JSONL/text sources never need a literal <|endoftext|> marker.
-            bool appendDocumentBoundary = job.UsesRandomWindowBatching;
-            Func<string, int[]> tokenise = text =>
-                TrainingTokenization.EncodeDocument(tokenizer, text, appendDocumentBoundary);
-
-            if (testFraction > 0)
-            {
-                int examThreshold = (int)Math.Round(testFraction * DeterministicSplit.Buckets);
-                var (_, trainVal) = pipeline.Branch(
-                    "exam", doc => DeterministicSplit.Bucket(doc, job.Seed) < examThreshold);
-                pipeline = trainVal;
-                Log($"Exam: {job.TestPercent:0.#}% of documents held out for the promotion exam "
-                    + "(excluded from training and validation).");
-            }
-
-            if (valFraction > 0)
-            {
-                // The val range starts above the exam's, so the two slices stay
-                // disjoint even though both are keyed by the same content hash.
-                int valThreshold = (int)Math.Round((testFraction + valFraction) * DeterministicSplit.Buckets);
-                var (valNode, trainNode) = pipeline.Branch(
-                    "val", doc => DeterministicSplit.Bucket(doc, job.Seed) < valThreshold);
-                pipeline = trainNode;
-
-                IBatchStrategy valBatcher = job.UsesRandomWindowBatching
-                    ? new RandomWindowBatcher(batchSize: job.BatchSize, seqLen: job.SeqLen, seed: job.Seed + 1)
-                    : new PackingBatcher(
-                        batchSize: job.BatchSize,
-                        maxSeqLen: job.SeqLen,
-                        eosTokenId: tokenizer.EosId,
-                        padTokenId: tokenizer.PadId);
-                var valLoader = new DataLoader(valNode, tokenise, valBatcher, prefetchBuffer: 1);
-                try
-                {
-                    await foreach (TrainingBatch held in valLoader.LoadAsync(cancellationToken: cancellationToken))
-                    {
-                        validationBatches.Add(held);
-                        if (validationBatches.Count >= 4) break;
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    // A source that cannot be read a second time (a remote stream,
-                    // for example) must not sink the run: train without a val curve.
-                    Log($"Validation: could not read the held-out split ({ex.Message}) - "
-                        + "training will run without a val curve.");
-                    foreach (TrainingBatch held in validationBatches) held.Dispose();
-                    validationBatches.Clear();
-                }
-
-                if (validationBatches.Count == 0)
-                {
-                    Log($"Validation: {job.ValidationPercent:0.#}% requested but the split produced no held-out "
-                        + "documents - training will run without a val curve.");
-                }
-                else
-                {
-                    Log($"Validation: {job.ValidationPercent:0.#}% of documents held out, "
-                        + $"{validationBatches.Count} batch(es) fixed for every evaluation.");
-                }
-            }
-
-            IBatchStrategy batcher = job.UsesRandomWindowBatching
-                ? new RandomWindowBatcher(batchSize: job.BatchSize, seqLen: job.SeqLen, seed: job.Seed)
-                : new PackingBatcher(
-                    batchSize: job.BatchSize,
-                    maxSeqLen: job.SeqLen,
-                    eosTokenId: tokenizer.EosId,
-                    padTokenId: tokenizer.PadId);
-            var dataLoader = new DataLoader(pipeline, tokenise, batcher, prefetchBuffer: 4,
-                maxBatches: job.TotalSteps * job.GradAccumSteps,
-                skipProgress: (done, total) =>
-                    Log($"Data cursor: replayed {done:N0}/{total:N0} batches..."));
-            stringLoader = dataLoader;
-            loaderDescription = dataLoader.Describe();
-            }
-
-            ITrainingBatchSource loader = sftLoader ?? stringLoader!;
-            Log($"Data pipeline: {loaderDescription}");
+            TrainingDataPlan dataPlan = await BuildDataPlanAsync(
+                job, components, pipeline, tokenizer, modelConfig, baseChatTemplate,
+                Log, cancellationToken).ConfigureAwait(false);
+            if (dataPlan.EarlyResult is not null) return dataPlan.EarlyResult;
+            List<TrainingBatch> validationBatches = dataPlan.ValidationBatches;
+            ITrainingBatchSource loader = dataPlan.Loader;
+            Log($"Data pipeline: {dataPlan.LoaderDescription}");
 
             // 4. Model - empty float weights, randomised unless resuming.
             var sharpConfig = job.IsFineTune
@@ -1054,7 +1160,7 @@ public static class TrainingRunner
                     // it picks the cursor up and continues where it stopped - unless
                     // the sources changed, in which case the old cursor no longer
                     // indexes this corpus and replaying it would silently stall.
-                    ResumeDataCursor = !job.IncrementalMode && !changed,
+                    ResumeDataCursor = !job.IncrementalMode && !input.SourcesChanged,
                     DataSeed = job.Seed,
                     DataFingerprint = dataFingerprint,
                     KeepRecent = job.KeepRecent,
@@ -1232,7 +1338,7 @@ public static class TrainingRunner
             // restart even without a manual Save).
             if (job.IncrementalMode)
             {
-                job.SourceFileHashes = plan.CurrentFileHashes;
+                job.SourceFileHashes = input.CurrentFileHashes;
                 IncrementalStore.Save(job);
                 Log("Incremental: recorded per-file hashes for the corpus just trained.");
             }
