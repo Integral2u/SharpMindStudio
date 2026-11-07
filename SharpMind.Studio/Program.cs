@@ -86,6 +86,7 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseMiddleware<OriginGuardMiddleware>();
 app.UseMiddleware<GatewayAuthMiddleware>();
 app.UseMiddleware<GatewayProxyMiddleware>();
 app.UseAntiforgery();

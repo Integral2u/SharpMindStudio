@@ -13,6 +13,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SharpMind.Studio.Core\SharpMind.Studio.Core.csproj" />
+    <ProjectReference Include="..\SharpMind.Studio\SharpMind.Studio.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
