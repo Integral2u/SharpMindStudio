@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="SSH.NET" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
   </ItemGroup>
 
   <ItemGroup>

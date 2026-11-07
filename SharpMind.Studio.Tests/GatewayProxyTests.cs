@@ -1,5 +1,5 @@
+using System.Security.Cryptography;
 using SharpMind.Studio.Core.Gateway;
-
 namespace SharpMind.Studio.Tests;
 
 public sealed class GatewayClaimsTests
@@ -128,6 +128,38 @@ public sealed class GatewaySecretBoxTests
         Assert.Null(GatewaySecretBox.Unprotect("not-base64", keyFile));
         Assert.Null(GatewaySecretBox.Unprotect(null, keyFile));
         Assert.Null(GatewaySecretBox.Unprotect(Convert.ToBase64String([1, 2, 3]), keyFile));
+    }
+
+    [Fact]
+    public void Key_IsDpapiProtectedOnWindows()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var temp = new TempDirectory();
+        string keyFile = temp.Combine("gateway.key");
+
+        GatewaySecretBox.EnsureKey(keyFile);
+
+        Assert.False(File.Exists(keyFile));
+        string dpapi = keyFile + ".dpapi";
+        Assert.True(File.Exists(dpapi));
+        Assert.True(new FileInfo(dpapi).Length > 32);
+    }
+
+    [Fact]
+    public void LegacyRawKey_IsMigratedToDpapiAndStillDecrypts()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var temp = new TempDirectory();
+        string keyFile = temp.Combine("gateway.key");
+        File.WriteAllBytes(keyFile, RandomNumberGenerator.GetBytes(32));
+
+        string protectedText = GatewaySecretBox.Protect("super-secret", keyFile);
+
+        Assert.Equal("super-secret", GatewaySecretBox.Unprotect(protectedText, keyFile));
+        Assert.False(File.Exists(keyFile));
+        Assert.True(File.Exists(keyFile + ".dpapi"));
     }
 }
 

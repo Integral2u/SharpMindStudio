@@ -5,9 +5,11 @@ namespace SharpMind.Studio.Core.Gateway;
 
 /// <summary>
 /// Encrypts gateway secrets at rest with AES-GCM. The key is generated once
-/// next to the gateway data and never leaves the user's profile. Without the
-/// key file the stored values cannot be recovered, so a copy of that file is
-/// part of backing up the gateway.
+/// next to the gateway data and never leaves the user's profile. On Windows the
+/// key file itself is wrapped with DPAPI (current user), so copying the profile
+/// to another account or machine does not expose the stored secrets; restore a
+/// backup as the same user on the same machine. Other platforms keep the raw key
+/// file with owner-only permissions, which is what the Docker image uses.
 /// </summary>
 public static class GatewaySecretBox
 {
@@ -15,6 +17,10 @@ public static class GatewaySecretBox
     private const int NonceSize = 12;
     private const int TagSize = 16;
     private const byte Version = 1;
+    private const string DpapiSuffix = ".dpapi";
+
+    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("SharpMind.Studio.SecretKey.v1");
+    private static readonly object KeyGate = new();
 
     public static string Protect(string plaintext, string keyFile)
     {
@@ -39,7 +45,7 @@ public static class GatewaySecretBox
     public static string? Unprotect(string? protectedText, string keyFile)
     {
         if (string.IsNullOrWhiteSpace(protectedText)) return null;
-        if (!File.Exists(keyFile)) return null;
+        if (!HasKey(keyFile)) return null;
 
         byte[] packed;
         try
@@ -55,8 +61,8 @@ public static class GatewaySecretBox
 
         try
         {
-            byte[] key = File.ReadAllBytes(keyFile);
-            if (key.Length != KeySize) return null;
+            byte[]? key = TryLoadKey(keyFile);
+            if (key is null) return null;
 
             ReadOnlySpan<byte> nonce = packed.AsSpan(1, NonceSize);
             ReadOnlySpan<byte> tag = packed.AsSpan(1 + NonceSize, TagSize);
@@ -67,11 +73,8 @@ public static class GatewaySecretBox
             aes.Decrypt(nonce, cipher, tag, plain);
             return Encoding.UTF8.GetString(plain);
         }
-        catch (CryptographicException)
-        {
-            return null;
-        }
-        catch (IOException)
+        catch (Exception ex) when (ex is CryptographicException or IOException
+            or UnauthorizedAccessException or PlatformNotSupportedException or InvalidDataException)
         {
             return null;
         }
@@ -80,31 +83,140 @@ public static class GatewaySecretBox
     public static byte[] EnsureKey(string keyFile)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(keyFile);
-        if (File.Exists(keyFile))
+        string full = Path.GetFullPath(keyFile);
+
+        lock (KeyGate)
         {
-            byte[] existing = File.ReadAllBytes(keyFile);
-            if (existing.Length == KeySize) return existing;
-            throw new InvalidDataException($"Gateway key '{keyFile}' is not {KeySize} bytes.");
+            byte[]? existing = TryLoadKeyCore(full);
+            if (existing is not null) return existing;
+
+            return SaveKeyCore(full, RandomNumberGenerator.GetBytes(KeySize));
+        }
+    }
+
+    private static bool HasKey(string keyFile) =>
+        File.Exists(keyFile) || File.Exists(keyFile + DpapiSuffix);
+
+    private static byte[]? TryLoadKey(string keyFile)
+    {
+        lock (KeyGate)
+        {
+            return TryLoadKeyCore(Path.GetFullPath(keyFile));
+        }
+    }
+
+    private static byte[]? TryLoadKeyCore(string full)
+    {
+        string dpapi = full + DpapiSuffix;
+        if (File.Exists(dpapi))
+        {
+            if (!OperatingSystem.IsWindows())
+                throw new InvalidDataException(
+                    $"'{dpapi}' is DPAPI-protected and can only be read on Windows.");
+
+            byte[] key = ProtectedData.Unprotect(
+                File.ReadAllBytes(dpapi),
+                Entropy,
+                DataProtectionScope.CurrentUser);
+            ValidateKey(key, dpapi);
+            return key;
         }
 
-        string? folder = Path.GetDirectoryName(Path.GetFullPath(keyFile));
+        if (!File.Exists(full)) return null;
+
+        byte[] legacy = File.ReadAllBytes(full);
+        ValidateKey(legacy, full);
+
+        if (OperatingSystem.IsWindows())
+        {
+            // Migrate a pre-DPAPI key in place: keep only the protected copy.
+            byte[] effective = SaveKeyCore(full, legacy);
+            TryDelete(full);
+            return effective;
+        }
+
+        return legacy;
+    }
+
+    /// <summary>
+    /// Writes the key, returning the key that actually won a concurrent create.
+    /// On Windows only the DPAPI blob is written.
+    /// </summary>
+    private static byte[] SaveKeyCore(string full, byte[] key)
+    {
+        string? folder = Path.GetDirectoryName(full);
         if (!string.IsNullOrWhiteSpace(folder)) Directory.CreateDirectory(folder);
 
-        byte[] key = RandomNumberGenerator.GetBytes(KeySize);
-        try
+        if (OperatingSystem.IsWindows())
         {
-            using var stream = new FileStream(keyFile, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-            stream.Write(key);
-        }
-        catch (IOException) when (File.Exists(keyFile))
-        {
-            // Another process created the key first; use that one.
-            byte[] existing = File.ReadAllBytes(keyFile);
-            if (existing.Length != KeySize)
-                throw new InvalidDataException($"Gateway key '{keyFile}' is not {KeySize} bytes.");
-            return existing;
+            string dpapi = full + DpapiSuffix;
+            byte[] blob = ProtectedData.Protect(key, Entropy, DataProtectionScope.CurrentUser);
+            try
+            {
+                using var stream = new FileStream(
+                    dpapi, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                stream.Write(blob);
+                return key;
+            }
+            catch (IOException) when (File.Exists(dpapi))
+            {
+                byte[] existing = ProtectedData.Unprotect(
+                    File.ReadAllBytes(dpapi),
+                    Entropy,
+                    DataProtectionScope.CurrentUser);
+                ValidateKey(existing, dpapi);
+                return existing;
+            }
         }
 
-        return key;
+        try
+        {
+            using var stream = new FileStream(
+                full, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            stream.Write(key);
+            SetOwnerOnly(full);
+            return key;
+        }
+        catch (IOException) when (File.Exists(full))
+        {
+            byte[] existing = File.ReadAllBytes(full);
+            ValidateKey(existing, full);
+            return existing;
+        }
+    }
+
+    private static void ValidateKey(byte[] key, string path)
+    {
+        if (key.Length != KeySize)
+            throw new InvalidDataException($"Secret key '{path}' is not {KeySize} bytes.");
+    }
+
+    private static void SetOwnerOnly(string path)
+    {
+        if (OperatingSystem.IsWindows()) return;
+
+        try
+        {
+            File.SetUnixFileMode(
+                path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or PlatformNotSupportedException)
+        {
+            // A filesystem without Unix permissions: the key still works.
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A leftover legacy key is superseded by the DPAPI copy.
+        }
     }
 }
