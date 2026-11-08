@@ -1,0 +1,177 @@
+﻿@using SharpMind.Inference.Chat
+@using SharpMind.Studio.Core.Work
+@using SharpMind.Studio.Services
+@inject StudioWorkService Work
+@inject StudioChatService Chat
+@inject StudioWorkspaceService Workspace
+@implements IDisposable
+
+<div class="page-head">
+    <div>
+        <div class="eyebrow">Run analysis</div>
+        <h1>Agents</h1>
+        <p class="faint">
+            The work agent's tools and skills, and the current chat as a turn-by-turn trace:
+            who spoke, which tool result came back, and which artifacts were produced.
+        </p>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Agent</div>
+            <h2>@Workspace.Project.Document.Name</h2>
+        </div>
+        <span class="faint small mono">
+            @(Chat.Document?.Mode ?? "no chat") · @(Chat.Model?.FileName ?? "no local model") ·
+            @Chat.DisplayMessages.Count messages
+        </span>
+    </div>
+    <div class="panel-body row">
+        <div class="field grow">
+            <span class="field-label">Tools</span>
+            <strong>@Work.Tools.Count</strong>
+            <span class="faint small"> (@Work.Tools.Count(tool => Work.IsToolEnabled(tool.Name)) enabled)</span>
+        </div>
+        <div class="field grow">
+            <span class="field-label">Skills</span>
+            <strong>@Work.SystemSkills.Count + @Work.ProjectSkills.Count</strong>
+            <span class="faint small"> (system + project)</span>
+        </div>
+        <div class="field grow">
+            <span class="field-label">Delegated turns</span>
+            <strong>@Chat.DisplayMessages.Count(message => message.Role == ChatRole.Agent && message.Name is not null)</strong>
+        </div>
+        <div class="field grow">
+            <span class="field-label">Tool results</span>
+            <strong>@Chat.DisplayMessages.Count(message => message.Role == ChatRole.Tool)</strong>
+        </div>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Toolbox</div>
+            <h2>Tools</h2>
+        </div>
+        <span class="faint small mono">@Work.Tools.Count</span>
+    </div>
+    <div class="panel-body">
+        <table class="table">
+            <thead>
+                <tr><th>Name</th><th>Group</th><th>Source</th><th>Kind</th><th>Enabled</th></tr>
+            </thead>
+            <tbody>
+                @foreach (WorkToolInfo tool in Work.Tools)
+                {
+                    <tr>
+                        <td class="mono">@tool.Name</td>
+                        <td>@tool.Group</td>
+                        <td>@tool.Source</td>
+                        <td>@(tool.IsPlugin ? "plugin" : "built-in")</td>
+                        <td>@(Work.IsToolEnabled(tool.Name) ? "yes" : "no")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Instructions</div>
+            <h2>Skills</h2>
+        </div>
+        <span class="faint small mono">@(Work.SystemSkills.Count + Work.ProjectSkills.Count)</span>
+    </div>
+    <div class="panel-body">
+        <table class="table">
+            <thead>
+                <tr><th>Name</th><th>Scope</th><th>Enabled</th></tr>
+            </thead>
+            <tbody>
+                @foreach (WorkSkill skill in Work.SystemSkills)
+                {
+                    <tr>
+                        <td>@skill.Name</td>
+                        <td>system</td>
+                        <td>@(Work.IsSystemSkillEnabled(skill) ? "yes" : "no")</td>
+                    </tr>
+                }
+                @foreach (WorkSkill skill in Work.ProjectSkills)
+                {
+                    <tr>
+                        <td>@skill.Name</td>
+                        <td>project</td>
+                        <td>@(Work.IsProjectSkillEnabled(skill) ? "yes" : "no")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Trace</div>
+            <h2>Current transcript</h2>
+        </div>
+        <button type="button" class="button" @onclick="Refresh">Refresh</button>
+    </div>
+    <div class="panel-body">
+        @if (Chat.DisplayMessages.Count == 0)
+        {
+            <p class="faint">Open a chat or send a turn to populate the trace.</p>
+        }
+        else
+        {
+            <table class="table">
+                <thead>
+                    <tr><th>#</th><th>Time</th><th>Role</th><th>Name</th><th>Artifacts</th><th>Content</th></tr>
+                </thead>
+                <tbody>
+                    @for (int index = 0; index < Chat.DisplayMessages.Count; index++)
+                    {
+                        ChatMessage message = Chat.DisplayMessages[index];
+                        <tr class="@(message.Role == ChatRole.Tool ? "lab-least" : "")">
+                            <td class="mono">@index</td>
+                            <td class="mono">@message.Timestamp.ToLocalTime().ToString("HH:mm:ss")</td>
+                            <td>@message.Role</td>
+                            <td>@(message.Name ?? "")</td>
+                            <td class="mono">@(message.Artifacts?.Length ?? 0)</td>
+                            <td>@Preview(message.Content)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</section>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Chat.Changed += OnChanged;
+        Work.Changed += OnChanged;
+    }
+
+    public void Dispose()
+    {
+        Chat.Changed -= OnChanged;
+        Work.Changed -= OnChanged;
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Refresh() => StateHasChanged();
+
+    private static string Preview(string content)
+    {
+        string text = content.Replace('\n', ' ').Replace('\r', ' ').Trim();
+        return text.Length <= 140 ? text : text[..140] + "…";
+    }
+}

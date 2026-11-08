@@ -36,8 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   captures one prompt through the activation hook and draws attention/FFN RMS
   heatmaps over layers and tokens on a log scale. The Latent space tab projects
   the prompt's final hidden states to two dimensions with classical MDS and draws
-  a hoverable scatter with the explained variance. Agents is the remaining
-  reserved lab. Source builds until the 1.1.1 packages publish.
+  a hoverable scatter with the explained variance. The Agents tab lists the work
+  agent's tools and skills with their enabled state and the current transcript as
+  a turn-by-turn trace of agents, tool results and artifacts; it needs no model
+  load. Source builds until the 1.1.1 packages publish.
 - **LFM3-VL image attachments** - when a vision projector is present next to
   the model, attached images are decoded and described natively. An image-only
   send uses "Describe this image."; the answer joins the transcript and the next

@@ -72,6 +72,8 @@ public sealed class StudioWorkService : IDisposable
     public IReadOnlyList<WorkSkill> SystemSkills => _systemSkills.Skills;
 
     public WorkSettings Settings => _settings;
+    public IReadOnlyList<WorkSkill> ProjectSkills => _settings.Skills;
+    public IReadOnlyList<WorkToolInfo> Tools => _tools.Tools;
     public string Memory => _memory;
     public WorkPermissionRequest? PendingPermission
     {
@@ -160,7 +162,7 @@ public sealed class StudioWorkService : IDisposable
         return builder;
     }
 
-    private bool IsToolEnabled(string name)
+    public bool IsToolEnabled(string name)
     {
         if (_settings.DisabledTools.Contains(name, StringComparer.OrdinalIgnoreCase)) return false;
         return _tools.IsDefaultEnabled(name) ||
