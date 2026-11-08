@@ -67,9 +67,11 @@
             @if (_chatsExpanded)
             {
                 <div class="nav-chats">
+                    <input type="search" class="nav-chat-search" value="@_chatQuery"
+                           placeholder="Search chat history..." @oninput="OnChatSearch" />
                     @if (ChatOnly.Count == 0)
                     {
-                        <div class="nav-chat-empty">No chats yet</div>
+                        <div class="nav-chat-empty">@(string.IsNullOrWhiteSpace(_chatQuery) ? "No chats yet" : "No matching chats")</div>
                     }
                     else
                     {
@@ -108,9 +110,11 @@
             @if (_workChatsExpanded)
             {
                 <div class="nav-chats">
+                    <input type="search" class="nav-chat-search" value="@_workQuery"
+                           placeholder="Search work sessions..." @oninput="OnWorkSearch" />
                     @if (WorkOnly.Count == 0)
                     {
-                        <div class="nav-chat-empty">No work sessions yet</div>
+                        <div class="nav-chat-empty">@(string.IsNullOrWhiteSpace(_workQuery) ? "No work sessions yet" : "No matching work sessions")</div>
                     }
                     else
                     {
@@ -249,13 +253,44 @@
 
     private bool _chatsExpanded;
     private bool _workChatsExpanded;
+    private string _chatQuery = "";
+    private string _workQuery = "";
     private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> _chats = [];
+    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> _chatResults = [];
+    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> _workResults = [];
 
     private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> ChatOnly =>
-        [.. _chats.Where(chat => !string.Equals(chat.Mode, "work", StringComparison.OrdinalIgnoreCase))];
+        Filter(_chatQuery, _chatResults, work: false);
 
     private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> WorkOnly =>
-        [.. _chats.Where(chat => string.Equals(chat.Mode, "work", StringComparison.OrdinalIgnoreCase))];
+        Filter(_workQuery, _workResults, work: true);
+
+    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> Filter(
+        string query,
+        IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> results,
+        bool work)
+    {
+        IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> source =
+            string.IsNullOrWhiteSpace(query) ? _chats : results;
+        return [.. source.Where(chat =>
+            string.Equals(chat.Mode, "work", StringComparison.OrdinalIgnoreCase) == work)];
+    }
+
+    private void OnChatSearch(ChangeEventArgs args)
+    {
+        _chatQuery = args.Value?.ToString() ?? "";
+        _chatResults = string.IsNullOrWhiteSpace(_chatQuery)
+            ? []
+            : ChatService.SearchSessions(_chatQuery);
+    }
+
+    private void OnWorkSearch(ChangeEventArgs args)
+    {
+        _workQuery = args.Value?.ToString() ?? "";
+        _workResults = string.IsNullOrWhiteSpace(_workQuery)
+            ? []
+            : ChatService.SearchSessions(_workQuery);
+    }
 
     private void ToggleChats()
     {
@@ -269,7 +304,14 @@
         if (_workChatsExpanded) LoadChats();
     }
 
-    private void LoadChats() => _chats = ChatService.Sessions;
+    private void LoadChats()
+    {
+        _chats = ChatService.Sessions;
+        if (!string.IsNullOrWhiteSpace(_chatQuery))
+            _chatResults = ChatService.SearchSessions(_chatQuery);
+        if (!string.IsNullOrWhiteSpace(_workQuery))
+            _workResults = ChatService.SearchSessions(_workQuery);
+    }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs args) =>
         _ = InvokeAsync(() =>

@@ -296,6 +296,10 @@ public sealed class StudioChatService : IAsyncDisposable
     public string? PendingPrompt { get; set; }
     public IReadOnlyList<ChatSessionSummary> Sessions => _store.List();
 
+    /// <summary>Full-text search across saved chat/work sessions.</summary>
+    public IReadOnlyList<ChatSessionSummary> SearchSessions(string query) =>
+        _store.Search(query);
+
     public string? TakePendingPrompt()
     {
         string? prompt = PendingPrompt;

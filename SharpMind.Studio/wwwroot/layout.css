@@ -306,6 +306,27 @@
     gap: .2rem;
 }
 
+.nav-chat-search {
+    width: 100%;
+    margin: 0 0 .25rem;
+    padding: .3rem .45rem;
+    border: 1px solid var(--line);
+    border-radius: .35rem;
+    background: rgba(8, 13, 20, .65);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: .68rem;
+}
+
+.nav-chat-search::placeholder {
+    color: var(--faint);
+}
+
+.nav-chat-search:focus {
+    outline: none;
+    border-color: rgba(var(--accent-rgb), .5);
+}
+
 .nav-chat-link {
     flex: 1;
     min-width: 0;

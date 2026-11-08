@@ -28,25 +28,7 @@ public sealed class ChatSessionStore
             try
             {
                 ChatSessionDocument document = JsonFile.Read<ChatSessionDocument>(file);
-                string preview = document.Messages.LastOrDefault(message =>
-                    message.Role == ChatRole.Agent && !string.IsNullOrWhiteSpace(message.Content))?.Content
-                    ?? document.Messages.LastOrDefault()?.Content
-                    ?? "";
-                if (preview.Length > 90) preview = preview[..90] + "...";
-
-                sessions.Add(new ChatSessionSummary
-                {
-                    Id = document.Id,
-                    Name = document.Name,
-                    ModelPath = document.ModelPath,
-                    Provider = document.Provider ?? "local",
-                    RemoteModel = document.RemoteModel,
-                    Mode = document.Mode,
-                    TunePreset = document.TunePreset,
-                    UpdatedUtc = document.UpdatedUtc,
-                    MessageCount = document.Messages.Count,
-                    Preview = preview.ReplaceLineEndings(" "),
-                });
+                sessions.Add(Summarize(document, preview: null));
             }
             catch
             {
@@ -54,6 +36,77 @@ public sealed class ChatSessionStore
         }
 
         return [.. sessions.OrderByDescending(session => session.UpdatedUtc)];
+    }
+
+    /// <summary>
+    /// Finds sessions whose name or message text contains <paramref name="query"/>.
+    /// The returned preview is the matching line, so the list shows why a session
+    /// matched instead of only the last reply.
+    /// </summary>
+    public IReadOnlyList<ChatSessionSummary> Search(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return List();
+        string needle = query.Trim();
+        var sessions = new List<ChatSessionSummary>();
+        foreach (string directory in Directory.EnumerateDirectories(Root))
+        {
+            string file = Path.Combine(directory, ChatFileName);
+            if (!File.Exists(file)) continue;
+
+            try
+            {
+                ChatSessionDocument document = JsonFile.Read<ChatSessionDocument>(file);
+                string? snippet = FindSnippet(document, needle);
+                bool nameMatches = document.Name.Contains(needle, StringComparison.OrdinalIgnoreCase);
+                if (!nameMatches && snippet is null) continue;
+                sessions.Add(Summarize(document, snippet));
+            }
+            catch
+            {
+            }
+        }
+
+        return [.. sessions.OrderByDescending(session => session.UpdatedUtc)];
+    }
+
+    private static ChatSessionSummary Summarize(ChatSessionDocument document, string? preview)
+    {
+        string text = preview
+            ?? document.Messages.LastOrDefault(message =>
+                message.Role == ChatRole.Agent && !string.IsNullOrWhiteSpace(message.Content))?.Content
+            ?? document.Messages.LastOrDefault()?.Content
+            ?? "";
+        if (text.Length > 120) text = text[..120] + "...";
+
+        return new ChatSessionSummary
+        {
+            Id = document.Id,
+            Name = document.Name,
+            ModelPath = document.ModelPath,
+            Provider = document.Provider ?? "local",
+            RemoteModel = document.RemoteModel,
+            Mode = document.Mode,
+            TunePreset = document.TunePreset,
+            UpdatedUtc = document.UpdatedUtc,
+            MessageCount = document.Messages.Count,
+            Preview = text.ReplaceLineEndings(" "),
+        };
+    }
+
+    private static string? FindSnippet(ChatSessionDocument document, string needle)
+    {
+        foreach (ChatMessage message in document.Messages)
+        {
+            if (string.IsNullOrEmpty(message.Content)) continue;
+            int index = message.Content.IndexOf(needle, StringComparison.OrdinalIgnoreCase);
+            if (index < 0) continue;
+
+            int start = Math.Max(0, index - 40);
+            int length = Math.Min(message.Content.Length - start, needle.Length + 80);
+            string snippet = message.Content.Substring(start, length);
+            return (start > 0 ? "..." : "") + snippet + (start + length < message.Content.Length ? "..." : "");
+        }
+        return null;
     }
 
     public ChatSessionDocument Create(string modelPath, string? familyId, string? familyName, string? inferenceVersion, string? systemPrompt, string mode = "chat", string? tunePreset = null, string? tuneTarget = null)

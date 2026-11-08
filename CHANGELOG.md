@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Chat history search** - the Chat and Work lists in the sidebar have a search
+  box that matches a session name or any message body, and the preview shows the
+  matching line. Results stay split by chat/work.
 - **Chat artifacts** - attach images, audio, text and other files from the
   composer; render returned images, audio, text/code and download links.
   Generated data-URL media and fenced code blocks are captured as artifacts.
