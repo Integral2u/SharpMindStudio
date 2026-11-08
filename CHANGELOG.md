@@ -42,8 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The Model visualizer tab
   captures one prompt through the activation hook and draws attention/FFN RMS
   heatmaps over layers and tokens on a log scale. The Latent space tab projects
-  the prompt's final hidden states to two dimensions with classical MDS and draws
-  a hoverable scatter with the explained variance. The Agents tab lists the work
+  the prompt's final hidden states to two dimensions with classical MDS, labels
+  each point with its decoded token and draws a hoverable scatter with the
+  explained variance; an Aggregate option keeps earlier prompts in the plot
+  instead of clearing it, with one colour per prompt. The Agents tab lists the work
   agent's tools and skills with their enabled state and the current transcript as
   a turn-by-turn trace of agents, tool results and artifacts; it needs no model
   load. Source builds until the 1.1.1 packages publish.

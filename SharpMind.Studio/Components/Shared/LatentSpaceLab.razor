@@ -46,6 +46,18 @@
             <button type="button" class="button" @onclick="Latent.Cancel" disabled="@(!Latent.IsRunning)">
                 Cancel
             </button>
+            <button type="button" class="button" @onclick="Latent.ClearRuns"
+                    disabled="@(Latent.IsRunning || Latent.Runs.Count == 0)">
+                Clear plot
+            </button>
+            <label class="small">
+                <input type="checkbox" @bind="Latent.Aggregate" disabled="@Latent.IsRunning" />
+                Aggregate runs
+            </label>
+            <label class="small">
+                <input type="checkbox" @bind="_showLabels" />
+                Labels
+            </label>
             <span class="status-line">@Latent.Status</span>
         </div>
 
@@ -56,7 +68,7 @@
     </div>
 </section>
 
-@if (Latent.Map is { } map)
+@if (Latent.Runs.Count > 0)
 {
     <section class="panel">
         <div class="panel-head">
@@ -65,35 +77,70 @@
                 <h2>@Latent.ModelName</h2>
             </div>
             <span class="faint small mono">
-                @map.Tokens tokens · @map.Dimensions dims · 2D variance @(map.ExplainedVariance.ToString("P1"))
+                @Latent.Runs.Count prompt(s) · @(PlotPoints().Count) tokens
             </span>
         </div>
-        <div class="panel-body">
+        <div class="panel-body stack">
+            <div class="row small">
+                @for (int runIndex = 0; runIndex < Latent.Runs.Count; runIndex++)
+                {
+                    LatentRun run = Latent.Runs[runIndex];
+                    <span class="mono">
+                        <span class="lab-swatch" style="background:@ColorFor(runIndex)"></span>
+                        @Shorten(run.Prompt)
+                        <span class="faint">
+                            (@run.Map.Tokens tokens · @run.Map.ExplainedVariance.ToString("P1"))
+                        </span>
+                    </span>
+                }
+            </div>
             <svg class="lab-scatter" viewBox="0 0 520 520" role="img" aria-label="Latent projection">
                 <line x1="40" y1="260" x2="480" y2="260" class="lab-axis" />
                 <line x1="260" y1="40" x2="260" y2="480" class="lab-axis" />
-                @foreach (var point in Points(map))
+                @foreach (PlotPoint point in PlotPoints())
                 {
-                    <circle cx="@point.X" cy="@point.Y" r="6" class="lab-point">
-                        <title>@point.Label (@point.RawX.ToString("F3"), @point.RawY.ToString("F3"))</title>
+                    <circle cx="@point.X.ToString("F1")" cy="@point.Y.ToString("F1")" r="5" class="lab-point"
+                            style="fill:@point.Color;stroke:@point.Color">
+                        <title>@point.Group · @point.RawLabel (@point.RawX.ToString("F3"), @point.RawY.ToString("F3"))</title>
                     </circle>
+                    @if (_showLabels)
+                    {
+                        @((MarkupString)LabelMarkup(point))
+                    }
                 }
             </svg>
             <div class="small faint">
-                Hover a point for the token and its coordinates. The axes are the first two
-                principal components, centred and scaled to the plot.
+                Labels are the decoded token at each point; a leading space is shown as ␣.
+                Aggregate keeps earlier prompts in the plot instead of clearing it, and each
+                prompt gets its own colour. The axes are the first two principal components,
+                scaled across every visible run.
             </div>
         </div>
     </section>
 }
 
 @code {
+    private static readonly string[] RunColors =
+    [
+        "rgba(45, 212, 191, .95)",
+        "rgba(245, 158, 11, .95)",
+        "rgba(96, 165, 250, .95)",
+        "rgba(244, 114, 182, .95)",
+        "rgba(52, 211, 153, .95)",
+        "rgba(167, 139, 250, .95)",
+        "rgba(251, 113, 133, .95)",
+        "rgba(34, 211, 238, .95)",
+    ];
+
     private IReadOnlyList<ModelDescriptor> _models = [];
     private string _selectedModelPath = "";
     private string _prompt = "The quick brown fox jumps over the lazy dog.";
     private int _maxTokens = 64;
+    private bool _showLabels = true;
 
-    private sealed record PlotPoint(double X, double Y, double RawX, double RawY, string Label);
+    private sealed record PlotPoint(
+        double X, double Y, double RawX, double RawY,
+        string Label, string RawLabel, string Group, string Color);
 
     protected override async Task OnInitializedAsync()
     {
@@ -118,19 +165,60 @@
         await Latent.RunAsync(model, _prompt, Math.Clamp(_maxTokens, 1, 256));
     }
 
-    private static IReadOnlyList<PlotPoint> Points(LatentSpaceMap map)
+    private IReadOnlyList<PlotPoint> PlotPoints()
     {
-        if (map.Points.Count == 0) return [];
-        double minX = map.Points.Min(point => point.X);
-        double maxX = map.Points.Max(point => point.X);
-        double minY = map.Points.Min(point => point.Y);
-        double maxY = map.Points.Max(point => point.Y);
-        return [.. map.Points.Select(point => new PlotPoint(
-            Scale(point.X, minX, maxX),
-            Scale(point.Y, minY, maxY),
-            point.X,
-            point.Y,
-            point.Text))];
+        var all = Latent.Runs.SelectMany(run => run.Map.Points).ToList();
+        if (all.Count == 0) return [];
+
+        double minX = all.Min(point => point.X);
+        double maxX = all.Max(point => point.X);
+        double minY = all.Min(point => point.Y);
+        double maxY = all.Max(point => point.Y);
+        var points = new List<PlotPoint>(all.Count);
+        for (int runIndex = 0; runIndex < Latent.Runs.Count; runIndex++)
+        {
+            LatentRun run = Latent.Runs[runIndex];
+            string color = ColorFor(runIndex);
+            string group = Shorten(run.Prompt, 26);
+            foreach (LatentPoint point in run.Map.Points)
+            {
+                points.Add(new PlotPoint(
+                    Scale(point.X, minX, maxX),
+                    Scale(point.Y, minY, maxY),
+                    point.X,
+                    point.Y,
+                    DisplayLabel(point.Text),
+                    point.Text,
+                    group,
+                    color));
+            }
+        }
+        return points;
+    }
+
+    private static string ColorFor(int index) => RunColors[index % RunColors.Length];
+
+    private static string LabelMarkup(PlotPoint point)
+    {
+        string x = (point.X + 7).ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+        string y = (point.Y + 3.5).ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+        string label = System.Net.WebUtility.HtmlEncode(point.Label);
+        return $"<text x=\"{x}\" y=\"{y}\" class=\"lab-point-label\" style=\"fill:{point.Color}\">{label}</text>";
+    }
+
+    private static string DisplayLabel(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return "·";
+        string trimmed = text.Trim();
+        if (trimmed.Length == 0) return "␣";
+        trimmed = trimmed.Replace("\r", "").Replace("\n", "\\n").Replace("\t", "\\t");
+        return trimmed.Length <= 14 ? trimmed : trimmed[..14] + "…";
+    }
+
+    private static string Shorten(string text, int max = 40)
+    {
+        string flat = text.ReplaceLineEndings(" ").Trim();
+        return flat.Length <= max ? flat : flat[..max] + "…";
     }
 
     private static double Scale(double value, double min, double max)

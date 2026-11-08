@@ -67,3 +67,19 @@
 .lab-point:hover {
     fill: rgba(var(--accent-rgb), 1);
 }
+
+.lab-point-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    pointer-events: none;
+    user-select: none;
+}
+
+.lab-swatch {
+    display: inline-block;
+    width: .6rem;
+    height: .6rem;
+    border-radius: 2px;
+    margin-right: .3rem;
+    vertical-align: middle;
+}
