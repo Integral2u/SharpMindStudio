@@ -1,0 +1,11 @@
+<Solution>
+  <!-- Package-only solution for clean clones and CI: no sibling SharpMind checkout,
+       build with -p:SharpMindSource=package so the Studio projects use the NuGet
+       packages. Local development uses SharpMind.Studio.slnx. -->
+  <Project Path="SharpMind.Studio.Cli/SharpMind.Studio.Cli.csproj" />
+  <Project Path="SharpMind.Studio.ComputeHost/SharpMind.Studio.ComputeHost.csproj" />
+  <Project Path="SharpMind.Studio.Core/SharpMind.Studio.Core.csproj" />
+  <Project Path="SharpMind.Studio.Tests/SharpMind.Studio.Tests.csproj" />
+  <Project Path="SharpMind.Studio.UI/SharpMind.Studio.UI.csproj" />
+  <Project Path="SharpMind.Studio/SharpMind.Studio.csproj" />
+</Solution>

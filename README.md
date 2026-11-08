@@ -33,11 +33,11 @@ dotnet test  SharpMind.Studio.slnx -c Debug
 dotnet run --project SharpMind.Studio
 ```
 
-In Visual Studio, open **`SharpMind.Studio.Source.slnx`** when the sibling
-`SharpMind` checkout is present. It loads the engine projects into the solution,
-so the IDE restores and builds them instead of reporting `NU1105` for project
-references outside the solution. `SharpMind.Studio.slnx` remains the package-only
-solution for clean clones.
+In Visual Studio, open **`SharpMind.Studio.slnx`** when the sibling `SharpMind`
+checkout is present. It includes the engine projects in the solution, so the IDE
+restores and builds them instead of reporting `NU1105` for project references
+outside the solution. `SharpMind.Studio.Package.slnx` is the package-only
+solution for clean clones and CI (`-p:SharpMindSource=package`).
 
 Open <http://127.0.0.1:5117>. Add a `.smm` or GGUF model in **Training → Models**,
 or connect OpenRouter or a SharpMind Compute host.

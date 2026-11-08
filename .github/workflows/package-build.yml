@@ -17,4 +17,4 @@ jobs:
       # No sibling SharpMind checkout: Studio must compile against the
       # published NuGet packages, exactly like a clean clone.
       - name: Build against NuGet packages
-        run: dotnet build SharpMind.Studio.slnx -c Release -p:SharpMindSource=package
+        run: dotnet build SharpMind.Studio.Package.slnx -c Release -p:SharpMindSource=package
