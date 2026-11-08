@@ -25,7 +25,10 @@ The source path below needs the .NET 10 SDK; the installer is built from the sam
 
 Requirements: Windows 10/11 and the [.NET 10 SDK](https://dotnet.microsoft.com/).
 
+Source development uses the sibling engine checkout:
+
 ```powershell
+git clone https://github.com/Integral2u/SharpMind
 git clone https://github.com/Integral2u/SharpMindStudio
 cd SharpMindStudio
 dotnet build SharpMind.Studio.slnx -c Debug
@@ -36,8 +39,13 @@ dotnet run --project SharpMind.Studio
 In Visual Studio, open **`SharpMind.Studio.slnx`** when the sibling `SharpMind`
 checkout is present. It includes the engine projects in the solution, so the IDE
 restores and builds them instead of reporting `NU1105` for project references
-outside the solution. `SharpMind.Studio.Package.slnx` is the package-only
-solution for clean clones and CI (`-p:SharpMindSource=package`).
+outside the solution.
+
+A clean Studio-only clone (no sibling engine checkout) uses the package solution:
+
+```powershell
+dotnet build SharpMind.Studio.Package.slnx -c Debug -p:SharpMindSource=package
+```
 
 Open <http://127.0.0.1:5117>. Add a `.smm` or GGUF model in **Training → Models**,
 or connect OpenRouter or a SharpMind Compute host.
