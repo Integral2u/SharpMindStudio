@@ -33,7 +33,9 @@ public sealed class StudioChatService : IAsyncDisposable
     private LoadedStudioModel? _loaded;
 #if SHARPMIND_AUDIO
     private Lfm3AudioRuntime? _audioRuntime;
+    private Lfm3TtsRuntime? _ttsRuntime;
     private bool? _supportsAudio;
+    private bool? _supportsTts;
 #endif
     private readonly SemaphoreSlim _audioGate = new(1, 1);
     private CancellationTokenSource? _streamCts;
@@ -86,8 +88,10 @@ public sealed class StudioChatService : IAsyncDisposable
     public bool IsRemote => IsOpenRouter || IsCompute;
 #if SHARPMIND_AUDIO
     public bool SupportsAudio => _supportsAudio ??= ComputeSupportsAudio();
+    public bool SupportsTts => _supportsTts ??= ComputeSupportsTts();
 #else
     public bool SupportsAudio => false;
+    public bool SupportsTts => false;
 #endif
     public string? ComputeProviderId => _document?.RemoteProvider;
     public string? RemoteProviderName => IsCompute
@@ -116,6 +120,14 @@ public sealed class StudioChatService : IAsyncDisposable
         if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase)) return false;
         return Lfm3AudioRuntime.FindProjector(_model.Path) is not null;
     }
+
+    private bool ComputeSupportsTts()
+    {
+        if (IsRemote || _loaded is null || _model is null) return false;
+        if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase)) return false;
+        string? projector = Lfm3AudioRuntime.FindProjector(_model.Path);
+        return projector is not null && Lfm3TtsRuntime.IsTtsProjector(projector);
+    }
 #endif
 
     /// <summary>
@@ -141,6 +153,9 @@ public sealed class StudioChatService : IAsyncDisposable
         await _audioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // Each runtime dequantizes the projector; keep only one alive at a time.
+            _ttsRuntime?.Dispose();
+            _ttsRuntime = null;
             _audioRuntime ??= new Lfm3AudioRuntime(
                 _loaded.Model, _loaded.Tokenizer, _loaded.Config, projector);
             _status = "Transcribing audio...";
@@ -171,6 +186,94 @@ public sealed class StudioChatService : IAsyncDisposable
             "Audio transcription needs the SharpMind source build (the sibling repository) or the 1.1.1 packages.");
 #endif
     }
+    /// <summary>
+    /// Synthesizes text with the native LFM3-Audio depth decoder and LiquidCodec. The first
+    /// call loads the projector; later calls reuse it until the model or the other audio
+    /// runtime is released.
+    /// </summary>
+    public async Task<ChatArtifact> SynthesizeAsync(
+        string text,
+        string? fileName = null,
+        CancellationToken cancellationToken = default)
+    {
+#if SHARPMIND_AUDIO
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        if (IsRemote || _loaded is null || _model is null)
+            throw new InvalidOperationException("Load a local LFM3-Audio model before synthesizing speech.");
+        if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException("This model is not an LFM3 text backbone.");
+        string projector = Lfm3AudioRuntime.FindProjector(_model.Path)
+            ?? throw new NotSupportedException(
+                "No LFM3-Audio projector (mmproj) was found next to this model. " +
+                "Put mmproj-*.gguf in the model folder or its LFM3-Audio sibling folder.");
+        if (!Lfm3TtsRuntime.IsTtsProjector(projector))
+            throw new NotSupportedException(
+                "This projector has no speech-output weights (the depth decoder and LiquidCodec).");
+
+        await _audioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Each runtime dequantizes the projector; keep only one alive at a time.
+            _audioRuntime?.Dispose();
+            _audioRuntime = null;
+            _ttsRuntime ??= new Lfm3TtsRuntime(
+                _loaded.Model, _loaded.Tokenizer, _loaded.Config, projector)
+            {
+                MaxFrames = 128, // cap a spoken reply at about ten seconds
+            };
+            _status = "Synthesizing speech...";
+            _error = null;
+            Notify();
+
+            float[] audio = await Task.Run(
+                () => _ttsRuntime.Synthesize(text, cancellationToken), cancellationToken).ConfigureAwait(false);
+            if (audio.Length == 0)
+                throw new InvalidOperationException("The model produced no speech for this text.");
+
+            using var buffer = new MemoryStream();
+            WavFile.Write(buffer, audio, Lfm3TtsRuntime.SampleRate);
+            _status = "Speech ready.";
+            return new ChatArtifact
+            {
+                Type = "audio",
+                FileName = fileName ?? "speech.wav",
+                Content = buffer.ToArray(),
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+            _status = "Could not synthesize speech.";
+            throw;
+        }
+        finally
+        {
+            _audioGate.Release();
+            Notify();
+        }
+#else
+        await Task.CompletedTask;
+        throw new NotSupportedException(
+            "Speech synthesis needs the SharpMind source build (the sibling repository).");
+#endif
+    }
+
+    /// <summary>Synthesizes a reply and attaches the WAV artifact to the message.</summary>
+    public async Task<ChatArtifact?> SpeakAsync(ChatMessage message, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        if (message.Role != ChatRole.Agent || string.IsNullOrWhiteSpace(message.Content)) return null;
+        string speech = SpeechText.ToSpeech(message.Content);
+        if (speech.Length == 0) return null;
+        string fileName = $"speech-{DateTime.Now:HHmmss}.wav";
+        ChatArtifact artifact = await SynthesizeAsync(speech, fileName, cancellationToken).ConfigureAwait(false);
+        message.Artifacts = [.. (message.Artifacts ?? []), artifact];
+        Notify();
+        return artifact;
+    }
+
+
+
     public int? LastToolCalls => _document?.LastToolCalls;
     public string? PendingPrompt { get; set; }
     public IReadOnlyList<ChatSessionSummary> Sessions => _store.List();
@@ -1102,7 +1205,10 @@ public sealed class StudioChatService : IAsyncDisposable
 #if SHARPMIND_AUDIO
         _audioRuntime?.Dispose();
         _audioRuntime = null;
+        _ttsRuntime?.Dispose();
+        _ttsRuntime = null;
         _supportsAudio = null;
+        _supportsTts = null;
 #endif
     }
 

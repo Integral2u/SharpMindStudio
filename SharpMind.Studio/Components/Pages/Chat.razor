@@ -327,6 +327,14 @@ else
                                 {
                                     <span>@tps.ToString("F1") tok/s</span>
                                 }
+                                @if (message.Role == ChatRole.Agent && !streaming && ChatService.SupportsTts
+                                     && !string.IsNullOrWhiteSpace(message.Content))
+                                {
+                                    <button type="button" class="button chat-speak-button" @onclick="() => SpeakAsync(message)"
+                                            disabled="@_speaking" title="Synthesize this reply">
+                                        @(_speaking ? "Speaking..." : "Speak")
+                                    </button>
+                                }
                             </div>
                             @if (message.Role == ChatRole.Agent)
                             {
@@ -590,6 +598,7 @@ else
     private bool _workMode;
     private bool _recording;
     private bool _transcribing;
+    private bool _speaking;
     private string? _voiceError;
     private TunePreset? _selectedTunePreset;
     private bool _showTuneModal;
@@ -1045,6 +1054,27 @@ else
             _transcribing = false;
             StateHasChanged();
             await FocusComposerAsync();
+        }
+    }
+
+    private async Task SpeakAsync(ChatMessage message)
+    {
+        if (_speaking) return;
+        _speaking = true;
+        _voiceError = null;
+        StateHasChanged();
+        try
+        {
+            await ChatService.SpeakAsync(message);
+        }
+        catch (Exception ex)
+        {
+            _voiceError = ex.Message;
+        }
+        finally
+        {
+            _speaking = false;
+            StateHasChanged();
         }
     }
 

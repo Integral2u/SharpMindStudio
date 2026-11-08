@@ -18,6 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Prompt lookup drafting** - the inference settings expose
   `PromptLookupDraft` (0 = off) for faster copy-heavy replies with unchanged
   output.
+- **Speak replies** - when the LFM3-Audio `mmproj` carries the depth decoder and
+  LiquidCodec, each finished model reply gets a Speak button. It strips
+  Markdown and attaches the synthesized 24 kHz WAV as an audio artifact, ready
+  to play, download or transcribe. The runtime uses the checkpoint's trained
+  female voice by default.
 - **Artifact cards** - images open or download, audio plays and downloads,
   text/code downloads, with the artifact type and size in the header.
 - **Larger sponsor pill** in the top bar.
