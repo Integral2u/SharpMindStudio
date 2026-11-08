@@ -153,9 +153,9 @@
                         <tr><td>LoRA fine-tune</td><td>Yes (GPU or CPU)</td><td>Yes (GPU or CPU)</td><td>GPU needs RMSNorm + RoPE/NoPE + gated FFN; otherwise the CPU retry runs.</td></tr>
                         <tr><td>SFT (assistant-only loss)</td><td>Yes (GPU or CPU)</td><td>Yes (GPU or CPU)</td><td>Chat JSONL; the base supplies the tokenizer and template.</td></tr>
                         <tr><td>GPU inference</td><td>With a supported local GPU</td><td>Yes (GPU or CPU)</td><td>Also covers LayerNorm and dense-GELU models.</td></tr>
-                        <tr><td>Local chat artifacts</td><td>Send / render</td><td>Not yet</td><td>Images, audio, files and code. Model-side media encoding is pending.</td></tr>
+                        <tr><td>Local chat artifacts</td><td>Send / render / mic</td><td>Not yet</td><td>Images, audio, files and code. LFM3-Audio microphone and audio attachments transcribe locally.</td></tr>
                         <tr><td>LFM3 text (13 conv / 5 SWA / 6 global)</td><td>Smoke</td><td>Smoke</td><td>Layer map, per-head gate and templated chat validated; broad quality pending.</td></tr>
-                        <tr><td>ASR / TTS</td><td>No</td><td>No</td><td>Needs an audio encoder/codec; the LFM3-Audio GGUF is a text backbone plus templates.</td></tr>
+                        <tr><td>ASR / TTS</td><td>ASR short clips</td><td>No</td><td>Native LFM3-Audio encoder plus <span class="mono">mmproj</span>. Long clips need chunking; TTS needs the depth decoder and LiquidCodec.</td></tr>
                         <tr><td>Remote data and artifacts</td><td>—</td><td>Yes</td><td>Uploads with progress; exports download back to Studio.</td></tr>
                     </tbody>
                 </table>

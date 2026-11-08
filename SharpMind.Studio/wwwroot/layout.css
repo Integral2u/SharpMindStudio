@@ -472,10 +472,12 @@
 .topbar-links a { color: var(--faint); }
 .topbar-links a:hover { color: var(--text); }
 .topbar-links .sponsor {
-    padding: .16rem .5rem;
+    padding: .24rem .7rem;
     border: 1px solid rgba(var(--accent-rgb), .3);
     border-radius: 99px;
     color: var(--accent);
+    font-size: .7rem;
+    font-weight: 600;
 }
 .topbar-links .sponsor:hover {
     color: var(--accent);

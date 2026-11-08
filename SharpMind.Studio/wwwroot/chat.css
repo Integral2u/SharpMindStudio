@@ -642,3 +642,44 @@
 .chat-artifact-file {
     align-self: flex-start;
 }
+
+.chat-artifact-card {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+    max-width: 34rem;
+    padding: .5rem .6rem .6rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel-2);
+}
+
+.chat-artifact-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .6rem;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: .64rem;
+}
+
+.chat-artifact-actions {
+    display: flex;
+    gap: .55rem;
+}
+
+.chat-artifact-actions a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.chat-artifact-actions a:hover {
+    text-decoration: underline;
+}
+
+.chat-mic-button.recording {
+    border-color: #e5484d;
+    color: #ff8a8f;
+    background: rgba(229, 72, 77, .14);
+}

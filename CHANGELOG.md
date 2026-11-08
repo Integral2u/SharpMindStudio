@@ -11,6 +11,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Chat artifacts** - attach images, audio, text and other files from the
   composer; render returned images, audio, text/code and download links.
   Generated data-URL media and fenced code blocks are captured as artifacts.
+- **Local microphone dictation** - when an LFM3-Audio model and its `mmproj`
+  are present, the composer shows a Mic button. Recording returns a WAV that
+  the native encoder transcribes into the composer; attached audio files are
+  transcribed before the turn.
+- **Artifact cards** - images open or download, audio plays and downloads,
+  text/code downloads, with the artifact type and size in the header.
+- **Larger sponsor pill** in the top bar.
 - **LFM3 text support** - tri-hybrid layer metadata (13 short-conv, 5
   sliding-window, 6 global layers) and the per-head `attn_gate` path.
 - **Training experiment controls** - configurable seed across splits,
@@ -32,6 +39,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- LFM3 per-head `attn_gate` loads in streaming and quantized-resident modes,
+  so LFM3-Audio chats no longer fail with "RawQuantizedData is null".
+- An `asr` encoder-decoder model (Nemotron ASR) or a `mmproj` file selected as a
+  chat model now reports what it is instead of a generic load failure.
 - `FetchUrl` SSRF hardening, DPAPI-wrapped secret keys and the cross-site
   Fetch Metadata guard.
 - Data Factory variants now share a split group through `GroupId`.

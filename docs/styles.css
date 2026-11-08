@@ -831,7 +831,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wr
     color: var(--faint);
 }
 .top-links a:hover { color: var(--text); border-color: var(--line-2); }
-.top-links .sponsor { color: var(--teal); border-color: rgba(94, 234, 212, .3); }
+.top-links .sponsor { color: var(--teal); border-color: rgba(94, 234, 212, .3); font-size: .68rem; font-weight: 600; padding: .24rem .68rem; }
 .top-links .sponsor:hover { border-color: rgba(94, 234, 212, .55); background: rgba(94, 234, 212, .07); }
 @media (max-width: 820px) {
     .top-links { display: none; }

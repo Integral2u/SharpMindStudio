@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using SharpMind.Inference.Agent;
 using SharpMind.Inference.Chat;
+using SharpMind.Model.Audio;
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Inference;
@@ -28,6 +29,9 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChatSession? _session;
     private LoadedStudioModel? _loaded;
+    private Lfm3AudioRuntime? _audioRuntime;
+    private bool? _supportsAudio;
+    private readonly SemaphoreSlim _audioGate = new(1, 1);
     private CancellationTokenSource? _streamCts;
     private ChatSessionDocument? _document;
     private ResolvedInference? _resolved;
@@ -76,6 +80,7 @@ public sealed class StudioChatService : IAsyncDisposable
     public bool IsOpenRouter => string.Equals(_document?.Provider, "openrouter", StringComparison.OrdinalIgnoreCase);
     public bool IsCompute => string.Equals(_document?.Provider, "compute", StringComparison.OrdinalIgnoreCase);
     public bool IsRemote => IsOpenRouter || IsCompute;
+    public bool SupportsAudio => _supportsAudio ??= ComputeSupportsAudio();
     public string? ComputeProviderId => _document?.RemoteProvider;
     public string? RemoteProviderName => IsCompute
         ? _compute.Find(_document?.RemoteProvider)?.Name ?? "SharpMind Compute"
@@ -95,6 +100,61 @@ public sealed class StudioChatService : IAsyncDisposable
     public decimal? LastCost => _document?.LastCost;
     public int? LastPromptTokens => _document?.LastPromptTokens;
     public int? LastCompletionTokens => _document?.LastCompletionTokens;
+
+    private bool ComputeSupportsAudio()
+    {
+        if (IsRemote || _loaded is null || _model is null) return false;
+        if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase)) return false;
+        return Lfm3AudioRuntime.FindProjector(_model.Path) is not null;
+    }
+
+    /// <summary>
+    /// Transcribes a WAV artifact with the native LFM3-Audio encoder. The first call
+    /// loads the projector; later calls reuse it until the model is released.
+    /// </summary>
+    public async Task<string> TranscribeAsync(
+        ChatArtifact artifact,
+        string language = "English",
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        if (IsRemote || _loaded is null || _model is null)
+            throw new InvalidOperationException("Load a local LFM3-Audio model before transcribing.");
+        if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException("This model is not an LFM3 text backbone.");
+        string projector = Lfm3AudioRuntime.FindProjector(_model.Path)
+            ?? throw new NotSupportedException(
+                "No LFM3-Audio projector (mmproj) was found next to this model. " +
+                "Put mmproj-*.gguf in the model folder or its LFM3-Audio sibling folder.");
+
+        await _audioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _audioRuntime ??= new Lfm3AudioRuntime(
+                _loaded.Model, _loaded.Tokenizer, _loaded.Config, projector);
+            _status = "Transcribing audio...";
+            _error = null;
+            Notify();
+
+            string transcript = await Task.Run(
+                () => _audioRuntime.TranscribeWav(artifact.Content, language, 256, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+
+            _status = string.IsNullOrWhiteSpace(transcript) ? "No speech detected." : "Transcript ready.";
+            return transcript;
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+            _status = "Could not transcribe audio.";
+            throw;
+        }
+        finally
+        {
+            _audioGate.Release();
+            Notify();
+        }
+    }
     public int? LastToolCalls => _document?.LastToolCalls;
     public string? PendingPrompt { get; set; }
     public IReadOnlyList<ChatSessionSummary> Sessions => _store.List();
@@ -278,6 +338,28 @@ public sealed class StudioChatService : IAsyncDisposable
                 _status = "Attachments are not available on remote chats yet.";
                 Notify();
                 return;
+            }
+
+            if (artifacts is { Count: > 0 } && SupportsAudio)
+            {
+                ChatArtifact? audio = artifacts.FirstOrDefault(
+                    item => item.Type.Contains("audio", StringComparison.OrdinalIgnoreCase));
+                if (audio is not null)
+                {
+                    try
+                    {
+                        string transcript = await TranscribeAsync(audio).ConfigureAwait(false);
+                        if (!string.IsNullOrWhiteSpace(transcript))
+                            text = string.IsNullOrWhiteSpace(text)
+                                ? transcript
+                                : transcript + "\n\n" + text;
+                    }
+                    catch
+                    {
+                        // TranscribeAsync records the error; do not send an audio-only prompt.
+                        return;
+                    }
+                }
             }
 
             if (IsOpenRouter)
@@ -719,12 +801,14 @@ public sealed class StudioChatService : IAsyncDisposable
     {
         Stop();
         EndSession();
+        _audioGate.Dispose();
         _gate.Dispose();
         return ValueTask.CompletedTask;
     }
 
     private async Task OpenCoreAsync(ChatSessionSnapshot? snapshot)
     {
+        DisposeAudioRuntime();
         if (IsRemote)
         {
             _session = null;
@@ -796,6 +880,7 @@ public sealed class StudioChatService : IAsyncDisposable
     }
     private async Task RebuildWorkSessionAsync(IReadOnlyList<ChatMessage> history)
     {
+        DisposeAudioRuntime();
         if (_document is null || _model is null || _resolved is null) return;
         LoadedStudioModel loaded = await _host.LoadAsync(_model, _resolved).ConfigureAwait(false);
         _loaded = loaded;
@@ -835,6 +920,7 @@ public sealed class StudioChatService : IAsyncDisposable
     }
     private async Task RebuildAsync(ChatSessionSnapshot? snapshot)
     {
+        DisposeAudioRuntime();
         if (_document is null || _model is null || _resolved is null) return;
         LoadedStudioModel loaded = await _host.LoadAsync(_model, _resolved).ConfigureAwait(false);
         _loaded = loaded;
@@ -992,6 +1078,13 @@ public sealed class StudioChatService : IAsyncDisposable
         }
     }
 
+    private void DisposeAudioRuntime()
+    {
+        _audioRuntime?.Dispose();
+        _audioRuntime = null;
+        _supportsAudio = null;
+    }
+
     private void EndSession()
     {
         _work.CancelPermission();
@@ -1002,6 +1095,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _streaming = false;
         DisposeSession(_session);
         _session = null;
+        DisposeAudioRuntime();
         if (_loaded is not null)
         {
             _host.Release(_loaded);

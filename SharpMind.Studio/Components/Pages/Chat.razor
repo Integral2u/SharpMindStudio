@@ -487,6 +487,20 @@ else
                             <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
                         </label>
                     }
+                    @if (ChatService.SupportsAudio)
+                    {
+                        <button type="button"
+                                class="button chat-mic-button @(_recording ? "recording" : "")"
+                                @onclick="ToggleMicAsync"
+                                disabled="@(_transcribing || ChatService.IsStreaming || ChatService.IsLoading)"
+                                title="@(_recording ? "Stop and transcribe" : "Record audio")">
+                            @(_recording ? "Stop" : "Mic")
+                        </button>
+                    }
+                    @if (_transcribing)
+                    {
+                        <span class="status-line">Transcribing...</span>
+                    }
                     @if (ChatService.IsLoading)
                     {
                         <button type="button" class="button danger" @onclick="ChatService.Interrupt">Interrupt</button>
@@ -509,6 +523,10 @@ else
                 @if (ChatService.Error is not null)
                 {
                     <div class="error-line">@ChatService.Error</div>
+                }
+                @if (_voiceError is not null)
+                {
+                    <div class="error-line">@_voiceError</div>
                 }
             </div>
         }
@@ -570,6 +588,9 @@ else
     private bool _wasStreaming;
     private bool _initialized;
     private bool _workMode;
+    private bool _recording;
+    private bool _transcribing;
+    private string? _voiceError;
     private TunePreset? _selectedTunePreset;
     private bool _showTuneModal;
     private ModelDescriptor? _tuneModel;
@@ -670,6 +691,11 @@ else
 
     public void Dispose()
     {
+        if (_recording)
+        {
+            _recording = false;
+            _ = JS.InvokeVoidAsync("studioAudio.cancel");
+        }
         ChatService.Changed -= OnChatChanged;
         Work.Changed -= OnWorkChanged;
     }
@@ -965,6 +991,63 @@ else
         RefreshTuneSelection();
         UpdateLatestModelRun();
     }
+    private async Task ToggleMicAsync()
+    {
+        if (_transcribing) return;
+        _voiceError = null;
+
+        if (!_recording)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("studioAudio.start");
+                _recording = true;
+            }
+            catch (Exception ex)
+            {
+                _voiceError = ex.Message;
+            }
+            return;
+        }
+
+        _recording = false;
+        string? base64 = null;
+        try
+        {
+            base64 = await JS.InvokeAsync<string>("studioAudio.stop");
+        }
+        catch (Exception ex)
+        {
+            _voiceError = ex.Message;
+        }
+        if (string.IsNullOrWhiteSpace(base64)) return;
+
+        _transcribing = true;
+        StateHasChanged();
+        try
+        {
+            var artifact = new ChatArtifact
+            {
+                Type = "audio",
+                FileName = "microphone.wav",
+                Content = Convert.FromBase64String(base64),
+            };
+            string transcript = await ChatService.TranscribeAsync(artifact);
+            if (!string.IsNullOrWhiteSpace(transcript))
+                _input = string.IsNullOrWhiteSpace(_input) ? transcript : _input.TrimEnd() + " " + transcript;
+        }
+        catch (Exception ex)
+        {
+            _voiceError = ex.Message;
+        }
+        finally
+        {
+            _transcribing = false;
+            StateHasChanged();
+            await FocusComposerAsync();
+        }
+    }
+
     private async Task SendAsync()
     {
         string text = _input;

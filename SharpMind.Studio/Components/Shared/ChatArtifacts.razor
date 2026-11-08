@@ -5,26 +5,36 @@
     <div class="chat-artifacts">
         @foreach (ChatArtifact artifact in Artifacts)
         {
-            if (IsImage(artifact))
-            {
-                <img class="chat-artifact-image" src="@DataUrl(artifact)"
-                     alt="@(artifact.FileName ?? "image")" />
-            }
-            else if (IsAudio(artifact))
-            {
-                <audio class="chat-artifact-audio" controls src="@DataUrl(artifact)"></audio>
-            }
-            else if (IsText(artifact))
-            {
-                <pre class="chat-artifact-text">@Text(artifact)</pre>
-            }
-            else
-            {
-                <a class="button chat-artifact-file" download="@(artifact.FileName ?? "artifact")"
-                   href="@DataUrl(artifact)">
-                    @(artifact.FileName ?? $"Download {artifact.Type}")
-                </a>
-            }
+            string url = DataUrl(artifact);
+            string name = artifact.FileName ?? DefaultName(artifact);
+            <div class="chat-artifact-card">
+                <div class="chat-artifact-head">
+                    <span>@Label(artifact) &middot; @Size(artifact)</span>
+                    <span class="chat-artifact-actions">
+                        @if (IsImage(artifact))
+                        {
+                            <a href="@url" target="_blank" rel="noopener">Open</a>
+                        }
+                        <a href="@url" download="@name">Download</a>
+                    </span>
+                </div>
+                @if (IsImage(artifact))
+                {
+                    <img class="chat-artifact-image" src="@url" alt="@name" />
+                }
+                else if (IsAudio(artifact))
+                {
+                    <audio class="chat-artifact-audio" controls src="@url"></audio>
+                }
+                else if (IsText(artifact))
+                {
+                    <pre class="chat-artifact-text">@Text(artifact)</pre>
+                }
+                else
+                {
+                    <a class="button chat-artifact-file" download="@name" href="@url">@name</a>
+                }
+            </div>
         }
     </div>
 }
@@ -42,6 +52,32 @@
         artifact.Type.Contains("text", StringComparison.OrdinalIgnoreCase)
         || artifact.Type.Contains("code", StringComparison.OrdinalIgnoreCase)
         || artifact.Type.Contains("json", StringComparison.OrdinalIgnoreCase);
+
+    private static string Label(ChatArtifact artifact) =>
+        IsImage(artifact) ? "Image"
+        : IsAudio(artifact) ? "Audio"
+        : artifact.Type.Contains("json", StringComparison.OrdinalIgnoreCase) ? "JSON"
+        : IsText(artifact) ? "Text"
+        : "File";
+
+    private static string DefaultName(ChatArtifact artifact) =>
+        artifact.Type.ToLowerInvariant() switch
+        {
+            "image" => "image.png",
+            "audio" => "audio.wav",
+            "json" => "response.json",
+            "code" => "response.txt",
+            "text" => "response.txt",
+            _ => "artifact.bin",
+        };
+
+    private static string Size(ChatArtifact artifact)
+    {
+        long bytes = artifact.Content.LongLength;
+        return bytes < 1024 ? $"{bytes} B"
+            : bytes < 1024 * 1024 ? $"{bytes / 1024.0:F1} KB"
+            : $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
 
     private static string DataUrl(ChatArtifact artifact) =>
         $"data:{Mime(artifact)};base64,{Convert.ToBase64String(artifact.Content)}";
