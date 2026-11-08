@@ -140,8 +140,14 @@
                         <span class="spinner-ring" title="Training active"></span>
                     }
                 </NavLink>
+                @if (LayerLabAvailable)
+                {
+                    <NavLink class="nav-link" href="lab">
+                        <span class="nav-index">06</span> Lab
+                    </NavLink>
+                }
                 <NavLink class="nav-link" href="settings">
-                    <span class="nav-index">06</span> Settings
+                    <span class="nav-index">07</span> Settings
                 </NavLink>
             }        </nav>
 
@@ -234,6 +240,12 @@
         Workspace.ProjectChanged -= OnWorkspaceChanged;
         Nav.LocationChanged -= OnLocationChanged;
     }
+
+#if SHARPMIND_SOURCE
+    private const bool LayerLabAvailable = true;
+#else
+    private const bool LayerLabAvailable = false;
+#endif
 
     private bool _chatsExpanded;
     private bool _workChatsExpanded;

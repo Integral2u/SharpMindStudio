@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Markdown and attaches the synthesized 24 kHz WAV as an audio artifact, ready
   to play, download or transcribe. The runtime uses the checkpoint's trained
   female voice by default.
+- **Layer importance lab** - a Lab page ablates each transformer block of any
+  loaded model, shows the attention/feed-forward activation RMS and the
+  next-token loss delta, and highlights the least important layer as a surgery
+  candidate. It runs in source builds until the 1.1.1 packages publish.
 - **Artifact cards** - images open or download, audio plays and downloads,
   text/code downloads, with the artifact type and size in the header.
 - **Larger sponsor pill** in the top bar.

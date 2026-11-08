@@ -70,6 +70,9 @@ builder.Services.AddSingleton<StudioTrainingService>();
 builder.Services.AddSingleton<StudioConversionService>();
 builder.Services.AddSingleton<StudioExamService>();
 builder.Services.AddSingleton<StudioRehearsalService>();
+#if SHARPMIND_SOURCE
+builder.Services.AddSingleton<StudioLayerLabService>();
+#endif
 builder.Services.AddScoped<StudioDeviceAccess>();
 builder.Services.AddScoped<PathPickerService>();
 builder.Services.AddScoped<StudioWorkService>();

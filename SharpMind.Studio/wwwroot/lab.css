@@ -1,0 +1,26 @@
+/* Layer importance lab */
+
+.lab-bar-cell {
+    width: 42%;
+    min-width: 140px;
+}
+
+.lab-bar {
+    height: 10px;
+    min-width: 2px;
+    border-radius: 999px;
+    background: var(--accent);
+    opacity: .85;
+}
+
+.lab-bar.lab-bar-help {
+    background: var(--warn);
+}
+
+.lab-least td {
+    background: var(--accent-dim);
+}
+
+.field.grow {
+    flex: 1 1 260px;
+}
