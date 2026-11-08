@@ -30,7 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   attention/feed-forward activation RMS and the next-token loss delta, and
   highlights the least important layer as a surgery candidate. The same run
   produces a surgery preview: skip the least important layers in rank order and
-  show the loss after each prefix, with the low-risk rows highlighted. The
+  show the loss after each prefix, with the low-risk rows highlighted. Each row
+  can export a pruned GGUF with those blocks removed and reports the output path
+  and size. The
   Quantization tab compares a reference GGUF with a candidate tensor by tensor
   (relative L2, cosine, max abs) without a forward pass, then optionally loads
   both models in turn and measures the calibration cross-entropy and perplexity.

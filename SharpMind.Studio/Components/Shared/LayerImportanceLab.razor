@@ -142,7 +142,8 @@
                             <th>Layers (least important first)</th>
                             <th>Loss</th>
                             <th>Delta</th>
-                            <th></th>
+                            <th>Profile</th>
+                            <th>Export</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -157,14 +158,44 @@
                                     <div class="lab-bar @(step.DeltaLoss > 0.05 ? "lab-bar-help" : "")"
                                          style="width:@(SurgerBarWidth(step, report))%"></div>
                                 </td>
+                                <td>
+                                    <button type="button" class="button"
+                                            @onclick="() => ExportAsync(step.Layers)"
+                                            disabled="@(LayerLab.IsRunning || LayerLab.IsExporting || !CanExport)">
+                                        Export GGUF
+                                    </button>
+                                </td>
                             </tr>
                         }
                     </tbody>
                 </table>
                 <div class="small faint">
                     Highlighted rows stay within 0.05 nats of the baseline; they are the low-risk
-                    skip candidates. A pruned export is the next step.
+                    skip candidates. Export writes a real GGUF with those blocks removed, next to
+                    the source model, and it loads as an ordinary smaller model.
                 </div>
+                @if (!CanExport)
+                {
+                    <div class="small faint">Export needs a GGUF source model.</div>
+                }
+                @if (LayerLab.IsExporting)
+                {
+                    <div class="status-line">@LayerLab.ExportStatus</div>
+                }
+                @if (LayerLab.ExportError is { } exportError)
+                {
+                    <div class="error-line">@exportError</div>
+                }
+                @if (LayerLab.ExportResult is { } exportResult)
+                {
+                    <div class="small mono">
+                        Pruned @exportResult.OriginalLayers → @exportResult.KeptLayers layers,
+                        removed @exportResult.RemovedLayers · @exportResult.Tensors tensors ·
+                        @((exportResult.Bytes / (1024.0 * 1024.0)).ToString("F1")) MB
+                        <br />
+                        @exportResult.Path
+                    </div>
+                }
             }
         </div>
     </section>
@@ -219,6 +250,12 @@
 
     private static bool IsSafe(SurgeryStep step, LayerImportanceReport report) =>
         step.DeltaLoss <= 0.05;
+
+    private bool CanExport =>
+        LayerLab.ModelPath?.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase) == true;
+
+    private async Task ExportAsync(IReadOnlyList<int> layers) =>
+        await LayerLab.ExportPrunedAsync(layers);
 
     private static double SurgerBarWidth(SurgeryStep step, LayerImportanceReport report)
     {

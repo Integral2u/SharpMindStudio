@@ -33,6 +33,12 @@ public sealed class StudioLayerLabService : IAsyncDisposable
     public LayerImportanceReport? Report { get; private set; }
     public double ElapsedSeconds { get; private set; }
     public string? ModelName { get; private set; }
+    public string? ModelPath { get; private set; }
+
+    public bool IsExporting { get; private set; }
+    public string? ExportStatus { get; private set; }
+    public string? ExportError { get; private set; }
+    public SurgeryExportResult? ExportResult { get; private set; }
 
     public async Task RunAsync(
         ModelDescriptor descriptor,
@@ -54,6 +60,10 @@ public sealed class StudioLayerLabService : IAsyncDisposable
             Report = null;
             ElapsedSeconds = 0;
             ModelName = descriptor.FileName;
+            ModelPath = descriptor.Path;
+            ExportResult = null;
+            ExportError = null;
+            ExportStatus = null;
             _cts = new CancellationTokenSource();
             Status = $"Loading {descriptor.FileName}...";
             Notify();
@@ -108,6 +118,78 @@ public sealed class StudioLayerLabService : IAsyncDisposable
     }
 
     public void Cancel() => _cts?.Cancel();
+
+    /// <summary>
+    /// Writes a pruned GGUF with the given blocks removed. The exporter only opens the source
+    /// for reading, so it can run without a loaded model; the gate keeps it from overlapping
+    /// with an ablation run.
+    /// </summary>
+    public async Task ExportPrunedAsync(
+        IReadOnlyList<int> layers,
+        string? destinationPath = null)
+    {
+        if (layers.Count == 0) return;
+        string? sourcePath = ModelPath;
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            ExportError = "Run the lab on a model before exporting.";
+            Notify();
+            return;
+        }
+        if (!sourcePath.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))
+        {
+            ExportError = "The pruned export only supports GGUF models.";
+            Notify();
+            return;
+        }
+
+        string destination = destinationPath ?? DefaultExportPath(sourcePath, layers);
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (IsRunning || IsExporting) return;
+            IsExporting = true;
+            ExportResult = null;
+            ExportError = null;
+            ExportStatus = $"Exporting {layers.Count} removed layer(s)...";
+            Notify();
+
+            var remove = layers.ToHashSet();
+            SurgeryExportResult result = await Task.Run(
+                () => ModelSurgeryExporter.ExportPruned(
+                    sourcePath, destination, remove,
+                    progress: (done, total) =>
+                    {
+                        ExportStatus = $"Copying tensor {done}/{total}...";
+                        Notify();
+                    })).ConfigureAwait(false);
+
+            ExportResult = result;
+            ExportStatus =
+                $"Wrote {result.KeptLayers} layers and {result.Tensors} tensors " +
+                $"({result.Bytes / (1024.0 * 1024.0):F1} MB).";
+        }
+        catch (Exception ex)
+        {
+            ExportError = $"{ex.GetType().Name}: {ex.Message}";
+            ExportStatus = "Pruned export failed.";
+        }
+        finally
+        {
+            IsExporting = false;
+            _gate.Release();
+            Notify();
+        }
+    }
+
+    private static string DefaultExportPath(string sourcePath, IReadOnlyList<int> layers)
+    {
+        string directory = Path.GetDirectoryName(Path.GetFullPath(sourcePath)) ?? ".";
+        string name = Path.GetFileNameWithoutExtension(sourcePath);
+        string suffix = string.Join("-", layers);
+        return Path.Combine(directory, $"{name}-pruned-{suffix}.gguf");
+    }
 
     private void Notify() => Changed?.Invoke();
 
