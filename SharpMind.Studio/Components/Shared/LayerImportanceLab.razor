@@ -40,6 +40,10 @@
                 <label class="field-label">Max tokens</label>
                 <input class="input" type="number" min="8" max="512" @bind="_maxTokens" disabled="@LayerLab.IsRunning" />
             </div>
+            <div class="field">
+                <label class="field-label">Surgery preview (layers)</label>
+                <input class="input" type="number" min="0" max="32" @bind="_maxSkip" disabled="@LayerLab.IsRunning" />
+            </div>
         </div>
 
         <div class="field">
@@ -121,6 +125,47 @@
             <div class="small faint">
                 Highlighted row: the least important layer under this calibration, a natural surgery candidate.
             </div>
+
+            @if (report.Surgery.Count > 0)
+            {
+                <div class="panel-head" style="margin-top:1.25rem">
+                    <div>
+                        <div class="eyebrow">Surgery preview</div>
+                        <h2>Skipping the least important layers</h2>
+                    </div>
+                    <span class="faint small mono">baseline @report.BaselineLoss.ToString("F4")</span>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Skipped</th>
+                            <th>Layers (least important first)</th>
+                            <th>Loss</th>
+                            <th>Delta</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (SurgeryStep step in report.Surgery)
+                        {
+                            <tr class="@(IsSafe(step, report) ? "lab-least" : "")">
+                                <td class="mono">@step.Layers.Length</td>
+                                <td class="mono">@string.Join(", ", step.Layers)</td>
+                                <td class="mono">@step.Loss.ToString("F4")</td>
+                                <td class="mono">@step.DeltaLoss.ToString("+0.0000;-0.0000;0.0000")</td>
+                                <td class="lab-bar-cell">
+                                    <div class="lab-bar @(step.DeltaLoss > 0.05 ? "lab-bar-help" : "")"
+                                         style="width:@(SurgerBarWidth(step, report))%"></div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="small faint">
+                    Highlighted rows stay within 0.05 nats of the baseline; they are the low-risk
+                    skip candidates. A pruned export is the next step.
+                </div>
+            }
         </div>
     </section>
 }
@@ -131,6 +176,7 @@
     private string _modeText = "Both";
     private int _maxTokens = 96;
     private string? _runError;
+    private int _maxSkip = 8;
     private string _prompt =
         "The quick brown fox jumps over the lazy dog. Layer importance shows which transformer " +
         "blocks carry the most information for this model. A short calibration keeps the sweep fast.";
@@ -167,7 +213,18 @@
             "FeedForward" => LayerAblation.FeedForward,
             _ => LayerAblation.Both,
         };
-        await LayerLab.RunAsync(model, _prompt, mode, Math.Clamp(_maxTokens, 8, 512));
+        await LayerLab.RunAsync(
+            model, _prompt, mode, Math.Clamp(_maxTokens, 8, 512), Math.Clamp(_maxSkip, 0, 32));
+    }
+
+    private static bool IsSafe(SurgeryStep step, LayerImportanceReport report) =>
+        step.DeltaLoss <= 0.05;
+
+    private static double SurgerBarWidth(SurgeryStep step, LayerImportanceReport report)
+    {
+        double max = report.Surgery.Max(item => Math.Abs(item.DeltaLoss));
+        if (max <= 1e-9) return 0;
+        return Math.Clamp(Math.Abs(step.DeltaLoss) / max * 100, 1, 100);
     }
 
     private double BarWidth(double delta)

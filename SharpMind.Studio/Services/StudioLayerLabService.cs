@@ -38,7 +38,8 @@ public sealed class StudioLayerLabService : IAsyncDisposable
         ModelDescriptor descriptor,
         string prompt,
         LayerAblation mode,
-        int maxTokens)
+        int maxTokens,
+        int maxSkipLayers = 8)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
@@ -71,7 +72,7 @@ public sealed class StudioLayerLabService : IAsyncDisposable
             var analyzer = new LayerImportanceAnalyzer(_loaded.Model);
             var watch = Stopwatch.StartNew();
             Report = analyzer.Analyze(
-                ids, mode, maxTokens: maxTokens,
+                ids, mode, maxTokens: maxTokens, maxSkipLayers: maxSkipLayers,
                 progress: (done, total) =>
                 {
                     Status = $"Ablating layer {done}/{total}...";
