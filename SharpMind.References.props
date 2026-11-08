@@ -6,6 +6,11 @@
     <SharpMindSource Condition="'$(SharpMindSource)' == ''">package</SharpMindSource>
   </PropertyGroup>
 
+  <!-- The audio runtime ships with the source tree; the 1.1.0 packages predate it. -->
+  <PropertyGroup Condition="'$(SharpMindSource)' == 'project'">
+    <DefineConstants>$(DefineConstants);SHARPMIND_AUDIO</DefineConstants>
+  </PropertyGroup>
+
   <!-- Local source-tree references: used automatically when the sibling SharpMind checkout exists. -->
   <ItemGroup Condition="'$(SharpMindSource)' == 'project'">
     <ProjectReference Include="$(SharpMindRoot)SharpMind.Core\SharpMind.Core.csproj"

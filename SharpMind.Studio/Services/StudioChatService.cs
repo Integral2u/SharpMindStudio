@@ -3,7 +3,9 @@ using System.Text;
 using System.Text.Json.Nodes;
 using SharpMind.Inference.Agent;
 using SharpMind.Inference.Chat;
+#if SHARPMIND_AUDIO
 using SharpMind.Model.Audio;
+#endif
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Inference;
@@ -29,8 +31,10 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChatSession? _session;
     private LoadedStudioModel? _loaded;
+#if SHARPMIND_AUDIO
     private Lfm3AudioRuntime? _audioRuntime;
     private bool? _supportsAudio;
+#endif
     private readonly SemaphoreSlim _audioGate = new(1, 1);
     private CancellationTokenSource? _streamCts;
     private ChatSessionDocument? _document;
@@ -80,7 +84,11 @@ public sealed class StudioChatService : IAsyncDisposable
     public bool IsOpenRouter => string.Equals(_document?.Provider, "openrouter", StringComparison.OrdinalIgnoreCase);
     public bool IsCompute => string.Equals(_document?.Provider, "compute", StringComparison.OrdinalIgnoreCase);
     public bool IsRemote => IsOpenRouter || IsCompute;
+#if SHARPMIND_AUDIO
     public bool SupportsAudio => _supportsAudio ??= ComputeSupportsAudio();
+#else
+    public bool SupportsAudio => false;
+#endif
     public string? ComputeProviderId => _document?.RemoteProvider;
     public string? RemoteProviderName => IsCompute
         ? _compute.Find(_document?.RemoteProvider)?.Name ?? "SharpMind Compute"
@@ -101,12 +109,14 @@ public sealed class StudioChatService : IAsyncDisposable
     public int? LastPromptTokens => _document?.LastPromptTokens;
     public int? LastCompletionTokens => _document?.LastCompletionTokens;
 
+#if SHARPMIND_AUDIO
     private bool ComputeSupportsAudio()
     {
         if (IsRemote || _loaded is null || _model is null) return false;
         if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase)) return false;
         return Lfm3AudioRuntime.FindProjector(_model.Path) is not null;
     }
+#endif
 
     /// <summary>
     /// Transcribes a WAV artifact with the native LFM3-Audio encoder. The first call
@@ -117,6 +127,7 @@ public sealed class StudioChatService : IAsyncDisposable
         string language = "English",
         CancellationToken cancellationToken = default)
     {
+#if SHARPMIND_AUDIO
         ArgumentNullException.ThrowIfNull(artifact);
         if (IsRemote || _loaded is null || _model is null)
             throw new InvalidOperationException("Load a local LFM3-Audio model before transcribing.");
@@ -154,6 +165,11 @@ public sealed class StudioChatService : IAsyncDisposable
             _audioGate.Release();
             Notify();
         }
+#else
+        await Task.CompletedTask;
+        throw new NotSupportedException(
+            "Audio transcription needs the SharpMind source build (the sibling repository) or the 1.1.1 packages.");
+#endif
     }
     public int? LastToolCalls => _document?.LastToolCalls;
     public string? PendingPrompt { get; set; }
@@ -1080,9 +1096,11 @@ public sealed class StudioChatService : IAsyncDisposable
 
     private void DisposeAudioRuntime()
     {
+#if SHARPMIND_AUDIO
         _audioRuntime?.Dispose();
         _audioRuntime = null;
         _supportsAudio = null;
+#endif
     }
 
     private void EndSession()

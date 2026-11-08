@@ -35,7 +35,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Split `TrainingRunner.RunAsync` into input, tokenizer, data, resume,
   model, train-loop and export stages.
 - Version bumped to **1.1.1.0**. The Studio source still references the
-  published **SharpMind 1.1.0** packages for clean-clone builds.
+  published **SharpMind 1.1.0** packages for clean-clone builds. The microphone
+  and native ASR UI compile only in source-tree mode until the 1.1.1 packages
+  are published.
 
 ### Fixed
 
