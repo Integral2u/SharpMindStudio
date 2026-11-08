@@ -24,3 +24,22 @@
 .field.grow {
     flex: 1 1 260px;
 }
+
+.lab-heatmap {
+    display: grid;
+    gap: 1px;
+    overflow-x: auto;
+    padding: 4px 0 8px;
+    margin-top: .35rem;
+}
+
+.lab-cell {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    background: var(--accent-dim);
+}
+
+.lab-cell:hover {
+    outline: 1px solid var(--accent);
+}

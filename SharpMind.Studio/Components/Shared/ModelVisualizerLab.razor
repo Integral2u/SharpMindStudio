@@ -1,0 +1,147 @@
+﻿@using SharpMind.Model.Analysis
+@using SharpMind.Studio.Services
+@inject ModelCatalogService Catalog
+@inject StudioVisualizerService Visual
+@implements IDisposable
+
+<div class="page-head">
+    <div>
+        <div class="eyebrow">Model analysis</div>
+        <h1>Model visualizer</h1>
+        <p class="faint">
+            One forward pass with the activation hook. Rows are layers, columns are prompt
+            tokens; the colour is the branch RMS on a log scale.
+        </p>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="panel-body stack">
+        <div class="row">
+            <div class="field grow">
+                <label class="field-label">Model</label>
+                <select class="input" @bind="_selectedModelPath" disabled="@Visual.IsRunning">
+                    @foreach (ModelDescriptor model in _models)
+                    {
+                        <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label">Max tokens</label>
+                <input class="input" type="number" min="1" max="256" @bind="_maxTokens" disabled="@Visual.IsRunning" />
+            </div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Prompt</label>
+            <textarea class="input" rows="4" @bind="_prompt" disabled="@Visual.IsRunning"></textarea>
+        </div>
+
+        <div class="row">
+            <button type="button" class="button primary" @onclick="RunAsync"
+                    disabled="@(Visual.IsRunning || _models.Count == 0 || string.IsNullOrWhiteSpace(_selectedModelPath))">
+                @(Visual.IsRunning ? "Capturing..." : "Capture")
+            </button>
+            <button type="button" class="button" @onclick="Visual.Cancel" disabled="@(!Visual.IsRunning)">
+                Cancel
+            </button>
+            <span class="status-line">@Visual.Status</span>
+        </div>
+
+        @if (Visual.Error is { } error)
+        {
+            <div class="error-line">@error</div>
+        }
+    </div>
+</section>
+
+@if (Visual.Map is { } map)
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Activation map</div>
+                <h2>@Visual.ModelName</h2>
+            </div>
+            <span class="faint small mono">
+                @map.Layers layers · @map.Tokens tokens · attention max @map.MaxAttention.ToString("F3") ·
+                FFN max @map.MaxFeedForward.ToString("F3")
+            </span>
+        </div>
+        <div class="panel-body stack">
+            <div>
+                <div class="eyebrow">Attention RMS</div>
+                <div class="lab-heatmap" style="grid-template-columns:repeat(@map.Tokens, 12px)">
+                    @for (int layer = 0; layer < map.Layers; layer++)
+                    {
+                        @for (int token = 0; token < map.Tokens; token++)
+                        {
+                            <span class="lab-cell"
+                                  style="background:rgba(var(--accent-rgb), @(Alpha(map.Attention(layer, token), map.MaxAttention)))"
+                                  title="layer @layer · @TokenLabel(token) · @map.Attention(layer, token).ToString("F3")"></span>
+                        }
+                    }
+                </div>
+            </div>
+            <div>
+                <div class="eyebrow">Feed-forward RMS</div>
+                <div class="lab-heatmap" style="grid-template-columns:repeat(@map.Tokens, 12px)">
+                    @for (int layer = 0; layer < map.Layers; layer++)
+                    {
+                        @for (int token = 0; token < map.Tokens; token++)
+                        {
+                            <span class="lab-cell"
+                                  style="background:rgba(var(--accent-rgb), @(Alpha(map.FeedForward(layer, token), map.MaxFeedForward)))"
+                                  title="layer @layer · @TokenLabel(token) · @map.FeedForward(layer, token).ToString("F3")"></span>
+                        }
+                    }
+                </div>
+            </div>
+            <div class="small faint">
+                Log scale from the per-map maximum. Hover a cell for the layer, token and value.
+                The early large FFN spikes are the same outliers the layer lab reports.
+            </div>
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<ModelDescriptor> _models = [];
+    private string _selectedModelPath = "";
+    private string _prompt = "The quick brown fox jumps over the lazy dog.";
+    private int _maxTokens = 64;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Visual.Changed += OnVisualChanged;
+        await LoadModelsAsync();
+    }
+
+    public void Dispose() => Visual.Changed -= OnVisualChanged;
+
+    private void OnVisualChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task LoadModelsAsync()
+    {
+        _models = [.. (await Catalog.RefreshAsync()).Where(model => model.Path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))];
+        _selectedModelPath = _models.FirstOrDefault()?.Path ?? "";
+    }
+
+    private async Task RunAsync()
+    {
+        ModelDescriptor? model = _models.FirstOrDefault(item => item.Path == _selectedModelPath);
+        if (model is null) return;
+        await Visual.RunAsync(model, _prompt, Math.Clamp(_maxTokens, 1, 256));
+    }
+
+    private string TokenLabel(int token) =>
+        token < Visual.TokenText.Length ? Visual.TokenText[token] : "";
+
+    private static string Alpha(float value, float max)
+    {
+        double maxLog = Math.Log10(1 + max);
+        double normalized = maxLog <= 1e-9 ? 0 : Math.Log10(1 + value) / maxLog;
+        return Math.Clamp(normalized * 0.9, 0.03, 0.95).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+    }
+}
