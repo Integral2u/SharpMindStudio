@@ -10,7 +10,8 @@
         <h1>Look inside the model.</h1>
         <p>
             Model analysis that does not change the weights: per-layer importance, quantization
-            sensitivity and activation views. Each lab loads the model on this machine.
+            sensitivity, activation views, latent structure and agent traces. Each lab loads the
+            model on this machine.
         </p>
     </div>
     <div class="hero-mark">
@@ -23,6 +24,8 @@
     <a class="settings-tab @(_tab == "layers" ? "selected" : "")" href="/lab?tab=layers" data-enhance-nav="false">Layer importance</a>
     <a class="settings-tab @(_tab == "quantization" ? "selected" : "")" href="/lab?tab=quantization" data-enhance-nav="false">Quantization</a>
     <a class="settings-tab @(_tab == "visualizer" ? "selected" : "")" href="/lab?tab=visualizer" data-enhance-nav="false">Model visualizer</a>
+    <a class="settings-tab @(_tab == "latent" ? "selected" : "")" href="/lab?tab=latent" data-enhance-nav="false">Latent space</a>
+    <a class="settings-tab @(_tab == "agents" ? "selected" : "")" href="/lab?tab=agents" data-enhance-nav="false">Agents</a>
 </div>
 
 @if (_tab == "layers")
@@ -47,7 +50,7 @@ else if (_tab == "quantization")
         </div>
     </section>
 }
-else
+else if (_tab == "visualizer")
 {
     <section class="panel">
         <div class="panel-head">
@@ -65,6 +68,42 @@ else
         </div>
     </section>
 }
+else if (_tab == "latent")
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Coming next</div>
+                <h2>Latent space</h2>
+            </div>
+        </div>
+        <div class="panel-body">
+            <p class="faint">
+                Project embeddings and layer activations to two dimensions, inspect nearest
+                neighbours and cluster structure, and compare the same prompt across checkpoints
+                or quantizations.
+            </p>
+        </div>
+    </section>
+}
+else
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Coming next</div>
+                <h2>Agents</h2>
+            </div>
+        </div>
+        <div class="panel-body">
+            <p class="faint">
+                Trace agent turns, tool calls and delegation: which agent produced which artifact,
+                how deep the delegation went, and where a run spent its tokens. Replay a saved run
+                from the transcript.
+            </p>
+        </div>
+    </section>
+}
 
 @code {
     [SupplyParameterFromQuery(Name = "tab")]
@@ -74,7 +113,7 @@ else
 
     protected override void OnParametersSet()
     {
-        _tab = TabQuery is "quantization" or "visualizer" ? TabQuery : "layers";
+        _tab = TabQuery is "quantization" or "visualizer" or "latent" or "agents" ? TabQuery : "layers";
     }
 
     public void Dispose()
