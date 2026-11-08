@@ -11,4 +11,12 @@
     <LangVersion>latest</LangVersion>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
+
+  <!-- Local development builds the sibling SharpMind projects. The package-only
+       solution passes -p:SharpMindSource=package, which wins as a global property. -->
+  <PropertyGroup>
+    <SharpMindRoot Condition="'$(SharpMindRoot)' == ''">$(MSBuildThisFileDirectory)..\SharpMind\</SharpMindRoot>
+    <SharpMindSource Condition="'$(SharpMindSource)' == '' and Exists('$(SharpMindRoot)SharpMind.Core\SharpMind.Core.csproj')">project</SharpMindSource>
+    <SharpMindSource Condition="'$(SharpMindSource)' == ''">package</SharpMindSource>
+  </PropertyGroup>
 </Project>
