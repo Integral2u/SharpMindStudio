@@ -1,0 +1,143 @@
+﻿@using SharpMind.Model.Analysis
+@using SharpMind.Studio.Services
+@inject ModelCatalogService Catalog
+@inject StudioLatentService Latent
+@implements IDisposable
+
+<div class="page-head">
+    <div>
+        <div class="eyebrow">Model analysis</div>
+        <h1>Latent space</h1>
+        <p class="faint">
+            The final hidden state of every prompt token projected to two dimensions with
+            classical MDS (the dual of PCA). Nearby points had similar model states.
+        </p>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="panel-body stack">
+        <div class="row">
+            <div class="field grow">
+                <label class="field-label">Model</label>
+                <select class="input" @bind="_selectedModelPath" disabled="@Latent.IsRunning">
+                    @foreach (ModelDescriptor model in _models)
+                    {
+                        <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label">Max tokens</label>
+                <input class="input" type="number" min="1" max="256" @bind="_maxTokens" disabled="@Latent.IsRunning" />
+            </div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Prompt</label>
+            <textarea class="input" rows="4" @bind="_prompt" disabled="@Latent.IsRunning"></textarea>
+        </div>
+
+        <div class="row">
+            <button type="button" class="button primary" @onclick="RunAsync"
+                    disabled="@(Latent.IsRunning || _models.Count == 0 || string.IsNullOrWhiteSpace(_selectedModelPath))">
+                @(Latent.IsRunning ? "Projecting..." : "Project")
+            </button>
+            <button type="button" class="button" @onclick="Latent.Cancel" disabled="@(!Latent.IsRunning)">
+                Cancel
+            </button>
+            <span class="status-line">@Latent.Status</span>
+        </div>
+
+        @if (Latent.Error is { } error)
+        {
+            <div class="error-line">@error</div>
+        }
+    </div>
+</section>
+
+@if (Latent.Map is { } map)
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Projection</div>
+                <h2>@Latent.ModelName</h2>
+            </div>
+            <span class="faint small mono">
+                @map.Tokens tokens · @map.Dimensions dims · 2D variance @(map.ExplainedVariance.ToString("P1"))
+            </span>
+        </div>
+        <div class="panel-body">
+            <svg class="lab-scatter" viewBox="0 0 520 520" role="img" aria-label="Latent projection">
+                <line x1="40" y1="260" x2="480" y2="260" class="lab-axis" />
+                <line x1="260" y1="40" x2="260" y2="480" class="lab-axis" />
+                @foreach (var point in Points(map))
+                {
+                    <circle cx="@point.X" cy="@point.Y" r="6" class="lab-point">
+                        <title>@point.Label (@point.RawX.ToString("F3"), @point.RawY.ToString("F3"))</title>
+                    </circle>
+                }
+            </svg>
+            <div class="small faint">
+                Hover a point for the token and its coordinates. The axes are the first two
+                principal components, centred and scaled to the plot.
+            </div>
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<ModelDescriptor> _models = [];
+    private string _selectedModelPath = "";
+    private string _prompt = "The quick brown fox jumps over the lazy dog.";
+    private int _maxTokens = 64;
+
+    private sealed record PlotPoint(double X, double Y, double RawX, double RawY, string Label);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Latent.Changed += OnLatentChanged;
+        await LoadModelsAsync();
+    }
+
+    public void Dispose() => Latent.Changed -= OnLatentChanged;
+
+    private void OnLatentChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task LoadModelsAsync()
+    {
+        _models = [.. (await Catalog.RefreshAsync()).Where(model => model.Path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))];
+        _selectedModelPath = _models.FirstOrDefault()?.Path ?? "";
+    }
+
+    private async Task RunAsync()
+    {
+        ModelDescriptor? model = _models.FirstOrDefault(item => item.Path == _selectedModelPath);
+        if (model is null) return;
+        await Latent.RunAsync(model, _prompt, Math.Clamp(_maxTokens, 1, 256));
+    }
+
+    private static IReadOnlyList<PlotPoint> Points(LatentSpaceMap map)
+    {
+        if (map.Points.Count == 0) return [];
+        double minX = map.Points.Min(point => point.X);
+        double maxX = map.Points.Max(point => point.X);
+        double minY = map.Points.Min(point => point.Y);
+        double maxY = map.Points.Max(point => point.Y);
+        return [.. map.Points.Select(point => new PlotPoint(
+            Scale(point.X, minX, maxX),
+            Scale(point.Y, minY, maxY),
+            point.X,
+            point.Y,
+            point.Text))];
+    }
+
+    private static double Scale(double value, double min, double max)
+    {
+        const double low = 40;
+        const double high = 480;
+        if (max - min <= 1e-12) return (low + high) / 2;
+        return low + (value - min) / (max - min) * (high - low);
+    }
+}

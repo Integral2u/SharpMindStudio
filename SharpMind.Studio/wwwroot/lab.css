@@ -43,3 +43,27 @@
 .lab-cell:hover {
     outline: 1px solid var(--accent);
 }
+
+.lab-scatter {
+    display: block;
+    width: 100%;
+    max-width: 560px;
+    height: auto;
+    margin: .5rem auto;
+}
+
+.lab-axis {
+    stroke: currentColor;
+    stroke-width: 1;
+    opacity: .18;
+}
+
+.lab-point {
+    fill: rgba(var(--accent-rgb), .7);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+}
+
+.lab-point:hover {
+    fill: rgba(var(--accent-rgb), 1);
+}

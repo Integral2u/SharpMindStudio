@@ -34,8 +34,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Quantization tab compares a reference GGUF with a candidate tensor by tensor
   (relative L2, cosine, max abs) without a forward pass. The Model visualizer tab
   captures one prompt through the activation hook and draws attention/FFN RMS
-  heatmaps over layers and tokens on a log scale. Latent space and Agents are
-  reserved for the next labs. Source builds until the 1.1.1 packages publish.
+  heatmaps over layers and tokens on a log scale. The Latent space tab projects
+  the prompt's final hidden states to two dimensions with classical MDS and draws
+  a hoverable scatter with the explained variance. Agents is the remaining
+  reserved lab. Source builds until the 1.1.1 packages publish.
 - **LFM3-VL image attachments** - when a vision projector is present next to
   the model, attached images are decoded and described natively. An image-only
   send uses "Describe this image."; the answer joins the transcript and the next

@@ -74,6 +74,7 @@ builder.Services.AddSingleton<StudioRehearsalService>();
 builder.Services.AddSingleton<StudioLayerLabService>();
 builder.Services.AddSingleton<StudioQuantizationLabService>();
 builder.Services.AddSingleton<StudioVisualizerService>();
+builder.Services.AddSingleton<StudioLatentService>();
 #endif
 builder.Services.AddScoped<StudioDeviceAccess>();
 builder.Services.AddScoped<PathPickerService>();
