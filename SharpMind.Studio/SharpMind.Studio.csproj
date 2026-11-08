@@ -11,6 +11,7 @@
     <PackageReference Include="HtmlSanitizer" />
     <PackageReference Include="Markdig" />
     <PackageReference Include="QRCoder" />
+    <PackageReference Include="SixLabors.ImageSharp" />
     <PackageReference Include="Yarp.ReverseProxy" />
     <ProjectReference Include="..\SharpMind.Studio.Core\SharpMind.Studio.Core.csproj" />
   </ItemGroup>
@@ -19,6 +20,8 @@
   <ItemGroup Condition="'$(SharpMindSource)' != 'project'">
     <Content Remove="Components/Pages/Lab.razor" />
     <RazorComponent Remove="Components/Pages/Lab.razor" />
+    <Content Remove="Components/Shared/LayerImportanceLab.razor" />
+    <RazorComponent Remove="Components/Shared/LayerImportanceLab.razor" />
     <Compile Remove="Services/StudioLayerLabService.cs" />
   </ItemGroup>
 

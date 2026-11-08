@@ -488,6 +488,10 @@ else
                             }
                         </div>
                     }
+                    @if (ChatService.SupportsVision && _pendingArtifacts.Any(a => a.Type.Contains("image", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        <span class="small faint">The image is described by the loaded LFM3-VL model.</span>
+                    }
                     @if (!ChatService.IsStreaming && !ChatService.IsLoading && !ChatService.IsRemote)
                     {
                         <label class="button chat-attach-button" title="Attach an image, audio file or document">
@@ -519,7 +523,8 @@ else
                         <button type="button" class="button danger" @onclick="Stop">Interrupt</button>
                     }
                     <button id="chat-send" type="button" class="button primary" @onclick="SendAsync"
-                            disabled="@(ChatService.IsStreaming || ChatService.IsLoading || string.IsNullOrWhiteSpace(_input) ||
+                            disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
+                                        (string.IsNullOrWhiteSpace(_input) && !HasVisionImage) ||
                                         (_workMode && !_remoteChat && _toolState.Capability == ToolCapability.Failed && !_allowFailedTools))">
                         Send
                     </button>
@@ -1078,10 +1083,18 @@ else
         }
     }
 
+    private bool HasVisionImage =>
+        ChatService.SupportsVision &&
+        _pendingArtifacts.Any(a => a.Type.Contains("image", StringComparison.OrdinalIgnoreCase));
+
     private async Task SendAsync()
     {
         string text = _input;
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            if (!HasVisionImage) return;
+            text = "Describe this image.";
+        }
         _input = "";
         ChatArtifact[] artifacts = [.. _pendingArtifacts];
         _pendingArtifacts.Clear();

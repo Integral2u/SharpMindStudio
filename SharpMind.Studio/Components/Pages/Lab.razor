@@ -1,183 +1,84 @@
-@page "/lab"
-@using SharpMind.Model.Analysis
+﻿@page "/lab"
 @using SharpMind.Studio.Services
-@inject ModelCatalogService Catalog
-@inject StudioLayerLabService LayerLab
-@inject StudioChatService Chat
-@inject StudioWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Layer lab - SharpMind Studio</PageTitle>
+<PageTitle>Labs - SharpMind Studio</PageTitle>
 
-<div class="page-head">
-    <div>
-        <div class="eyebrow">Model analysis</div>
-        <h1>Layer importance lab</h1>
-        <p class="faint">
-            One baseline pass, then one ablated pass per transformer block. The delta is the
-            next-token cross-entropy increase in nats per token; bigger means the layer matters more.
+<div class="hero">
+    <div class="hero-copy">
+        <div class="eyebrow">Labs</div>
+        <h1>Look inside the model.</h1>
+        <p>
+            Model analysis that does not change the weights: per-layer importance, quantization
+            sensitivity and activation views. Each lab loads the model on this machine.
         </p>
+    </div>
+    <div class="hero-mark">
+        measure first<br />
+        change later
     </div>
 </div>
 
-<section class="panel">
-    <div class="panel-body stack">
-        <div class="row">
-            <div class="field grow">
-                <label class="field-label">Model</label>
-                <select class="input" @bind="_selectedModelPath" disabled="@LayerLab.IsRunning">
-                    @foreach (ModelDescriptor model in _models)
-                    {
-                        <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label class="field-label">Ablate</label>
-                <select class="input" @bind="_modeText" disabled="@LayerLab.IsRunning">
-                    <option value="Both">Both branches</option>
-                    <option value="Attention">Attention only</option>
-                    <option value="FeedForward">Feed-forward only</option>
-                </select>
-            </div>
-            <div class="field">
-                <label class="field-label">Max tokens</label>
-                <input class="input" type="number" min="8" max="512" @bind="_maxTokens" disabled="@LayerLab.IsRunning" />
-            </div>
-        </div>
+<div class="settings-tabs training-tabs">
+    <a class="settings-tab @(_tab == "layers" ? "selected" : "")" href="/lab?tab=layers" data-enhance-nav="false">Layer importance</a>
+    <a class="settings-tab @(_tab == "quantization" ? "selected" : "")" href="/lab?tab=quantization" data-enhance-nav="false">Quantization</a>
+    <a class="settings-tab @(_tab == "visualizer" ? "selected" : "")" href="/lab?tab=visualizer" data-enhance-nav="false">Model visualizer</a>
+</div>
 
-        <div class="field">
-            <label class="field-label">Calibration text</label>
-            <textarea class="input" rows="5" @bind="_prompt" disabled="@LayerLab.IsRunning"></textarea>
-            <div class="small faint">
-                Keep it short. Every extra token is paid once for the baseline and once per layer.
-            </div>
-        </div>
-
-        <div class="row">
-            <button type="button" class="button primary" @onclick="RunAsync"
-                    disabled="@(LayerLab.IsRunning || Chat.IsChatActive || _models.Count == 0 || string.IsNullOrWhiteSpace(_selectedModelPath))">
-                @(LayerLab.IsRunning ? "Running..." : "Run lab")
-            </button>
-            <button type="button" class="button" @onclick="LayerLab.Cancel" disabled="@(!LayerLab.IsRunning)">
-                Cancel
-            </button>
-            <span class="status-line">@LayerLab.Status</span>
-        </div>
-
-        @if (_runError is { } runError)
-        {
-            <div class="error-line">@runError</div>
-        }
-        @if (LayerLab.Error is { } error)
-        {
-            <div class="error-line">@error</div>
-        }
-        @if (Chat.IsChatActive)
-        {
-            <div class="small faint">Finish the active chat turn before running the lab; both use the same loaded model.</div>
-        }
-    </div>
-</section>
-
-@if (LayerLab.Report is { } report)
+@if (_tab == "layers")
+{
+    <LayerImportanceLab />
+}
+else if (_tab == "quantization")
 {
     <section class="panel">
         <div class="panel-head">
             <div>
-                <div class="eyebrow">Result</div>
-                <h2>@LayerLab.ModelName</h2>
+                <div class="eyebrow">Coming next</div>
+                <h2>Quantization lab</h2>
             </div>
-            <span class="faint small mono">
-                baseline loss @report.BaselineLoss.ToString("F4") · @report.Tokens tokens ·
-                @report.Mode · @LayerLab.ElapsedSeconds.ToString("F0")s
-            </span>
         </div>
         <div class="panel-body">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Layer</th>
-                        <th>Attention RMS</th>
-                        <th>FFN RMS</th>
-                        <th>Ablated loss</th>
-                        <th>Delta</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (LayerImportance layer in report.Layers)
-                    {
-                        <tr class="@(layer.Layer == report.LeastImportant?.Layer ? "lab-least" : "")">
-                            <td class="mono">@layer.Layer</td>
-                            <td class="mono">@layer.AttentionRms.ToString("F3")</td>
-                            <td class="mono">@layer.FeedForwardRms.ToString("F3")</td>
-                            <td class="mono">@layer.AblatedLoss.ToString("F4")</td>
-                            <td class="mono">@layer.DeltaLoss.ToString("+0.0000;-0.0000;0.0000")</td>
-                            <td class="lab-bar-cell">
-                                <div class="lab-bar @(layer.DeltaLoss < 0 ? "lab-bar-help" : "")"
-                                     style="width:@(BarWidth(layer.DeltaLoss))%"></div>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-            <div class="small faint">
-                Highlighted row: the least important layer under this calibration, a natural surgery candidate.
+            <p class="faint">
+                Compare GGUF quantizations of the same model: per-tensor weight error, output
+                divergence and layer sensitivity, so a smaller file is chosen on evidence rather
+                than file size alone.
+            </p>
+        </div>
+    </section>
+}
+else
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Coming next</div>
+                <h2>Model visualizer</h2>
             </div>
+        </div>
+        <div class="panel-body">
+            <p class="faint">
+                Inspect attention, embeddings and per-layer activations for a loaded model. The
+                activation hook that drives the layer lab already records the branch outputs this
+                view needs.
+            </p>
         </div>
     </section>
 }
 
 @code {
-    private IReadOnlyList<ModelDescriptor> _models = [];
-    private string _selectedModelPath = "";
-    private string _modeText = "Both";
-    private int _maxTokens = 96;
-    private string? _runError;
-    private string _prompt =
-        "The quick brown fox jumps over the lazy dog. Layer importance shows which transformer " +
-        "blocks carry the most information for this model. A short calibration keeps the sweep fast.";
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? TabQuery { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    private string _tab = "layers";
+
+    protected override void OnParametersSet()
     {
-        LayerLab.Changed += OnLabChanged;
-        await LoadModelsAsync();
+        _tab = TabQuery is "quantization" or "visualizer" ? TabQuery : "layers";
     }
 
-    public void Dispose() => LayerLab.Changed -= OnLabChanged;
-
-    private void OnLabChanged() => _ = InvokeAsync(StateHasChanged);
-
-    private async Task LoadModelsAsync()
+    public void Dispose()
     {
-        _models = await Catalog.RefreshAsync();
-        _selectedModelPath = _models.FirstOrDefault()?.Path ?? "";
-    }
-
-    private async Task RunAsync()
-    {
-        _runError = null;
-        if (Chat.IsChatActive)
-        {
-            _runError = "A chat turn is active; wait for it to finish before running the lab.";
-            return;
-        }
-        ModelDescriptor? model = _models.FirstOrDefault(item => item.Path == _selectedModelPath);
-        if (model is null) return;
-        LayerAblation mode = _modeText switch
-        {
-            "Attention" => LayerAblation.Attention,
-            "FeedForward" => LayerAblation.FeedForward,
-            _ => LayerAblation.Both,
-        };
-        await LayerLab.RunAsync(model, _prompt, mode, Math.Clamp(_maxTokens, 8, 512));
-    }
-
-    private double BarWidth(double delta)
-    {
-        double max = LayerLab.Report?.Layers.Max(layer => Math.Abs(layer.DeltaLoss)) ?? 0;
-        if (max <= 1e-9) return 0;
-        return Math.Clamp(Math.Abs(delta) / max * 100, 2, 100);
+        // The tab page owns no subscriptions; the layer component owns its own.
     }
 }

@@ -23,10 +23,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Markdown and attaches the synthesized 24 kHz WAV as an audio artifact, ready
   to play, download or transcribe. The runtime uses the checkpoint's trained
   female voice by default.
-- **Layer importance lab** - a Lab page ablates each transformer block of any
-  loaded model, shows the attention/feed-forward activation RMS and the
-  next-token loss delta, and highlights the least important layer as a surgery
-  candidate. It runs in source builds until the 1.1.1 packages publish.
+- **Labs menu** - a top-level Labs page with tabs for Layer importance,
+  Quantization and Model visualizer, so more model-analysis labs can be added
+  without new navigation items. The Layer importance tab ablates each
+  transformer block of any loaded model, shows the attention/feed-forward
+  activation RMS and the next-token loss delta, and highlights the least
+  important layer as a surgery candidate. The Quantization and visualizer tabs
+  are the next labs. Source builds until the 1.1.1 packages publish.
+- **LFM3-VL image attachments** - when a vision projector is present next to
+  the model, attached images are decoded and described natively. An image-only
+  send uses "Describe this image."; the answer joins the transcript and the next
+  text turn rebuilds the session so the vision turn stays in context.
 - **Artifact cards** - images open or download, audio plays and downloads,
   text/code downloads, with the artifact type and size in the header.
 - **Larger sponsor pill** in the top bar.

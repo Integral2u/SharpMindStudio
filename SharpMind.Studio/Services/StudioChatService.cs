@@ -6,6 +6,9 @@ using SharpMind.Inference.Chat;
 #if SHARPMIND_AUDIO
 using SharpMind.Model.Audio;
 #endif
+#if SHARPMIND_SOURCE
+using SharpMind.Model.Vision;
+#endif
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Inference;
@@ -36,6 +39,9 @@ public sealed class StudioChatService : IAsyncDisposable
     private Lfm3TtsRuntime? _ttsRuntime;
     private bool? _supportsAudio;
     private bool? _supportsTts;
+#endif
+#if SHARPMIND_SOURCE
+    private bool? _supportsVision;
 #endif
     private readonly SemaphoreSlim _audioGate = new(1, 1);
     private CancellationTokenSource? _streamCts;
@@ -93,6 +99,11 @@ public sealed class StudioChatService : IAsyncDisposable
     public bool SupportsAudio => false;
     public bool SupportsTts => false;
 #endif
+#if SHARPMIND_SOURCE
+    public bool SupportsVision => _supportsVision ??= ComputeSupportsVision();
+#else
+    public bool SupportsVision => false;
+#endif
     public string? ComputeProviderId => _document?.RemoteProvider;
     public string? RemoteProviderName => IsCompute
         ? _compute.Find(_document?.RemoteProvider)?.Name ?? "SharpMind Compute"
@@ -127,6 +138,13 @@ public sealed class StudioChatService : IAsyncDisposable
         if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase)) return false;
         string? projector = Lfm3AudioRuntime.FindProjector(_model.Path);
         return projector is not null && Lfm3TtsRuntime.IsTtsProjector(projector);
+    }
+#endif
+#if SHARPMIND_SOURCE
+    private bool ComputeSupportsVision()
+    {
+        if (IsRemote || _model is null) return false;
+        return Lfm3VlRuntime.FindProjector(_model.Path) is not null;
     }
 #endif
 
@@ -481,6 +499,15 @@ public sealed class StudioChatService : IAsyncDisposable
                 }
             }
 
+#if SHARPMIND_SOURCE
+            if (SupportsVision && artifacts?.FirstOrDefault(
+                    item => item.Type.Contains("image", StringComparison.OrdinalIgnoreCase)) is { } image)
+            {
+                await SendVisionTurnAsync(text.Trim(), image).ConfigureAwait(false);
+                return;
+            }
+#endif
+
             if (IsOpenRouter)
             {
                 await SendRemoteTurnAsync(text.Trim(), _openRouterBackend).ConfigureAwait(false);
@@ -590,6 +617,85 @@ public sealed class StudioChatService : IAsyncDisposable
             _gate.Release();
         }
     }
+
+#if SHARPMIND_SOURCE
+    /// <summary>
+    /// Runs one native LFM3-VL turn. The image is decoded and described directly instead
+    /// of going through ChatSession, which is a text-only prompt pipeline; the transcript
+    /// keeps the image artifact and the answer, and the next text turn rebuilds the session
+    /// from the document so the vision turn stays in context.
+    /// </summary>
+    private async Task SendVisionTurnAsync(string text, ChatArtifact image)
+    {
+        if (_document is null || _model is null) return;
+
+        _streaming = true;
+        _error = null;
+        _status = "Reading image...";
+        _streamCts = new CancellationTokenSource();
+        ChatMessage userMessage = ChatMessage.User(text, "You");
+        userMessage.Artifacts = [image];
+        _document.Messages.Add(userMessage);
+        ChatMessage assistant = ChatMessage.Agent("");
+        _document.Messages.Add(assistant);
+        Notify();
+
+        LoadedStudioModel? loaded = _loaded;
+        bool borrowed = false;
+        try
+        {
+            if (loaded is null)
+            {
+                ResolvedInference resolved = _resolved
+                    ?? ResolveInference(_model.Family.Id, _model.Path, _document.Overrides);
+                loaded = await _host.LoadAsync(_model, resolved, cancellationToken: _streamCts.Token)
+                    .ConfigureAwait(false);
+                borrowed = true;
+            }
+
+            LoadedStudioModel model = loaded
+                ?? throw new InvalidOperationException("The vision model is not loaded.");
+            string projector = Lfm3VlRuntime.FindProjector(_model.Path)
+                ?? throw new NotSupportedException(
+                    "No LFM3-VL vision projector (mmproj) was found next to this model. " +
+                    "Put mmproj-*.gguf in the model folder.");
+            float[] chw = StudioImageInput.Decode(image.Content, 512, out int height, out int width);
+            _status = $"Describing image ({height}x{width})...";
+            Notify();
+
+            CancellationToken token = _streamCts.Token;
+            string answer = await Task.Run(() =>
+            {
+                using var runtime = new Lfm3VlRuntime(
+                    model.Model, model.Tokenizer, model.Config, projector);
+                return runtime.Describe(chw, height, width, text, 128, token);
+            }, token).ConfigureAwait(false);
+
+            assistant.Content = answer.Trim();
+            _status = "Ready.";
+        }
+        catch (OperationCanceledException)
+        {
+            _status = "Stopped.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+            _status = "Image understanding failed.";
+        }
+        finally
+        {
+            if (borrowed && loaded is not null) _host.Release(loaded);
+            _streamCts?.Dispose();
+            _streamCts = null;
+            _streaming = false;
+            DisposeSession(_session);
+            _session = null;
+            await SaveSnapshotAsync().ConfigureAwait(false);
+            Notify();
+        }
+    }
+#endif
 
     /// <summary>
     /// Shared turn setup for the remote backends: validate, append the user row
