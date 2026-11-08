@@ -331,6 +331,27 @@
             "IsolateTo" = "8:"
             }
 
+            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_E212A3B4C5D64E789A1B2C3D4E5F6012"
+            {
+            "SourcePath" = "8:..\\SharpMind.Studio\\wwwroot\\lab.css"
+            "TargetName" = "8:lab.css"
+            "Tag" = "8:"
+            "Folder" = "8:_E1F2A3B4C5D64E789A1B2C3D4E5F6071"
+            "Condition" = "8:"
+            "Transitive" = "11:FALSE"
+            "Vital" = "11:TRUE"
+            "ReadOnly" = "11:FALSE"
+            "Hidden" = "11:FALSE"
+            "System" = "11:FALSE"
+            "Permanent" = "11:FALSE"
+            "SharedLegacy" = "11:FALSE"
+            "PackageAs" = "3:1"
+            "Register" = "3:1"
+            "Exclude" = "11:FALSE"
+            "IsDependency" = "11:FALSE"
+            "IsolateTo" = "8:"
+            }
+
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_E4A5B6C7D8E94F0A9B1C2D3E4F5A6071"
             {
             "SourcePath" = "8:..\\SharpMind.Studio\\wwwroot\\gateway\\admin.html"

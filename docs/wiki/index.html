@@ -151,6 +151,7 @@
                         <tr><td>OpenAI-style API</td><td>—</td><td>Yes</td><td>Bearer token; <span class="mono">/v1/chat/completions</span>, models, files, training jobs.</td></tr>
                         <tr><td>Pretrain from scratch</td><td>Yes (CPU)</td><td>Yes (CPU)</td><td>The GPU engine refuses whole-weight training by design.</td></tr>
 <tr><td>Layer importance lab</td><td>Yes</td><td>-</td><td>Model-agnostic per-block attention/FFN ablation with activation RMS and loss deltas; source builds.</td></tr>
+<tr><td>LFM3-VL image input</td><td>Yes</td><td>-</td><td>Native vision tower and 2x2 merge projector from the vision <span class="mono">mmproj</span>; source builds.</td></tr>
                         <tr><td>LoRA fine-tune</td><td>Yes (GPU or CPU)</td><td>Yes (GPU or CPU)</td><td>GPU needs RMSNorm + RoPE/NoPE + gated FFN; otherwise the CPU retry runs.</td></tr>
                         <tr><td>SFT (assistant-only loss)</td><td>Yes (GPU or CPU)</td><td>Yes (GPU or CPU)</td><td>Chat JSONL; the base supplies the tokenizer and template.</td></tr>
                         <tr><td>GPU inference</td><td>With a supported local GPU</td><td>Yes (GPU or CPU)</td><td>Also covers LayerNorm and dense-GELU models.</td></tr>
