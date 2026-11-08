@@ -32,7 +32,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   produces a surgery preview: skip the least important layers in rank order and
   show the loss after each prefix, with the low-risk rows highlighted. The
   Quantization tab compares a reference GGUF with a candidate tensor by tensor
-  (relative L2, cosine, max abs) without a forward pass. The Model visualizer tab
+  (relative L2, cosine, max abs) without a forward pass, then optionally loads
+  both models in turn and measures the calibration cross-entropy and perplexity.
+  The Model visualizer tab
   captures one prompt through the activation hook and draws attention/FFN RMS
   heatmaps over layers and tokens on a log scale. The Latent space tab projects
   the prompt's final hidden states to two dimensions with classical MDS and draws

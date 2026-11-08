@@ -120,12 +120,70 @@
                 </tbody>
             </table>
             <div class="small faint">
-                Worst tensors first. The next step is a forward-loss comparison on the same
-                calibration text used by the layer lab.
+                Worst tensors first. The calibration-loss section below measures the actual
+                next-token loss, but it has to load both models in turn.
             </div>
         </div>
     </section>
 }
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Forward comparison</div>
+            <h2>Calibration loss</h2>
+        </div>
+        <span class="faint small mono">loads each model sequentially</span>
+    </div>
+    <div class="panel-body stack">
+        <div class="field">
+            <label class="field-label">Calibration text</label>
+            <textarea class="input" rows="3" @bind="_calibration" disabled="@Quant.IsRunning"></textarea>
+        </div>
+        <div class="row">
+            <div class="field">
+                <label class="field-label">Max tokens</label>
+                <input class="input" type="number" min="8" max="512" @bind="_lossTokens" disabled="@Quant.IsRunning" />
+            </div>
+            <button type="button" class="button" @onclick="RunLossAsync"
+                    disabled="@(Quant.IsRunning || _models.Count < 2 || string.IsNullOrWhiteSpace(_referencePath) ||
+                                string.IsNullOrWhiteSpace(_candidatePath) || _referencePath == _candidatePath)">
+                @(Quant.IsRunning ? "Running..." : "Compare loss")
+            </button>
+            <span class="status-line">@Quant.Status</span>
+        </div>
+
+        @if (Quant.Error is { } lossError)
+        {
+            <div class="error-line">@lossError</div>
+        }
+
+        @if (Quant.ReferenceLoss is { } referenceLoss && Quant.CandidateLoss is { } candidateLoss)
+        {
+            <table class="table">
+                <thead>
+                    <tr><th>File</th><th>Cross-entropy</th><th>Perplexity</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="mono">@Path.GetFileName(_referencePath)</td>
+                        <td class="mono">@referenceLoss.ToString("F4")</td>
+                        <td class="mono">@Math.Exp(referenceLoss).ToString("F2")</td>
+                    </tr>
+                    <tr>
+                        <td class="mono">@Path.GetFileName(_candidatePath)</td>
+                        <td class="mono">@candidateLoss.ToString("F4")</td>
+                        <td class="mono">@Math.Exp(candidateLoss).ToString("F2")</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="small faint">
+                @Quant.LossTokens prediction tokens · candidate delta
+                @(Quant.LossDelta?.ToString("+0.0000;-0.0000;0.0000") ?? "0.0000") nats.
+            </div>
+        }
+    </div>
+</section>
 
 @code {
     private IReadOnlyList<ModelDescriptor> _models = [];
@@ -133,6 +191,9 @@
     private string _candidatePath = "";
     private string _filter = "";
     private int _maxTensors = 0;
+    private string _calibration =
+        "The quick brown fox jumps over the lazy dog. A quantization should preserve the next-token distribution.";
+    private int _lossTokens = 64;
 
     protected override async Task OnInitializedAsync()
     {
@@ -156,6 +217,14 @@
     {
         string? filter = string.IsNullOrWhiteSpace(_filter) ? null : _filter.Trim();
         await Quant.RunAsync(_referencePath, _candidatePath, filter, Math.Max(0, _maxTensors));
+    }
+
+    private async Task RunLossAsync()
+    {
+        ModelDescriptor? reference = _models.FirstOrDefault(model => model.Path == _referencePath);
+        ModelDescriptor? candidate = _models.FirstOrDefault(model => model.Path == _candidatePath);
+        if (reference is null || candidate is null) return;
+        await Quant.RunLossAsync(reference, candidate, _calibration, Math.Clamp(_lossTokens, 8, 512));
     }
 
     private double BarWidth(double relativeL2)

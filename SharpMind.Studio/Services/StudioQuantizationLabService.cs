@@ -1,18 +1,29 @@
 using System.Diagnostics;
 using SharpMind.Model.Analysis;
+using SharpMind.Studio.Core.Chat;
+using SharpMind.Studio.Core.Inference;
 
 namespace SharpMind.Studio.Services;
 
 /// <summary>
-/// Runs the tensor-level quantization comparison for the Labs page. It only opens the two
-/// GGUF files and dequantizes one tensor at a time, so it does not load a model or compete
-/// with the chat session for weights.
+/// Runs the quantization lab: a tensor-level weight comparison that only opens the two GGUF
+/// files, and an optional forward-loss comparison that loads the two models sequentially so
+/// they never compete for memory.
 /// </summary>
 public sealed class StudioQuantizationLabService : IAsyncDisposable
 {
+    private readonly InferenceSettingsService _inference;
+    private readonly StudioModelHost _host;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private CancellationTokenSource? _cts;
+    private LoadedStudioModel? _loaded;
     private bool _disposed;
+
+    public StudioQuantizationLabService(InferenceSettingsService inference, StudioModelHost host)
+    {
+        _inference = inference;
+        _host = host;
+    }
 
     public event Action? Changed;
 
@@ -21,6 +32,12 @@ public sealed class StudioQuantizationLabService : IAsyncDisposable
     public string? Error { get; private set; }
     public QuantizationComparisonReport? Report { get; private set; }
     public double ElapsedSeconds { get; private set; }
+
+    public double? ReferenceLoss { get; private set; }
+    public double? CandidateLoss { get; private set; }
+    public int LossTokens { get; private set; }
+    public double? LossDelta =>
+        ReferenceLoss is { } reference && CandidateLoss is { } candidate ? candidate - reference : null;
 
     public async Task RunAsync(
         string referencePath,
@@ -78,6 +95,90 @@ public sealed class StudioQuantizationLabService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Loads each model in turn, measures the next-token cross-entropy on the same
+    /// calibration ids and releases it before loading the next one.
+    /// </summary>
+    public async Task RunLossAsync(
+        ModelDescriptor reference,
+        ModelDescriptor candidate,
+        string prompt,
+        int maxTokens)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (IsRunning) return;
+            IsRunning = true;
+            Error = null;
+            ReferenceLoss = null;
+            CandidateLoss = null;
+            LossTokens = 0;
+            _cts = new CancellationTokenSource();
+            CancellationToken token = _cts.Token;
+
+            Status = $"Loading {reference.FileName}...";
+            Notify();
+            int[] ids = await MeasureAsync(reference, prompt, maxTokens, reference: true, null, token)
+                .ConfigureAwait(false);
+            Status = $"Loading {candidate.FileName}...";
+            Notify();
+            await MeasureAsync(candidate, prompt, maxTokens, reference: false, ids, token).ConfigureAwait(false);
+
+            LossTokens = Math.Max(0, Math.Min(ids.Length, maxTokens) - 1);
+            Status = $"Loss {ReferenceLoss:F4} -> {CandidateLoss:F4} (delta {LossDelta:+0.0000;-0.0000;0}).";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Loss comparison cancelled.";
+        }
+        catch (Exception ex)
+        {
+            Error = $"{ex.GetType().Name}: {ex.Message}";
+            Status = "Loss comparison failed.";
+        }
+        finally
+        {
+            if (_loaded is not null)
+            {
+                _host.Release(_loaded);
+                _loaded = null;
+            }
+            _cts?.Dispose();
+            _cts = null;
+            IsRunning = false;
+            _gate.Release();
+            Notify();
+        }
+    }
+
+    private async Task<int[]> MeasureAsync(
+        ModelDescriptor descriptor,
+        string prompt,
+        int maxTokens,
+        bool reference,
+        int[]? ids,
+        CancellationToken token)
+    {
+        ResolvedInference resolved = _inference.Resolve(
+            descriptor.Family.Id, descriptor.Path, session: null);
+        _loaded = await _host.LoadAsync(descriptor, resolved, progress: null, token)
+            .ConfigureAwait(false);
+        ids ??= _loaded.Tokenizer.Encode(prompt, addBos: true, addEos: false);
+        var analyzer = new LayerImportanceAnalyzer(_loaded.Model);
+        double loss = await Task.Run(
+            () => analyzer.MeasureLoss(ids, maxTokens, token), token).ConfigureAwait(false);
+        if (reference) ReferenceLoss = loss;
+        else CandidateLoss = loss;
+        _host.Release(_loaded);
+        _loaded = null;
+        return ids;
+    }
+
     public void Cancel() => _cts?.Cancel();
 
     private void Notify() => Changed?.Invoke();
@@ -88,6 +189,11 @@ public sealed class StudioQuantizationLabService : IAsyncDisposable
         _disposed = true;
         _cts?.Cancel();
         _cts?.Dispose();
+        if (_loaded is not null)
+        {
+            _host.Release(_loaded);
+            _loaded = null;
+        }
         _gate.Dispose();
         return ValueTask.CompletedTask;
     }
