@@ -133,6 +133,13 @@
         </div>
 
         <div class="field">
+            <label class="field-label">Prompt lookup draft (0 = off)</label>
+            <input class="input" type="number" min="0" max="16" value="@Value.PromptLookupDraft"
+                   @onchange="e => Update(v => v with { PromptLookupDraft = Integer(e) })" />
+            <div class="small faint editor-source">@SourceLabel("PromptLookupDraft")</div>
+        </div>
+
+        <div class="field">
             <label class="field-label">Max context</label>
             <input class="input" type="number" min="64" value="@Value.MaxContextTokens"
                    placeholder="Model context"
@@ -243,6 +250,7 @@
         "MinP" => Effective?.MinP.ToString("0.###"),
         "Seed" => Effective?.Seed?.ToString() ?? "random",
         "MaxNewTokens" => Effective?.MaxNewTokens.ToString(),
+        "PromptLookupDraft" => Effective?.PromptLookupDraft.ToString() ?? "off",
         "MaxContextTokens" => Effective?.MaxContextTokens?.ToString() ?? "model context",
         "RepetitionPenalty" => Effective?.RepetitionPenalty.ToString("0.###"),
         "RepetitionWindow" => Effective?.RepetitionWindow.ToString(),

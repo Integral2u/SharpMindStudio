@@ -22,6 +22,7 @@ public sealed record InferenceOverrides
     public int? MaxContextTokens { get; init; }
     public float? RepetitionPenalty { get; init; }
     public int? RepetitionWindow { get; init; }
+    public int? PromptLookupDraft { get; init; }
     public bool? ShowThinking { get; init; }
     public bool? EnableThinking { get; init; }
     public string? Compactor { get; init; }
@@ -43,6 +44,7 @@ public sealed record InferenceOverrides
         MaxNewTokens = 512,
         RepetitionPenalty = 1.1f,
         RepetitionWindow = 0,
+        PromptLookupDraft = 0,
         ShowThinking = true,
         EnableThinking = false,
         Compactor = "None",
@@ -69,6 +71,7 @@ public sealed record ResolvedInference
     public int? MaxContextTokens { get; init; }
     public required float RepetitionPenalty { get; init; }
     public required int RepetitionWindow { get; init; }
+    public required int PromptLookupDraft { get; init; }
     public required bool ShowThinking { get; init; }
     public required bool EnableThinking { get; init; }
     public required string Compactor { get; init; }
@@ -147,6 +150,7 @@ public static class InferenceResolver
             MaxContextTokens = Nullable("MaxContextTokens", session?.MaxContextTokens, model?.MaxContextTokens, family?.MaxContextTokens, system.MaxContextTokens),
             RepetitionPenalty = Value("RepetitionPenalty", session?.RepetitionPenalty, model?.RepetitionPenalty, family?.RepetitionPenalty, system.RepetitionPenalty, 1.1f),
             RepetitionWindow = Value("RepetitionWindow", session?.RepetitionWindow, model?.RepetitionWindow, family?.RepetitionWindow, system.RepetitionWindow, 0),
+            PromptLookupDraft = Value("PromptLookupDraft", session?.PromptLookupDraft, model?.PromptLookupDraft, family?.PromptLookupDraft, system.PromptLookupDraft, 0),
             ShowThinking = Value("ShowThinking", session?.ShowThinking, model?.ShowThinking, family?.ShowThinking, system.ShowThinking, true),
             EnableThinking = Value("EnableThinking", session?.EnableThinking, model?.EnableThinking, family?.EnableThinking, system.EnableThinking, false),
             Compactor = String("Compactor", session?.Compactor, model?.Compactor, family?.Compactor, system.Compactor, "None"),

@@ -155,7 +155,7 @@
                         <tr><td>GPU inference</td><td>With a supported local GPU</td><td>Yes (GPU or CPU)</td><td>Also covers LayerNorm and dense-GELU models.</td></tr>
                         <tr><td>Local chat artifacts</td><td>Send / render / mic</td><td>Not yet</td><td>Images, audio, files and code. LFM3-Audio microphone and audio attachments transcribe locally.</td></tr>
                         <tr><td>LFM3 text (13 conv / 5 SWA / 6 global)</td><td>Smoke</td><td>Smoke</td><td>Layer map, per-head gate and templated chat validated; broad quality pending.</td></tr>
-                        <tr><td>ASR / TTS</td><td>ASR short clips</td><td>No</td><td>Native LFM3-Audio encoder plus <span class="mono">mmproj</span>. Long clips need chunking; TTS needs the depth decoder and LiquidCodec.</td></tr>
+                        <tr><td>ASR / TTS</td><td>ASR short and long clips</td><td>No</td><td>Native LFM3-Audio encoder plus <span class="mono">mmproj</span>; long recordings are chunked. TTS needs the depth decoder and LiquidCodec.</td></tr>
                         <tr><td>Remote data and artifacts</td><td>—</td><td>Yes</td><td>Uploads with progress; exports download back to Studio.</td></tr>
                     </tbody>
                 </table>

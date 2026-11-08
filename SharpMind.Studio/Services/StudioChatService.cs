@@ -1051,6 +1051,9 @@ public sealed class StudioChatService : IAsyncDisposable
         session.TopP = profile.TopP;
         session.RepetitionPenalty = profile.RepetitionPenalty;
         session.RepetitionWindow = profile.RepetitionWindow;
+#if SHARPMIND_SOURCE
+        session.PromptLookupDraft = profile.PromptLookupDraft;
+#endif
         session.ShowThinking = profile.ShowThinking;
         session.EnableThinking = profile.EnableThinking;
         session.ToolCallRecovery = profile.ToolCallRecovery;

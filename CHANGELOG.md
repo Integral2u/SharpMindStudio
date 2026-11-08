@@ -14,7 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Local microphone dictation** - when an LFM3-Audio model and its `mmproj`
   are present, the composer shows a Mic button. Recording returns a WAV that
   the native encoder transcribes into the composer; attached audio files are
-  transcribed before the turn.
+  transcribed before the turn. Recordings longer than four seconds are chunked.
+- **Prompt lookup drafting** - the inference settings expose
+  `PromptLookupDraft` (0 = off) for faster copy-heavy replies with unchanged
+  output.
 - **Artifact cards** - images open or download, audio plays and downloads,
   text/code downloads, with the artifact type and size in the header.
 - **Larger sponsor pill** in the top bar.
