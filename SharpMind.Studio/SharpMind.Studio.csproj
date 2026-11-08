@@ -22,7 +22,10 @@
     <RazorComponent Remove="Components/Pages/Lab.razor" />
     <Content Remove="Components/Shared/LayerImportanceLab.razor" />
     <RazorComponent Remove="Components/Shared/LayerImportanceLab.razor" />
+    <Content Remove="Components/Shared/QuantizationLab.razor" />
+    <RazorComponent Remove="Components/Shared/QuantizationLab.razor" />
     <Compile Remove="Services/StudioLayerLabService.cs" />
+    <Compile Remove="Services/StudioQuantizationLabService.cs" />
   </ItemGroup>
 
 </Project>

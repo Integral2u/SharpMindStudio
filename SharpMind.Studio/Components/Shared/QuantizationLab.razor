@@ -1,0 +1,167 @@
+﻿@using SharpMind.Model.Analysis
+@using SharpMind.Studio.Services
+@inject ModelCatalogService Catalog
+@inject StudioQuantizationLabService Quant
+@implements IDisposable
+
+<div class="page-head">
+    <div>
+        <div class="eyebrow">Model analysis</div>
+        <h1>Quantization</h1>
+        <p class="faint">
+            Compare a reference GGUF with a smaller quantization tensor by tensor. The relative L2
+            and cosine are weight-level; no forward pass or model load is needed.
+        </p>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="panel-body stack">
+        <div class="row">
+            <div class="field grow">
+                <label class="field-label">Reference (usually Q8_0 / F16)</label>
+                <select class="input" @bind="_referencePath" disabled="@Quant.IsRunning">
+                    @foreach (ModelDescriptor model in _models)
+                    {
+                        <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
+                    }
+                </select>
+            </div>
+            <div class="field grow">
+                <label class="field-label">Candidate quantization</label>
+                <select class="input" @bind="_candidatePath" disabled="@Quant.IsRunning">
+                    @foreach (ModelDescriptor model in _models)
+                    {
+                        <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="field grow">
+                <label class="field-label">Tensor filter (optional)</label>
+                <input class="input" @bind="_filter" placeholder="blk.0 or ffn_down" disabled="@Quant.IsRunning" />
+            </div>
+            <div class="field">
+                <label class="field-label">Max tensors (0 = all)</label>
+                <input class="input" type="number" min="0" @bind="_maxTensors" disabled="@Quant.IsRunning" />
+            </div>
+        </div>
+
+        <div class="row">
+            <button type="button" class="button primary" @onclick="RunAsync"
+                    disabled="@(Quant.IsRunning || _models.Count < 2 || string.IsNullOrWhiteSpace(_referencePath) ||
+                                string.IsNullOrWhiteSpace(_candidatePath) || _referencePath == _candidatePath)">
+                @(Quant.IsRunning ? "Comparing..." : "Compare")
+            </button>
+            <button type="button" class="button" @onclick="Quant.Cancel" disabled="@(!Quant.IsRunning)">
+                Cancel
+            </button>
+            <span class="status-line">@Quant.Status</span>
+        </div>
+
+        @if (Quant.Error is { } error)
+        {
+            <div class="error-line">@error</div>
+        }
+        @if (_models.Count < 2)
+        {
+            <div class="small faint">Add at least two GGUF models to compare quantizations.</div>
+        }
+        @if (_referencePath == _candidatePath && _models.Count >= 2)
+        {
+            <div class="small faint">Pick two different files.</div>
+        }
+    </div>
+</section>
+
+@if (Quant.Report is { } report)
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <div class="eyebrow">Result</div>
+                <h2>@Path.GetFileName(report.ReferencePath) → @Path.GetFileName(report.CandidatePath)</h2>
+            </div>
+            <span class="faint small mono">
+                global L2 @report.GlobalRelativeL2.ToString("F4") · cosine @report.MeanCosine.ToString("F5") ·
+                @report.Compared compared / @report.Skipped skipped · @Quant.ElapsedSeconds.ToString("F0")s
+            </span>
+        </div>
+        <div class="panel-body">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Tensor</th>
+                        <th>Reference</th>
+                        <th>Candidate</th>
+                        <th>Rel. L2</th>
+                        <th>Cosine</th>
+                        <th>Max abs</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (TensorQuantizationError tensor in report.Worst(40))
+                    {
+                        <tr>
+                            <td class="mono">@tensor.Name</td>
+                            <td class="mono">@tensor.ReferenceDtype</td>
+                            <td class="mono">@tensor.CandidateDtype</td>
+                            <td class="mono">@tensor.RelativeL2.ToString("F4")</td>
+                            <td class="mono">@tensor.Cosine.ToString("F5")</td>
+                            <td class="mono">@tensor.MaxAbsError.ToString("F5")</td>
+                            <td class="lab-bar-cell">
+                                <div class="lab-bar" style="width:@(BarWidth(tensor.RelativeL2))%"></div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="small faint">
+                Worst tensors first. The next step is a forward-loss comparison on the same
+                calibration text used by the layer lab.
+            </div>
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<ModelDescriptor> _models = [];
+    private string _referencePath = "";
+    private string _candidatePath = "";
+    private string _filter = "";
+    private int _maxTensors = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Quant.Changed += OnQuantChanged;
+        await LoadModelsAsync();
+    }
+
+    public void Dispose() => Quant.Changed -= OnQuantChanged;
+
+    private void OnQuantChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task LoadModelsAsync()
+    {
+        _models = [.. (await Catalog.RefreshAsync())
+            .Where(model => model.Path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))];
+        _referencePath = _models.FirstOrDefault()?.Path ?? "";
+        _candidatePath = _models.Skip(1).FirstOrDefault()?.Path ?? _referencePath;
+    }
+
+    private async Task RunAsync()
+    {
+        string? filter = string.IsNullOrWhiteSpace(_filter) ? null : _filter.Trim();
+        await Quant.RunAsync(_referencePath, _candidatePath, filter, Math.Max(0, _maxTensors));
+    }
+
+    private double BarWidth(double relativeL2)
+    {
+        double max = Quant.Report?.Tensors.Max(tensor => tensor.RelativeL2) ?? 0;
+        if (max <= 1e-12) return 0;
+        return Math.Clamp(relativeL2 / max * 100, 1, 100);
+    }
+}

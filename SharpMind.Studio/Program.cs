@@ -72,6 +72,7 @@ builder.Services.AddSingleton<StudioExamService>();
 builder.Services.AddSingleton<StudioRehearsalService>();
 #if SHARPMIND_SOURCE
 builder.Services.AddSingleton<StudioLayerLabService>();
+builder.Services.AddSingleton<StudioQuantizationLabService>();
 #endif
 builder.Services.AddScoped<StudioDeviceAccess>();
 builder.Services.AddScoped<PathPickerService>();

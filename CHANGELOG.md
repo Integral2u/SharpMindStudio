@@ -28,8 +28,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   model-analysis labs can be added without new navigation items. The Layer
   importance tab ablates each transformer block of any loaded model, shows the
   attention/feed-forward activation RMS and the next-token loss delta, and
-  highlights the least important layer as a surgery candidate. The other tabs
-  are reserved for the next labs. Source builds until the 1.1.1 packages
+  highlights the least important layer as a surgery candidate. The Quantization
+  tab compares a reference GGUF with a candidate tensor by tensor (relative L2,
+  cosine, max abs) without a forward pass. Model visualizer, Latent space and
+  Agents are reserved for the next labs. Source builds until the 1.1.1 packages
   publish.
 - **LFM3-VL image attachments** - when a vision projector is present next to
   the model, attached images are decoded and described natively. An image-only
