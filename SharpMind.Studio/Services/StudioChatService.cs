@@ -298,12 +298,14 @@ public sealed class StudioChatService : IAsyncDisposable
     public async Task<ChatArtifact?> SpeakAsync(ChatMessage message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
-        if (message.Role != ChatRole.Agent || string.IsNullOrWhiteSpace(message.Content)) return null;
+        if (message.Role is not (ChatRole.Agent or ChatRole.User)) return null;
+        if (string.IsNullOrWhiteSpace(message.Content)) return null;
         string speech = SpeechText.ToSpeech(message.Content);
         if (speech.Length == 0) return null;
         string fileName = $"speech-{DateTime.Now:HHmmss}.wav";
         ChatArtifact artifact = await SynthesizeAsync(speech, fileName, cancellationToken).ConfigureAwait(false);
         message.Artifacts = [.. (message.Artifacts ?? []), artifact];
+        if (_document is not null) _store.Save(_document);
         Notify();
         return artifact;
     }

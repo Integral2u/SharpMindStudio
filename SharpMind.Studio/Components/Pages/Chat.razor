@@ -327,11 +327,12 @@ else
                                 {
                                     <span>@tps.ToString("F1") tok/s</span>
                                 }
-                                @if (message.Role == ChatRole.Agent && !streaming && ChatService.SupportsTts
-                                     && !string.IsNullOrWhiteSpace(message.Content))
+                                @if ((message.Role == ChatRole.Agent || message.Role == ChatRole.User)
+                                     && !streaming && ChatService.SupportsTts
+                                     && SpeechText.ToSpeech(message.Content).Length > 0)
                                 {
                                     <button type="button" class="button chat-speak-button" @onclick="() => SpeakAsync(message)"
-                                            disabled="@_speaking" title="Synthesize this reply">
+                                            disabled="@_speaking" title="Synthesize this message">
                                         @(_speaking ? "Speaking..." : "Speak")
                                     </button>
                                 }
@@ -344,7 +345,10 @@ else
                                 }
                                 else
                                 {
-                                    <div class="chat-text markdown">@((MarkupString)Markdown.ToHtml(message.Content))</div>
+                                    @if (ShowAgentText(message))
+                                    {
+                                        <div class="chat-text markdown">@((MarkupString)Markdown.ToHtml(message.Content))</div>
+                                    }
                                 }
                             }
                             else
@@ -1163,6 +1167,15 @@ else
             StateHasChanged();
         }
     }
+
+    /// <summary>
+    /// The audio backbone answers a bare ":" when it has no text to give. Hide a
+    /// punctuation-only agent turn (code and normal prose still show); the user's
+    /// own message can be spoken directly when they want a TTS sample.
+    /// </summary>
+    private static bool ShowAgentText(ChatMessage message) =>
+        !string.IsNullOrWhiteSpace(message.Content) &&
+        message.Content.Any(char.IsLetterOrDigit);
 
     private bool HasVisionImage =>
         ChatService.SupportsVision &&

@@ -27,7 +27,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to play, download or transcribe. The runtime uses the checkpoint's trained
   female voice by default. The chat's session options expose the voice
   (female/male), language, maximum frames, temperature, top-k and seed, so the
-  same reply can be re-synthesized with different prosody.
+  same reply can be re-synthesized with different prosody. User messages can be
+  spoken too, the audio card shows its duration, and the WAV is saved with the
+  chat. A punctuation-only model reply (the LFM3-Audio backbone's bare ":") is
+  treated as no speech: it gets no Speak button and its empty text bubble is
+  hidden.
 - **Labs menu** - a top-level Labs page with tabs for Layer importance,
   Quantization, Model visualizer, Latent space and Agents, so more
   model-analysis labs can be added without new navigation items. The Layer

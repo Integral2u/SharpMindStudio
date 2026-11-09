@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -38,6 +39,10 @@ public static class SpeechText
         speech = speech.Replace("*", "");
         speech = Regex.Replace(speech, @"[ \t]+", " ");
         speech = Regex.Replace(speech, @"\n{2,}", "\n");
-        return speech.Trim();
+        speech = speech.Trim();
+        // A punctuation-only reply (the LFM3-Audio backbone's bare ":") is not
+        // speech: it produced a 0.16 s WAV the player showed as 0:00. Treat it as
+        // nothing to say rather than synthesizing a click.
+        return speech.Any(char.IsLetterOrDigit) ? speech : "";
     }
 }

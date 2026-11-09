@@ -9,7 +9,7 @@
             string name = artifact.FileName ?? DefaultName(artifact);
             <div class="chat-artifact-card">
                 <div class="chat-artifact-head">
-                    <span>@Label(artifact) &middot; @Size(artifact)</span>
+                    <span>@Label(artifact) &middot; @(Duration(artifact) is { } duration ? $"{duration} · " : "")@Size(artifact)</span>
                     <span class="chat-artifact-actions">
                         @if (IsImage(artifact))
                         {
@@ -77,6 +77,52 @@
         return bytes < 1024 ? $"{bytes} B"
             : bytes < 1024 * 1024 ? $"{bytes / 1024.0:F1} KB"
             : $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+
+    /// <summary>
+    /// Reads the duration out of a RIFF/WAVE header. Short synthesized clips are
+    /// otherwise indistinguishable from an empty one in the HTML player (which
+    /// rounds anything under a second to 0:00).
+    /// </summary>
+    private static string? Duration(ChatArtifact artifact)
+    {
+        if (!IsAudio(artifact)) return null;
+        byte[] bytes = artifact.Content;
+        if (bytes.Length < 44 ||
+            bytes[0] != (byte)'R' || bytes[1] != (byte)'I' ||
+            bytes[2] != (byte)'F' || bytes[3] != (byte)'F' ||
+            bytes[8] != (byte)'W' || bytes[9] != (byte)'A' ||
+            bytes[10] != (byte)'V' || bytes[11] != (byte)'E')
+            return null;
+
+        int sampleRate = 0, channels = 0, bits = 0, dataSize = 0;
+        int position = 12;
+        while (position + 8 <= bytes.Length)
+        {
+            string id = System.Text.Encoding.ASCII.GetString(bytes, position, 4);
+            int size = BitConverter.ToInt32(bytes, position + 4);
+            if (size < 0) break;
+
+            if (id == "fmt " && position + 24 <= bytes.Length)
+            {
+                channels = BitConverter.ToUInt16(bytes, position + 10);
+                sampleRate = BitConverter.ToInt32(bytes, position + 12);
+                bits = BitConverter.ToUInt16(bytes, position + 22);
+            }
+            else if (id == "data")
+            {
+                dataSize = Math.Min(size, bytes.Length - position - 8);
+                break;
+            }
+
+            position += 8 + size + (size & 1);
+        }
+
+        if (sampleRate <= 0 || channels <= 0 || bits <= 0 || dataSize <= 0) return null;
+        double seconds = (double)dataSize / (sampleRate * channels * (bits / 8));
+        return seconds < 60
+            ? $"{seconds:0.0} s"
+            : $"{(int)(seconds / 60)}:{(int)(seconds % 60):00}";
     }
 
     private static string DataUrl(ChatArtifact artifact) =>

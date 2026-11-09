@@ -43,4 +43,12 @@ public sealed class SpeechTextTests
         Assert.Equal("", SpeechText.ToSpeech(""));
         Assert.Equal("", SpeechText.ToSpeech("   \n\n  "));
     }
+
+    [Fact]
+    public void ToSpeech_PunctuationOnly_IsEmpty()
+    {
+        Assert.Equal("", SpeechText.ToSpeech(":"));
+        Assert.Equal("", SpeechText.ToSpeech("..."));
+        Assert.Equal("", SpeechText.ToSpeech("—"));
+    }
 }
