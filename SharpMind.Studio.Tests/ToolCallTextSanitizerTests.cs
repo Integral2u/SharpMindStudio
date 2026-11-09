@@ -63,4 +63,33 @@ public sealed class ToolCallTextSanitizerTests
         Assert.Equal(ChatRole.User, visible[0].Role);
         Assert.Equal("You've chosen green.", visible[1].Content);
     }
+
+    [Fact]
+    public void Transcript_HidesPunctuationOnlyAgentReply()
+    {
+        IReadOnlyList<ChatMessage> visible = ChatTranscriptFilter.Visible(
+        [
+            ChatMessage.User("hi"),
+            ChatMessage.Agent(":"),
+        ]);
+
+        Assert.Single(visible);
+        Assert.Equal(ChatRole.User, visible[0].Role);
+    }
+
+    [Fact]
+    public void Transcript_KeepsPunctuationOnlyAgentReplyWithArtifacts()
+    {
+        var agent = ChatMessage.Agent(":");
+        agent.Artifacts = [new ChatArtifact { Type = "audio", FileName = "a.wav", Content = [1, 2, 3] }];
+
+        IReadOnlyList<ChatMessage> visible = ChatTranscriptFilter.Visible(
+        [
+            ChatMessage.User("hi"),
+            agent,
+        ]);
+
+        Assert.Equal(2, visible.Count);
+        Assert.Same(agent, visible[1]);
+    }
 }

@@ -161,6 +161,13 @@ public static class ChatTranscriptFilter
             if (string.IsNullOrWhiteSpace(content) && !keepEmpty)
                 continue;
 
+            // A punctuation-only agent turn (the LFM3-Audio backbone's bare ":")
+            // is not a useful bubble. Keep it when it carries artifacts (image,
+            // audio, file) or is the streaming placeholder.
+            bool hasArtifacts = message.Artifacts is { Length: > 0 };
+            if (!hasArtifacts && !keepEmpty && !content.Any(char.IsLetterOrDigit))
+                continue;
+
             if (string.Equals(content, message.Content, StringComparison.Ordinal))
             {
                 visible.Add(message);
