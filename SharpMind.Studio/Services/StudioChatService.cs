@@ -39,6 +39,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private Lfm3TtsRuntime? _ttsRuntime;
     private bool? _supportsAudio;
     private bool? _supportsTts;
+    private bool? _isTtsModel;
 #endif
 #if SHARPMIND_SOURCE
     private bool? _supportsVision;
@@ -136,6 +137,20 @@ public sealed class StudioChatService : IAsyncDisposable
     {
         if (IsRemote || _loaded is null || _model is null) return false;
         if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase)) return false;
+        string? projector = Lfm3AudioRuntime.FindProjector(_model.Path);
+        return projector is not null && Lfm3TtsRuntime.IsTtsProjector(projector);
+    }
+
+    /// <summary>
+    /// True for an audio model whose projector carries the TTS weights. This only
+    /// looks at the model path and the mmproj, so the first text prompt can be
+    /// recognized before the model is loaded.
+    /// </summary>
+    private bool IsTtsModel() => _isTtsModel ??= ComputeIsTtsModel();
+
+    private bool ComputeIsTtsModel()
+    {
+        if (IsRemote || _model is null) return false;
         string? projector = Lfm3AudioRuntime.FindProjector(_model.Path);
         return projector is not null && Lfm3TtsRuntime.IsTtsProjector(projector);
     }
@@ -237,6 +252,16 @@ public sealed class StudioChatService : IAsyncDisposable
             _ttsRuntime ??= new Lfm3TtsRuntime(
                 _loaded.Model, _loaded.Tokenizer, _loaded.Config, projector);
             ApplyTtsOptions(_ttsRuntime);
+            _ttsRuntime.FrameSampled = (index, _) =>
+            {
+                _status = $"Synthesizing speech... frame {index}";
+                Notify();
+            };
+            _ttsRuntime.EndOfSpeech = (index, _) =>
+            {
+                _status = $"Synthesizing speech... {index} frames";
+                Notify();
+            };
             _status = "Synthesizing speech...";
             _error = null;
             Notify();
@@ -293,6 +318,89 @@ public sealed class StudioChatService : IAsyncDisposable
         runtime.Seed = overrides.TtsSeed;
     }
 #endif
+
+    private static bool HasAudioArtifact(IReadOnlyList<ChatArtifact>? artifacts) =>
+        artifacts?.Any(item =>
+            item.Type.Contains("audio", StringComparison.OrdinalIgnoreCase)) == true;
+
+    /// <summary>
+    /// An LFM3-Audio text prompt is a text-to-speech request: the user's words are
+    /// synthesized into the assistant's audio artifact, with no text reply and no
+    /// manual Speak step.
+    /// </summary>
+    private async Task SendSpeechTurnAsync(string text, IReadOnlyList<ChatArtifact>? artifacts)
+    {
+        string speech = SpeechText.ToSpeech(text);
+        if (speech.Length == 0)
+        {
+            _error = "Nothing to synthesize: the message has no speakable text.";
+            _status = "Enter some words to generate audio.";
+            Notify();
+            return;
+        }
+
+        if (_model is null)
+        {
+            _error = "Load a local LFM3-Audio model before generating speech.";
+            _status = "No audio model is loaded.";
+            Notify();
+            return;
+        }
+
+        if (_loaded is null)
+        {
+            _resolved ??= ResolveInference(
+                _model.Family.Id, _model.Path, _document?.Overrides);
+            await OpenCoreAsync(null).ConfigureAwait(false);
+            if (_loaded is null)
+            {
+                _error = "The audio model could not be loaded.";
+                _status = "Audio model load failed.";
+                Notify();
+                return;
+            }
+        }
+
+        ChatSessionDocument document = _document!;
+        _streaming = true;
+        _error = null;
+        _status = "Synthesizing speech...";
+        _streamCts = new CancellationTokenSource();
+
+        ChatMessage userMessage = ChatMessage.User(text, "You");
+        userMessage.Artifacts = artifacts?.ToArray();
+        document.Messages.Add(userMessage);
+        ChatMessage assistant = ChatMessage.Agent("");
+        document.Messages.Add(assistant);
+        Notify();
+        await Task.Yield();
+
+        try
+        {
+            ChatArtifact audio = await SynthesizeAsync(
+                speech, $"speech-{DateTime.Now:HHmmss}.wav", _streamCts.Token)
+                .ConfigureAwait(false);
+            assistant.Artifacts = [audio];
+            _status = "Audio ready.";
+        }
+        catch (OperationCanceledException)
+        {
+            _status = "Stopped.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+            _status = "Could not synthesize speech.";
+        }
+        finally
+        {
+            _streamCts?.Dispose();
+            _streamCts = null;
+            _streaming = false;
+            _store.Save(document);
+            Notify();
+        }
+    }
 
     /// <summary>Synthesizes a reply and attaches the WAV artifact to the message.</summary>
     public async Task<ChatArtifact?> SpeakAsync(ChatMessage message, CancellationToken cancellationToken = default)
@@ -543,6 +651,17 @@ public sealed class StudioChatService : IAsyncDisposable
                 await SendRemoteTurnAsync(text.Trim(), _computeBackend).ConfigureAwait(false);
                 return;
             }
+
+            // An LFM3-Audio model is a speech model: a text prompt generates audio
+            // directly instead of a text reply plus a manual Speak button. Audio
+            // attachments still go through transcription above.
+#if SHARPMIND_AUDIO
+            if (IsTtsModel() && !IsWorkMode && !HasAudioArtifact(artifacts))
+            {
+                await SendSpeechTurnAsync(text.Trim(), artifacts).ConfigureAwait(false);
+                return;
+            }
+#endif
 
             if (_session is null)
             {
@@ -1342,6 +1461,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _ttsRuntime = null;
         _supportsAudio = null;
         _supportsTts = null;
+        _isTtsModel = null;
 #endif
     }
 

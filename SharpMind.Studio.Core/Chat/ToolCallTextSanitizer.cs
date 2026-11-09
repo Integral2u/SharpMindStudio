@@ -158,13 +158,13 @@ public static class ChatTranscriptFilter
 
             string content = ToolCallTextSanitizer.Sanitize(message.Content);
             bool keepEmpty = keepEmptyLastAgent && i == source.Count - 1;
-            if (string.IsNullOrWhiteSpace(content) && !keepEmpty)
+            bool hasArtifacts = message.Artifacts is { Length: > 0 };
+            if (string.IsNullOrWhiteSpace(content) && !keepEmpty && !hasArtifacts)
                 continue;
 
             // A punctuation-only agent turn (the LFM3-Audio backbone's bare ":")
             // is not a useful bubble. Keep it when it carries artifacts (image,
             // audio, file) or is the streaming placeholder.
-            bool hasArtifacts = message.Artifacts is { Length: > 0 };
             if (!hasArtifacts && !keepEmpty && !content.Any(char.IsLetterOrDigit))
                 continue;
 

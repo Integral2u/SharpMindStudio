@@ -92,4 +92,20 @@ public sealed class ToolCallTextSanitizerTests
         Assert.Equal(2, visible.Count);
         Assert.Same(agent, visible[1]);
     }
+
+    [Fact]
+    public void Transcript_KeepsEmptyAgentWithArtifacts()
+    {
+        var agent = ChatMessage.Agent("");
+        agent.Artifacts = [new ChatArtifact { Type = "audio", FileName = "a.wav", Content = [1, 2, 3] }];
+
+        IReadOnlyList<ChatMessage> visible = ChatTranscriptFilter.Visible(
+        [
+            ChatMessage.User("hi"),
+            agent,
+        ]);
+
+        Assert.Equal(2, visible.Count);
+        Assert.Same(agent, visible[1]);
+    }
 }

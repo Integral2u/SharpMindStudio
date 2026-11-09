@@ -21,17 +21,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Prompt lookup drafting** - the inference settings expose
   `PromptLookupDraft` (0 = off) for faster copy-heavy replies with unchanged
   output.
-- **Speak replies** - when the LFM3-Audio `mmproj` carries the depth decoder and
-  LiquidCodec, each finished model reply gets a Speak button. It strips
-  Markdown and attaches the synthesized 24 kHz WAV as an audio artifact, ready
-  to play, download or transcribe. The runtime uses the checkpoint's trained
-  female voice by default. The chat's session options expose the voice
+- **Speech models** - an LFM3-Audio model treats a text prompt as a TTS
+  request: the words are synthesized into the assistant's 24 kHz WAV artifact
+  automatically, with no Speak button and no text reply; audio input is
+  transcribed as before. The chat's session options expose the voice
   (female/male), language, maximum frames, temperature, top-k and seed, so the
-  same reply can be re-synthesized with different prosody. User messages can be
-  spoken too, the audio card shows its duration, and the WAV is saved with the
-  chat. A punctuation-only model reply (the LFM3-Audio backbone's bare ":") is
-  treated as no speech: it gets no Speak button and its turn is hidden from the
-  transcript.
+  same prompt can be re-synthesized with different prosody. The audio card shows
+  its duration, and the WAV is saved with the chat. A punctuation-only model
+  reply (the LFM3-Audio backbone's bare ":") is treated as no speech: the turn
+  is hidden from the transcript.
 - **Labs menu** - a top-level Labs page with tabs for Layer importance,
   Quantization, Model visualizer, Latent space and Agents, so more
   model-analysis labs can be added without new navigation items. The Layer
