@@ -426,6 +426,11 @@ else
                                        @onchange="e => _sessionDraft = _sessionDraft with { TtsSeed = int.TryParse(e.Value?.ToString(), out int value) ? value : null }" />
                             </div>
                         </div>
+                        <div class="small faint">
+                            The LFM3-Audio checkpoint is trained on a female voice; male is
+                            available but less consistently covered. Empty fields keep the
+                            checkpoint defaults (female, American English, 128 frames).
+                        </div>
 
                         <div class="row">
                             <button type="button" class="button primary" @onclick="ApplyOptionsAsync"
