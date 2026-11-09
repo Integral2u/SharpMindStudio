@@ -58,7 +58,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **LFM3-VL image attachments** - when a vision projector is present next to
   the model, attached images are decoded and described natively. An image-only
   send uses "Describe this image."; the answer joins the transcript and the next
-  text turn rebuilds the session so the vision turn stays in context.
+  text turn rebuilds the session so the vision turn stays in context. The chat
+  session options set the image's longest side (default 512 px) and the answer
+  token cap (default 128).
 - **Artifact cards** - images open or download, audio plays and downloads,
   text/code downloads, with the artifact type and size in the header.
 - **Larger sponsor pill** in the top bar.

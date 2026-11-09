@@ -45,6 +45,12 @@ public sealed record InferenceOverrides
     /// <summary>Depth-decoder sampling seed; null picks a time-based seed.</summary>
     public int? TtsSeed { get; init; }
 
+    /// <summary>Longest image side, in pixels, before the LFM3-VL encoder.</summary>
+    public int? VisionMaxSide { get; init; }
+
+    /// <summary>Upper bound on generated vision-answer tokens.</summary>
+    public int? VisionMaxTokens { get; init; }
+
     public static InferenceOverrides SystemDefaults() => new()
     {
         Generator = "StandardGeneratorBuilder",

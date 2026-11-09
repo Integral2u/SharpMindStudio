@@ -432,6 +432,32 @@ else
                             checkpoint defaults (female, American English, 128 frames).
                         </div>
 
+                        <div class="panel-head" style="margin-top:.75rem">
+                            <div>
+                                <div class="eyebrow">Vision</div>
+                                <h2>LFM3-VL</h2>
+                            </div>
+                            <span class="faint small mono">only when an mmproj is present</span>
+                        </div>
+                        <div class="row">
+                            <div class="field">
+                                <label class="field-label">Image max side (px)</label>
+                                <input class="input" type="number" min="128" max="1536" step="32"
+                                       value="@(_sessionDraft.VisionMaxSide ?? 512)"
+                                       @onchange="e => _sessionDraft = _sessionDraft with { VisionMaxSide = int.TryParse(e.Value?.ToString(), out int value) ? value : null }" />
+                            </div>
+                            <div class="field">
+                                <label class="field-label">Answer max tokens</label>
+                                <input class="input" type="number" min="16" max="1024"
+                                       value="@(_sessionDraft.VisionMaxTokens ?? 128)"
+                                       @onchange="e => _sessionDraft = _sessionDraft with { VisionMaxTokens = int.TryParse(e.Value?.ToString(), out int value) ? value : null }" />
+                            </div>
+                        </div>
+                        <div class="small faint">
+                            The image is resized to this longest side (rounded to 32 px). More
+                            pixels mean more image tokens and a slower encode.
+                        </div>
+
                         <div class="row">
                             <button type="button" class="button primary" @onclick="ApplyOptionsAsync"
                                     disabled="@ChatService.IsStreaming">

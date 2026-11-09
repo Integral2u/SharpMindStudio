@@ -681,7 +681,10 @@ public sealed class StudioChatService : IAsyncDisposable
                 ?? throw new NotSupportedException(
                     "No LFM3-VL vision projector (mmproj) was found next to this model. " +
                     "Put mmproj-*.gguf in the model folder.");
-            float[] chw = StudioImageInput.Decode(image.Content, 512, out int height, out int width);
+            InferenceOverrides visionOverrides = _document.Overrides;
+            int maxSide = Math.Clamp(visionOverrides.VisionMaxSide ?? 512, 128, 1536);
+            int maxAnswerTokens = Math.Clamp(visionOverrides.VisionMaxTokens ?? 128, 16, 1024);
+            float[] chw = StudioImageInput.Decode(image.Content, maxSide, out int height, out int width);
             _status = $"Describing image ({height}x{width})...";
             Notify();
 
@@ -690,7 +693,7 @@ public sealed class StudioChatService : IAsyncDisposable
             {
                 using var runtime = new Lfm3VlRuntime(
                     model.Model, model.Tokenizer, model.Config, projector);
-                return runtime.Describe(chw, height, width, text, 128, token);
+                return runtime.Describe(chw, height, width, text, maxAnswerTokens, token);
             }, token).ConfigureAwait(false);
 
             assistant.Content = answer.Trim();
