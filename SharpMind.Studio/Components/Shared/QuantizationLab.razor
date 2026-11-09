@@ -20,7 +20,7 @@
         <div class="row">
             <div class="field grow">
                 <label class="field-label">Reference (usually Q8_0 / F16)</label>
-                <select class="input" @bind="_referencePath" disabled="@Quant.IsRunning">
+                <select class="input" @bind="_referencePath" @bind:after="CheckCompatibilityAsync" disabled="@Quant.IsRunning">
                     @foreach (ModelDescriptor model in _models)
                     {
                         <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
@@ -29,7 +29,7 @@
             </div>
             <div class="field grow">
                 <label class="field-label">Candidate quantization</label>
-                <select class="input" @bind="_candidatePath" disabled="@Quant.IsRunning">
+                <select class="input" @bind="_candidatePath" @bind:after="CheckCompatibilityAsync" disabled="@Quant.IsRunning">
                     @foreach (ModelDescriptor model in _models)
                     {
                         <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
@@ -37,6 +37,31 @@
                 </select>
             </div>
         </div>
+
+        @if (_checkingCompatibility)
+        {
+            <div class="small faint">Checking the pair...</div>
+        }
+        else if (_compatibility is { } compatibility)
+        {
+            @if (compatibility.SameModel)
+            {
+                <div class="small faint">
+                    Same model: every tensor name and shape matches, so this is a valid
+                    quantization pair.
+                </div>
+            }
+            else
+            {
+                <div class="error-line">
+                    Different model: @(compatibility.Note ?? "the tensor layouts differ.")
+                </div>
+                <div class="small faint">
+                    The weight metrics still run, but the forward loss is disabled until both
+                    files are the same model at two quantizations.
+                </div>
+            }
+        }
 
         <div class="row">
             <div class="field grow">
@@ -301,6 +326,8 @@
     private int _lossTokens = 64;
     private string _quantizeTarget = "q4k";
     private int _quantizeBudgetMb;
+    private QuantizationCompatibility? _compatibility;
+    private bool _checkingCompatibility;
 
     protected override async Task OnInitializedAsync()
     {
@@ -318,6 +345,37 @@
             .Where(model => model.Path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))];
         _referencePath = _models.FirstOrDefault()?.Path ?? "";
         _candidatePath = _models.Skip(1).FirstOrDefault()?.Path ?? _referencePath;
+        await CheckCompatibilityAsync();
+    }
+
+    private async Task CheckCompatibilityAsync()
+    {
+        _compatibility = null;
+        if (string.IsNullOrWhiteSpace(_referencePath) ||
+            string.IsNullOrWhiteSpace(_candidatePath) ||
+            _referencePath == _candidatePath)
+        {
+            _checkingCompatibility = false;
+            return;
+        }
+
+        _checkingCompatibility = true;
+        try
+        {
+            string reference = _referencePath;
+            string candidate = _candidatePath;
+            _compatibility = await Task.Run(() =>
+                QuantizationAnalyzer.CheckModelCompatibility(reference, candidate));
+        }
+        catch (Exception ex)
+        {
+            _compatibility = new QuantizationCompatibility(
+                false, $"{ex.GetType().Name}: {ex.Message}", []);
+        }
+        finally
+        {
+            _checkingCompatibility = false;
+        }
     }
 
     private async Task RunAsync()
