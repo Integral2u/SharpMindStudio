@@ -1,9 +1,13 @@
 ﻿@using SharpMind.Inference.Chat
+@using SharpMind.Studio.Core.Agents
+@using SharpMind.Studio.Core.Chat
 @using SharpMind.Studio.Core.Work
 @using SharpMind.Studio.Services
 @inject StudioWorkService Work
 @inject StudioChatService Chat
 @inject StudioWorkspaceService Workspace
+@inject StudioAgentService Agents
+@inject ModelCatalogService Catalog
 @implements IDisposable
 
 <div class="page-head">
@@ -47,6 +51,141 @@
             <span class="field-label">Tool results</span>
             <strong>@Chat.DisplayMessages.Count(message => message.Role == ChatRole.Tool)</strong>
         </div>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Definitions</div>
+            <h2>Specialist agents</h2>
+        </div>
+        <div class="row">
+            <button type="button" class="button" @onclick="NewAgent">New agent</button>
+            <button type="button" class="button" @onclick="Agents.Reload">Reload</button>
+        </div>
+    </div>
+    <div class="panel-body stack">
+        <div class="small faint">
+            These names are shown to the model as a <span class="mono">delegate</span> tool. An
+            agent with no model uses the current model; one with a model is loaded only for that
+            task and cached until the host evicts it.
+        </div>
+
+        <div class="row">
+            <div class="field">
+                <label class="field-label">Max delegation depth</label>
+                <input class="input" type="number" min="1" max="8" value="@Agents.MaxDepth"
+                       @onchange="SetMaxDepth" />
+            </div>
+        </div>
+
+        @if (Agents.Agents.Count == 0)
+        {
+            <div class="small faint">No specialist agents defined yet.</div>
+        }
+        else
+        {
+            <table class="table">
+                <thead>
+                    <tr><th>Name</th><th>Purpose</th><th>Model</th><th>TTL</th><th>Enabled</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (StudioAgentDefinition agent in Agents.Agents)
+                    {
+                        <tr>
+                            <td class="mono">@agent.Name</td>
+                            <td>@agent.Description</td>
+                            <td class="mono">@(string.IsNullOrWhiteSpace(agent.ModelPath) ? "current" : Path.GetFileName(agent.ModelPath))</td>
+                            <td class="mono">@(agent.TtlMinutes == 0 ? "default" : $"{agent.TtlMinutes}m")</td>
+                            <td>@(agent.Enabled ? "yes" : "no")</td>
+                            <td class="row">
+                                <button type="button" class="button" @onclick="() => EditAgent(agent)">Edit</button>
+                                <button type="button" class="button danger" @onclick="() => Agents.Delete(agent.Id)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (_editing is { } editing)
+        {
+            <div class="panel-head" style="margin-top:.75rem">
+                <div>
+                    <div class="eyebrow">@(string.IsNullOrWhiteSpace(editing.Id) ? "New" : "Edit")</div>
+                    <h2>@(string.IsNullOrWhiteSpace(editing.Name) ? "Agent" : editing.Name)</h2>
+                </div>
+            </div>
+            <div class="row">
+                <div class="field grow">
+                    <label class="field-label">Name</label>
+                    <input class="input" value="@editing.Name"
+                           @onchange="e => _editing = editing with { Name = e.Value?.ToString() ?? string.Empty }" />
+                </div>
+                <div class="field grow">
+                    <label class="field-label">Purpose (shown to the parent model)</label>
+                    <input class="input" value="@editing.Description"
+                           @onchange="e => _editing = editing with { Description = e.Value?.ToString() ?? string.Empty }" />
+                </div>
+            </div>
+            <div class="field">
+                <label class="field-label">Rules / system prompt</label>
+                <textarea class="input" rows="4" value="@editing.Rules"
+                          @onchange="e => _editing = editing with { Rules = e.Value?.ToString() ?? string.Empty }"></textarea>
+            </div>
+            <div class="row">
+                <div class="field grow">
+                    <label class="field-label">Model</label>
+                    <select class="input" value="@(editing.ModelPath ?? string.Empty)"
+                            @onchange="e => _editing = editing with { ModelPath = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString() }">
+                        <option value="">Current model (same weights, no reload)</option>
+                        @foreach (ModelDescriptor model in _models)
+                        {
+                            <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label class="field-label">Temperature (blank = inherited)</label>
+                    <input class="input" type="number" min="0" max="3" step="0.05"
+                           value="@editing.Temperature"
+                           @onchange="e => _editing = editing with { Temperature = float.TryParse(e.Value?.ToString(), out float value) ? value : null }" />
+                </div>
+                <div class="field">
+                    <label class="field-label">Seed (blank = random)</label>
+                    <input class="input" type="number" value="@editing.Seed"
+                           @onchange="e => _editing = editing with { Seed = int.TryParse(e.Value?.ToString(), out int value) ? value : null }" />
+                </div>
+            </div>
+            <div class="row">
+                <div class="field">
+                    <label class="field-label">TTL minutes (0 = host default)</label>
+                    <input class="input" type="number" min="0" max="1440" value="@editing.TtlMinutes"
+                           @onchange="e => _editing = editing with { TtlMinutes = int.TryParse(e.Value?.ToString(), out int value) ? value : 0 }" />
+                </div>
+                <label class="field grow">
+                    <span class="field-label">Inherit parent tools</span>
+                    <input type="checkbox" checked="@editing.InheritTools"
+                           @onchange="e => _editing = editing with { InheritTools = e.Value is bool inherit && inherit }" />
+                </label>
+                <label class="field grow">
+                    <span class="field-label">Enabled</span>
+                    <input type="checkbox" checked="@editing.Enabled"
+                           @onchange="e => _editing = editing with { Enabled = e.Value is bool enabled && enabled }" />
+                </label>
+            </div>
+            <div class="field">
+                <label class="field-label">Allowed tools (comma separated; blank = all inherited)</label>
+                <input class="input" value="@AllowedToolsText(editing)"
+                       @onchange="e => _editing = editing with { AllowedTools = SplitTools(e.Value?.ToString()) }" />
+            </div>
+            <div class="row">
+                <button type="button" class="button primary" @onclick="SaveAgent"
+                        disabled="@string.IsNullOrWhiteSpace(_editing?.Name)">Save agent</button>
+                <button type="button" class="button" @onclick="() => _editing = null">Cancel</button>
+            </div>
+        }
     </div>
 </section>
 
@@ -153,21 +292,52 @@
 </section>
 
 @code {
-    protected override void OnInitialized()
+    private StudioAgentDefinition? _editing;
+    private IReadOnlyList<ModelDescriptor> _models = [];
+
+    protected override async Task OnInitializedAsync()
     {
         Chat.Changed += OnChanged;
         Work.Changed += OnChanged;
+        Agents.Changed += OnChanged;
+        _models = await Catalog.RefreshAsync();
     }
 
     public void Dispose()
     {
         Chat.Changed -= OnChanged;
         Work.Changed -= OnChanged;
+        Agents.Changed -= OnChanged;
     }
 
     private void OnChanged() => _ = InvokeAsync(StateHasChanged);
 
     private void Refresh() => StateHasChanged();
+
+    private void NewAgent() => _editing = new StudioAgentDefinition();
+
+    private void EditAgent(StudioAgentDefinition agent) => _editing = agent;
+
+    private void SetMaxDepth(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out int value))
+            Agents.SetMaxDepth(value);
+    }
+
+    private void SaveAgent()
+    {
+        if (_editing is not { } agent || string.IsNullOrWhiteSpace(agent.Name)) return;
+        Agents.Upsert(agent);
+        _editing = null;
+    }
+
+    private static List<string> SplitTools(string? text) =>
+        [.. (text ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    private static string AllowedToolsText(StudioAgentDefinition agent) =>
+        string.Join(", ", agent.AllowedTools);
 
     private static string Preview(string content)
     {

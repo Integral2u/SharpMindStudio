@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Agent definitions** - the Agents tab defines specialists (name, purpose, rules,
+  current or named model, temperature, seed, TTL, enabled, max delegation depth).
+  Enabled agents are exposed to chat and work as the engine's `delegate` tool;
+  same-model agents use the engine's sub-agent path, while an agent with its own
+  model is loaded through the model host for one task and cached until its TTL.
 - **Chat history search** - the Chat and Work lists in the sidebar have a search
   box that matches a session name or any message body, and the preview shows the
   matching line. Results stay split by chat/work.

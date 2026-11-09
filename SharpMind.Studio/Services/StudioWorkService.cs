@@ -44,6 +44,7 @@ public sealed class StudioWorkService : IDisposable
     private readonly SystemWorkSkillsService _systemSkills;
     private readonly WorkToolService _tools;
     private readonly StudioDeviceAccess _device;
+    private readonly StudioAgentService _agents;
     private readonly Lock _gate = new();
     private WorkSettingsStore _store;
     private WorkSettings _settings;
@@ -51,12 +52,13 @@ public sealed class StudioWorkService : IDisposable
     private WorkPermissionRequest? _pending;
     private WorkChoiceRequest? _pendingChoice;
 
-    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device)
+    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents)
     {
         _workspace = workspace;
         _systemSkills = systemSkills;
         _tools = tools;
         _device = device;
+        _agents = agents;
         _store = new WorkSettingsStore(workspace.Project.Root);
         _settings = _store.Load();
         _memory = _store.ReadMemory();
@@ -122,15 +124,18 @@ public sealed class StudioWorkService : IDisposable
 
     public IAgentBuilder? CreateAgent(string mode)
     {
-        if (!string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase)) return null;
+        bool work = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase);
+        IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = _agents.EnabledAgents;
+        if (!work && agents.Count == 0) return null;
 
-        var builder = new AgentBuilder(_workspace.Project.Document.Name)
+        var builder = new AgentBuilder(_workspace.Project.Document.Name);
+        if (work)
         {
-            DisabledTools = [.. _tools.Tools
+            builder.DisabledTools = [.. _tools.Tools
                 .Where(tool => !IsToolEnabled(tool.Name))
-                .Select(tool => tool.Name)],
-        };
-        if (!_device.IsMobile)
+                .Select(tool => tool.Name)];
+        }
+        if (work && !_device.IsMobile)
         {
             builder.WithTools(new WorkFileTools(
                 _workspace.Project.Root,
@@ -141,23 +146,46 @@ public sealed class StudioWorkService : IDisposable
             if (_tools.PluginTools.Count > 0)
                 builder.WithTools([.. _tools.PluginTools]);
         }
-        builder.WithCustomRule(
-            "You are working inside one local project. File tools are limited to the configured context locations. " +
-            "Use relative paths from the project root, or an absolute path inside a context. " +
-            "Never claim a file was read, created, changed or deleted unless the tool result says it succeeded.");
-        foreach (WorkSkill skill in WorkSkillResolver.Resolve(
-                     _systemSkills.Skills,
-                     IsSystemSkillEnabled,
-                     _settings.Skills,
-                     IsProjectSkillEnabled))
+        if (work)
         {
-            builder.WithSkillContent($"## {skill.Name}\n{skill.Content}");
+            builder.WithCustomRule(
+                "You are working inside one local project. File tools are limited to the configured context locations. " +
+                "Use relative paths from the project root, or an absolute path inside a context. " +
+                "Never claim a file was read, created, changed or deleted unless the tool result says it succeeded.");
+            foreach (WorkSkill skill in WorkSkillResolver.Resolve(
+                         _systemSkills.Skills,
+                         IsSystemSkillEnabled,
+                         _settings.Skills,
+                         IsProjectSkillEnabled))
+            {
+                builder.WithSkillContent($"## {skill.Name}\n{skill.Content}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(_settings.SystemPrompt))
+                builder.WithAdditionalSystemPrompt(_settings.SystemPrompt.Trim());
+            if (!string.IsNullOrWhiteSpace(_memory))
+                builder.WithAdditionalSystemPrompt($"## Project memory\n{_memory.Trim()}");
         }
 
-        if (!string.IsNullOrWhiteSpace(_settings.SystemPrompt))
-            builder.WithAdditionalSystemPrompt(_settings.SystemPrompt.Trim());
-        if (!string.IsNullOrWhiteSpace(_memory))
-            builder.WithAdditionalSystemPrompt($"## Project memory\n{_memory.Trim()}");
+        if (agents.Count > 0)
+        {
+            builder.WithAgents(_agents.MaxDepth);
+            foreach (SharpMind.Studio.Core.Agents.StudioAgentDefinition agent in agents)
+            {
+                string rules = string.IsNullOrWhiteSpace(agent.Rules)
+                    ? $"You are {agent.Name}. {agent.Description}"
+                    : agent.Rules;
+                builder.CreateAgent(new AgentConfig
+                {
+                    Name = agent.Name,
+                    SystemPrompt = rules,
+                    Purpose = string.IsNullOrWhiteSpace(agent.Description) ? null : agent.Description,
+                    Temperature = agent.Temperature,
+                    Seed = agent.Seed,
+                });
+            }
+            builder.RegisterDelegateTool();
+        }
 
         return builder;
     }

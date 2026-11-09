@@ -25,6 +25,12 @@ public sealed class LoadedStudioModel : IDisposable
 
     internal int RefCount { get; set; }
 
+    /// <summary>Last load/release; the idle TTL is measured from here.</summary>
+    public DateTimeOffset LastUsedUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>How long this model may stay cached with no users.</summary>
+    public TimeSpan IdleTtl { get; set; } = StudioModelHost.DefaultIdleTtl;
+
     public void Dispose()
     {
         Model.Dispose();
@@ -34,8 +40,20 @@ public sealed class LoadedStudioModel : IDisposable
 
 public sealed class StudioModelHost : IDisposable
 {
+    public static readonly TimeSpan DefaultIdleTtl = TimeSpan.FromMinutes(30);
+
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, LoadedStudioModel> _models = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Timer _trimTimer;
+
+    public StudioModelHost()
+    {
+        _trimTimer = new Timer(
+            _ => TrimExpired(),
+            state: null,
+            dueTime: TimeSpan.FromMinutes(1),
+            period: TimeSpan.FromMinutes(1));
+    }
 
     public int LoadedModelCount
     {
@@ -60,6 +78,7 @@ public sealed class StudioModelHost : IDisposable
             if (_models.TryGetValue(key, out LoadedStudioModel? cached) && cached is not null)
             {
                 cached.RefCount++;
+                cached.LastUsedUtc = DateTimeOffset.UtcNow;
                 progress?.Report(new ModelLoadProgress($"Using loaded {descriptor.FileName}", 0.9));
                 return cached;
             }
@@ -77,6 +96,7 @@ public sealed class StudioModelHost : IDisposable
                 () => Load(descriptor, profile, key, progress, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
             loaded.RefCount = 1;
+            loaded.LastUsedUtc = DateTimeOffset.UtcNow;
             _models[key] = loaded;
             return loaded;
         }
@@ -86,7 +106,7 @@ public sealed class StudioModelHost : IDisposable
         }
     }
 
-    public void Release(LoadedStudioModel loaded)
+    public void Release(LoadedStudioModel loaded, TimeSpan? idleTtl = null)
     {
         ArgumentNullException.ThrowIfNull(loaded);
         _gate.Wait();
@@ -96,11 +116,18 @@ public sealed class StudioModelHost : IDisposable
                 !ReferenceEquals(cached, loaded))
                 return;
 
+            loaded.LastUsedUtc = DateTimeOffset.UtcNow;
+            if (idleTtl is { } ttl) loaded.IdleTtl = ttl;
             loaded.RefCount--;
             if (loaded.RefCount > 0) return;
 
+            // Keep idle models for their TTL; the timer trims them. A new load
+            // still evicts all idle entries when it needs the space.
+            DateTimeOffset now = DateTimeOffset.UtcNow;
             foreach ((string idleKey, LoadedStudioModel idle) in _models
-                .Where(pair => pair.Key != loaded.Key && pair.Value.RefCount == 0)
+                .Where(pair => pair.Key != loaded.Key &&
+                               pair.Value.RefCount == 0 &&
+                               IsExpired(pair.Value, now))
                 .ToArray())
             {
                 _models.Remove(idleKey);
@@ -110,6 +137,36 @@ public sealed class StudioModelHost : IDisposable
         finally
         {
             _gate.Release();
+        }
+    }
+
+    private static bool IsExpired(LoadedStudioModel model, DateTimeOffset now) =>
+        model.LastUsedUtc + model.IdleTtl <= now;
+
+    private void TrimExpired()
+    {
+        try
+        {
+            _gate.Wait();
+            try
+            {
+                DateTimeOffset now = DateTimeOffset.UtcNow;
+                foreach ((string key, LoadedStudioModel idle) in _models
+                    .Where(pair => pair.Value.RefCount == 0 && IsExpired(pair.Value, now))
+                    .ToArray())
+                {
+                    _models.Remove(key);
+                    idle.Dispose();
+                }
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+        catch
+        {
+            // The timer must never take the host down.
         }
     }
 
@@ -130,6 +187,7 @@ public sealed class StudioModelHost : IDisposable
 
     public void Dispose()
     {
+        _trimTimer.Dispose();
         Unload();
         _gate.Dispose();
     }

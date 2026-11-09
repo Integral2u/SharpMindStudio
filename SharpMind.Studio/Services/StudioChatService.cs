@@ -9,6 +9,7 @@ using SharpMind.Model.Audio;
 #if SHARPMIND_SOURCE
 using SharpMind.Model.Vision;
 #endif
+using SharpMind.Studio.Core.Agents;
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Inference;
@@ -23,6 +24,8 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly StudioWorkspaceService _workspace;
     private readonly ModelCatalogService _catalog;
     private readonly InferenceSettingsService _inference;
+    private readonly StudioAgentService _agents;
+    private readonly StudioAgentRunner _agentRunner;
     private readonly OpenRouterSettingsService _openRouter;
     private readonly OpenRouterChatBackend _openRouterBackend;
     private readonly ComputeProviderService _compute;
@@ -68,11 +71,15 @@ public sealed class StudioChatService : IAsyncDisposable
         ComputeChatBackend computeBackend,
         StudioModelHost host,
         StudioWorkService work,
+        StudioAgentService agents,
+        StudioAgentRunner agentRunner,
         StudioDeviceAccess device)
     {
         _workspace = workspace;
         _catalog = catalog;
         _inference = inference;
+        _agents = agents;
+        _agentRunner = agentRunner;
         _openRouter = openRouter;
         _openRouterBackend = openRouterBackend;
         _compute = compute;
@@ -1368,7 +1375,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
         Type cacheType = generator.CacheType ?? cache.Type;
         var agent = _work.CreateAgent(_document?.Mode ?? "chat");
-        return ChatSessionFactory.CreateChatSession(
+        IChatSession session = ChatSessionFactory.CreateChatSession(
             generator.BuilderType,
             cacheType,
             loaded.Model,
@@ -1378,6 +1385,43 @@ public sealed class StudioChatService : IAsyncDisposable
             postProcessor: new StudioArtifactPostProcessor(),
             formatter: ChatFormatterFactory.Create(profile.Formatter, loaded.Meta),
             seed: profile.Seed);
+        session.ProcessToolRequest = HandleAgentToolAsync;
+        return session;
+    }
+
+    /// <summary>
+    /// Routes a <c>delegate</c> call for an agent that names a different model to
+    /// <see cref="StudioAgentRunner"/>; same-model agents keep the engine's native
+    /// sub-agent path (defer), and every other tool is untouched.
+    /// </summary>
+    private async Task<ToolRequestResult> HandleAgentToolAsync(
+        string toolName, JsonObject arguments, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(toolName, "delegate", StringComparison.OrdinalIgnoreCase))
+            return ToolRequestResult.Defer();
+
+        string name = arguments["agent"]?.GetValue<string>() ?? "";
+        string task = arguments["task"]?.GetValue<string>() ?? "";
+        StudioAgentDefinition? definition = _agents.Find(name);
+        if (definition is null || !definition.Enabled ||
+            string.IsNullOrWhiteSpace(definition.ModelPath) ||
+            string.IsNullOrWhiteSpace(task) ||
+            string.Equals(definition.ModelPath, _model?.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            return ToolRequestResult.Defer();
+        }
+
+        try
+        {
+            string result = await _agentRunner.RunAsync(definition, task, cancellationToken)
+                .ConfigureAwait(false);
+            return ToolRequestResult.Handled(result);
+        }
+        catch (Exception ex)
+        {
+            return ToolRequestResult.Handled(
+                $"[agent {definition.Name} failed] {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private ResolvedInference ResolveInference(

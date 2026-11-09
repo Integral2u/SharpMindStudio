@@ -53,6 +53,8 @@ builder.Services.AddHttpClient<HuggingFaceClient>(client =>
 builder.Services.AddSingleton<SharpMind.Studio.Core.Chat.StudioModelHost>();
 builder.Services.AddSingleton<MarkdownService>();
 builder.Services.AddSingleton<SystemWorkSkillsService>();
+builder.Services.AddSingleton<StudioAgentService>();
+builder.Services.AddSingleton<StudioAgentRunner>();
 builder.Services.AddSingleton<GatewayService>();
 builder.Services.AddSingleton<GatewayRateLimiter>();
 builder.Services.AddHttpForwarder();
