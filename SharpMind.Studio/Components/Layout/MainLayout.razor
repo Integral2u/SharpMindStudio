@@ -78,7 +78,13 @@
                         @foreach (var chat in ChatOnly)
                         {
                             <div class="nav-chat-item">
-                                <a href="@ChatHref(chat)" class="nav-chat-link" title="@chat.Name">@chat.Name@(chat.Mode == "work" ? " / work" : "")@(chat.Provider == "openrouter" ? " / remote" : "")</a>
+                                <div class="nav-chat-main">
+                                    <a href="@ChatHref(chat)" class="nav-chat-link" title="@chat.Name">@chat.Name@(chat.Mode == "work" ? " / work" : "")@(chat.Provider == "openrouter" ? " / remote" : "")</a>
+                                    @if (!string.IsNullOrWhiteSpace(_chatQuery) && !string.IsNullOrWhiteSpace(chat.Preview))
+                                    {
+                                        <div class="nav-chat-preview">@chat.Preview</div>
+                                    }
+                                </div>
                                 <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
                                         title="Rename chat" aria-label="Rename chat">&#9998;</button>
                                 <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"
@@ -121,7 +127,13 @@
                         @foreach (var chat in WorkOnly)
                         {
                             <div class="nav-chat-item">
-                                <a href="@ChatHref(chat)" class="nav-chat-link" title="@chat.Name">@chat.Name@(chat.Provider == "openrouter" ? " / remote" : "")</a>
+                                <div class="nav-chat-main">
+                                    <a href="@ChatHref(chat)" class="nav-chat-link" title="@chat.Name">@chat.Name@(chat.Provider == "openrouter" ? " / remote" : "")</a>
+                                    @if (!string.IsNullOrWhiteSpace(_workQuery) && !string.IsNullOrWhiteSpace(chat.Preview))
+                                    {
+                                        <div class="nav-chat-preview">@chat.Preview</div>
+                                    }
+                                </div>
                                 <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
                                         title="Rename work session" aria-label="Rename work session">&#9998;</button>
                                 <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"

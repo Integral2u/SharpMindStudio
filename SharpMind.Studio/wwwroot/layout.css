@@ -306,6 +306,22 @@
     gap: .2rem;
 }
 
+.nav-chat-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.nav-chat-preview {
+    padding: 0 .4rem .2rem;
+    color: var(--faint);
+    font-size: .62rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .nav-chat-search {
     width: 100%;
     margin: 0 0 .25rem;
