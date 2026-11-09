@@ -1,7 +1,8 @@
 <Solution>
-  <!-- Package-only solution for clean clones and CI: no sibling SharpMind checkout,
-       build with -p:SharpMindSource=package so the Studio projects use the NuGet
-       packages. Local development uses SharpMind.Studio.slnx. -->
+  <!-- Package-only solution for clean clones and CI. It builds against the
+       next SharpMind packages; CI checks out the engine and packs 1.1.1 into
+       ../SharpMind/nupkg before this solution. Local development uses
+       SharpMind.Studio.slnx with the sibling source tree. -->
   <Project Path="SharpMind.Studio.Cli/SharpMind.Studio.Cli.csproj" />
   <Project Path="SharpMind.Studio.ComputeHost/SharpMind.Studio.ComputeHost.csproj" />
   <Project Path="SharpMind.Studio.Core/SharpMind.Studio.Core.csproj" />

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Next-version package build** - the Studio package solution now targets the
+  1.1.1 engine packages and compiles the same audio/labs code as the source
+  solution; CI checks out the engine and packs those packages first. The 1.1.0
+  packages are no longer the development baseline.
 - **Agent definitions** - the Agents tab defines specialists (name, purpose, rules,
   current or named model, temperature, seed, TTL, enabled, max delegation depth).
   Enabled agents are exposed to chat and work as the engine's `delegate` tool;

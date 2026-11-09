@@ -6,8 +6,10 @@
     <SharpMindSource Condition="'$(SharpMindSource)' == ''">package</SharpMindSource>
   </PropertyGroup>
 
-  <!-- Features that ship with the source tree; the 1.1.0 packages predate them. -->
-  <PropertyGroup Condition="'$(SharpMindSource)' == 'project'">
+  <!-- The 1.1.1 packages carry the audio, analysis and vision APIs, so both the
+       sibling source tree and the packages expose the full Studio feature set.
+       The previous 1.1.0 packages are no longer the development baseline. -->
+  <PropertyGroup>
     <DefineConstants>$(DefineConstants);SHARPMIND_AUDIO;SHARPMIND_SOURCE</DefineConstants>
   </PropertyGroup>
 
