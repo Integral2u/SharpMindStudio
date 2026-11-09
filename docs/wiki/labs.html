@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Model labs - SharpMind Studio Wiki</title>
+    <meta name="description" content="Layer importance, quantization, activation maps, latent space and agent definitions in SharpMind Studio." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<div class="top-links">
+    <a href="https://github.com/Integral2u/SharpMind" target="_blank" rel="noopener">Powered by SharpMind</a>
+    <a class="sponsor" href="https://github.com/sponsors/Integral2u" target="_blank" rel="noopener">&#9829; Sponsor</a>
+</div>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="inference.html">Models &amp; chat</a>
+        <a href="huggingface.html">HuggingFace</a>
+        <a href="openrouter.html">OpenRouter</a>
+        <a href="work.html">Work</a>
+        <a class="active" href="labs.html">Labs</a>
+        <a href="pairing.html">Phone pairing</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1.1</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#layer-importance">Layer importance</a>
+            <a href="#surgery">Surgery and export</a>
+            <a href="#quantization">Quantization</a>
+            <a href="#visualizer">Model visualizer</a>
+            <a href="#latent">Latent space</a>
+            <a href="#agents">Agents</a>
+            <a href="#audio-vision">Audio and vision</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Labs</span></div>
+            <span class="eyebrow">Measure first</span>
+            <h1>Model labs</h1>
+            <p class="lead">
+                Labs inspect a model without changing its weights. Layer importance measures what
+                the blocks do, quantization compares and writes smaller files, and the visualizer
+                and latent views expose the activations and hidden geometry.
+            </p>
+
+            <h2 id="layer-importance">Layer importance</h2>
+            <p>
+                The lab runs one baseline pass, then one ablated pass per transformer block. The
+                ablated loss is the next-token cross-entropy with that block skipped, and
+                <strong>Delta</strong> is the increase in nats per token.
+            </p>
+            <ul>
+                <li><strong>Teal bars</strong> are a positive delta: ablating the layer hurt, so the layer matters.</li>
+                <li><strong>Yellow bars</strong> are a negative delta: ablating it helped on this calibration text.</li>
+                <li>The bars are scaled to the worst layer in the run; the absolute delta is in the Delta column.</li>
+                <li>The highlighted row is the least important layer, the natural first surgery candidate.</li>
+                <li>Attention RMS and FFN RMS show the branch activation magnitude. Very large early FFN spikes are outliers, not importance by themselves.</li>
+            </ul>
+            <p class="small">
+                Calibration text matters. A short, representative prompt is usually more useful
+                than one long sample because every extra token is paid once for the baseline and
+                once per layer.
+            </p>
+
+            <h2 id="surgery">Surgery and pruned export</h2>
+            <p>
+                The surgery preview skips the least important layers in rank order and shows the
+                loss after each prefix. Rows within <span class="mono">0.05</span> nats of the
+                baseline are highlighted as low risk.
+            </p>
+            <p>
+                Each row can write a real GGUF with those blocks removed. The file is renumbered,
+                per-layer metadata is filtered and <span class="mono">block_count</span> is
+                updated, so it loads as an ordinary smaller model. The source model is untouched.
+            </p>
+            <p>
+                <strong>Manual surgery</strong> lets you name any layers to remove, for example
+                <span class="mono">12, 8, 15</span>. The first and last blocks are kept: they carry
+                the input- and output-adjacent streams. The valid range is
+                <span class="mono">1 .. N-2</span>, where <span class="mono">N</span> is the number
+                of blocks.
+            </p>
+
+            <h2 id="quantization">Quantization</h2>
+            <p>
+                The tab has two comparisons. The tensor comparison dequantizes both files and
+                reports relative L2, cosine and worst tensors without a forward pass. It also
+                checks that both files are the same model: same architecture, tensor names and
+                shapes. A pruned or fine-tuned file is not a quantization pair, and the
+                calibration-loss comparison is disabled for it.
+            </p>
+            <p>
+                The calibration-loss section loads each model in turn and measures the same
+                next-token cross-entropy, so the two models never have to be resident together.
+            </p>
+            <p>
+                <strong>Actual quantization</strong> writes a smaller GGUF: a fixed target
+                (Q2_K-Q8_K, Q8_0, Q4_0, F16), a per-role blend (embedding and LM head stay
+                finer), or a byte budget that picks the coarsest K-quant that fits. K-quant rows
+                are written row-padded and the engine pads the input rows at inference, so a
+                model whose hidden size is not 256-aligned (Qwen2-0.5B at 896) still runs the
+                full K-quant.
+            </p>
+
+            <h2 id="visualizer">Model visualizer</h2>
+            <p>
+                One prompt runs through the activation hook. Rows are layers, columns are prompt
+                tokens, and the colour is the branch RMS on a log scale. Hover a cell for the
+                layer, token and exact value.
+            </p>
+            <p>
+                The right-hand column is the layer type from the model config:
+                <span class="mono">full</span> or <span class="mono">sliding</span> attention,
+                <span class="mono">linear</span> for blocks without attention (for example LFM2
+                short-conv layers), and <span class="mono">recurrent</span> for DeltaNet blocks.
+            </p>
+
+            <h2 id="latent">Latent space</h2>
+            <p>
+                The final normalized hidden state of every prompt token is projected to two
+                dimensions with classical MDS, the dual of PCA. Nearby points had similar model
+                states. The scatter labels each point with its decoded token; the legend shows
+                the prompt and the explained variance.
+            </p>
+            <p>
+                <strong>Aggregate</strong> keeps earlier prompts in the plot instead of replacing
+                it, with one colour per prompt. <strong>Clear plot</strong> starts over.
+            </p>
+
+            <h2 id="agents">Agents</h2>
+            <p>
+                Definitions in the Agents tab become a <span class="mono">delegate</span> tool for
+                chat and work. The tool's <span class="mono">agent</span> argument is an enum of
+                the enabled specialists, with each purpose shown to the parent model.
+            </p>
+            <ul>
+                <li><strong>Current model</strong> agents run on the same weights; the engine's sub-agent path keeps the work tools available.</li>
+                <li><strong>Named model</strong> agents load that model through the model host for one self-contained task. The host caches it and evicts idle entries after the agent's TTL, or when another load needs the space.</li>
+                <li><strong>Rules</strong> are the agent's system prompt. <strong>Purpose</strong> is the one-line description the parent sees.</li>
+                <li><strong>Max delegation depth</strong> bounds how deep the model can chain agents.</li>
+            </ul>
+
+            <h2 id="audio-vision">Audio and vision</h2>
+            <p>
+                An LFM3-Audio model treats a text prompt as a text-to-speech request: the words
+                are synthesized into the assistant's 24 kHz WAV artifact automatically. There is
+                no Speak button and no separate text reply. The audio card shows its duration and
+                the WAV is saved with the chat.
+            </p>
+            <p>
+                An attached audio file is transcribed. On an audio model the transcript becomes
+                the assistant reply, and the audio stays on the user message for playback.
+            </p>
+            <p>
+                An LFM3-VL model describes an attached image natively. The image card stays on the
+                user message; the caption is the assistant reply. The session options set the
+                image's longest side and the answer token cap.
+            </p>
+            <p class="small">
+                Punctuation-only model turns (the audio backbone's bare ":") are treated as no
+                speech and hidden from the transcript.
+            </p>
+        </article>
+    </div>
+</main>
+</body>
+</html>

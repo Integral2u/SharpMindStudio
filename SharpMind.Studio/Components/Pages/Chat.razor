@@ -549,6 +549,17 @@ else
                 <textarea id="chat-input" class="textarea" data-enter-send="chat-send" onkeydown="studioChat.enterSend(event, 'chat-send')" @bind="_input" @bind:event="oninput"
                           placeholder="Message the model. Enter sends; Shift+Enter adds a line."
                           disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"></textarea>
+                @if (ChatService.SupportsTts)
+                {
+                    <div class="small faint">
+                        Audio model: a text prompt generates speech automatically; an attached
+                        audio file is transcribed.
+                    </div>
+                }
+                else if (ChatService.SupportsAudio)
+                {
+                    <div class="small faint">Audio model: an attached audio file is transcribed.</div>
+                }
                 <div class="chat-composer-actions">
                     <span class="status-line">@ChatService.Status</span>
                     @if (_pendingArtifacts.Count > 0)

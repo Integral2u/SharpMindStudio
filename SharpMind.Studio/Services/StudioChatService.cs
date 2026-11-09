@@ -43,6 +43,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private bool? _supportsAudio;
     private bool? _supportsTts;
     private bool? _isTtsModel;
+    private bool? _isAudioModel;
 #endif
 #if SHARPMIND_SOURCE
     private bool? _supportsVision;
@@ -160,6 +161,16 @@ public sealed class StudioChatService : IAsyncDisposable
         if (IsRemote || _model is null) return false;
         string? projector = Lfm3AudioRuntime.FindProjector(_model.Path);
         return projector is not null && Lfm3TtsRuntime.IsTtsProjector(projector);
+    }
+
+    /// <summary>True when the model has an audio encoder/projector, so attached audio can be transcribed.</summary>
+    private bool IsAudioModel() => _isAudioModel ??= ComputeIsAudioModel();
+
+    private bool ComputeIsAudioModel()
+    {
+        if (IsRemote || _model is null) return false;
+        string? projector = Lfm3AudioRuntime.FindProjector(_model.Path);
+        return projector is not null && Lfm3AudioRuntime.IsAudioProjector(projector);
     }
 #endif
 #if SHARPMIND_SOURCE
@@ -329,6 +340,26 @@ public sealed class StudioChatService : IAsyncDisposable
     private static bool HasAudioArtifact(IReadOnlyList<ChatArtifact>? artifacts) =>
         artifacts?.Any(item =>
             item.Type.Contains("audio", StringComparison.OrdinalIgnoreCase)) == true;
+
+    /// <summary>
+    /// Audio in, text out: the transcription becomes the assistant reply, and the
+    /// attached audio stays on the user message for playback.
+    /// </summary>
+    private Task SendTranscriptionTurnAsync(
+        string typedText, string transcript, IReadOnlyList<ChatArtifact>? artifacts)
+    {
+        ChatSessionDocument document = _document!;
+        _error = null;
+        ChatMessage user = ChatMessage.User(
+            string.IsNullOrWhiteSpace(typedText) ? "Audio" : typedText.Trim(), "You");
+        user.Artifacts = artifacts?.ToArray();
+        document.Messages.Add(user);
+        document.Messages.Add(ChatMessage.Agent(transcript.Trim()));
+        _status = "Transcribed.";
+        _store.Save(document);
+        Notify();
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// An LFM3-Audio text prompt is a text-to-speech request: the user's words are
@@ -608,6 +639,8 @@ public sealed class StudioChatService : IAsyncDisposable
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
+            string typedText = text;
+            string? audioTranscript = null;
             if (IsRemote && artifacts is { Count: > 0 })
             {
                 _error = "Attachments are only supported for local models right now.";
@@ -625,10 +658,13 @@ public sealed class StudioChatService : IAsyncDisposable
                     try
                     {
                         string transcript = await TranscribeAsync(audio).ConfigureAwait(false);
-                        if (!string.IsNullOrWhiteSpace(transcript))
+                        audioTranscript = string.IsNullOrWhiteSpace(transcript) ? null : transcript;
+                        if (audioTranscript is not null)
+                        {
                             text = string.IsNullOrWhiteSpace(text)
                                 ? transcript
                                 : transcript + "\n\n" + text;
+                        }
                     }
                     catch
                     {
@@ -637,6 +673,17 @@ public sealed class StudioChatService : IAsyncDisposable
                     }
                 }
             }
+
+#if SHARPMIND_AUDIO
+            // Audio in, text out: an audio model's transcription is the answer,
+            // not a prompt for the text generator (which would just answer ":").
+            if (audioTranscript is not null && IsAudioModel())
+            {
+                await SendTranscriptionTurnAsync(typedText, audioTranscript, artifacts)
+                    .ConfigureAwait(false);
+                return;
+            }
+#endif
 
 #if SHARPMIND_SOURCE
             if (SupportsVision && artifacts?.FirstOrDefault(
@@ -1506,6 +1553,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _supportsAudio = null;
         _supportsTts = null;
         _isTtsModel = null;
+        _isAudioModel = null;
 #endif
     }
 

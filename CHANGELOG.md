@@ -28,13 +28,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   output.
 - **Speech models** - an LFM3-Audio model treats a text prompt as a TTS
   request: the words are synthesized into the assistant's 24 kHz WAV artifact
-  automatically, with no Speak button and no text reply; audio input is
-  transcribed as before. The chat's session options expose the voice
+  automatically, with no Speak button and no text reply; an attached audio file
+  is transcribed and the transcript becomes the assistant reply. The chat's
+  session options expose the voice
   (female/male), language, maximum frames, temperature, top-k and seed, so the
   same prompt can be re-synthesized with different prosody. The audio card shows
   its duration, and the WAV is saved with the chat. A punctuation-only model
   reply (the LFM3-Audio backbone's bare ":") is treated as no speech: the turn
   is hidden from the transcript.
+- **Wiki and in-app guide** - `docs/wiki/labs.html` explains each lab, the layer
+  delta colours, manual surgery, the same-model quantization check and agent
+  definitions; the Labs page links to it. The providers page lists the GPU and
+  inference partner programs.
 - **Labs menu** - a top-level Labs page with tabs for Layer importance,
   Quantization, Model visualizer, Latent space and Agents, so more
   model-analysis labs can be added without new navigation items. The Layer
