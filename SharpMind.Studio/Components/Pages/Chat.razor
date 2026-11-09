@@ -471,7 +471,7 @@ else
                 </div>
             }
 
-            @if (_workMode && Work.PendingPermission is { } permission)
+            @if (Work.PendingPermission is { } permission)
             {
                 <div class="panel work-permission-prompt">
                     <div class="panel-body">
@@ -489,10 +489,13 @@ else
                                     @onclick="() => ResolvePermissionAsync(WorkPermissionDecision.AllowOnce)">
                                 Allow once
                             </button>
-                            <button type="button" class="button primary"
-                                    @onclick="() => ResolvePermissionAsync(WorkPermissionDecision.Always)">
-                                Always allow
-                            </button>
+                            @if (permission.CanRemember)
+                            {
+                                <button type="button" class="button primary"
+                                        @onclick="() => ResolvePermissionAsync(WorkPermissionDecision.Always)">
+                                    Always allow
+                                </button>
+                            }
                         </div>
                     </div>
                 </div>

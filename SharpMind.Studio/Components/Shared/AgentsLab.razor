@@ -68,8 +68,10 @@
     <div class="panel-body stack">
         <div class="small faint">
             These names are shown to the model as a <span class="mono">delegate</span> tool. An
-            agent with no model uses the current model; one with a model is loaded only for that
-            task and cached until the host evicts it.
+            agent with no model inherits the current model; one with a model is loaded only for
+            that task and cached until the host evicts it. The model can also call
+            <span class="mono">spawn_agent</span> to create a temporary specialist from the
+            task's own name, rules, model and allowed tools.
         </div>
 
         <div class="row">
@@ -139,7 +141,7 @@
                     <label class="field-label">Model</label>
                     <select class="input" value="@(editing.ModelPath ?? string.Empty)"
                             @onchange="e => _editing = editing with { ModelPath = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString() }">
-                        <option value="">Current model (same weights, no reload)</option>
+                        <option value="">Inherit current model (same weights, no reload)</option>
                         @foreach (ModelDescriptor model in _models)
                         {
                             <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
@@ -165,7 +167,7 @@
                            @onchange="e => _editing = editing with { TtlMinutes = int.TryParse(e.Value?.ToString(), out int value) ? value : 0 }" />
                 </div>
                 <label class="field grow">
-                    <span class="field-label">Inherit parent tools</span>
+                    <span class="field-label">Inherit enabled tools</span>
                     <input type="checkbox" checked="@editing.InheritTools"
                            @onchange="e => _editing = editing with { InheritTools = e.Value is bool inherit && inherit }" />
                 </label>
@@ -175,10 +177,66 @@
                            @onchange="e => _editing = editing with { Enabled = e.Value is bool enabled && enabled }" />
                 </label>
             </div>
+            <div class="row">
+                <div class="field grow">
+                    <label class="field-label">File read</label>
+                    <select class="input" value="@editing.Permissions.Read"
+                            @onchange="e => _editing = SetPermission(editing, WorkToolCategory.Read, e.Value)">
+                        @foreach (WorkPermission permission in PermissionOptions)
+                        {
+                            <option value="@permission">@PermissionLabel(permission)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field grow">
+                    <label class="field-label">File write</label>
+                    <select class="input" value="@editing.Permissions.Write"
+                            @onchange="e => _editing = SetPermission(editing, WorkToolCategory.Write, e.Value)">
+                        @foreach (WorkPermission permission in PermissionOptions)
+                        {
+                            <option value="@permission">@PermissionLabel(permission)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field grow">
+                    <label class="field-label">File delete</label>
+                    <select class="input" value="@editing.Permissions.Delete"
+                            @onchange="e => _editing = SetPermission(editing, WorkToolCategory.Delete, e.Value)">
+                        @foreach (WorkPermission permission in PermissionOptions)
+                        {
+                            <option value="@permission">@PermissionLabel(permission)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field grow">
+                    <label class="field-label">Web access</label>
+                    <select class="input" value="@editing.Permissions.Web"
+                            @onchange="e => _editing = SetPermission(editing, WorkToolCategory.Web, e.Value)">
+                        @foreach (WorkPermission permission in PermissionOptions)
+                        {
+                            <option value="@permission">@PermissionLabel(permission)</option>
+                        }
+                    </select>
+                </div>
+            </div>
             <div class="field">
-                <label class="field-label">Allowed tools (comma separated; blank = all inherited)</label>
-                <input class="input" value="@AllowedToolsText(editing)"
-                       @onchange="e => _editing = editing with { AllowedTools = SplitTools(e.Value?.ToString()) }" />
+                <span class="field-label">Allowed tools</span>
+                <span class="faint small">
+                    With inheritance on and nothing checked the agent receives every enabled
+                    project tool. Checking tools restricts it to that set; clearing inheritance
+                    with nothing checked gives it no project tools.
+                </span>
+                <div class="row" style="flex-wrap:wrap; gap:.35rem 1rem">
+                    @foreach (WorkToolInfo tool in Work.Tools.Where(tool => tool.Group != "Agents"))
+                    {
+                        string toolName = tool.Name;
+                        <label class="small" title="@tool.Group">
+                            <input type="checkbox" checked="@IsToolAllowed(editing, toolName)"
+                                   @onchange="e => _editing = SetToolAllowed(editing, toolName, e.Value)" />
+                            <span class="mono">@toolName</span>
+                        </label>
+                    }
+                </div>
             </div>
             <div class="row">
                 <button type="button" class="button primary" @onclick="SaveAgent"
@@ -205,12 +263,16 @@
             <tbody>
                 @foreach (WorkToolInfo tool in Work.Tools)
                 {
+                    string toolName = tool.Name;
                     <tr>
                         <td class="mono">@tool.Name</td>
                         <td>@tool.Group</td>
                         <td>@tool.Source</td>
                         <td>@(tool.IsPlugin ? "plugin" : "built-in")</td>
-                        <td>@(Work.IsToolEnabled(tool.Name) ? "yes" : "no")</td>
+                        <td>
+                            <input type="checkbox" checked="@Work.IsToolEnabled(toolName)"
+                                   @onchange="e => Work.SetToolEnabled(toolName, e.Value is bool enabled && enabled)" />
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -331,13 +393,52 @@
         _editing = null;
     }
 
-    private static List<string> SplitTools(string? text) =>
-        [.. (text ?? "")
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)];
+    private static readonly WorkPermission[] PermissionOptions =
+        [WorkPermission.Ask, WorkPermission.Always, WorkPermission.Never];
 
-    private static string AllowedToolsText(StudioAgentDefinition agent) =>
-        string.Join(", ", agent.AllowedTools);
+    private static string PermissionLabel(WorkPermission permission) => permission switch
+    {
+        WorkPermission.Always => "Allow",
+        WorkPermission.Never => "Deny",
+        _ => "Ask",
+    };
+
+    private static StudioAgentDefinition SetPermission(
+        StudioAgentDefinition agent, WorkToolCategory category, object? value)
+    {
+        WorkPermission permission = Enum.TryParse(value?.ToString(), out WorkPermission parsed)
+            ? parsed
+            : WorkPermission.Ask;
+        WorkPermissions permissions = agent.Permissions;
+        WorkPermissions next = category switch
+        {
+            WorkToolCategory.Read => permissions with { Read = permission },
+            WorkToolCategory.Write => permissions with { Write = permission },
+            WorkToolCategory.Delete => permissions with { Delete = permission },
+            WorkToolCategory.Web => permissions with { Web = permission },
+            _ => permissions,
+        };
+        return agent with { Permissions = next };
+    }
+
+    private static bool IsToolAllowed(StudioAgentDefinition agent, string name) =>
+        agent.AllowedTools.Contains(name, StringComparer.OrdinalIgnoreCase);
+
+    private static StudioAgentDefinition SetToolAllowed(
+        StudioAgentDefinition agent, string name, object? value)
+    {
+        List<string> tools = [.. agent.AllowedTools];
+        if (value is bool allowed && allowed)
+        {
+            if (!tools.Contains(name, StringComparer.OrdinalIgnoreCase))
+                tools.Add(name);
+        }
+        else
+        {
+            tools.RemoveAll(tool => string.Equals(tool, name, StringComparison.OrdinalIgnoreCase));
+        }
+        return agent with { AllowedTools = tools };
+    }
 
     private static string Preview(string content)
     {

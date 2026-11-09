@@ -30,7 +30,10 @@ public sealed class ChatBackendContext
 
     public required string UserText { get; init; }
 
-    /// <summary>The Work agent when this is a Work chat, otherwise null.</summary>
+    /// <summary>
+    /// The tool/agent builder for this turn. Work mode adds file, web and skill
+    /// tools; chat still gets <c>delegate</c> and <c>spawn_agent</c>.
+    /// </summary>
     public IAgentBuilder? Agent { get; init; }
 
     public required Action<string> SetStatus { get; init; }

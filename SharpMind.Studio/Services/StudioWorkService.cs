@@ -1,4 +1,5 @@
-﻿using SharpMind.Inference.Agent;
+﻿using System.Text.Json.Nodes;
+using SharpMind.Inference.Agent;
 using SharpMind.Studio.Core.Work;
 
 namespace SharpMind.Studio.Services;
@@ -29,6 +30,12 @@ public sealed class WorkPermissionRequest
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public required WorkToolAccess Access { get; init; }
+
+    /// <summary>
+    /// True when "Always allow" updates the project policy. An agent's own policy
+    /// is not persisted, so its prompt only offers Deny and Allow once.
+    /// </summary>
+    public bool CanRemember { get; init; } = true;
     public Task<WorkPermissionDecision> Result => _completion.Task;
 
     public void Resolve(WorkPermissionDecision decision) => _completion.TrySetResult(decision);
@@ -68,6 +75,13 @@ public sealed class StudioWorkService : IDisposable
     }
 
     public event Action? Changed;
+
+    /// <summary>
+    /// Runs a <c>delegate</c> or <c>spawn_agent</c> call. StudioChatService supplies
+    /// this so both the local session and an OpenRouter/Compute backend execute the
+    /// same agent path with the current model and profile.
+    /// </summary>
+    public Func<string, JsonObject, CancellationToken, Task<string>>? AgentToolExecutor { get; set; }
 
     public string ProjectRoot => _store.ProjectRoot;
     public string MemoryFile => _store.MemoryFile;
@@ -126,22 +140,20 @@ public sealed class StudioWorkService : IDisposable
     {
         bool work = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase);
         IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = _agents.EnabledAgents;
-        if (!work && agents.Count == 0) return null;
 
+        // Even a chat with no defined agents gets the builder for spawn_agent, so
+        // the model can create a temporary specialist when the task needs one.
         var builder = new AgentBuilder(_workspace.Project.Document.Name);
-        if (work)
-        {
-            builder.DisabledTools = [.. _tools.Tools
-                .Where(tool => !IsToolEnabled(tool.Name))
-                .Select(tool => tool.Name)];
-        }
+        builder.DisabledTools = [.. _tools.Tools
+            .Where(tool => !IsToolEnabled(tool.Name))
+            .Select(tool => tool.Name)];
         if (work && !_device.IsMobile)
         {
             builder.WithTools(new WorkFileTools(
                 _workspace.Project.Root,
                 AllowedRoots(),
-                CheckAccessAsync));
-            builder.WithTools(new WorkWebTools(CheckAccessAsync));
+                access => CheckAccessAsync(access)));
+            builder.WithTools(new WorkWebTools(access => CheckAccessAsync(access)));
             builder.WithTools(new WorkUiTools(RequestChoiceAsync));
             if (_tools.PluginTools.Count > 0)
                 builder.WithTools([.. _tools.PluginTools]);
@@ -169,25 +181,97 @@ public sealed class StudioWorkService : IDisposable
 
         if (agents.Count > 0)
         {
-            builder.WithAgents(_agents.MaxDepth);
-            foreach (SharpMind.Studio.Core.Agents.StudioAgentDefinition agent in agents)
-            {
-                string rules = string.IsNullOrWhiteSpace(agent.Rules)
-                    ? $"You are {agent.Name}. {agent.Description}"
-                    : agent.Rules;
-                builder.CreateAgent(new AgentConfig
+            // Studio runs every delegated agent itself so it can apply the agent's
+            // model, tools and permissions. Registering engine sub-agents would
+            // intercept "delegate" before that path and drop those settings.
+            var names = agents
+                .Select(agent => (JsonNode)JsonValue.Create(agent.Name)!)
+                .ToList();
+            var purposes = agents.Select(agent =>
+                string.IsNullOrWhiteSpace(agent.Description)
+                    ? agent.Name
+                    : $"{agent.Name}: {agent.Description}");
+            builder.WithTool(
+                "delegate",
+                "Hands a self-contained sub-task to a specialist agent and returns its answer. Use it when a listed agent's purpose matches the task better than you can do it yourself.",
+                new JsonObject
                 {
-                    Name = agent.Name,
-                    SystemPrompt = rules,
-                    Purpose = string.IsNullOrWhiteSpace(agent.Description) ? null : agent.Description,
-                    Temperature = agent.Temperature,
-                    Seed = agent.Seed,
-                });
-            }
-            builder.RegisterDelegateTool();
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["agent"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["enum"] = new JsonArray([.. names]),
+                            ["description"] = string.Join("; ", purposes),
+                        },
+                        ["task"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["description"] = "The complete sub-task, with all the context the agent needs.",
+                        },
+                    },
+                    ["required"] = new JsonArray("agent", "task"),
+                },
+                arguments => InvokeAgentToolAsync("delegate", arguments));
         }
 
+        // The model can also create a temporary specialist when none of the
+        // defined agents fits the task. The call is handled by StudioChatService;
+        // the nested run gets the agent tools, not this tool again.
+        builder.WithTool(
+            "spawn_agent",
+            "Creates a temporary specialist agent for one self-contained task. Use it when no defined agent fits the request. The specialist can inherit the project's file/web tools; its permissions default to Ask.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["name"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "A short name for the specialist.",
+                    },
+                    ["purpose"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "One line describing what the specialist is for.",
+                    },
+                    ["rules"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "The specialist's system prompt, behaviour and constraints.",
+                    },
+                    ["model"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Optional model path. Omit to use the current model.",
+                    },
+                    ["allowed_tools"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject { ["type"] = "string" },
+                        ["description"] = "Optional tool names; omit to inherit the enabled tools.",
+                    },
+                    ["task"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "The complete self-contained task.",
+                    },
+                },
+                ["required"] = new JsonArray("name", "rules", "task"),
+            },
+            arguments => InvokeAgentToolAsync("spawn_agent", arguments));
+
         return builder;
+    }
+
+    private Task<string> InvokeAgentToolAsync(string toolName, JsonObject arguments)
+    {
+        Func<string, JsonObject, CancellationToken, Task<string>>? executor = AgentToolExecutor;
+        return executor is null
+            ? Task.FromResult("[agent runner is not available]")
+            : executor(toolName, arguments, CancellationToken.None);
     }
 
     public bool IsToolEnabled(string name)
@@ -196,11 +280,88 @@ public sealed class StudioWorkService : IDisposable
         return _tools.IsDefaultEnabled(name) ||
                _settings.EnabledTools.Contains(name, StringComparer.OrdinalIgnoreCase);
     }
-    public async Task<bool> CheckAccessAsync(WorkToolAccess access)
+    public void SetToolEnabled(string name, bool enabled)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        List<string> enabledTools = [.. _settings.EnabledTools];
+        List<string> disabledTools = [.. _settings.DisabledTools];
+        if (enabled)
+        {
+            disabledTools.RemoveAll(item => string.Equals(item, name, StringComparison.OrdinalIgnoreCase));
+            if (!_tools.IsDefaultEnabled(name) &&
+                !enabledTools.Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                enabledTools.Add(name);
+            }
+        }
+        else
+        {
+            enabledTools.RemoveAll(item => string.Equals(item, name, StringComparison.OrdinalIgnoreCase));
+            if (!disabledTools.Contains(name, StringComparer.OrdinalIgnoreCase))
+                disabledTools.Add(name);
+        }
+
+        Save(_settings with { EnabledTools = enabledTools, DisabledTools = disabledTools }, _memory);
+        Notify();
+    }
+
+    /// <summary>
+    /// A tool builder for one agent. It exposes the project's file/web tools with
+    /// the agent's own Ask/Allow/Deny policy, then filters them to the enabled and
+    /// allowed set. Defined agents are deliberately not registered here, so a
+    /// delegated agent cannot recurse through the delegate tool.
+    /// </summary>
+    public IAgentBuilder? CreateAgentTools(
+        SharpMind.Studio.Core.Agents.StudioAgentDefinition agent)
+    {
+        if (_device.IsMobile) return null;
+        if (!agent.InheritTools && agent.AllowedTools.Count == 0) return null;
+
+        Task<bool> Permission(WorkToolAccess access) =>
+            CheckAccessAsync(access, agent.Permissions);
+
+        // AgentBuilder filters DisabledTools while it reflects the tool objects, so
+        // discover the names first and set the filter before the real registration.
+        object[] toolObjects =
+        [
+            new WorkFileTools(_workspace.Project.Root, AllowedRoots(), Permission),
+            new WorkWebTools(Permission),
+            .. _tools.PluginTools,
+        ];
+        var probe = new AgentBuilder(agent.Name);
+        probe.WithTools(toolObjects);
+        var allowed = agent.AllowedTools.Count > 0
+            ? new HashSet<string>(agent.AllowedTools, StringComparer.OrdinalIgnoreCase)
+            : null;
+
+        var builder = new AgentBuilder(agent.Name)
+        {
+            DisabledTools = [.. probe.RegisteredToolNames.Where(name =>
+                (allowed is not null && !allowed.Contains(name)) ||
+                !IsToolEnabled(name))],
+        };
+        builder.WithTools(toolObjects);
+        string rules = string.IsNullOrWhiteSpace(agent.Rules)
+            ? $"You are {agent.Name}. {agent.Description}".Trim()
+            : agent.Rules.Trim();
+        builder.WithCustomRule(rules);
+        return builder;
+    }
+
+    public async Task<bool> CheckAccessAsync(WorkToolAccess access, WorkPermissions? permissions = null)
     {
         WorkContext? context = null;
         WorkPermission configured;
-        if (access.Category == WorkToolCategory.Web)
+        if (permissions is not null)
+        {
+            configured = permissions.For(access.Category);
+            if (access.Category != WorkToolCategory.Web)
+            {
+                context = FindContext(access.Path);
+                if (context is null) return false;
+            }
+        }
+        else if (access.Category == WorkToolCategory.Web)
         {
             configured = _settings.Permissions.Web;
         }
@@ -214,7 +375,11 @@ public sealed class StudioWorkService : IDisposable
         if (configured == WorkPermission.Never) return false;
         if (configured == WorkPermission.Always) return true;
 
-        var request = new WorkPermissionRequest { Access = access };
+        var request = new WorkPermissionRequest
+        {
+            Access = access,
+            CanRemember = permissions is null,
+        };
         lock (_gate)
         {
             if (_pending is not null)
@@ -232,7 +397,9 @@ public sealed class StudioWorkService : IDisposable
 
         if (decision == WorkPermissionDecision.Always)
         {
-            RememberPermission(access.Category, context);
+            // An agent's policy must not silently become the project policy.
+            if (permissions is null)
+                RememberPermission(access.Category, context);
             return true;
         }
 

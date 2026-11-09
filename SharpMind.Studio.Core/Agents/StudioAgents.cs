@@ -1,4 +1,5 @@
 using SharpMind.Studio.Core.Serialization;
+using SharpMind.Studio.Core.Work;
 
 namespace SharpMind.Studio.Core.Agents;
 
@@ -9,6 +10,15 @@ namespace SharpMind.Studio.Core.Agents;
 /// </summary>
 public sealed record StudioAgentDefinition
 {
+    /// <summary>The safe default for a new agent and the fallback for older files.</summary>
+    public static WorkPermissions AskPermissions => new()
+    {
+        Read = WorkPermission.Ask,
+        Write = WorkPermission.Ask,
+        Delete = WorkPermission.Ask,
+        Web = WorkPermission.Ask,
+    };
+
     public string Id { get; init; } = "";
     public string Name { get; init; } = "";
     public string Description { get; init; } = "";
@@ -23,8 +33,14 @@ public sealed record StudioAgentDefinition
     /// <summary>When true a work agent also receives the parent project's tools.</summary>
     public bool InheritTools { get; init; } = true;
 
-    /// <summary>Tool names this agent may use. Empty means no explicit filter.</summary>
+    /// <summary>Tool names this agent may use. Empty means all inherited.</summary>
     public List<string> AllowedTools { get; init; } = [];
+
+    /// <summary>
+    /// File/web access for this agent. Defaults to Ask for every category so an
+    /// agent can never silently touch the disk or network.
+    /// </summary>
+    public WorkPermissions Permissions { get; init; } = AskPermissions;
 
     /// <summary>Idle minutes before the loaded model may be evicted; 0 keeps the host default.</summary>
     public int TtlMinutes { get; init; } = 30;
@@ -65,7 +81,13 @@ public sealed class StudioAgentStore
             StudioAgentsDocument document = JsonFile.Read<StudioAgentsDocument>(Path);
             return document with
             {
-                Agents = [.. (document.Agents ?? []).Where(agent => !string.IsNullOrWhiteSpace(agent.Name))],
+                Agents = [.. (document.Agents ?? [])
+                    .Where(agent => !string.IsNullOrWhiteSpace(agent.Name))
+                    .Select(agent => agent with
+                    {
+                        AllowedTools = [.. (agent.AllowedTools ?? [])],
+                        Permissions = agent.Permissions ?? StudioAgentDefinition.AskPermissions,
+                    })],
             };
         }
         catch
@@ -92,6 +114,7 @@ public sealed class StudioAgentStore
                 Rules = agent.Rules.Trim(),
                 ModelPath = string.IsNullOrWhiteSpace(agent.ModelPath) ? null : agent.ModelPath.Trim(),
                 AllowedTools = [.. (agent.AllowedTools ?? []).Where(tool => !string.IsNullOrWhiteSpace(tool))],
+                Permissions = agent.Permissions ?? StudioAgentDefinition.AskPermissions,
                 TtlMinutes = Math.Clamp(agent.TtlMinutes, 0, 24 * 60),
             });
         }

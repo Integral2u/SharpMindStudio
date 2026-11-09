@@ -37,6 +37,8 @@ public sealed class WorkToolService
         ("UIGetSystemSpecs", "System"),
         ("GetCurrentDateTime", "System"),
         ("Echo", "Diagnostics"),
+        ("delegate", "Agents"),
+        ("spawn_agent", "Agents"),
     ];
 
     private readonly StudioWorkspaceService _workspace;

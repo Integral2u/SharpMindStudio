@@ -156,10 +156,13 @@
                 the enabled specialists, with each purpose shown to the parent model.
             </p>
             <ul>
-                <li><strong>Current model</strong> agents run on the same weights; the engine's sub-agent path keeps the work tools available.</li>
+                <li><strong>Inherit current model</strong> agents run on the same weights. Studio runs the agent in its own session so the agent's own tools and permissions still apply.</li>
                 <li><strong>Named model</strong> agents load that model through the model host for one self-contained task. The host caches it and evicts idle entries after the agent's TTL, or when another load needs the space.</li>
                 <li><strong>Rules</strong> are the agent's system prompt. <strong>Purpose</strong> is the one-line description the parent sees.</li>
-                <li><strong>Max delegation depth</strong> bounds how deep the model can chain agents.</li>
+                <li><strong>Allowed tools</strong> can inherit the enabled project tools or be narrowed to a checked set. The toolbox toggles which tools the project offers.</li>
+                <li><strong>File and web access</strong> is Ask, Allow or Deny per category. A new agent starts at Ask for read, write, delete and web, and an agent's answer never changes the project policy.</li>
+                <li><strong>spawn_agent</strong> lets the model create a temporary specialist from task-supplied name, rules, model and tools. The temporary agent uses the same Ask defaults.</li>
+                <li><strong>Max delegation depth</strong> bounds nested agent calls; a delegated agent can call the other enabled specialists until that depth is reached.</li>
             </ul>
 
             <h2 id="audio-vision">Audio and vision</h2>

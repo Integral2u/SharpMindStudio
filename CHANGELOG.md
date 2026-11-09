@@ -13,10 +13,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   solution; CI checks out the engine and packs those packages first. The 1.1.0
   packages are no longer the development baseline.
 - **Agent definitions** - the Agents tab defines specialists (name, purpose, rules,
-  current or named model, temperature, seed, TTL, enabled, max delegation depth).
-  Enabled agents are exposed to chat and work as the engine's `delegate` tool;
-  same-model agents use the engine's sub-agent path, while an agent with its own
-  model is loaded through the model host for one task and cached until its TTL.
+  inherit current or named model, temperature, seed, TTL, enabled, max delegation
+  depth, allowed tools and file/web Ask/Allow/Deny permissions). Enabled agents are
+  exposed to chat and work as the `delegate` tool; the model can also call
+  `spawn_agent` to create a temporary specialist from task-supplied name, rules,
+  model and tools. Studio runs both through the agent runner, so a same-model agent
+  borrows the current weights and a named model is loaded for one task and cached
+  until its TTL. Agent file/web permissions default to Ask and never change the
+  project policy.
 - **Chat history search** - the Chat and Work lists in the sidebar have a search
   box that matches a session name or any message body, and the preview shows the
   matching line. Results stay split by chat/work.

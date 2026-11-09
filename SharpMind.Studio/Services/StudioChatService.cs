@@ -15,6 +15,7 @@ using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.OpenRouter;
 using SharpMind.Studio.Core.Runs;
+using SharpMind.Studio.Core.Work;
 using SharpMind.Studio.Services.Chat;
 
 namespace SharpMind.Studio.Services;
@@ -89,6 +90,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _work = work;
         _device = device;
         _store = new ChatSessionStore(workspace.Project.ChatsDirectory);
+        _work.AgentToolExecutor = ExecuteAgentToolAsync;
     }
 
     public event Action? Changed;
@@ -930,7 +932,7 @@ public sealed class StudioChatService : IAsyncDisposable
             Document = _document,
             Assistant = assistant,
             UserText = text,
-            Agent = IsWorkMode ? _work.CreateAgent("work") : null,
+            Agent = _work.CreateAgent(_document?.Mode ?? "chat"),
             SetStatus = status => _status = status,
             Notify = Notify,
         };
@@ -1437,30 +1439,110 @@ public sealed class StudioChatService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Routes a <c>delegate</c> call for an agent that names a different model to
-    /// <see cref="StudioAgentRunner"/>; same-model agents keep the engine's native
-    /// sub-agent path (defer), and every other tool is untouched.
+    /// Routes agent tools to <see cref="StudioAgentRunner"/>.
+    /// <c>delegate</c> runs a defined agent, including one that borrows the current
+    /// model. <c>spawn_agent</c> creates a temporary specialist from the call's
+    /// name/purpose/rules/model/tool list; neither path registers the delegate tool
+    /// on the nested run, so an agent cannot recurse through itself.
     /// </summary>
     private async Task<ToolRequestResult> HandleAgentToolAsync(
         string toolName, JsonObject arguments, CancellationToken cancellationToken)
     {
-        if (!string.Equals(toolName, "delegate", StringComparison.OrdinalIgnoreCase))
-            return ToolRequestResult.Defer();
+        if (string.Equals(toolName, "delegate", StringComparison.OrdinalIgnoreCase))
+            return await HandleDelegateAsync(arguments, cancellationToken).ConfigureAwait(false);
+        if (string.Equals(toolName, "spawn_agent", StringComparison.OrdinalIgnoreCase))
+            return await HandleSpawnAgentAsync(arguments, cancellationToken).ConfigureAwait(false);
+        return ToolRequestResult.Defer();
+    }
 
+    /// <summary>
+    /// The backend-neutral executor used by OpenRouter and Compute sessions, whose
+    /// tool loop calls the registered tool directly instead of ProcessToolRequest.
+    /// </summary>
+    private async Task<string> ExecuteAgentToolAsync(
+        string toolName, JsonObject arguments, CancellationToken cancellationToken)
+    {
+        ToolRequestResult result = await HandleAgentToolAsync(
+            toolName, arguments, cancellationToken).ConfigureAwait(false);
+        return result.Result ?? "";
+    }
+
+    private async Task<ToolRequestResult> HandleDelegateAsync(
+        JsonObject arguments, CancellationToken cancellationToken)
+    {
         string name = arguments["agent"]?.GetValue<string>() ?? "";
         string task = arguments["task"]?.GetValue<string>() ?? "";
         StudioAgentDefinition? definition = _agents.Find(name);
-        if (definition is null || !definition.Enabled ||
-            string.IsNullOrWhiteSpace(definition.ModelPath) ||
-            string.IsNullOrWhiteSpace(task) ||
-            string.Equals(definition.ModelPath, _model?.Path, StringComparison.OrdinalIgnoreCase))
+        if (definition is null)
+            return ToolRequestResult.Handled($"[agent '{name}' is not defined]");
+        if (!definition.Enabled)
+            return ToolRequestResult.Handled($"[agent '{definition.Name}' is disabled]");
+        if (string.IsNullOrWhiteSpace(task))
+            return ToolRequestResult.Handled("[delegate needs a task]");
+
+        return await RunAgentAsync(definition, task, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ToolRequestResult> HandleSpawnAgentAsync(
+        JsonObject arguments, CancellationToken cancellationToken)
+    {
+        string name = arguments["name"]?.GetValue<string>() ?? "";
+        string rules = arguments["rules"]?.GetValue<string>() ?? "";
+        string task = arguments["task"]?.GetValue<string>() ?? "";
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(rules) ||
+            string.IsNullOrWhiteSpace(task))
         {
-            return ToolRequestResult.Defer();
+            return ToolRequestResult.Handled(
+                "[spawn_agent needs a name, rules and task]");
         }
 
+        string? model = arguments["model"]?.GetValue<string>();
+        if (string.Equals(model, "current", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(model, "inherit", StringComparison.OrdinalIgnoreCase))
+        {
+            model = null;
+        }
+
+        List<string> allowedTools = [];
+        if (arguments["allowed_tools"] is JsonArray tools)
+        {
+            foreach (JsonNode? node in tools)
+            {
+                if (node?.GetValue<string>() is { Length: > 0 } tool)
+                    allowedTools.Add(tool);
+            }
+        }
+
+        var definition = new StudioAgentDefinition
+        {
+            Id = $"spawn-{Guid.NewGuid():n}",
+            Name = name.Trim(),
+            Description = arguments["purpose"]?.GetValue<string>() ?? "",
+            Rules = rules.Trim(),
+            ModelPath = string.IsNullOrWhiteSpace(model) ? null : model.Trim(),
+            AllowedTools = allowedTools,
+            // A spawned specialist keeps the same safe Ask defaults as a defined agent.
+            Permissions = new WorkPermissions
+            {
+                Read = WorkPermission.Ask,
+                Write = WorkPermission.Ask,
+                Delete = WorkPermission.Ask,
+                Web = WorkPermission.Ask,
+            },
+        };
+
+        return await RunAgentAsync(definition, task, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ToolRequestResult> RunAgentAsync(
+        StudioAgentDefinition definition,
+        string task,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            string result = await _agentRunner.RunAsync(definition, task, cancellationToken)
+            string result = await _agentRunner
+                .RunAsync(definition, task, _loaded, _resolved, cancellationToken)
                 .ConfigureAwait(false);
             return ToolRequestResult.Handled(result);
         }
