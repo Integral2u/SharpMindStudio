@@ -364,8 +364,10 @@
         {
             string reference = _referencePath;
             string candidate = _candidatePath;
-            _compatibility = await Task.Run(() =>
+            QuantizationCompatibility result = await Task.Run(() =>
                 QuantizationAnalyzer.CheckModelCompatibility(reference, candidate));
+            if (_referencePath == reference && _candidatePath == candidate)
+                _compatibility = result;
         }
         catch (Exception ex)
         {
