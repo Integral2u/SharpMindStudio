@@ -308,9 +308,9 @@
 
         <div class="small faint">
             A budget switches to variable quantization: the plan picks the coarsest K-quant
-            that fits. SharpMind's K-quant kernels use flat 256-element blocks, so a tensor
-            whose row length is not 256-aligned falls back to Q8_0 (32-aligned) or F16 instead
-            of writing a layout the engine cannot read.
+            that fits. K-quant rows are written row-padded, and the engine pads the input
+            rows at inference so models whose hidden size is not 256-aligned (for example
+            Qwen2-0.5B at 896) run the full quantization instead of a fallback.
         </div>
     </div>
 </section>

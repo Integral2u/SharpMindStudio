@@ -43,8 +43,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   files are the same model (same architecture, tensor names and shapes) before
   the forward-loss comparison, and can write a smaller GGUF itself: a fixed
   Q2_K–Q8_K/Q8_0/Q4_0/F16 target, a per-role blend, or a byte budget that picks
-  the coarsest fitting K-quant. Then optionally loads both models in turn and
-  measures the calibration cross-entropy and perplexity.
+  the coarsest fitting K-quant; K-quant rows are row-padded, so 896-wide models
+  such as Qwen2-0.5B run the full quantization. Then optionally loads both models
+  in turn and measures the calibration cross-entropy and perplexity.
   The Model visualizer tab
   captures one prompt through the activation hook and draws attention/FFN RMS
   heatmaps over layers and tokens on a log scale. The Latent space tab projects
