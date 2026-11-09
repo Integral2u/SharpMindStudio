@@ -377,6 +377,56 @@ else
                                                 Effective="ChatService.Resolved"
                                                 Generators="Workspace.Builders.Generators"
                                                 Caches="Workspace.Builders.Caches" />
+
+                        <div class="panel-head" style="margin-top:.75rem">
+                            <div>
+                                <div class="eyebrow">Speech</div>
+                                <h2>LFM3-Audio TTS</h2>
+                            </div>
+                            <span class="faint small mono">empty fields use the checkpoint defaults</span>
+                        </div>
+                        <div class="row">
+                            <div class="field">
+                                <label class="field-label">Voice</label>
+                                <select class="input" value="@(_sessionDraft.TtsVoice ?? "female")"
+                                        @onchange="e => _sessionDraft = _sessionDraft with { TtsVoice = e.Value?.ToString() }">
+                                    <option value="female">female</option>
+                                    <option value="male">male</option>
+                                </select>
+                            </div>
+                            <div class="field grow">
+                                <label class="field-label">Language</label>
+                                <input class="input" value="@(_sessionDraft.TtsLanguage ?? "American English")"
+                                       @onchange="e => _sessionDraft = _sessionDraft with { TtsLanguage = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString() }" />
+                            </div>
+                            <div class="field">
+                                <label class="field-label">Max frames (80 ms each)</label>
+                                <input class="input" type="number" min="1" max="512"
+                                       value="@(_sessionDraft.TtsMaxFrames ?? 128)"
+                                       @onchange="e => _sessionDraft = _sessionDraft with { TtsMaxFrames = int.TryParse(e.Value?.ToString(), out int value) ? value : null }" />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="field">
+                                <label class="field-label">Temperature</label>
+                                <input class="input" type="number" min="0.1" max="3" step="0.05"
+                                       value="@(_sessionDraft.TtsTemperature ?? 1.0f)"
+                                       @onchange="e => _sessionDraft = _sessionDraft with { TtsTemperature = float.TryParse(e.Value?.ToString(), out float value) ? value : null }" />
+                            </div>
+                            <div class="field">
+                                <label class="field-label">Top-k</label>
+                                <input class="input" type="number" min="1" max="1024"
+                                       value="@(_sessionDraft.TtsTopK ?? 128)"
+                                       @onchange="e => _sessionDraft = _sessionDraft with { TtsTopK = int.TryParse(e.Value?.ToString(), out int value) ? value : null }" />
+                            </div>
+                            <div class="field">
+                                <label class="field-label">Seed (blank = random)</label>
+                                <input class="input" type="number"
+                                       value="@_sessionDraft.TtsSeed"
+                                       @onchange="e => _sessionDraft = _sessionDraft with { TtsSeed = int.TryParse(e.Value?.ToString(), out int value) ? value : null }" />
+                            </div>
+                        </div>
+
                         <div class="row">
                             <button type="button" class="button primary" @onclick="ApplyOptionsAsync"
                                     disabled="@ChatService.IsStreaming">

@@ -25,7 +25,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   LiquidCodec, each finished model reply gets a Speak button. It strips
   Markdown and attaches the synthesized 24 kHz WAV as an audio artifact, ready
   to play, download or transcribe. The runtime uses the checkpoint's trained
-  female voice by default.
+  female voice by default. The chat's session options expose the voice
+  (female/male), language, maximum frames, temperature, top-k and seed, so the
+  same reply can be re-synthesized with different prosody.
 - **Labs menu** - a top-level Labs page with tabs for Layer importance,
   Quantization, Model visualizer, Latent space and Agents, so more
   model-analysis labs can be added without new navigation items. The Layer
@@ -37,8 +39,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   can export a pruned GGUF with those blocks removed and reports the output path
   and size. The
   Quantization tab compares a reference GGUF with a candidate tensor by tensor
-  (relative L2, cosine, max abs) without a forward pass, then optionally loads
-  both models in turn and measures the calibration cross-entropy and perplexity.
+  (relative L2, cosine, max abs) without a forward pass, flags whether the two
+  files are the same model (same architecture, tensor names and shapes) before
+  the forward-loss comparison, and can write a smaller GGUF itself: a fixed
+  Q2_K–Q8_K/Q8_0/Q4_0/F16 target, a per-role blend, or a byte budget that picks
+  the coarsest fitting K-quant. Then optionally loads both models in turn and
+  measures the calibration cross-entropy and perplexity.
   The Model visualizer tab
   captures one prompt through the activation hook and draws attention/FFN RMS
   heatmaps over layers and tokens on a log scale. The Latent space tab projects

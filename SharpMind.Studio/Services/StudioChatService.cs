@@ -235,10 +235,8 @@ public sealed class StudioChatService : IAsyncDisposable
             _audioRuntime?.Dispose();
             _audioRuntime = null;
             _ttsRuntime ??= new Lfm3TtsRuntime(
-                _loaded.Model, _loaded.Tokenizer, _loaded.Config, projector)
-            {
-                MaxFrames = 128, // cap a spoken reply at about ten seconds
-            };
+                _loaded.Model, _loaded.Tokenizer, _loaded.Config, projector);
+            ApplyTtsOptions(_ttsRuntime);
             _status = "Synthesizing speech...";
             _error = null;
             Notify();
@@ -275,6 +273,26 @@ public sealed class StudioChatService : IAsyncDisposable
             "Speech synthesis needs the SharpMind source build (the sibling repository).");
 #endif
     }
+
+#if SHARPMIND_AUDIO
+    /// <summary>Applies the chat's speech overrides to the cached TTS runtime.</summary>
+    private void ApplyTtsOptions(Lfm3TtsRuntime runtime)
+    {
+        InferenceOverrides overrides = _document?.Overrides ?? new InferenceOverrides();
+        runtime.Voice = string.IsNullOrWhiteSpace(overrides.TtsVoice)
+            ? "female"
+            : overrides.TtsVoice!;
+        runtime.Language = string.IsNullOrWhiteSpace(overrides.TtsLanguage)
+            ? "American English"
+            : overrides.TtsLanguage!;
+        runtime.MaxFrames = Math.Clamp(overrides.TtsMaxFrames ?? 128, 1, 512);
+        runtime.Temperature = overrides.TtsTemperature is { } temperature
+            ? Math.Clamp(temperature, 0.1f, 3f)
+            : 1.0f;
+        runtime.TopK = Math.Clamp(overrides.TtsTopK ?? 128, 1, 1024);
+        runtime.Seed = overrides.TtsSeed;
+    }
+#endif
 
     /// <summary>Synthesizes a reply and attaches the WAV artifact to the message.</summary>
     public async Task<ChatArtifact?> SpeakAsync(ChatMessage message, CancellationToken cancellationToken = default)

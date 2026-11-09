@@ -51,11 +51,13 @@
 
         <div class="row">
             <button type="button" class="button primary" @onclick="RunAsync"
-                    disabled="@(Quant.IsRunning || _models.Count < 2 || string.IsNullOrWhiteSpace(_referencePath) ||
+                    disabled="@(Quant.IsRunning || Quant.IsQuantizing || _models.Count < 2 ||
+                                string.IsNullOrWhiteSpace(_referencePath) ||
                                 string.IsNullOrWhiteSpace(_candidatePath) || _referencePath == _candidatePath)">
                 @(Quant.IsRunning ? "Comparing..." : "Compare")
             </button>
-            <button type="button" class="button" @onclick="Quant.Cancel" disabled="@(!Quant.IsRunning)">
+            <button type="button" class="button" @onclick="Quant.Cancel"
+                    disabled="@(!(Quant.IsRunning || Quant.IsQuantizing))">
                 Cancel
             </button>
             <span class="status-line">@Quant.Status</span>
@@ -90,6 +92,23 @@
             </span>
         </div>
         <div class="panel-body">
+            @if (report.SameModel)
+            {
+                <div class="small faint">
+                    Same model: every tensor name and shape matches, so this is a valid
+                    quantization pair.
+                </div>
+            }
+            else
+            {
+                <div class="error-line">
+                    Not the same model: @(report.CompatibilityNote ?? "the tensor layouts differ.")
+                </div>
+                <div class="small faint">
+                    The weight metrics above are still shown, but the forward-loss comparison
+                    is disabled until both files are the same model at two quantizations.
+                </div>
+            }
             <table class="table">
                 <thead>
                     <tr>
@@ -138,15 +157,16 @@
     <div class="panel-body stack">
         <div class="field">
             <label class="field-label">Calibration text</label>
-            <textarea class="input" rows="3" @bind="_calibration" disabled="@Quant.IsRunning"></textarea>
+            <textarea class="input" rows="3" @bind="_calibration" disabled="@(Quant.IsRunning || Quant.IsQuantizing)"></textarea>
         </div>
         <div class="row">
             <div class="field">
                 <label class="field-label">Max tokens</label>
-                <input class="input" type="number" min="8" max="512" @bind="_lossTokens" disabled="@Quant.IsRunning" />
+                <input class="input" type="number" min="8" max="512" @bind="_lossTokens" disabled="@(Quant.IsRunning || Quant.IsQuantizing)" />
             </div>
             <button type="button" class="button" @onclick="RunLossAsync"
-                    disabled="@(Quant.IsRunning || _models.Count < 2 || string.IsNullOrWhiteSpace(_referencePath) ||
+                    disabled="@(Quant.IsRunning || Quant.IsQuantizing || Quant.Report?.SameModel == false || _models.Count < 2 ||
+                                string.IsNullOrWhiteSpace(_referencePath) ||
                                 string.IsNullOrWhiteSpace(_candidatePath) || _referencePath == _candidatePath)">
                 @(Quant.IsRunning ? "Running..." : "Compare loss")
             </button>
@@ -185,6 +205,91 @@
     </div>
 </section>
 
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Actual quantization</div>
+            <h2>Write a smaller GGUF</h2>
+        </div>
+        <span class="faint small mono">fixed, per-role blend or a byte budget</span>
+    </div>
+    <div class="panel-body stack">
+        <div class="row">
+            <div class="field grow">
+                <span class="field-label">Source model</span>
+                <div class="mono">@(string.IsNullOrWhiteSpace(_referencePath) ? "none" : Path.GetFileName(_referencePath))</div>
+            </div>
+            <div class="field">
+                <label class="field-label">Target</label>
+                <select class="input" @bind="_quantizeTarget" disabled="@(Quant.IsQuantizing || Quant.IsRunning)">
+                    <option value="q4k">Q4_K</option>
+                    <option value="q5k">Q5_K</option>
+                    <option value="q6k">Q6_K</option>
+                    <option value="q8k">Q8_K</option>
+                    <option value="q8_0">Q8_0</option>
+                    <option value="q4_0">Q4_0</option>
+                    <option value="q3k">Q3_K</option>
+                    <option value="q2k">Q2_K</option>
+                    <option value="f16">F16</option>
+                    <option value="blend">Blend (emb/head Q8_K, rest Q4_K)</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label">Budget MB (0 = fixed)</label>
+                <input class="input" type="number" min="0" @bind="_quantizeBudgetMb"
+                       disabled="@(Quant.IsQuantizing || Quant.IsRunning)" />
+            </div>
+            <button type="button" class="button primary" @onclick="RunQuantizeAsync"
+                    disabled="@(Quant.IsQuantizing || Quant.IsRunning || _models.Count == 0 ||
+                                string.IsNullOrWhiteSpace(_referencePath) ||
+                                !_referencePath.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))">
+                @(Quant.IsQuantizing ? "Quantizing..." : "Quantize")
+            </button>
+            <span class="status-line">@Quant.QuantizeStatus</span>
+        </div>
+
+        @if (Quant.QuantizeError is { } quantizeError)
+        {
+            <div class="error-line">@quantizeError</div>
+        }
+
+        @if (Quant.QuantizeResult is { } quantized)
+        {
+            <table class="table">
+                <thead>
+                    <tr><th>File</th><th>Size</th><th>Tensors</th><th>Requantized</th><th>Copied</th><th>Dtypes</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="mono">@Path.GetFileName(quantized.Path)</td>
+                        <td class="mono">@((quantized.Bytes / (1024.0 * 1024.0)).ToString("F1")) MB</td>
+                        <td class="mono">@quantized.Tensors</td>
+                        <td class="mono">@quantized.Requantized</td>
+                        <td class="mono">@quantized.Copied</td>
+                        <td class="mono">
+                            @string.Join(", ", quantized.Counts.OrderBy(pair => pair.Key)
+                                .Select(pair => $"{pair.Key}:{pair.Value}"))
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="small mono">@quantized.Path</div>
+            <div class="small faint">
+                @((100.0 * quantized.Bytes / Math.Max(1, quantized.SourceBytes)).ToString("F1"))%
+                of the source size. The new file is next to the source; refresh the model list
+                to open it.
+            </div>
+        }
+
+        <div class="small faint">
+            A budget switches to variable quantization: the plan picks the coarsest K-quant
+            that fits. SharpMind's K-quant kernels use flat 256-element blocks, so a tensor
+            whose row length is not 256-aligned falls back to Q8_0 (32-aligned) or F16 instead
+            of writing a layout the engine cannot read.
+        </div>
+    </div>
+</section>
+
 @code {
     private IReadOnlyList<ModelDescriptor> _models = [];
     private string _referencePath = "";
@@ -194,6 +299,8 @@
     private string _calibration =
         "The quick brown fox jumps over the lazy dog. A quantization should preserve the next-token distribution.";
     private int _lossTokens = 64;
+    private string _quantizeTarget = "q4k";
+    private int _quantizeBudgetMb;
 
     protected override async Task OnInitializedAsync()
     {
@@ -225,6 +332,13 @@
         ModelDescriptor? candidate = _models.FirstOrDefault(model => model.Path == _candidatePath);
         if (reference is null || candidate is null) return;
         await Quant.RunLossAsync(reference, candidate, _calibration, Math.Clamp(_lossTokens, 8, 512));
+    }
+
+    private async Task RunQuantizeAsync()
+    {
+        ModelDescriptor? source = _models.FirstOrDefault(model => model.Path == _referencePath);
+        if (source is null) return;
+        await Quant.QuantizeAsync(source, _quantizeTarget, Math.Max(0, _quantizeBudgetMb));
     }
 
     private double BarWidth(double relativeL2)

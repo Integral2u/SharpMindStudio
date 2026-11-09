@@ -27,6 +27,24 @@ public sealed record InferenceOverrides
     public bool? EnableThinking { get; init; }
     public string? Compactor { get; init; }
 
+    /// <summary>LFM3-Audio TTS voice phrase: "female" or "male".</summary>
+    public string? TtsVoice { get; init; }
+
+    /// <summary>LFM3-Audio TTS language phrase, for example "American English".</summary>
+    public string? TtsLanguage { get; init; }
+
+    /// <summary>Upper bound on generated speech frames (one frame is 80 ms).</summary>
+    public int? TtsMaxFrames { get; init; }
+
+    /// <summary>Depth-decoder sampling temperature.</summary>
+    public float? TtsTemperature { get; init; }
+
+    /// <summary>Depth-decoder top-k.</summary>
+    public int? TtsTopK { get; init; }
+
+    /// <summary>Depth-decoder sampling seed; null picks a time-based seed.</summary>
+    public int? TtsSeed { get; init; }
+
     public static InferenceOverrides SystemDefaults() => new()
     {
         Generator = "StandardGeneratorBuilder",
