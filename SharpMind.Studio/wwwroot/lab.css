@@ -21,6 +21,23 @@
     background: var(--accent-dim);
 }
 
+.lab-legend {
+    display: inline-block;
+    width: .6rem;
+    height: .6rem;
+    border-radius: 2px;
+    margin-right: .3rem;
+    vertical-align: middle;
+}
+
+.lab-legend.accent {
+    background: var(--accent);
+}
+
+.lab-legend.help {
+    background: var(--warn);
+}
+
 .field.grow {
     flex: 1 1 260px;
 }
@@ -31,6 +48,28 @@
     overflow-x: auto;
     padding: 4px 0 8px;
     margin-top: .35rem;
+}
+
+.lab-heatmap-row {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+}
+
+.lab-layer-types {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding-top: 4px;
+}
+
+.lab-layer-type {
+    height: 12px;
+    line-height: 12px;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: 8px;
+    white-space: nowrap;
 }
 
 .lab-cell {

@@ -1,4 +1,5 @@
-﻿@using SharpMind.Model.Analysis
+﻿@using SharpMind.Model.Config
+@using SharpMind.Model.Analysis
 @using SharpMind.Studio.Services
 @inject ModelCatalogService Catalog
 @inject StudioVisualizerService Visual
@@ -72,35 +73,53 @@
         <div class="panel-body stack">
             <div>
                 <div class="eyebrow">Attention RMS</div>
-                <div class="lab-heatmap" style="grid-template-columns:repeat(@map.Tokens, 12px)">
-                    @for (int layer = 0; layer < map.Layers; layer++)
-                    {
-                        @for (int token = 0; token < map.Tokens; token++)
+                <div class="lab-heatmap-row">
+                    <div class="lab-heatmap" style="grid-template-columns:repeat(@map.Tokens, 12px)">
+                        @for (int layer = 0; layer < map.Layers; layer++)
                         {
-                            <span class="lab-cell"
-                                  style="background:rgba(var(--accent-rgb), @(Alpha(map.Attention(layer, token), map.MaxAttention)))"
-                                  title="layer @layer · @TokenLabel(token) · @map.Attention(layer, token).ToString("F3")"></span>
+                            @for (int token = 0; token < map.Tokens; token++)
+                            {
+                                <span class="lab-cell"
+                                      style="background:rgba(var(--accent-rgb), @(Alpha(map.Attention(layer, token), map.MaxAttention)))"
+                                      title="layer @layer · @TokenLabel(token) · @map.Attention(layer, token).ToString("F3")"></span>
+                            }
                         }
-                    }
+                    </div>
+                    <div class="lab-layer-types">
+                        @for (int layer = 0; layer < map.Layers; layer++)
+                        {
+                            <span class="lab-layer-type">@LayerType(layer)</span>
+                        }
+                    </div>
                 </div>
             </div>
             <div>
                 <div class="eyebrow">Feed-forward RMS</div>
-                <div class="lab-heatmap" style="grid-template-columns:repeat(@map.Tokens, 12px)">
-                    @for (int layer = 0; layer < map.Layers; layer++)
-                    {
-                        @for (int token = 0; token < map.Tokens; token++)
+                <div class="lab-heatmap-row">
+                    <div class="lab-heatmap" style="grid-template-columns:repeat(@map.Tokens, 12px)">
+                        @for (int layer = 0; layer < map.Layers; layer++)
                         {
-                            <span class="lab-cell"
-                                  style="background:rgba(var(--accent-rgb), @(Alpha(map.FeedForward(layer, token), map.MaxFeedForward)))"
-                                  title="layer @layer · @TokenLabel(token) · @map.FeedForward(layer, token).ToString("F3")"></span>
+                            @for (int token = 0; token < map.Tokens; token++)
+                            {
+                                <span class="lab-cell"
+                                      style="background:rgba(var(--accent-rgb), @(Alpha(map.FeedForward(layer, token), map.MaxFeedForward)))"
+                                      title="layer @layer · @TokenLabel(token) · @map.FeedForward(layer, token).ToString("F3")"></span>
+                            }
                         }
-                    }
+                    </div>
+                    <div class="lab-layer-types">
+                        @for (int layer = 0; layer < map.Layers; layer++)
+                        {
+                            <span class="lab-layer-type">@LayerType(layer)</span>
+                        }
+                    </div>
                 </div>
             </div>
             <div class="small faint">
                 Log scale from the per-map maximum. Hover a cell for the layer, token and value.
-                The early large FFN spikes are the same outliers the layer lab reports.
+                The right-hand column is the layer type from the model config: full/sliding
+                attention, linear (no attention) or recurrent (DeltaNet). The early large FFN
+                spikes are the same outliers the layer lab reports.
             </div>
         </div>
     </section>
@@ -137,6 +156,24 @@
 
     private string TokenLabel(int token) =>
         token < Visual.TokenText.Length ? Visual.TokenText[token] : "";
+
+    private string LayerType(int layer)
+    {
+        ModelConfig? config = Visual.Config;
+        if (config is null) return "";
+        if (config.LayerKvHeads is { } kv && layer < kv.Length && kv[layer] == 0)
+            return "linear";
+        if (config.IsRecurrentLayer(layer))
+            return "recurrent";
+        if (config.SwaLayers is { } swa && layer < swa.Length)
+            return swa[layer] ? "sliding" : "full";
+        if (config.SlidingWindowSize > 0 && config.IsHybridSlidingWindow &&
+            config.SlidingWindowPattern is { } period && period > 0)
+        {
+            return layer % period == period - 1 ? "full" : "sliding";
+        }
+        return config.SlidingWindowSize > 0 ? "sliding" : "attention";
+    }
 
     private static string Alpha(float value, float max)
     {

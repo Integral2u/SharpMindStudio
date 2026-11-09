@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using SharpMind.Model.Analysis;
+using SharpMind.Model.Config;
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Inference;
 
@@ -31,6 +32,7 @@ public sealed class StudioVisualizerService : IAsyncDisposable
     public string Status { get; private set; } = "Pick a model and capture a prompt.";
     public string? Error { get; private set; }
     public ActivationMap? Map { get; private set; }
+    public ModelConfig? Config { get; private set; }
     public string[] TokenText { get; private set; } = [];
     public double ElapsedSeconds { get; private set; }
     public string? ModelName { get; private set; }
@@ -47,6 +49,7 @@ public sealed class StudioVisualizerService : IAsyncDisposable
             IsRunning = true;
             Error = null;
             Map = null;
+            Config = null;
             TokenText = [];
             ElapsedSeconds = 0;
             ModelName = descriptor.FileName;
@@ -58,6 +61,7 @@ public sealed class StudioVisualizerService : IAsyncDisposable
                 descriptor.Family.Id, descriptor.Path, session: null);
             _loaded = await _host.LoadAsync(descriptor, resolved, progress: null, _cts.Token)
                 .ConfigureAwait(false);
+            Config = _loaded.Config;
 
             Status = "Capturing activations...";
             Notify();

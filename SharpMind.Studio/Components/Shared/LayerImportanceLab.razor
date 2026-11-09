@@ -102,7 +102,7 @@
                         <th>FFN RMS</th>
                         <th>Ablated loss</th>
                         <th>Delta</th>
-                        <th></th>
+                        <th>Relative delta</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -122,6 +122,11 @@
                     }
                 </tbody>
             </table>
+            <div class="row small" style="gap:1rem;margin:.35rem 0">
+                <span><span class="lab-legend accent"></span> positive delta: ablation hurt</span>
+                <span><span class="lab-legend help"></span> negative delta: ablation helped</span>
+                <span class="faint">Delta is nats/token; bars scale to the worst layer.</span>
+            </div>
             <div class="small faint">
                 Highlighted row: the least important layer under this calibration, a natural surgery candidate.
             </div>
@@ -142,7 +147,7 @@
                             <th>Layers (least important first)</th>
                             <th>Loss</th>
                             <th>Delta</th>
-                            <th>Profile</th>
+                            <th>Relative delta</th>
                             <th>Export</th>
                         </tr>
                     </thead>
@@ -171,31 +176,59 @@
                 </table>
                 <div class="small faint">
                     Highlighted rows stay within 0.05 nats of the baseline; they are the low-risk
-                    skip candidates. Export writes a real GGUF with those blocks removed, next to
-                    the source model, and it loads as an ordinary smaller model.
+                    skip candidates. A yellow bar means more than +0.05 nats, so that row is
+                    already visibly worse. Export writes a real GGUF with those blocks removed,
+                    next to the source model, and it loads as an ordinary smaller model.
                 </div>
-                @if (!CanExport)
-                {
-                    <div class="small faint">Export needs a GGUF source model.</div>
-                }
-                @if (LayerLab.IsExporting)
-                {
-                    <div class="status-line">@LayerLab.ExportStatus</div>
-                }
-                @if (LayerLab.ExportError is { } exportError)
-                {
-                    <div class="error-line">@exportError</div>
-                }
-                @if (LayerLab.ExportResult is { } exportResult)
-                {
-                    <div class="small mono">
-                        Pruned @exportResult.OriginalLayers → @exportResult.KeptLayers layers,
-                        removed @exportResult.RemovedLayers · @exportResult.Tensors tensors ·
-                        @((exportResult.Bytes / (1024.0 * 1024.0)).ToString("F1")) MB
-                        <br />
-                        @exportResult.Path
-                    </div>
-                }
+            }
+
+            <div class="panel-head" style="margin-top:1.25rem">
+                <div>
+                    <div class="eyebrow">Manual surgery</div>
+                    <h2>Choose any removable layers</h2>
+                </div>
+                <span class="faint small mono">layer 0 and @(report.Layers.Count - 1) stay</span>
+            </div>
+            <div class="row">
+                <div class="field grow">
+                    <label class="field-label">Layers to remove (comma separated)</label>
+                    <input class="input" @bind="_manualLayers" placeholder="e.g. 12, 8, 15"
+                           disabled="@LayerLab.IsExporting" />
+                </div>
+                <button type="button" class="button" @onclick="ExportManualAsync"
+                        disabled="@(LayerLab.IsRunning || LayerLab.IsExporting || !CanExport)">
+                    Export selected GGUF
+                </button>
+            </div>
+            <div class="small faint">
+                Valid range: 1 to @(report.Layers.Count - 2). The first and last blocks are kept
+                so the input/output-adjacent streams remain.
+            </div>
+            @if (_manualError is { } manualError)
+            {
+                <div class="error-line">@manualError</div>
+            }
+            @if (!CanExport)
+            {
+                <div class="small faint">Export needs a GGUF source model.</div>
+            }
+            @if (LayerLab.IsExporting)
+            {
+                <div class="status-line">@LayerLab.ExportStatus</div>
+            }
+            @if (LayerLab.ExportError is { } exportError)
+            {
+                <div class="error-line">@exportError</div>
+            }
+            @if (LayerLab.ExportResult is { } exportResult)
+            {
+                <div class="small mono">
+                    Pruned @exportResult.OriginalLayers → @exportResult.KeptLayers layers,
+                    removed @exportResult.RemovedLayers · @exportResult.Tensors tensors ·
+                    @((exportResult.Bytes / (1024.0 * 1024.0)).ToString("F1")) MB
+                    <br />
+                    @exportResult.Path
+                </div>
             }
         </div>
     </section>
@@ -208,6 +241,8 @@
     private int _maxTokens = 96;
     private string? _runError;
     private int _maxSkip = 8;
+    private string _manualLayers = "";
+    private string? _manualError;
     private string _prompt =
         "The quick brown fox jumps over the lazy dog. Layer importance shows which transformer " +
         "blocks carry the most information for this model. A short calibration keeps the sweep fast.";
@@ -256,6 +291,29 @@
 
     private async Task ExportAsync(IReadOnlyList<int> layers) =>
         await LayerLab.ExportPrunedAsync(layers);
+
+    private async Task ExportManualAsync()
+    {
+        _manualError = null;
+        int count = LayerLab.Report?.Layers.Count ?? 0;
+        int[] layers = [.. _manualLayers
+            .Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(text => int.TryParse(text, out int layer) ? layer : -1)
+            .Distinct()
+            .OrderBy(layer => layer)];
+        if (layers.Length == 0)
+        {
+            _manualError = "Enter at least one layer number.";
+            return;
+        }
+        if (layers[0] < 1 || layers[^1] > count - 2)
+        {
+            _manualError = $"Layers must be between 1 and {count - 2}; the first and last blocks stay.";
+            return;
+        }
+
+        await LayerLab.ExportPrunedAsync(layers);
+    }
 
     private static double SurgerBarWidth(SurgeryStep step, LayerImportanceReport report)
     {

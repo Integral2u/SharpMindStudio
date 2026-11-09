@@ -44,7 +44,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   produces a surgery preview: skip the least important layers in rank order and
   show the loss after each prefix, with the low-risk rows highlighted. Each row
   can export a pruned GGUF with those blocks removed and reports the output path
-  and size. The
+  and size. The table has a legend for the teal/yellow delta bars, and a Manual
+  surgery input exports any removable layers in the 1..N-2 range (the first and
+  last blocks stay). The
   Quantization tab compares a reference GGUF with a candidate tensor by tensor
   (relative L2, cosine, max abs) without a forward pass, flags whether the two
   files are the same model (same architecture, tensor names and shapes) before
@@ -55,14 +57,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   in turn and measures the calibration cross-entropy and perplexity.
   The Model visualizer tab
   captures one prompt through the activation hook and draws attention/FFN RMS
-  heatmaps over layers and tokens on a log scale. The Latent space tab projects
+  heatmaps over layers and tokens on a log scale; a right-hand column labels
+  each layer as full/sliding attention, linear or recurrent. The Latent space tab projects
   the prompt's final hidden states to two dimensions with classical MDS, labels
   each point with its decoded token and draws a hoverable scatter with the
   explained variance; an Aggregate option keeps earlier prompts in the plot
-  instead of clearing it, with one colour per prompt. The Agents tab lists the work
-  agent's tools and skills with their enabled state and the current transcript as
-  a turn-by-turn trace of agents, tool results and artifacts; it needs no model
-  load. Source builds until the 1.1.1 packages publish.
+  instead of clearing it, with one colour per prompt. The Agents tab defines
+  specialist agents and lists the work agent's tools and skills with their
+  enabled state and the current transcript as a turn-by-turn trace of agents,
+  tool results and artifacts; it needs no model load. Source builds until the
+  1.1.1 packages publish.
 - **LFM3-VL image attachments** - when a vision projector is present next to
   the model, attached images are decoded and described natively. An image-only
   send uses "Describe this image."; the answer joins the transcript and the next
