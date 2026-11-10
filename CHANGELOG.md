@@ -12,11 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   1.1.1 engine packages and compiles the same audio/labs code as the source
   solution; CI checks out the engine and packs those packages first. The 1.1.0
   packages are no longer the development baseline.
-- **Provider programs** - Vast.ai and Novita appear as manual remote-host
-  presets in Providers > Compute. The Vast.ai, EuroRouter and Novita sign-up
-  links are available; other programs are added only after approval. The
-  provider page lists the available programs and integration status; the model
-  routers still need a generic OpenAI-compatible provider integration.
+- **Remote hosts and routers** - Vast.ai and Novita appear as manual remote-host
+  presets in Providers > Compute, OpenRouter is listed as integrated, and the
+  Vast.ai, EuroRouter and Novita sign-up links are available. The provider page
+  groups hosts and routers with their integration status; EuroRouter still needs
+  a generic OpenAI-compatible provider integration.
 - **Wiki navigation** - Labs is back in the deployed wiki navigation and the
   in-app link now uses the real `wiki/labs.html` path. A new Settings guide joins
   the wiki index, and Chat, Work, Training, Labs and Settings each link to their
@@ -68,8 +68,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is hidden from the transcript.
 - **Wiki and in-app guide** - `docs/wiki/labs.html` explains each lab, the layer
   delta colours, manual surgery, the same-model quantization check and agent
-  definitions; the Labs page links to it. The providers page lists the GPU and
-  inference partner programs.
+  definitions; the Labs page links to it. The providers page lists remote hosts
+  and model routers.
 - **Labs menu** - a top-level Labs page with tabs for Layer importance,
   Quantization, Model visualizer, Latent space and Agents, so more
   model-analysis labs can be added without new navigation items. The Layer
