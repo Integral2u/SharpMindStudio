@@ -123,7 +123,7 @@ public static class ComputeProviderPrefabs
         new(VastAi, "Vast.ai GPU", ComputeProviderKinds.Remote,
             "A Vast.ai GPU instance running the SharpMind Server image. Paste its public URL and token.",
             Docker: false, Runpod: false,
-            ProgramUrl: "https://docs.vast.ai/guides/reference/referral-program"),
+            ReferralUrl: "https://cloud.vast.ai/?ref_id=854920"),
         new(MaxCloudOn, "MaxCloudOn GPU", ComputeProviderKinds.Remote,
             "A MaxCloudOn GPU instance running the SharpMind Server image. Paste its public URL and token.",
             Docker: false, Runpod: false,

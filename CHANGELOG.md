@@ -13,10 +13,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   solution; CI checks out the engine and packs those packages first. The 1.1.0
   packages are no longer the development baseline.
 - **Provider programs** - Vast.ai and MaxCloudOn appear as manual remote-host
-  presets in Providers > Compute, with their public program pages shown until an
-  approved referral URL exists. The provider page lists all six programs with an
-  explicit not-enrolled/integration-pending status; the model routers still need
-  a generic OpenAI-compatible provider integration.
+  presets in Providers > Compute. The approved Vast.ai referral link is active
+  in the provider picker and wiki; the other programs remain unmonetized program
+  pages until enrollment. The provider page lists all six with explicit
+  enrolled/not-enrolled or integration-pending status; the model routers still
+  need a generic OpenAI-compatible provider integration.
 - **Wiki navigation** - Labs is back in the deployed wiki navigation and the
   in-app link now uses the real `wiki/labs.html` path. A new Settings guide joins
   the wiki index, and Chat, Work, Training, Labs and Settings each link to their
