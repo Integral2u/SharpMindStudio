@@ -617,7 +617,7 @@ else
                     }
                     <button id="chat-send" type="button" class="button primary" @onclick="SendAsync"
                             disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
-                                        (string.IsNullOrWhiteSpace(_input) && !HasVisionImage) ||
+                                        (string.IsNullOrWhiteSpace(_input) && !HasVisionImage && !HasAudioInput) ||
                                         (_workMode && !_remoteChat && _toolState.Capability == ToolCapability.Failed && !_allowFailedTools))">
                         Send
                     </button>
@@ -1167,13 +1167,23 @@ else
         ChatService.SupportsVision &&
         _pendingArtifacts.Any(a => a.Type.Contains("image", StringComparison.OrdinalIgnoreCase));
 
+    private bool HasAudioInput =>
+        ChatService.SupportsAudio &&
+        _pendingArtifacts.Any(a => a.Type.Contains("audio", StringComparison.OrdinalIgnoreCase));
+
     private async Task SendAsync()
     {
         string text = _input;
         if (string.IsNullOrWhiteSpace(text))
         {
-            if (!HasVisionImage) return;
-            text = "Describe this image.";
+            if (HasVisionImage)
+            {
+                text = "Describe this image.";
+            }
+            else if (!HasAudioInput)
+            {
+                return;
+            }
         }
         _input = "";
         ChatArtifact[] artifacts = [.. _pendingArtifacts];

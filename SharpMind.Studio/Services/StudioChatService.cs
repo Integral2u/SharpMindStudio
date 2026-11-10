@@ -642,7 +642,12 @@ public sealed class StudioChatService : IAsyncDisposable
 
     public async Task SendAsync(string text, IReadOnlyList<ChatArtifact>? artifacts = null)
     {
-        if (string.IsNullOrWhiteSpace(text) || _document is null || _streaming) return;
+        bool audioAttached = artifacts?.Any(item =>
+            item.Type.Contains("audio", StringComparison.OrdinalIgnoreCase)) == true;
+        bool audioOnly = string.IsNullOrWhiteSpace(text) &&
+            audioAttached && !IsRemote && SupportsAudio;
+        if ((string.IsNullOrWhiteSpace(text) && !audioOnly) || _document is null || _streaming)
+            return;
 
         await _gate.WaitAsync().ConfigureAwait(false);
         try
@@ -677,6 +682,13 @@ public sealed class StudioChatService : IAsyncDisposable
                     catch
                     {
                         // TranscribeAsync records the error; do not send an audio-only prompt.
+                        return;
+                    }
+
+                    if (audioTranscript is null && string.IsNullOrWhiteSpace(typedText))
+                    {
+                        _status = "No speech detected.";
+                        Notify();
                         return;
                     }
                 }
