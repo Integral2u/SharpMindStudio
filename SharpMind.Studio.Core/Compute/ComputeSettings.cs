@@ -98,13 +98,16 @@ public sealed record ComputeProviderPrefab(
     string Description,
     bool Docker,
     bool Runpod,
-    string? ReferralUrl = null);
+    string? ReferralUrl = null,
+    string? ProgramUrl = null);
 
 public static class ComputeProviderPrefabs
 {
     public const string LocalDocker = "local-docker";
     public const string Runpod = "runpod";
     public const string Vultr = "vultr";
+    public const string VastAi = "vast-ai";
+    public const string MaxCloudOn = "maxcloudon";
     public const string Custom = "custom";
 
     public static IReadOnlyList<ComputeProviderPrefab> All { get; } =
@@ -117,6 +120,14 @@ public static class ComputeProviderPrefabs
         new(Vultr, "Vultr cloud server", ComputeProviderKinds.Remote,
             "A Vultr instance running the SharpMind Server image.", Docker: false, Runpod: false,
             ReferralUrl: "https://www.vultr.com/?ref=9933964"),
+        new(VastAi, "Vast.ai GPU", ComputeProviderKinds.Remote,
+            "A Vast.ai GPU instance running the SharpMind Server image. Paste its public URL and token.",
+            Docker: false, Runpod: false,
+            ProgramUrl: "https://docs.vast.ai/guides/reference/referral-program"),
+        new(MaxCloudOn, "MaxCloudOn GPU", ComputeProviderKinds.Remote,
+            "A MaxCloudOn GPU instance running the SharpMind Server image. Paste its public URL and token.",
+            Docker: false, Runpod: false,
+            ProgramUrl: "https://maxcloudon.com/affiliate-program/"),
         new(Custom, "Custom remote server", ComputeProviderKinds.Remote,
             "Any machine that already runs the SharpMind Server image.", Docker: false, Runpod: false),
     ];

@@ -234,11 +234,18 @@ else if (_tab == "openrouter")
                                         <option value="@prefab.Id">@prefab.Name</option>
                                     }
                                 </select>
-                                @if (ComputeProviderPrefabs.Find(_computePrefab).ReferralUrl is { Length: > 0 } referral)
+                                @if (ComputeProviderPrefabs.Find(_computePrefab) is { ReferralUrl.Length: > 0 } withReferral)
                                 {
-                                    <a class="button" href="@referral" target="_blank" rel="noopener"
-                                       title="Open the @ComputeProviderPrefabs.Find(_computePrefab).Name sign-up page (referral link).">
+                                    <a class="button" href="@withReferral.ReferralUrl" target="_blank" rel="sponsored noopener"
+                                       title="Open the @withReferral.Name sign-up page (referral link).">
                                         Sign up
+                                    </a>
+                                }
+                                else if (ComputeProviderPrefabs.Find(_computePrefab) is { ProgramUrl.Length: > 0 } withProgram)
+                                {
+                                    <a class="button" href="@withProgram.ProgramUrl" target="_blank" rel="noopener"
+                                       title="Open the @withProgram.Name partner program page. Enrollment is not active yet.">
+                                        Program page
                                     </a>
                                 }
                             </div>

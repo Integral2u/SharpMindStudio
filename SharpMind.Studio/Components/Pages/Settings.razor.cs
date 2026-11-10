@@ -300,7 +300,10 @@ public partial class Settings
         _computeKind = provider.NormalizedKind;
         _computeBaseUrl = provider.BaseUrl;
         _computeToken = "";
-        _computeImage = provider.Prefab is ComputeProviderPrefabs.Vultr or ComputeProviderPrefabs.Custom
+        _computeImage = provider.Prefab is ComputeProviderPrefabs.Vultr
+                or ComputeProviderPrefabs.VastAi
+                or ComputeProviderPrefabs.MaxCloudOn
+                or ComputeProviderPrefabs.Custom
             ? SshSetupScript.ResolveImage(provider, Compute.RegistryImage)
             : provider.DockerImage ?? ComputeProviderPresets.DefaultImage;
         _computePort = provider.DockerPort ?? ComputeProviderPresets.DefaultPort;
@@ -408,13 +411,18 @@ public partial class Settings
                 ComputeProviderPrefabs.LocalDocker => "Local Docker",
                 ComputeProviderPrefabs.Runpod => "Runpod GPU",
                 ComputeProviderPrefabs.Vultr => "Vultr",
+                ComputeProviderPrefabs.VastAi => "Vast.ai GPU",
+                ComputeProviderPrefabs.MaxCloudOn => "MaxCloudOn GPU",
                 _ => "SharpMind Server",
             };
         }
 
         if (_computePrefab == ComputeProviderPrefabs.LocalDocker)
             SyncComputeStudioUrl();
-        else if (_computePrefab is ComputeProviderPrefabs.Vultr or ComputeProviderPrefabs.Custom
+        else if (_computePrefab is ComputeProviderPrefabs.Vultr
+                     or ComputeProviderPrefabs.VastAi
+                     or ComputeProviderPrefabs.MaxCloudOn
+                     or ComputeProviderPrefabs.Custom
                  && string.Equals(_computeImage, ComputeProviderPresets.DefaultImage, StringComparison.OrdinalIgnoreCase))
         {
             _computeImage = Compute.RegistryImage ?? ComputeProviderPresets.DefaultServerImage;
