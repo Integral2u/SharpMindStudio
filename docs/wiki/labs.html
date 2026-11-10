@@ -194,6 +194,10 @@
             <p>
                 An attached audio file is transcribed. On an audio model the transcript becomes
                 the assistant reply, and the audio stays on the user message for playback.
+                The backbone alone is not enough: the separate audio projector
+                (<span class="mono">mmproj-*.gguf</span>) is required for transcription and TTS.
+                See <a href="troubleshooting.html#audio">Audio and mmproj</a> if Send stays disabled
+                after attaching a WAV.
             </p>
             <p>
                 An LFM3-VL model describes an attached image natively. The image card stays on the

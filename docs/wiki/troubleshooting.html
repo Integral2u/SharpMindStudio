@@ -52,6 +52,8 @@
             <a href="#image">Images and pulls</a>
             <a href="#network">Ports and network</a>
             <a href="#gpu">GPU and accelerators</a>
+            <a href="#audio">Audio and mmproj</a>
+            <a href="#native">Python and llama.cpp</a>
             <a href="#training">Training jobs</a>
             <a href="#auth">Tokens and 401</a>
             <a href="#billing">Billing</a>
@@ -176,6 +178,44 @@
                     </tr>
                 </tbody>
             </table>
+
+            <h2 id="audio">Audio and mmproj</h2>
+            <p>
+                LFM3-Audio needs two files: the text backbone (for example
+                <span class="mono">LFM3-Audio-2B-Q8_0.gguf</span>) and an audio projector
+                (for example <span class="mono">mmproj-LFM3-Audio-2B-Q8_0.gguf</span>). The
+                projector is required for WAV transcription and speech generation. It is not
+                required for ordinary text chat with the backbone.
+            </p>
+            <ul class="checklist">
+                <li><strong>Attach a WAV but Send stays disabled:</strong> the selected model has no audio projector. Choose the LFM3-Audio backbone, not a plain text model.</li>
+                <li><strong>No projector found:</strong> put <span class="mono">mmproj-*.gguf</span> in the backbone's folder or in a sibling folder whose name starts with the backbone name. Studio searches both.</li>
+                <li><strong>The projector is about 300 MB:</strong> this is normal. It carries the audio encoder/projector weights; the backbone does not contain them.</li>
+                <li><strong>Where did it come from:</strong> the projector is published with the model, or converted from the model's audio/reference files. Studio does not create it, and the model folder's <span class="mono">reference</span> directory is not executed.</li>
+                <li><strong>First audio turn is slow:</strong> Studio loads the backbone on demand, then runs the encoder. Later turns reuse the loaded model and projector.</li>
+                <li><strong>No speech detected:</strong> the WAV was silent or too quiet. Use 16 kHz mono if your recorder supports it; Studio resamples and downmixes other WAV layouts.</li>
+            </ul>
+
+            <h2 id="native">Python and llama.cpp</h2>
+            <p>
+                SharpMind and SharpMind Studio do not run Python and do not embed, load or call
+                llama.cpp at runtime. The model runtimes, tokenizers, audio encoder, TTS decoder,
+                GBNF grammar parser and GGUF readers/writers are implemented in C#/.NET.
+            </p>
+            <p>
+                You will still see the words <span class="mono">python</span> and
+                <span class="mono">llama.cpp</span> in the source and docs:
+            </p>
+            <ul>
+                <li><span class="mono">&lt;|python_tag|&gt;</span> is a Llama-3 tool-call marker emitted by the model, not a Python process.</li>
+                <li>Comments and tests mention llama.cpp as a numerical or tokenizer parity reference. They do not call it.</li>
+                <li>The model folder may contain a <span class="mono">reference</span> directory with Python and llama.cpp source files. Those are documentation/reference artifacts for the model; Studio does not execute them.</li>
+                <li>Optional accelerator plugins use native GPU libraries such as CUDA/cuBLAS. That is separate from llama.cpp.</li>
+            </ul>
+            <p>
+                If you see a Python or llama.cpp process while Studio is running, it was started by
+                something else on the machine, not by SharpMind's model or training pipeline.
+            </p>
 
             <h2 id="training">Training jobs</h2>
             <ul>
