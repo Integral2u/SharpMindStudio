@@ -14,6 +14,8 @@ compute host or a prompt to OpenRouter.
 - **Zip:** <https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMindStudio.zip>
 - **Source:** <https://github.com/Integral2u/SharpMindStudio>
 
+**In process** of using [SignPath](https://signpath.org) Foundation for code signing
+
 ![SharpMind Studio chat view](docs/chat-view.png)
 
 ## Install
