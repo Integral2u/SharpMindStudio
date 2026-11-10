@@ -1,9 +1,9 @@
 param(
-    [Parameter(Mandatory = $true)]
     [string]$PfxPath,
 
-    [Parameter(Mandatory = $true)]
     [string]$PfxPassword,
+
+    [string]$Thumbprint,
 
     [string]$SignTool = 'C:\Integral2u\SignTool-10.0.26100.14-x64\signtool.exe',
 
@@ -15,7 +15,12 @@ $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $SignTool)) {
     throw "signtool.exe was not found at '$SignTool'."
 }
-if (-not (Test-Path $PfxPath)) {
+if ([string]::IsNullOrWhiteSpace($Thumbprint) -and
+    [string]::IsNullOrWhiteSpace($PfxPath)) {
+    throw 'Pass either -PfxPath/-PfxPassword or -Thumbprint.'
+}
+if (-not [string]::IsNullOrWhiteSpace($PfxPath) -and
+    -not (Test-Path $PfxPath)) {
     throw "The signing certificate was not found at '$PfxPath'."
 }
 
@@ -32,8 +37,15 @@ foreach ($file in @($setup, $msi)) {
     }
 
     Write-Host "Signing $file"
-    & $SignTool sign /fd SHA256 /f $PfxPath /p $PfxPassword `
-        /tr $TimestampUrl /td SHA256 $file
+    $signArgs = @('sign', '/fd', 'SHA256')
+    if (-not [string]::IsNullOrWhiteSpace($Thumbprint)) {
+        $signArgs += @('/sha1', $Thumbprint)
+    }
+    else {
+        $signArgs += @('/f', $PfxPath, '/p', $PfxPassword)
+    }
+    $signArgs += @('/tr', $TimestampUrl, '/td', 'SHA256', $file)
+    & $SignTool @signArgs
     if ($LASTEXITCODE -ne 0) {
         throw "signtool sign failed for '$file' with exit code $LASTEXITCODE."
     }

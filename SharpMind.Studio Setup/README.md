@@ -32,6 +32,12 @@ The project builds the UI and web host, then packages:
   ..\scripts\sign-release.ps1 -PfxPath C:\path\to\codesign.pfx -PfxPassword '...'
   ```
 
+  With a certificate installed from a hardware token or HSM, use its thumbprint:
+
+  ```powershell
+  ..\scripts\sign-release.ps1 -Thumbprint <sha1-thumbprint>
+  ```
+
   The script signs and verifies both files with SHA-256 and a timestamp, rebuilds
   `SharpMind.Studio.Setup.msi.zip`, and rewrites `SHA256SUMS.txt`.
 - Uninstall must not remove `%USERPROFILE%\SharpMind` (models, sessions, keys).
