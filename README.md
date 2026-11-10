@@ -42,16 +42,15 @@ restores and builds them instead of reporting `NU1105` for project references
 outside the solution.
 
 A clean Studio-only clone uses the package solution. It builds against the
-matching SharpMind packages (the next version, not the last release); CI packs
-the engine beside the repo first:
+published SharpMind 1.1.1 packages from nuget.org:
 
 ```powershell
 dotnet build SharpMind.Studio.Package.slnx -c Debug -p:SharpMindSource=package
 ```
 
-During development, the source solution above is the target and the package
-solution is the compatibility check. To build the package solution before the
-next packages are published, pack the engine into `../SharpMind/nupkg`.
+The source solution remains the development target and uses the sibling engine
+projects. The package solution is the clean-clone and published-package
+compatibility check; CI builds it directly from nuget.org.
 
 Open <http://127.0.0.1:5117>. Add a `.smm` or GGUF model in **Training → Models**,
 or connect OpenRouter or a SharpMind Compute host.

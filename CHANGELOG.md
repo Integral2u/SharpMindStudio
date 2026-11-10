@@ -8,10 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Next-version package build** - the Studio package solution now targets the
-  1.1.1 engine packages and compiles the same audio/labs code as the source
-  solution; CI checks out the engine and packs those packages first. The 1.1.0
-  packages are no longer the development baseline.
+- **Published package build** - the Studio package solution now restores the
+  published SharpMind 1.1.1 packages from nuget.org and compiles the same
+  audio/labs code as the source solution. CI builds the package solution
+  directly; no sibling checkout or local package feed is required. Source
+  development keeps project references to the sibling engine checkout.
 - **Provider copy** - Chat now says "local, OpenRouter or Compute"; Work still
   says local or OpenRouter because Compute hosts are inference-only. The wiki
   provider table compares all three.

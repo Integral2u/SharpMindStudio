@@ -14,26 +14,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # The next version is not on NuGet yet. Clone the engine beside this repo
-      # (the same layout as local development) and pack its 1.1.1 packages.
-      # A plain git clone avoids inheriting this repo's Directory.Packages.props.
-      - name: Checkout the SharpMind engine
-        run: git clone --depth 1 --branch master https://github.com/Integral2u/SharpMind.git ../SharpMind
-
-      - name: Pack the next SharpMind packages
-        shell: pwsh
-        run: |
-          $projects = @(
-            '../SharpMind/SharpMind.Core/SharpMind.Core.csproj',
-            '../SharpMind/SharpMind.Data/SharpMind.Data.csproj',
-            '../SharpMind/SharpMind.Tokenization/SharpMind.Tokenization.csproj',
-            '../SharpMind/SharpMind.Model/SharpMind.Model.csproj',
-            '../SharpMind/SharpMind.Inference/SharpMind.Inference.csproj',
-            '../SharpMind/SharpMind.Training/SharpMind.Training.csproj'
-          )
-          foreach ($project in $projects) {
-            dotnet pack $project -c Release -o ../SharpMind/nupkg -p:Version=1.1.1
-          }
-
-      - name: Build against the next packages
+      # Published SharpMind 1.1.1 packages from nuget.org. The source solution
+      # remains the development target and uses the sibling engine projects.
+      - name: Build against published packages
         run: dotnet build SharpMind.Studio.Package.slnx -c Release -p:SharpMindSource=package
