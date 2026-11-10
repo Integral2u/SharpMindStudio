@@ -237,15 +237,15 @@ else if (_tab == "openrouter")
                                 @if (ComputeProviderPrefabs.Find(_computePrefab) is { ReferralUrl.Length: > 0 } withReferral)
                                 {
                                     <a class="button" href="@withReferral.ReferralUrl" target="_blank" rel="sponsored noopener"
-                                       title="Open the @withReferral.Name sign-up page (referral link).">
+                                       title="Open the @withReferral.Name sign-up page.">
                                         Sign up
                                     </a>
                                 }
                                 else if (ComputeProviderPrefabs.Find(_computePrefab) is { ProgramUrl.Length: > 0 } withProgram)
                                 {
                                     <a class="button" href="@withProgram.ProgramUrl" target="_blank" rel="noopener"
-                                       title="Open the @withProgram.Name partner program page. Enrollment is not active yet.">
-                                        Program page
+                                       title="Open the @withProgram.Name program page.">
+                                        Program
                                     </a>
                                 }
                             </div>
@@ -501,7 +501,7 @@ else if (_tab == "openrouter")
                             @if (ComputeProviderPrefabs.Find(provider.Prefab).ReferralUrl is { Length: > 0 } referral)
                             {
                                 <a class="button" href="@referral" target="_blank" rel="noopener"
-                                   title="Open the @ComputeProviderPrefabs.Find(provider.Prefab).Name sign-up page (referral link).">
+                                   title="Open the @ComputeProviderPrefabs.Find(provider.Prefab).Name sign-up page.">
                                     Sign up
                                 </a>
                             }
