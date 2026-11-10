@@ -11,6 +11,7 @@ compute host or a prompt to OpenRouter.
 
 - **Site and wiki:** <https://integral2u.github.io/SharpMindStudio/>
 - **Installer:** <https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMind.Studio.Setup.msi.zip>
+- **Zip:** <https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMindStudio.zip>
 - **Source:** <https://github.com/Integral2u/SharpMindStudio>
 
 ![SharpMind Studio chat view](docs/chat-view.png)
