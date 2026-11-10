@@ -302,7 +302,6 @@ public partial class Settings
         _computeToken = "";
         _computeImage = provider.Prefab is ComputeProviderPrefabs.Vultr
                 or ComputeProviderPrefabs.VastAi
-                or ComputeProviderPrefabs.MaxCloudOn
                 or ComputeProviderPrefabs.Novita
                 or ComputeProviderPrefabs.Custom
             ? SshSetupScript.ResolveImage(provider, Compute.RegistryImage)
@@ -413,7 +412,6 @@ public partial class Settings
                 ComputeProviderPrefabs.Runpod => "Runpod GPU",
                 ComputeProviderPrefabs.Vultr => "Vultr",
                 ComputeProviderPrefabs.VastAi => "Vast.ai GPU",
-                ComputeProviderPrefabs.MaxCloudOn => "MaxCloudOn GPU",
                 ComputeProviderPrefabs.Novita => "Novita GPU",
                 _ => "SharpMind Server",
             };
@@ -423,7 +421,6 @@ public partial class Settings
             SyncComputeStudioUrl();
         else if (_computePrefab is ComputeProviderPrefabs.Vultr
                      or ComputeProviderPrefabs.VastAi
-                     or ComputeProviderPrefabs.MaxCloudOn
                      or ComputeProviderPrefabs.Novita
                      or ComputeProviderPrefabs.Custom
                  && string.Equals(_computeImage, ComputeProviderPresets.DefaultImage, StringComparison.OrdinalIgnoreCase))

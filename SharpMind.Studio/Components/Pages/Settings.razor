@@ -241,13 +241,6 @@ else if (_tab == "openrouter")
                                         Sign up
                                     </a>
                                 }
-                                else if (ComputeProviderPrefabs.Find(_computePrefab) is { ProgramUrl.Length: > 0 } withProgram)
-                                {
-                                    <a class="button" href="@withProgram.ProgramUrl" target="_blank" rel="noopener"
-                                       title="Open the @withProgram.Name program page.">
-                                        Program
-                                    </a>
-                                }
                             </div>
                             <span class="small faint">@ComputeProviderPrefabs.Find(_computePrefab).Description</span>
                         </div>
