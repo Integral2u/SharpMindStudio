@@ -1,0 +1,127 @@
+@using SharpMind.Studio.Services
+@inject StudioPluginService Plugins
+@inject ThemeService Theme
+@inject WorkToolService Tools
+
+<details class="panel settings-collapsible" id="plugin-components">
+    <summary class="panel-head">
+        <div>
+            <div class="eyebrow">Plugin host</div>
+            <h2>Plugin components</h2>
+        </div>
+        <span class="faint small mono">@Plugins.Components.Count component(s)</span>
+    </summary>
+    <div class="panel-body stack">
+        <p class="small faint">
+            Tool classes are listed under System tools. This section covers the other plugin
+            component types Studio hosts: context compactors, prompt pre/post-processors,
+            generator/cache builders and accelerator plugins. Generator and cache builders appear
+            in the inference profile selectors; accelerators are resolved by training and Compute
+            hosts.
+        </p>
+
+        <div class="row">
+            <div class="field grow">
+                <label class="field-label" for="plugin-compactor">Context compactor</label>
+                <select id="plugin-compactor" class="input" value="@_compactor" @onchange="SetCompactorAsync">
+                    <option value="">None (use the context limit)</option>
+                    @foreach (SharpMind.Inference.Chat.IContextCompactor compactor in Plugins.Compactors)
+                    {
+                        <option value="@compactor.Name">@compactor.Name</option>
+                    }
+                </select>
+                <span class="small faint">
+                    Applies to new chat and agent sessions. A plugin compactor may summarise or
+                    drop older turns when the context is full.
+                </span>
+            </div>
+            <div class="field">
+                <label class="field-label">Refresh</label>
+                <button type="button" class="button" @onclick="Refresh">Refresh plugins</button>
+            </div>
+        </div>
+
+        @if (Plugins.Components.Count == 0)
+        {
+            <div class="small faint">No non-tool plugin components found in @Plugins.Folder.</div>
+        }
+        else
+        {
+            @foreach (IGrouping<string, StudioPluginComponent> group in Plugins.Components.GroupBy(component => component.Kind))
+            {
+                <details class="settings-subgroup" open>
+                    <summary class="settings-subgroup-head">
+                        <span class="eyebrow">@group.Key</span>
+                        <span class="faint small">@group.Count()</span>
+                    </summary>
+                    <div class="settings-subgroup-body">
+                        <table class="table">
+                            <thead>
+                                <tr><th>Name</th><th>Source</th><th>Type</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (StudioPluginComponent component in group)
+                                {
+                                    <tr>
+                                        <td class="mono">@component.Name</td>
+                                        <td>@component.Source</td>
+                                        <td class="mono small">@component.Detail</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            }
+        }
+
+        @if (Plugins.PreProcessors.Count > 0 || Plugins.PostProcessors.Count > 0)
+        {
+            <div class="small faint">
+                Active prompt pipeline:
+                @if (Plugins.PreProcessors.Count > 0)
+                {
+                    <span>pre [@string.Join(", ", Plugins.PreProcessors.Select(item => item.Name))]</span>
+                }
+                @if (Plugins.PostProcessors.Count > 0)
+                {
+                    <span>post [@string.Join(", ", Plugins.PostProcessors.Select(item => item.Name))]</span>
+                }
+                <span>and Studio artifact extraction.</span>
+            </div>
+        }
+
+        @if (Plugins.Warnings.Count > 0)
+        {
+            <div class="small faint">
+                @foreach (string warning in Plugins.Warnings)
+                {
+                    <div>@warning</div>
+                }
+            </div>
+        }
+    </div>
+</details>
+
+@code {
+    private string _compactor = "";
+
+    protected override void OnInitialized()
+    {
+        _compactor = Theme.PluginCompactor ?? "";
+    }
+
+    private async Task SetCompactorAsync(ChangeEventArgs args)
+    {
+        _compactor = args.Value?.ToString() ?? "";
+        await Theme.SetPluginCompactorAsync(_compactor);
+    }
+
+    private void Refresh()
+    {
+        Tools.Reload();
+        Plugins.Reload();
+        _compactor = Theme.PluginCompactor ?? "";
+        StateHasChanged();
+    }
+}

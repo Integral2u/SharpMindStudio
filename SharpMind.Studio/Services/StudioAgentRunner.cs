@@ -21,6 +21,8 @@ public sealed class StudioAgentRunner
     private readonly StudioWorkspaceService _workspace;
     private readonly StudioWorkService _work;
     private readonly StudioAgentService _agents;
+    private readonly StudioPluginService _plugins;
+    private readonly ThemeService _theme;
 
     public StudioAgentRunner(
         StudioModelHost host,
@@ -28,7 +30,9 @@ public sealed class StudioAgentRunner
         InferenceSettingsService inference,
         StudioWorkspaceService workspace,
         StudioWorkService work,
-        StudioAgentService agents)
+        StudioAgentService agents,
+        StudioPluginService plugins,
+        ThemeService theme)
     {
         _host = host;
         _catalog = catalog;
@@ -36,6 +40,8 @@ public sealed class StudioAgentRunner
         _workspace = workspace;
         _work = work;
         _agents = agents;
+        _plugins = plugins;
+        _theme = theme;
     }
 
     public async Task<string> RunAsync(
@@ -80,6 +86,14 @@ public sealed class StudioAgentRunner
         try
         {
             IAgentBuilder? tools = _work.CreateAgentTools(agent);
+            if (tools is AgentBuilder builder)
+            {
+                builder.PluginCompactors = _plugins.Compactors;
+                builder.PluginPreProcessors = _plugins.PreProcessors;
+                builder.PluginPostProcessors = _plugins.PostProcessors;
+                builder.Compactor = _plugins.FindCompactor(_theme.PluginCompactor);
+            }
+
             AddNestedDelegate(tools, agent, loaded, profile, depth, cancellationToken);
             IChatSession session = CreateSession(loaded, profile, agent, tools);
             try
@@ -217,7 +231,8 @@ public sealed class StudioAgentRunner
             loaded.Tokenizer,
             loaded.Meta,
             agentBuilder: tools,
-            postProcessor: new StudioArtifactPostProcessor(),
+            preProcessor: _plugins.PreProcessor,
+            postProcessor: _plugins.PostProcessor,
             formatter: ChatFormatterFactory.Create(profile.Formatter, loaded.Meta),
             seed: agent.Seed ?? profile.Seed);
 

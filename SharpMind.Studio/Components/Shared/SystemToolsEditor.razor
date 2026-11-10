@@ -1,5 +1,6 @@
 ﻿@using SharpMind.Studio.Services
 @inject WorkToolService Tools
+@inject StudioPluginService Plugins
 @inject StudioChatService ChatService
 
 <details class="panel settings-collapsible">
@@ -71,6 +72,7 @@
     private void Refresh()
     {
         Tools.Reload();
+        Plugins.Reload();
         StateHasChanged();
     }
 }

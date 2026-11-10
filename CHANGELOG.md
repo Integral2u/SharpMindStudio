@@ -16,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   in-app link now uses the real `wiki/labs.html` path. A new Settings guide joins
   the wiki index, and Chat, Work, Training, Labs and Settings each link to their
   guide. The site sidebar links to the wiki index everywhere.
+- **Plugin component host** - Settings > System now lists and reloads every plugin
+  type Studio can host, not just tool classes: context compactors, prompt
+  pre/post-processors, generator/cache builders and accelerator plugins. A plugin
+  pre/post-processor is composed with Studio's artifact extraction, and a selected
+  plugin compactor applies to new chat and agent sessions.
+- **Remembered model** - the Labs model choosers (Layer importance, Quantization,
+  Model visualizer and Latent space) open on the last model used anywhere in
+  Studio instead of resetting to the first catalog entry.
 - **Agent definitions** - the Agents tab defines specialists (name, purpose, rules,
   inherit current or named model, temperature, seed, TTL, enabled, max delegation
   depth, allowed tools and file/web Ask/Allow/Deny permissions). Enabled agents are

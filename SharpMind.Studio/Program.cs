@@ -22,6 +22,7 @@ studioUrls += ";" + (builder.Configuration["Studio:LanUrl"] ?? "http://0.0.0.0:5
 builder.WebHost.UseUrls(studioUrls);
 builder.Services.Configure<StudioOptions>(builder.Configuration.GetSection("Studio"));
 builder.Services.AddSingleton<StudioWorkspaceService>();
+builder.Services.AddSingleton<StudioPluginService>();
 builder.Services.AddSingleton<ThemeService>();
 builder.Services.AddSingleton<StudioActivityService>();
 builder.Services.AddSingleton<StudioCanaryService>();

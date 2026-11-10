@@ -2,6 +2,7 @@
 @using SharpMind.Studio.Services
 @inject ModelCatalogService Catalog
 @inject StudioQuantizationLabService Quant
+@inject ThemeService Theme
 @implements IDisposable
 
 <div class="page-head">
@@ -20,7 +21,7 @@
         <div class="row">
             <div class="field grow">
                 <label class="field-label">Reference (usually Q8_0 / F16)</label>
-                <select class="input" @bind="_referencePath" @bind:after="CheckCompatibilityAsync" disabled="@Quant.IsRunning">
+                <select class="input" @bind="_referencePath" @bind:after="OnReferenceChangedAsync" disabled="@Quant.IsRunning">
                     @foreach (ModelDescriptor model in _models)
                     {
                         <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
@@ -343,8 +344,19 @@
     {
         _models = [.. (await Catalog.RefreshAsync())
             .Where(model => model.Path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))];
-        _referencePath = _models.FirstOrDefault()?.Path ?? "";
-        _candidatePath = _models.Skip(1).FirstOrDefault()?.Path ?? _referencePath;
+        _referencePath = _models.Any(model => model.Path == Theme.LastChatModel)
+            ? Theme.LastChatModel!
+            : _models.FirstOrDefault()?.Path ?? "";
+        _candidatePath = _models
+            .FirstOrDefault(model => !string.Equals(model.Path, _referencePath, StringComparison.OrdinalIgnoreCase))?
+            .Path ?? _referencePath;
+        await CheckCompatibilityAsync();
+    }
+
+    private async Task OnReferenceChangedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_referencePath))
+            await Theme.SetLastChatModelAsync(_referencePath);
         await CheckCompatibilityAsync();
     }
 

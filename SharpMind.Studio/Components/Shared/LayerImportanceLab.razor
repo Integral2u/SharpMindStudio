@@ -3,6 +3,7 @@
 @inject ModelCatalogService Catalog
 @inject StudioLayerLabService LayerLab
 @inject StudioChatService Chat
+@inject ThemeService Theme
 @implements IDisposable
 
 <div class="page-head">
@@ -21,7 +22,7 @@
         <div class="row">
             <div class="field grow">
                 <label class="field-label">Model</label>
-                <select class="input" @bind="_selectedModelPath" disabled="@LayerLab.IsRunning">
+                <select class="input" @bind="_selectedModelPath" @bind:after="RememberModelAsync" disabled="@LayerLab.IsRunning">
                     @foreach (ModelDescriptor model in _models)
                     {
                         <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
@@ -260,7 +261,15 @@
     private async Task LoadModelsAsync()
     {
         _models = await Catalog.RefreshAsync();
-        _selectedModelPath = _models.FirstOrDefault()?.Path ?? "";
+        _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
+            ? Theme.LastChatModel!
+            : _models.FirstOrDefault()?.Path ?? "";
+    }
+
+    private async Task RememberModelAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_selectedModelPath))
+            await Theme.SetLastChatModelAsync(_selectedModelPath);
     }
 
     private async Task RunAsync()

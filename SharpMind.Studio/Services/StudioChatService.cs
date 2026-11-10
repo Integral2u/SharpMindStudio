@@ -34,6 +34,8 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly StudioModelHost _host;
     private readonly StudioWorkService _work;
     private readonly StudioDeviceAccess _device;
+    private readonly StudioPluginService _plugins;
+    private readonly ThemeService _theme;
     private ChatSessionStore _store;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChatSession? _session;
@@ -75,7 +77,9 @@ public sealed class StudioChatService : IAsyncDisposable
         StudioWorkService work,
         StudioAgentService agents,
         StudioAgentRunner agentRunner,
-        StudioDeviceAccess device)
+        StudioDeviceAccess device,
+        StudioPluginService plugins,
+        ThemeService theme)
     {
         _workspace = workspace;
         _catalog = catalog;
@@ -89,6 +93,8 @@ public sealed class StudioChatService : IAsyncDisposable
         _host = host;
         _work = work;
         _device = device;
+        _plugins = plugins;
+        _theme = theme;
         _store = new ChatSessionStore(workspace.Project.ChatsDirectory);
         _work.AgentToolExecutor = ExecuteAgentToolAsync;
     }
@@ -1424,6 +1430,14 @@ public sealed class StudioChatService : IAsyncDisposable
 
         Type cacheType = generator.CacheType ?? cache.Type;
         var agent = _work.CreateAgent(_document?.Mode ?? "chat");
+        if (agent is AgentBuilder builder)
+        {
+            builder.PluginCompactors = _plugins.Compactors;
+            builder.PluginPreProcessors = _plugins.PreProcessors;
+            builder.PluginPostProcessors = _plugins.PostProcessors;
+            builder.Compactor = _plugins.FindCompactor(_theme.PluginCompactor);
+        }
+
         IChatSession session = ChatSessionFactory.CreateChatSession(
             generator.BuilderType,
             cacheType,
@@ -1431,7 +1445,8 @@ public sealed class StudioChatService : IAsyncDisposable
             loaded.Tokenizer,
             loaded.Meta,
             agentBuilder: agent,
-            postProcessor: new StudioArtifactPostProcessor(),
+            preProcessor: _plugins.PreProcessor,
+            postProcessor: _plugins.PostProcessor,
             formatter: ChatFormatterFactory.Create(profile.Formatter, loaded.Meta),
             seed: profile.Seed);
         session.ProcessToolRequest = HandleAgentToolAsync;

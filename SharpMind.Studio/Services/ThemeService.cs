@@ -12,6 +12,7 @@ public sealed class StudioSettings
     public string DefaultGenerator { get; set; } = ThemeService.DefaultGeneratorName;
     public string DefaultCache { get; set; } = ThemeService.DefaultCacheName;
     public string? LastChatModel { get; set; }
+    public string? PluginCompactor { get; set; }
     public string StudioHost { get; set; } = ThemeService.DefaultHost;
     public int StudioPort { get; set; } = ThemeService.DefaultPort;
     public bool CloseToTray { get; set; } = true;
@@ -43,7 +44,7 @@ public sealed class ThemeService
     public ThemeService()
     {
         StudioPaths.EnsureCreated();
-        (Theme, CustomColor, DefaultGenerator, DefaultCache, LastChatModel, StudioHost, StudioPort, CloseToTray) = LoadSettings();
+        (Theme, CustomColor, DefaultGenerator, DefaultCache, LastChatModel, PluginCompactor, StudioHost, StudioPort, CloseToTray) = LoadSettings();
     }
 
     public event Action? Changed;
@@ -52,6 +53,7 @@ public sealed class ThemeService
     public string DefaultGenerator { get; private set; }
     public string DefaultCache { get; private set; }
     public string? LastChatModel { get; private set; }
+    public string? PluginCompactor { get; private set; }
     public string StudioHost { get; private set; }
     public int StudioPort { get; private set; }
     public bool CloseToTray { get; private set; }
@@ -85,6 +87,7 @@ public sealed class ThemeService
                 DefaultGenerator = DefaultGenerator,
                 DefaultCache = DefaultCache,
                 LastChatModel = LastChatModel,
+                PluginCompactor = PluginCompactor,
                 StudioHost = StudioHost,
                 StudioPort = StudioPort,
                 CloseToTray = CloseToTray,
@@ -122,6 +125,14 @@ public sealed class ThemeService
         Changed?.Invoke();
     }
 
+    /// <summary>The plugin context compactor selected in Settings; blank means none.</summary>
+    public async Task SetPluginCompactorAsync(string? name, CancellationToken cancellationToken = default)
+    {
+        PluginCompactor = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+        await SaveSettingsAsync(cancellationToken);
+        Changed?.Invoke();
+    }
+
     public async Task SetServerAsync(string? host, int port, CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrWhiteSpace(host)) StudioHost = host.Trim();
@@ -151,6 +162,7 @@ public sealed class ThemeService
                 DefaultGenerator = DefaultGenerator,
                 DefaultCache = DefaultCache,
                 LastChatModel = LastChatModel,
+                PluginCompactor = PluginCompactor,
                 StudioHost = StudioHost,
                 StudioPort = StudioPort,
                 CloseToTray = CloseToTray,
@@ -179,12 +191,12 @@ public sealed class ThemeService
         return text.ToLowerInvariant();
     }
 
-    private static (string Theme, string CustomColor, string Generator, string Cache, string? LastChatModel, string StudioHost, int StudioPort, bool CloseToTray) LoadSettings()
+    private static (string Theme, string CustomColor, string Generator, string Cache, string? LastChatModel, string? PluginCompactor, string StudioHost, int StudioPort, bool CloseToTray) LoadSettings()
     {
         try
         {
             if (!File.Exists(StudioPaths.SettingsFile))
-                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, DefaultHost, DefaultPort, true);
+                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, null, DefaultHost, DefaultPort, true);
 
             var settings = JsonSerializer.Deserialize<StudioSettings>(
                 File.ReadAllText(StudioPaths.SettingsFile), StudioJson.File);
@@ -200,11 +212,16 @@ public sealed class ThemeService
             string host = string.IsNullOrWhiteSpace(settings?.StudioHost) ? DefaultHost : settings!.StudioHost!;
             int port = settings is { StudioPort: > 0 and <= 65535 } ? settings.StudioPort : DefaultPort;
             bool closeToTray = settings?.CloseToTray ?? true;
-            return (theme, color, generator, cache, string.IsNullOrWhiteSpace(settings?.LastChatModel) ? null : settings!.LastChatModel, host, port, closeToTray);
+            string? compactor = string.IsNullOrWhiteSpace(settings?.PluginCompactor)
+                ? null
+                : settings!.PluginCompactor;
+            return (theme, color, generator, cache,
+                string.IsNullOrWhiteSpace(settings?.LastChatModel) ? null : settings!.LastChatModel,
+                compactor, host, port, closeToTray);
         }
         catch
         {
-            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, DefaultHost, DefaultPort, true);
+            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, null, DefaultHost, DefaultPort, true);
         }
     }
 
