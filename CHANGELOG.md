@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   1.1.1 engine packages and compiles the same audio/labs code as the source
   solution; CI checks out the engine and packs those packages first. The 1.1.0
   packages are no longer the development baseline.
+- **Provider copy** - Chat now says "local, OpenRouter or Compute"; Work still
+  says local or OpenRouter because Compute hosts are inference-only. The wiki
+  provider table compares all three.
 - **Remote hosts and routers** - Vast.ai and Novita appear as manual remote-host
   presets in Providers > Compute, OpenRouter is listed as integrated, and the
   Vast.ai, EuroRouter and Novita sign-up links are available. The provider page

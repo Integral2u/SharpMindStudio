@@ -49,7 +49,7 @@
                     <h2>@(_workMode ? "What should we work on?" : "What do you want to ask?")</h2>
                 </div>
                 <div class="row">
-                    <span class="faint small mono">local or OpenRouter</span>
+                    <span class="faint small mono">@(_workMode ? "local or OpenRouter" : "local, OpenRouter or Compute")</span>
                     <WikiGuideLink Page="inference" Label="Chat guide" />
                 </div>
             </div>
@@ -231,7 +231,7 @@
                     else
                     {
                         <div class="small faint">
-                            Inference runs on @host.Name. Work tools need a local model or OpenRouter.
+                            Inference runs on @host.Name. Work tools need a local model or OpenRouter; Compute is inference-only.
                         </div>
                     }
                 }

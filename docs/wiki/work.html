@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Work mode — SharpMind Studio Wiki</title>
-    <meta name="description" content="Use SharpMind Work with project context, scoped file and web tools, skills, permissions and local or OpenRouter models." />
+    <meta name="description" content="Use SharpMind Work with project context, scoped file and web tools, skills, permissions and local or OpenRouter models. Compute hosts are inference-only." />
     <link rel="stylesheet" href="../styles.css" />
 </head>
 <body>
@@ -52,7 +52,7 @@
             <a href="#context">Context and permissions</a>
             <a href="#skills">Skills</a>
             <a href="#loop">The work loop</a>
-            <a href="#providers">Local or OpenRouter</a>
+            <a href="#providers">Model providers</a>
             <a href="#safety">Safety</a>
             <a href="#problems">Problems</a>
         </aside>
@@ -73,14 +73,14 @@
                 <li>Context locations with read, write and delete permissions.</li>
                 <li>A web permission that is off until you enable it.</li>
                 <li>A send gate: if the tool probe fails, the project cannot quietly run tools.</li>
-                <li>Works with a local model or OpenRouter; Compute-host tool calling is not supported yet.</li>
+                <li>Works with a local model or OpenRouter. A Compute host is inference-only, so it cannot run Work tools yet.</li>
             </ul>
 
             <h2 id="project">Create a project</h2>
             <ol class="steps">
                 <li><strong>Work → New project.</strong> Give it a name and a folder. The folder is the project's boundary.</li>
                 <li><strong>Write the system prompt.</strong> Say what the project is for, what the model may change and what it must not touch.</li>
-                <li><strong>Pick a provider.</strong> A local model is best for private files and reliable tool calls; OpenRouter works when the local model is too small.</li>
+                <li><strong>Pick a provider.</strong> A local model is best for private files and reliable tool calls; OpenRouter works when the local model is too small. A Compute host is inference-only for Chat and cannot run Work tools yet.</li>
                 <li><strong>Add context.</strong> Point at the folders and files the project actually needs. Start read-only.</li>
                 <li><strong>Enable write/delete only after a read run.</strong> The permission is per location, not global.</li>
             </ol>
@@ -123,21 +123,22 @@
                 <li>Use <strong>runs</strong> and the project's <span class="mono">models</span> folder for artifacts you want to keep.</li>
             </ol>
 
-            <h2 id="providers">Local or OpenRouter</h2>
+            <h2 id="providers">Model providers</h2>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th></th><th>Local model</th><th>OpenRouter</th></tr></thead>
+                    <thead><tr><th></th><th>Local model</th><th>OpenRouter</th><th>Compute host</th></tr></thead>
                     <tbody>
-                        <tr><td>Privacy</td><td>Files stay on this PC</td><td>Prompt and tool results go to the provider</td></tr>
-                        <tr><td>Tool reliability</td><td>Depends on the model; smaller models are weaker</td><td>Stronger models available, still model-dependent</td></tr>
-                        <tr><td>Cost</td><td>Free</td><td>Per token</td></tr>
-                        <tr><td>Setup</td><td>Download a model and pick it</td><td>API key and a model</td></tr>
+                        <tr><td>Privacy</td><td>Files stay on this PC</td><td>Prompt and tool results go to the provider</td><td>Data stays on the host you control</td></tr>
+                        <tr><td>Tool reliability</td><td>Depends on the model; smaller models are weaker</td><td>Stronger models available, still model-dependent</td><td>Inference-only; Work tools not supported</td></tr>
+                        <tr><td>Cost</td><td>Free</td><td>Per token</td><td>Your host</td></tr>
+                        <tr><td>Setup</td><td>Download a model and pick it</td><td>API key and a model</td><td>SharpMind Server image, URL and token</td></tr>
                     </tbody>
                 </table>
             </div>
             <p>
                 A SharpMind Compute host is currently inference-only for Chat. It does not expose
-                Work's tool calling, so Work should use a local model or OpenRouter.
+                Work's tool calling, so Work should use a local model or OpenRouter. Chat can use
+                any of the three.
             </p>
             <div class="callout">
                 <strong>Tool-call recovery.</strong> Studio can be strict, lenient or loose about

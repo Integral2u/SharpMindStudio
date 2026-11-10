@@ -19,7 +19,9 @@
 <div class="welcome">
     <div class="welcome-head">
         <h1>@(_mode == "work" ? "What do you want to work on?" : "What do you want to ask?")</h1>
-        <p>@(_mode == "work" ? "Start a project-backed session with tools. Choose local weights or OpenRouter." : "Start a chat with a local model or OpenRouter.")</p>
+        <p>@(_mode == "work"
+            ? "Start a project-backed session with tools. Choose local weights or OpenRouter; Compute is inference-only."
+            : "Start a chat with local weights, OpenRouter or a Compute host.")</p>
     </div>
 
     <div class="welcome-compose">
@@ -40,7 +42,7 @@
         </button>
         <button type="button" class="welcome-mode @(_mode == "work" ? "selected" : "")"
                 @onclick='() => SetMode("work")' disabled="@(_computeProviderId is not null)"
-                title="@(_computeProviderId is not null ? "Work tools need a local model or OpenRouter." : null)">
+                title="@(_computeProviderId is not null ? "Work tools need a local model or OpenRouter; Compute is inference-only." : null)">
             <span class="welcome-mode-name">Work</span>
             <span class="welcome-mode-hint">Start a project-backed session with tools</span>
         </button>
@@ -197,7 +199,7 @@
         else
         {
             <div class="small faint">
-                Inference runs on @selectedHost.Name. Work tools need a local model or OpenRouter.
+                Inference runs on @selectedHost.Name. Work tools need a local model or OpenRouter; Compute is inference-only.
             </div>
         }
     }
