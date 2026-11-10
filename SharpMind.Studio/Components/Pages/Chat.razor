@@ -79,6 +79,10 @@
                         {
                             <span class="small faint">Audio model: an attached WAV is transcribed before the first turn.</span>
                         }
+                        else if (SelectedSupportsVision)
+                        {
+                            <span class="small faint">LFM3-VL reads an attached image; it does not generate images from text.</span>
+                        }
                     </div>
                 }
                 @if (_pendingArtifacts.Count > 0)
@@ -608,9 +612,13 @@ else
                             }
                         </div>
                     }
-                    @if (ChatService.SupportsVision && _pendingArtifacts.Any(a => a.Type.Contains("image", StringComparison.OrdinalIgnoreCase)))
+                    @if (ChatService.SupportsVision)
                     {
-                        <span class="small faint">The image is described by the loaded LFM3-VL model.</span>
+                        <span class="small faint">
+                            @(HasVisionImage
+                                ? "The image is described by the loaded LFM3-VL model."
+                                : "LFM3-VL reads an attached image. It does not generate an image from a text prompt.")
+                        </span>
                     }
                     @if (!ChatService.IsStreaming && !ChatService.IsLoading && !ChatService.IsRemote)
                     {
@@ -1208,6 +1216,11 @@ else
         (!string.IsNullOrWhiteSpace(_selectedModelPath) &&
          ChatService.SupportsAudioFor(_selectedModelPath)) ||
         ChatService.SupportsAudio;
+
+    private bool SelectedSupportsVision =>
+        (!string.IsNullOrWhiteSpace(_selectedModelPath) &&
+         ChatService.SupportsVisionFor(_selectedModelPath)) ||
+        ChatService.SupportsVision;
 
     private bool HasAudioInput =>
         SelectedSupportsAudio &&

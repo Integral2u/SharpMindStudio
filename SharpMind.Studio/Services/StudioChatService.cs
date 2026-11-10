@@ -197,6 +197,16 @@ public sealed class StudioChatService : IAsyncDisposable
         if (IsRemote || _model is null) return false;
         return Lfm3VlRuntime.FindProjector(_model.Path) is not null;
     }
+
+    /// <summary>
+    /// True when the model path has an LFM3-VL projector. The welcome composer
+    /// uses this before NewChatAsync has created the document.
+    /// </summary>
+    public bool SupportsVisionFor(string? modelPath)
+    {
+        if (string.IsNullOrWhiteSpace(modelPath)) return false;
+        return Lfm3VlRuntime.FindProjector(modelPath) is not null;
+    }
 #endif
 
     /// <summary>

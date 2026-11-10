@@ -53,6 +53,7 @@
             <a href="#network">Ports and network</a>
             <a href="#gpu">GPU and accelerators</a>
             <a href="#audio">Audio and mmproj</a>
+            <a href="#vision">Vision models</a>
             <a href="#native">Python and llama.cpp</a>
             <a href="#training">Training jobs</a>
             <a href="#auth">Tokens and 401</a>
@@ -195,6 +196,20 @@
                 <li><strong>First audio turn is slow:</strong> Studio loads the backbone on demand, then runs the encoder. Later turns reuse the loaded model and projector.</li>
                 <li><strong>No speech detected:</strong> the WAV was silent or too quiet. Use 16 kHz mono if your recorder supports it; Studio resamples and downmixes other WAV layouts.</li>
             </ul>
+
+            <h2 id="vision">Vision models</h2>
+            <p>
+                LFM3-VL is a vision-language model: it reads an attached image and answers or
+                captions it. It is not a text-to-image model. Typing <span class="mono">puppy</span>
+                does not generate a picture of a puppy; it runs the text backbone with no image
+                input. To use the vision path, attach an image and send a question or prompt in the
+                same turn, for example <em>Describe this image</em>.
+            </p>
+            <p>
+                Studio does not currently ship a diffusion or text-to-image runtime. For image
+                generation, use a dedicated image model outside Studio and attach the result here
+                for description or analysis.
+            </p>
 
             <h2 id="native">Python and llama.cpp</h2>
             <p>

@@ -204,6 +204,12 @@
                 user message; the caption is the assistant reply. The session options set the
                 image's longest side and the answer token cap.
             </p>
+            <p>
+                LFM3-VL is an image-understanding model, not a text-to-image generator. A text-only
+                prompt runs the underlying text backbone; it does not create a picture. To describe
+                or answer a question about an image, attach the image and include the question in
+                the same turn.
+            </p>
             <p class="small">
                 Punctuation-only model turns (the audio backbone's bare ":") are treated as no
                 speech and hidden from the transcript.
