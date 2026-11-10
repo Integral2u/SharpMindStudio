@@ -22,6 +22,8 @@ docs/
     huggingface.html         GGUF browser, token, conversion, quantisation
     openrouter.html          remote models for Chat and Work
     work.html                projects, context, tools, permissions
+    labs.html                layer/quantization/visualizer/latent/agent labs
+    settings.html            system tools, plugin components, families/models
     pairing.html             phone/LAN pairing and remote Studio approval
     troubleshooting.html     exact error messages and fixes
   404.html

@@ -146,14 +146,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Known limitations
 
-- Chat attachments are local-only; remote providers do not receive content
-  parts yet, and the local engine does not encode image/audio tensors.
-- LFM3 text chat is validated with a templated `2+2` smoke run; broader
-  quality evaluation is still pending.
-- ASR/TTS is not enabled: the main LFM3-Audio GGUF is a text backbone plus
-  ASR/TTS templates. The audio encoder and codec live in the separate
-  `mmproj` file, which the engine does not load yet. The Nemotron `asr`
-  architecture needs an encoder-decoder audio frontend.
+- Chat attachments are local-only; OpenRouter and Compute turns still receive
+  text only.
+- LFM3 text chat is validated with templated smoke runs; broader quality
+  evaluation is still pending.
+- LFM3-VL image input and LFM3-Audio ASR/TTS require the matching `mmproj`
+  projector next to the backbone. Nemotron `asr` uses a different
+  encoder-decoder frontend and is not supported.
+- LFM3-VL understands images; it does not generate them. Studio has no
+  text-to-image/diffusion runtime.
+- Agent model selection is one model or inherit-current. Prioritized fallback
+  model lists and delegation from a remote parent chat are not implemented.
+- GPU training is LoRA-only; from-scratch pretraining and MoE training are CPU
+  paths.
 
 ## [1.1.0.0]
 
