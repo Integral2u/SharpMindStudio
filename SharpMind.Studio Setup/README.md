@@ -26,6 +26,14 @@ The project builds the UI and web host, then packages:
 - `UpgradeCode` stays fixed across 1.1.x. Change `ProductCode`/`PackageCode` for
   each release and bump `ProductVersion`.
 - Sign `setup.exe` and the MSI after the build; do not sign before packaging.
+  With a PFX certificate:
+
+  ```powershell
+  ..\scripts\sign-release.ps1 -PfxPath C:\path\to\codesign.pfx -PfxPassword '...'
+  ```
+
+  The script signs and verifies both files with SHA-256 and a timestamp, rebuilds
+  `SharpMind.Studio.Setup.msi.zip`, and rewrites `SHA256SUMS.txt`.
 - Uninstall must not remove `%USERPROFILE%\SharpMind` (models, sessions, keys).
 - The web host needs the generated
   `SharpMind.Studio.staticwebassets.endpoints.json` and
