@@ -68,6 +68,33 @@
                     </button>
                 </div>
 
+                @if (!_remoteChat && !ChatService.IsStreaming && !ChatService.IsLoading)
+                {
+                    <div class="row">
+                        <label class="button chat-attach-button" title="Attach an image, audio file or document">
+                            Attach
+                            <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
+                        </label>
+                        @if (SelectedSupportsAudio)
+                        {
+                            <span class="small faint">Audio model: an attached WAV is transcribed before the first turn.</span>
+                        }
+                    </div>
+                }
+                @if (_pendingArtifacts.Count > 0)
+                {
+                    <div class="chat-attachment-list">
+                        @foreach (ChatArtifact artifact in _pendingArtifacts)
+                        {
+                            <span class="chat-attachment-chip">
+                                @(artifact.FileName ?? artifact.Type)
+                                <button type="button" title="Remove attachment"
+                                        @onclick="() => _pendingArtifacts.Remove(artifact)">&times;</button>
+                            </span>
+                        }
+                    </div>
+                }
+
                 <div class="welcome-controls chat-welcome-controls">
                     <div class="field">
                         <label class="field-label" for="chat-provider">Provider</label>
@@ -890,6 +917,14 @@ else
         ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
         if (model is null) return;
 
+        ChatArtifact[] artifacts = [.. _pendingArtifacts];
+        if (artifacts.Any(item => item.Type.Contains("audio", StringComparison.OrdinalIgnoreCase)) &&
+            !SelectedSupportsAudio)
+        {
+            _voiceError = "The selected model has no LFM3-Audio projector. Choose an LFM3-Audio model to transcribe a WAV.";
+            return;
+        }
+
         string prompt = _input.Trim();
         _input = "";
         StateHasChanged();
@@ -907,6 +942,8 @@ else
         if (ChatService.Document is not null)
         {
             ChatService.PendingPrompt = prompt.Length > 0 ? prompt : null;
+            ChatService.PendingArtifacts = artifacts;
+            _pendingArtifacts.Clear();
             _startingNew = false;
             _focusPending = true;
             Nav.NavigateTo(_workMode ? $"/work/{ChatService.Document.Id}" : $"/chat/{ChatService.Document.Id}");
@@ -1167,8 +1204,13 @@ else
         ChatService.SupportsVision &&
         _pendingArtifacts.Any(a => a.Type.Contains("image", StringComparison.OrdinalIgnoreCase));
 
+    private bool SelectedSupportsAudio =>
+        (!string.IsNullOrWhiteSpace(_selectedModelPath) &&
+         ChatService.SupportsAudioFor(_selectedModelPath)) ||
+        ChatService.SupportsAudio;
+
     private bool HasAudioInput =>
-        ChatService.SupportsAudio &&
+        SelectedSupportsAudio &&
         _pendingArtifacts.Any(a => a.Type.Contains("audio", StringComparison.OrdinalIgnoreCase));
 
     private async Task SendAsync()
@@ -1240,10 +1282,12 @@ else
 
     private void TrySendPendingPrompt()
     {
-        if (ChatService.TakePendingPrompt() is not { } pending) return;
+        string? pending = ChatService.TakePendingPrompt();
+        IReadOnlyList<ChatArtifact> artifacts = ChatService.TakePendingArtifacts();
+        if (pending is null && artifacts.Count == 0) return;
         _ = InvokeAsync(async () =>
         {
-            await ChatService.SendAsync(pending);
+            await ChatService.SendAsync(pending ?? "", artifacts);
             await FocusComposerAsync();
         });
     }

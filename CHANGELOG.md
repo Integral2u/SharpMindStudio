@@ -40,8 +40,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   composer; render returned images, audio, text/code and download links.
   Generated data-URL media and fenced code blocks are captured as artifacts.
 - **Audio-only turns** - attaching a WAV now enables Send without typed text.
-  The transcription becomes the assistant reply, and the attachment stays on
-  the user message. Remote chats still reject attachments.
+  The first turn loads the audio backbone on demand, transcribes it, and keeps
+  the attachment on the user message. The attachment control is also available
+  on the new Chat/Work composer, not only inside an open chat. Remote chats
+  still reject attachments.
 - **Local microphone dictation** - when an LFM3-Audio model and its `mmproj`
   are present, the composer shows a Mic button. Recording returns a WAV that
   the native encoder transcribes into the composer; attached audio files are

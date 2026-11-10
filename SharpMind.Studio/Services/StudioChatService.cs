@@ -144,17 +144,27 @@ public sealed class StudioChatService : IAsyncDisposable
 #if SHARPMIND_AUDIO
     private bool ComputeSupportsAudio()
     {
-        if (IsRemote || _loaded is null || _model is null) return false;
-        if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase)) return false;
+        // Resolve from the selected model and its projector, not from the loaded
+        // transformer: audio-only turns must be sendable before the first load.
+        if (IsRemote || _model is null) return false;
         return Lfm3AudioRuntime.FindProjector(_model.Path) is not null;
     }
 
     private bool ComputeSupportsTts()
     {
-        if (IsRemote || _loaded is null || _model is null) return false;
-        if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase)) return false;
+        if (IsRemote || _model is null) return false;
         string? projector = Lfm3AudioRuntime.FindProjector(_model.Path);
         return projector is not null && Lfm3TtsRuntime.IsTtsProjector(projector);
+    }
+
+    /// <summary>
+    /// True when the model path has an LFM3-Audio projector. The welcome composer
+    /// uses this before NewChatAsync has created the document.
+    /// </summary>
+    public bool SupportsAudioFor(string? modelPath)
+    {
+        if (string.IsNullOrWhiteSpace(modelPath)) return false;
+        return Lfm3AudioRuntime.FindProjector(modelPath) is not null;
     }
 
     /// <summary>
@@ -200,14 +210,25 @@ public sealed class StudioChatService : IAsyncDisposable
     {
 #if SHARPMIND_AUDIO
         ArgumentNullException.ThrowIfNull(artifact);
-        if (IsRemote || _loaded is null || _model is null)
+        if (IsRemote || _model is null)
             throw new InvalidOperationException("Load a local LFM3-Audio model before transcribing.");
-        if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase))
-            throw new NotSupportedException("This model is not an LFM3 text backbone.");
         string projector = Lfm3AudioRuntime.FindProjector(_model.Path)
             ?? throw new NotSupportedException(
                 "No LFM3-Audio projector (mmproj) was found next to this model. " +
                 "Put mmproj-*.gguf in the model folder or its LFM3-Audio sibling folder.");
+
+        // An audio-only first turn arrives before any text turn has loaded the
+        // backbone. Load it here so the transcription can run.
+        if (_loaded is null)
+        {
+            _resolved ??= ResolveInference(
+                _model.Family.Id, _model.Path, _document?.Overrides);
+            await OpenCoreAsync(null).ConfigureAwait(false);
+        }
+        if (_loaded is null)
+            throw new InvalidOperationException("The audio model could not be loaded.");
+        if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException("This model is not an LFM3 text backbone.");
 
         await _audioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -468,6 +489,10 @@ public sealed class StudioChatService : IAsyncDisposable
 
     public int? LastToolCalls => _document?.LastToolCalls;
     public string? PendingPrompt { get; set; }
+
+    /// <summary>Attachments for the first turn of a chat started from the welcome composer.</summary>
+    public IReadOnlyList<ChatArtifact> PendingArtifacts { get; set; } = [];
+
     public IReadOnlyList<ChatSessionSummary> Sessions => _store.List();
 
     /// <summary>Full-text search across saved chat/work sessions.</summary>
@@ -479,6 +504,13 @@ public sealed class StudioChatService : IAsyncDisposable
         string? prompt = PendingPrompt;
         PendingPrompt = null;
         return prompt;
+    }
+
+    public IReadOnlyList<ChatArtifact> TakePendingArtifacts()
+    {
+        IReadOnlyList<ChatArtifact> artifacts = PendingArtifacts;
+        PendingArtifacts = [];
+        return artifacts;
     }
     public IReadOnlyList<ChatMessage> DisplayMessages =>
         ChatTranscriptFilter.Visible(_document?.Messages ?? [], _streaming);

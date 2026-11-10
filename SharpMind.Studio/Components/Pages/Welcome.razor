@@ -422,6 +422,7 @@
 
                 if (!string.IsNullOrWhiteSpace(_prompt))
                     ChatService.PendingPrompt = _prompt.Trim();
+                ChatService.PendingArtifacts = [];
                 Nav.NavigateTo(_mode == "work"
                     ? $"/work/{ChatService.Document.Id}"
                     : $"/chat/{ChatService.Document.Id}");
@@ -463,6 +464,7 @@
 
             if (!string.IsNullOrWhiteSpace(_prompt))
                 ChatService.PendingPrompt = _prompt.Trim();
+            ChatService.PendingArtifacts = [];
             Nav.NavigateTo(_mode == "work" ? $"/work/{ChatService.Document.Id}" : $"/chat/{ChatService.Document.Id}");
         }
         finally
