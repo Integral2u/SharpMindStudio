@@ -76,6 +76,12 @@ public sealed class StudioTrainingService : IDisposable
         set { lock (_gate) _draft = value; }
     }
 
+    /// <summary>
+    /// The architecture template last sent from the Model visualizer. The New
+    /// model editor can re-apply it after other fields change.
+    /// </summary>
+    public ModelArchitectureTemplate? PendingTemplate { get; set; }
+
     /// <summary>Build-map planner selection, kept across tab switches.</summary>
     public PlannerStart PlannerStart { get; set; } = PlannerStart.Nothing;
 

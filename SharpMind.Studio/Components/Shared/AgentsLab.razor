@@ -54,24 +54,37 @@
     </div>
 </section>
 
-<section class="panel">
-    <div class="panel-head">
+<details class="panel settings-collapsible" open>
+    <summary class="panel-head">
         <div>
             <div class="eyebrow">Definitions</div>
             <h2>Specialist agents</h2>
         </div>
+        <span class="faint small mono">@Agents.Agents.Count defined</span>
+    </summary>
+    <div class="panel-body stack">
         <div class="row">
             <button type="button" class="button" @onclick="NewAgent">New agent</button>
             <button type="button" class="button" @onclick="Agents.Reload">Reload</button>
         </div>
-    </div>
-    <div class="panel-body stack">
-        <div class="small faint">
-            These names are shown to the model as a <span class="mono">delegate</span> tool. An
-            agent with no model inherits the current model; one with a model is loaded only for
-            that task and cached until the host evicts it. The model can also call
-            <span class="mono">spawn_agent</span> to create a temporary specialist from the
-            task's own name, rules, model and allowed tools.
+
+        <div class="agent-tool-notes">
+            <div>
+                <strong class="mono">delegate</strong>
+                <span class="faint small">
+                    The model picks one of the saved agents below by name. That agent's own rules,
+                    model, allowed tools and permissions are used, and it disappears when the task
+                    finishes. Nothing is added to the project.
+                </span>
+            </div>
+            <div>
+                <strong class="mono">spawn_agent</strong>
+                <span class="faint small">
+                    The model creates a temporary specialist from parameters in the call: name,
+                    rules, optional model and optional tool list. It is not saved, uses the same
+                    Ask permission defaults, and is discarded after the task.
+                </span>
+            </div>
         </div>
 
         <div class="row">
@@ -226,17 +239,27 @@
                     project tool. Checking tools restricts it to that set; clearing inheritance
                     with nothing checked gives it no project tools.
                 </span>
-                <div class="row" style="flex-wrap:wrap; gap:.35rem 1rem">
-                    @foreach (WorkToolInfo tool in Work.Tools.Where(tool => tool.Group != "Agents"))
-                    {
-                        string toolName = tool.Name;
-                        <label class="small" title="@tool.Group">
-                            <input type="checkbox" checked="@IsToolAllowed(editing, toolName)"
-                                   @onchange="e => _editing = SetToolAllowed(editing, toolName, e.Value)" />
-                            <span class="mono">@toolName</span>
-                        </label>
-                    }
-                </div>
+                @foreach (IGrouping<string, WorkToolInfo> group in Work.Tools
+                    .Where(tool => tool.Group != "Agents")
+                    .GroupBy(tool => tool.Group))
+                {
+                    <details class="settings-subgroup" open>
+                        <summary class="settings-subgroup-head">
+                            <span class="eyebrow">@group.Key</span>
+                        </summary>
+                        <div class="settings-subgroup-body work-tools">
+                            @foreach (WorkToolInfo tool in group)
+                            {
+                                string toolName = tool.Name;
+                                <label class="work-tool" title="@tool.Source">
+                                    <input type="checkbox" checked="@IsToolAllowed(editing, toolName)"
+                                           @onchange="e => _editing = SetToolAllowed(editing, toolName, e.Value)" />
+                                    <span class="mono">@toolName</span>
+                                </label>
+                            }
+                        </div>
+                    </details>
+                }
             </div>
             <div class="row">
                 <button type="button" class="button primary" @onclick="SaveAgent"
@@ -245,49 +268,68 @@
             </div>
         }
     </div>
-</section>
+</details>
 
-<section class="panel">
-    <div class="panel-head">
+<details class="panel settings-collapsible" open>
+    <summary class="panel-head">
         <div>
             <div class="eyebrow">Toolbox</div>
-            <h2>Tools</h2>
+            <h2>Project tools</h2>
         </div>
-        <span class="faint small mono">@Work.Tools.Count</span>
+        <span class="faint small mono">@Work.Tools.Count tools</span>
+    </summary>
+    <div class="panel-body stack">
+        <p class="small faint">
+            This is the same tool registry as <strong>Settings &gt; System</strong>. System tools
+            sets the defaults for new projects; the checkboxes here enable or disable a tool for
+            this project, and the grouped rows match the System tools groups. The model can only
+            call tools that are enabled for the project.
+        </p>
+        @foreach (IGrouping<string, WorkToolInfo> group in Work.Tools.GroupBy(tool => tool.Group))
+        {
+            <details class="settings-subgroup" open>
+                <summary class="settings-subgroup-head">
+                    <div>
+                        <span class="eyebrow">@group.Key</span>
+                        <span class="faint small">@group.Count() tool(s)</span>
+                    </div>
+                </summary>
+                <div class="settings-subgroup-body stack">
+                    <div class="row">
+                        <button type="button" class="button"
+                                @onclick="() => SetGroupEnabled(group, true)">All</button>
+                        <button type="button" class="button"
+                                @onclick="() => SetGroupEnabled(group, false)">None</button>
+                    </div>
+                    <div class="work-tools">
+                        @foreach (WorkToolInfo tool in group)
+                        {
+                            string toolName = tool.Name;
+                            <label class="work-tool" title="@tool.Source">
+                                <input type="checkbox" checked="@Work.IsToolEnabled(toolName)"
+                                       @onchange="e => Work.SetToolEnabled(toolName, e.Value is bool enabled && enabled)" />
+                                <span class="mono">@tool.Name</span>
+                                @if (tool.IsPlugin)
+                                {
+                                    <span class="small faint">plugin</span>
+                                }
+                            </label>
+                        }
+                    </div>
+                </div>
+            </details>
+        }
     </div>
-    <div class="panel-body">
-        <table class="table">
-            <thead>
-                <tr><th>Name</th><th>Group</th><th>Source</th><th>Kind</th><th>Enabled</th></tr>
-            </thead>
-            <tbody>
-                @foreach (WorkToolInfo tool in Work.Tools)
-                {
-                    string toolName = tool.Name;
-                    <tr>
-                        <td class="mono">@tool.Name</td>
-                        <td>@tool.Group</td>
-                        <td>@tool.Source</td>
-                        <td>@(tool.IsPlugin ? "plugin" : "built-in")</td>
-                        <td>
-                            <input type="checkbox" checked="@Work.IsToolEnabled(toolName)"
-                                   @onchange="e => Work.SetToolEnabled(toolName, e.Value is bool enabled && enabled)" />
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-</section>
+</details>
 
-<section class="panel">
-    <div class="panel-head">
+<details class="panel settings-collapsible" open>
+    <summary class="panel-head">
         <div>
             <div class="eyebrow">Instructions</div>
             <h2>Skills</h2>
         </div>
         <span class="faint small mono">@(Work.SystemSkills.Count + Work.ProjectSkills.Count)</span>
-    </div>
+    </summary>
     <div class="panel-body">
         <table class="table">
             <thead>
@@ -313,17 +355,20 @@
             </tbody>
         </table>
     </div>
-</section>
+</details>
 
-<section class="panel">
-    <div class="panel-head">
+<details class="panel settings-collapsible" open>
+    <summary class="panel-head">
         <div>
             <div class="eyebrow">Trace</div>
             <h2>Current transcript</h2>
         </div>
-        <button type="button" class="button" @onclick="Refresh">Refresh</button>
-    </div>
-    <div class="panel-body">
+        <span class="faint small mono">@Chat.DisplayMessages.Count messages</span>
+    </summary>
+    <div class="panel-body stack">
+        <div class="row">
+            <button type="button" class="button" @onclick="Refresh">Refresh</button>
+        </div>
         @if (Chat.DisplayMessages.Count == 0)
         {
             <p class="faint">Open a chat or send a turn to populate the trace.</p>
@@ -351,7 +396,7 @@
             </table>
         }
     </div>
-</section>
+</details>
 
 @code {
     private StudioAgentDefinition? _editing;
@@ -384,6 +429,12 @@
     {
         if (int.TryParse(args.Value?.ToString(), out int value))
             Agents.SetMaxDepth(value);
+    }
+
+    private void SetGroupEnabled(IEnumerable<WorkToolInfo> group, bool enabled)
+    {
+        foreach (WorkToolInfo tool in group)
+            Work.SetToolEnabled(tool.Name, enabled);
     }
 
     private void SaveAgent()

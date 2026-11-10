@@ -121,7 +121,7 @@ public static class TrainingModelOptions
     /// <summary>Builds the option-derived fields of <see cref="ModelConfig"/> for a job.</summary>
     public static ModelConfig ResolveModelConfig(TrainingJobSettings job, int vocabSize)
     {
-        return new ModelConfig
+        var config = new ModelConfig
         {
             // Stamp the preset so reloading the .smm selects the same kernels.
             // Without this every corpus-trained model reloaded as GPT-2, which
@@ -149,6 +149,31 @@ public static class TrainingModelOptions
                 && Enum.TryParse<PositionalEncoding>(job.PositionalEncoding, true, out var pe)
                 ? pe
                 : PositionalEncoding.RoPE,
+        };
+
+        return ApplyLayerPlan(job, config);
+    }
+
+    /// <summary>
+    /// Applies the visualizer's per-layer plan. Only Full and Sliding are
+    /// trainable today; other names are treated as Full in the kernel metadata.
+    /// </summary>
+    private static ModelConfig ApplyLayerPlan(TrainingJobSettings job, ModelConfig config)
+    {
+        if (job.LayerTypes is not { Count: > 0 } types || types.Count != job.NumLayers)
+            return config;
+
+        bool[] sliding = [.. types.Select(type => ModelArchitectureTemplate.Normalize(type) == "Sliding")];
+        if (!sliding.Any(value => value)) return config;
+
+        int window = job.LayerSlidingWindowSize > 0
+            ? job.LayerSlidingWindowSize
+            : Math.Min(512, Math.Max(8, job.MaxSeqLen));
+        return config with
+        {
+            SlidingWindowSize = window,
+            SwaLayers = sliding,
+            IsHybridSlidingWindow = sliding.Any(value => !value),
         };
     }
 

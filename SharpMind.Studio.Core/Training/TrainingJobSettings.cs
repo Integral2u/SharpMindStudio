@@ -137,6 +137,16 @@ public sealed class TrainingJobSettings
     public string? PositionalEncoding { get; set; }
 
     /// <summary>
+    /// Optional layer plan from the Model visualizer: one entry per layer,
+    /// "Full" or "Sliding". Empty means every layer uses the global attention
+    /// setting. Saved on the job so the design survives a reload.
+    /// </summary>
+    public List<string> LayerTypes { get; set; } = [];
+
+    /// <summary>Window size for layers marked "Sliding"; 0 = derive from context.</summary>
+    public int LayerSlidingWindowSize { get; set; }
+
+    /// <summary>
     /// Optimizer name ("AdamW", "SGD"); null/empty = AdamW. SGD uses
     /// <see cref="SgdMomentum"/>; AdamW keeps its internal beta defaults.
     /// </summary>

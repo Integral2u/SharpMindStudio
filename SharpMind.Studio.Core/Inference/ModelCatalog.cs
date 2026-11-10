@@ -21,8 +21,12 @@ public sealed record ModelDescriptor
     public int NumKvHeads { get; init; }
     public int HiddenDim { get; init; }
     public int NumHeads { get; init; }
+    public int FfnDim { get; init; }
     public int KeyLength { get; init; }
     public int ValueLength { get; init; }
+    public int SlidingWindowSize { get; init; }
+    public bool[]? SwaLayers { get; init; }
+    public int[]? LayerKvHeads { get; init; }
 }
 
 public sealed class ModelCatalog
@@ -107,6 +111,10 @@ public sealed class ModelCatalog
             NumKvHeads = config.NumKvHeads,
             HiddenDim = config.HiddenDim,
             NumHeads = config.NumHeads,
+            FfnDim = config.FfnDim,
+            SlidingWindowSize = config.SlidingWindowSize,
+            SwaLayers = config.SwaLayers,
+            LayerKvHeads = config.LayerKvHeads,
             KeyLength = config.KeyLength ?? config.HeadDimOverride ?? (config.NumHeads > 0 ? config.HiddenDim / config.NumHeads : 0),
             ValueLength = config.ValueLength ?? config.KeyLength ?? config.HeadDimOverride ?? (config.NumHeads > 0 ? config.HiddenDim / config.NumHeads : 0),
         };

@@ -193,7 +193,7 @@ public sealed class StudioWorkService : IDisposable
                     : $"{agent.Name}: {agent.Description}");
             builder.WithTool(
                 "delegate",
-                "Hands a self-contained sub-task to a specialist agent and returns its answer. Use it when a listed agent's purpose matches the task better than you can do it yourself.",
+                "Hands a self-contained sub-task to one of the saved specialist agents by name and returns its answer. The agent's stored rules, model, tools and permissions are used. Use it when a listed agent's purpose matches the task better than you can do it yourself.",
                 new JsonObject
                 {
                     ["type"] = "object",
@@ -221,7 +221,7 @@ public sealed class StudioWorkService : IDisposable
         // the nested run gets the agent tools, not this tool again.
         builder.WithTool(
             "spawn_agent",
-            "Creates a temporary specialist agent for one self-contained task. Use it when no defined agent fits the request. The specialist can inherit the project's file/web tools; its permissions default to Ask.",
+            "Creates a temporary specialist for one self-contained task. Nothing is saved: name, rules, optional model and optional tool list come from this call. Use it when no defined agent fits. The specialist inherits the enabled project tools and its file/web permissions default to Ask.",
             new JsonObject
             {
                 ["type"] = "object",

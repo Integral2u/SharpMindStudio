@@ -1,0 +1,15 @@
+@* A consistent link from a Studio mode to its deployed wiki page. *@
+<a class="@Class" href="@Href" target="_blank" rel="noopener">@Label</a>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Page { get; set; } = "";
+
+    [Parameter]
+    public string Label { get; set; } = "Wiki guide";
+
+    [Parameter]
+    public string Class { get; set; } = "small";
+
+    private string Href => $"https://integral2u.github.io/SharpMindStudio/wiki/{Page}.html";
+}

@@ -37,6 +37,9 @@
     <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/settings?tab=models" data-enhance-nav="false">Models</a>
     <a class="settings-tab @(_tab == "openrouter" ? "selected" : "")" href="/settings?tab=openrouter" data-enhance-nav="false">Providers</a>
     <a class="settings-tab @(_tab == "pair" ? "selected" : "")" href="/settings?tab=pair" data-enhance-nav="false">Pair</a>
+    <span style="margin-left:auto">
+        <WikiGuideLink Page="settings" Label="Settings guide" Class="settings-tab" />
+    </span>
 </div>
 
 @if (_tab == "system")

@@ -9,6 +9,7 @@
 @using SharpMind.Training
 @inject StudioWorkspaceService Workspace
 @inject PathPickerService Picker
+@inject StudioTrainingService Training
 
 <section class="training-subsection" id="training-model">
     <div class="training-subsection-head">
@@ -125,6 +126,33 @@
             <div class="field">
                 <label class="field-label" for="job-topk">Top-k experts</label>
                 <input id="job-topk" class="input" type="number" min="1" @bind="Job.TopKExperts" />
+            </div>
+        }
+        <div class="field training-form-wide">
+            <label class="field-label" for="job-layer-plan">Layer plan (optional)</label>
+            <input id="job-layer-plan" class="input mono" value="@LayerPlanText"
+                   @onchange="e => SetLayerPlanText(e.Value?.ToString())"
+                   placeholder="Full, Full, Sliding, Full" />
+            <span class="small faint">
+                One entry per layer: Full or Sliding. A blank plan keeps the global attention
+                setting. The Model visualizer can generate this plan and the dimensions above.
+            </span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="job-sliding-window">Sliding window</label>
+            <input id="job-sliding-window" class="input" type="number" min="0" step="8"
+                   @bind="Job.LayerSlidingWindowSize" />
+        </div>
+        @if (Training.PendingTemplate is not null)
+        {
+            <div class="field training-form-wide">
+                <label class="field-label">Visualizer template</label>
+                <div class="row">
+                    <span class="small faint">@Training.PendingTemplate.Name</span>
+                    <button type="button" class="button" @onclick="ApplyVisualizerTemplate">
+                        Apply template
+                    </button>
+                </div>
             </div>
         }
     </div>
@@ -641,5 +669,26 @@
         Job.NumKvHeads = kvHeads;
         Job.FfnDim = ffn;
         Job.MaxSeqLen = seqLen;
+        Job.LayerTypes = [.. Enumerable.Repeat("Full", layers)];
+    }
+
+    private string LayerPlanText =>
+        Job.LayerTypes.Count == 0 ? "" : string.Join(", ", Job.LayerTypes);
+
+    private void SetLayerPlanText(string? text)
+    {
+        string[] parts = (text ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        Job.LayerTypes = parts.Length == 0
+            ? []
+            : [.. parts.Select(ModelArchitectureTemplate.Normalize)];
+        if (Job.LayerTypes.Count > 0)
+            Job.NumLayers = Job.LayerTypes.Count;
+    }
+
+    private void ApplyVisualizerTemplate()
+    {
+        Training.PendingTemplate?.ApplyTo(Job);
+        StateHasChanged();
     }
 }

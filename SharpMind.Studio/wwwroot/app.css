@@ -178,6 +178,49 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     background: rgba(255, 255, 255, .02);
 }
 
+.settings-refresh-button {
+    margin-left: auto;
+}
+
+.agent-tool-notes {
+    display: grid;
+    gap: .6rem;
+    padding: .8rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .02);
+}
+
+.agent-tool-notes > div {
+    display: grid;
+    grid-template-columns: minmax(7rem, max-content) 1fr;
+    gap: .75rem;
+    align-items: baseline;
+}
+
+.agent-layer-plan {
+    display: grid;
+    gap: .35rem;
+    max-height: 22rem;
+    overflow-y: auto;
+    padding-right: .25rem;
+}
+
+.agent-layer-row {
+    display: grid;
+    grid-template-columns: 2rem minmax(10rem, 1fr) auto auto;
+    align-items: center;
+    gap: .4rem;
+}
+
+.agent-layer-row .input {
+    padding: .35rem .5rem;
+}
+
+.agent-layer-row .button {
+    padding: .35rem .6rem;
+}
+
 .settings-subgroup {
     border: 1px solid var(--line);
     border-radius: .7rem;

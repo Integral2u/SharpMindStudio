@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Settings — SharpMind Studio Wiki</title>
+    <meta name="description" content="SharpMind Studio settings: appearance, system tools and plugins, model families, model defaults, providers and phone pairing." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<div class="top-links">
+    <a href="https://github.com/Integral2u/SharpMind" target="_blank" rel="noopener">Powered by SharpMind</a>
+    <a class="sponsor" href="https://github.com/sponsors/Integral2u" target="_blank" rel="noopener">&#9829; Sponsor</a>
+</div>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="inference.html">Models &amp; chat</a>
+        <a href="huggingface.html">HuggingFace</a>
+        <a href="openrouter.html">OpenRouter</a>
+        <a href="work.html">Work</a>
+        <a href="labs.html">Labs</a>
+        <a class="active" href="settings.html">Settings</a>
+        <a href="pairing.html">Phone pairing</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1.1</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#appearance">Appearance</a>
+            <a href="#system">System</a>
+            <a href="#tools">System tools</a>
+            <a href="#families">Families and models</a>
+            <a href="#providers">Providers</a>
+            <a href="#pair">Pairing</a>
+            <a href="#problems">Problems</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Settings</span></div>
+            <span class="eyebrow">Configuration</span>
+            <h1>Settings</h1>
+            <p class="lead">
+                Settings holds the defaults that flow into new chats, Work projects, training jobs
+                and Labs runs. Each layer can override the one above it; an empty override inherits.
+            </p>
+
+            <h2 id="appearance">Appearance</h2>
+            <p>
+                Themes and display density apply immediately. A custom theme is stored locally with
+                the project, so it does not change another machine or another browser profile.
+            </p>
+
+            <h2 id="system">System</h2>
+            <p>
+                System holds the Studio server connection, the tool defaults and the local folders
+                for models, training and Work workspaces. Use <strong>Refresh plugins</strong> after
+                adding or replacing a plugin assembly. The button sits on the right of the System
+                tools header.
+            </p>
+
+            <h2 id="tools">System tools</h2>
+            <p>
+                System tools is the shared Work tool registry. The defaults here apply to new Work
+                projects; an existing project can then enable or disable individual tools in its
+                own project settings. Tools are grouped by what they touch:
+            </p>
+            <ul>
+                <li><strong>Files · read</strong> — list, read and search inside a context location.</li>
+                <li><strong>Files · write</strong> — write, append and create files.</li>
+                <li><strong>Files · delete</strong> — remove files through the delete permission.</li>
+                <li><strong>Web</strong> — fetch a URL when web access is allowed.</li>
+                <li><strong>Interface</strong> — ask the person a structured question.</li>
+                <li><strong>System</strong> — clocks and machine specifications.</li>
+                <li><strong>Diagnostics</strong> — the echo probe used to check a model's tool path.</li>
+                <li><strong>Agents</strong> — <span class="mono">delegate</span> and <span class="mono">spawn_agent</span>.</li>
+            </ul>
+            <p>
+                The Labs &gt; Agents toolbox shows the same registry with the current project's
+                enabled state. It is not a second list: changing a default here changes what a new
+                project starts with, and changing a project tool changes only that project.
+            </p>
+
+            <h2 id="families">Families and models</h2>
+            <p>
+                Families override the system inference defaults for a model family. Models override
+                the family. Chat sessions can override the model again in their own session options.
+                The value shown next to an empty field names the layer that supplied it.
+            </p>
+            <p>
+                Model settings also control the local model folder, context limits, sampling and
+                whether a family uses a specific formatter or generator. A model-specific value
+                always wins over inherited values.
+            </p>
+
+            <h2 id="providers">Providers</h2>
+            <p>
+                Providers holds local weights, OpenRouter, HuggingFace access and Compute hosts.
+                Probe a provider before saving it; a failed probe stays visible instead of silently
+                falling back. See <a href="openrouter.html">OpenRouter</a> and
+                <a href="providers.html">Compare providers</a> for the setup paths.
+            </p>
+
+            <h2 id="pair">Pairing</h2>
+            <p>
+                Phone pairing turns the LAN listener into a revocable device list. Pair with a QR
+                or PIN, then revoke individual devices. See <a href="pairing.html">Phone pairing</a>
+                for the network requirements.
+            </p>
+
+            <h2 id="problems">Problems</h2>
+            <ul class="checklist">
+                <li><strong>A plugin does not appear.</strong> Press Refresh plugins, then check the warning line under the tool groups.</li>
+                <li><strong>A tool is enabled but the model never calls it.</strong> Check the project's enabled state in Work &gt; Project settings and confirm the tool probe passed.</li>
+                <li><strong>A model ignores inherited sampling.</strong> Clear the model override and check the source label next to the value.</li>
+                <li><strong>The LAN page is unreachable.</strong> Confirm the firewall allows the LAN port and the phone is on the same network.</li>
+            </ul>
+
+            <div class="next">
+                <a class="button" href="index.html">&larr; Wiki index</a>
+                <a class="button primary" href="work.html">Work guide &rarr;</a>
+            </div>
+        </article>
+    </div>
+
+    <footer class="footer">
+        <div class="wrap">
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="../index.html">Home</a></span>
+            <span>SharpMind Studio 1.1.1</span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>

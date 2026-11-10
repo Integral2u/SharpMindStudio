@@ -17,6 +17,16 @@
 
 <section class="panel">
     <div class="panel-body stack">
+        @if (Latent.IsRunning)
+        {
+            <div class="load-panel">
+                <div class="load-panel-row">
+                    <span class="spinner-ring"></span>
+                    <span>@Latent.Status</span>
+                    <button type="button" class="button" @onclick="Latent.Cancel">Interrupt</button>
+                </div>
+            </div>
+        }
         <div class="row">
             <div class="field grow">
                 <label class="field-label">Model</label>

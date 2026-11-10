@@ -32,6 +32,7 @@
         <a href="openrouter.html">OpenRouter</a>
         <a href="work.html">Work</a>
         <a class="active" href="labs.html">Labs</a>
+        <a href="settings.html">Settings</a>
         <a href="pairing.html">Phone pairing</a>
         <a href="troubleshooting.html">Troubleshooting</a>
     </nav>
@@ -61,8 +62,9 @@
             <h1>Model labs</h1>
             <p class="lead">
                 Labs inspect a model without changing its weights. Layer importance measures what
-                the blocks do, quantization compares and writes smaller files, and the visualizer
-                and latent views expose the activations and hidden geometry.
+                the blocks do, quantization compares and writes smaller files, the visualizer
+                exposes activations and can design a reusable architecture template, and the
+                latent view shows the hidden geometry.
             </p>
 
             <h2 id="layer-importance">Layer importance</h2>
@@ -136,6 +138,20 @@
                 <span class="mono">linear</span> for blocks without attention (for example LFM2
                 short-conv layers), and <span class="mono">recurrent</span> for DeltaNet blocks.
             </p>
+            <p>
+                The <strong>Architecture template</strong> section works without a capture. Set the
+                hidden width, depth, heads, KV heads, FFN width and context, then choose full or
+                sliding for each layer. <strong>Add layer</strong>, <strong>Insert</strong> and
+                <strong>Remove</strong> change the depth; the layer list is the ordered plan.
+                <strong>Use selected model</strong> seeds the shape from the model in the picker.
+                <strong>Use in New model</strong> sends the dimensions and layer plan to Training,
+                where the same plan can be viewed or edited as a comma-separated list.
+            </p>
+            <p>
+                Loading and capture are interruptible. The status row shows whether Studio is
+                loading weights or running the forward pass, and <strong>Interrupt</strong> cancels
+                both stages. Latent space uses the same loading and interrupt controls.
+            </p>
 
             <h2 id="latent">Latent space</h2>
             <p>
@@ -151,9 +167,12 @@
 
             <h2 id="agents">Agents</h2>
             <p>
-                Definitions in the Agents tab become a <span class="mono">delegate</span> tool for
-                chat and work. The tool's <span class="mono">agent</span> argument is an enum of
-                the enabled specialists, with each purpose shown to the parent model.
+                There are two ways the model can use a specialist. <span class="mono">delegate</span>
+                selects one of the saved agents below by name and uses that agent's stored rules,
+                model, tools and permissions. <span class="mono">spawn_agent</span> creates a
+                temporary specialist from parameters in the call (name, rules, optional model and
+                tools); it is not saved and starts with Ask permissions. Saved agents are shown to
+                the parent model as an enum of names with their purposes.
             </p>
             <ul>
                 <li><strong>Inherit current model</strong> agents run on the same weights. Studio runs the agent in its own session so the agent's own tools and permissions still apply.</li>

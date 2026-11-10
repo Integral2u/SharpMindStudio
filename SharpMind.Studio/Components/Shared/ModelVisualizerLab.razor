@@ -1,8 +1,11 @@
 ﻿@using SharpMind.Model.Config
 @using SharpMind.Model.Analysis
+@using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Services
 @inject ModelCatalogService Catalog
 @inject StudioVisualizerService Visual
+@inject StudioTrainingService Training
+@inject NavigationManager Nav
 @implements IDisposable
 
 <div class="page-head">
@@ -16,8 +19,145 @@
     </div>
 </div>
 
-<section class="panel">
+<details class="panel settings-collapsible" open>
+    <summary class="panel-head">
+        <div>
+            <div class="eyebrow">Architecture template</div>
+            <h2>Build a model shape</h2>
+        </div>
+        <span class="faint small mono">@_template.NumLayers layers - H@_template.HiddenDim - FFN @_template.FfnDim</span>
+    </summary>
     <div class="panel-body stack">
+        <p class="small faint">
+            Design the width, depth and layer plan without loading or capturing a model. The
+            template can be seeded from the selected model, then sent to <strong>Training &gt; New
+            model</strong>. Sliding-window layers train with the selected window; full layers keep
+            full causal attention.
+        </p>
+
+        <div class="row">
+            <div class="field grow">
+                <label class="field-label">Template name</label>
+                <input class="input" value="@_template.Name"
+                       @onchange="e => SetTemplateName(e.Value?.ToString())" />
+            </div>
+            <div class="field grow">
+                <label class="field-label">Architecture family</label>
+                <select class="input" value="@(_template.ArchitecturePreset ?? string.Empty)"
+                        @onchange="e => _template = _template with { ArchitecturePreset = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString() }">
+                    <option value="">Custom / manual</option>
+                    @foreach (TrainingPreset preset in TrainingModelOptions.Presets)
+                    {
+                        <option value="@preset.ArchitecturePresetKey">@preset.DisplayName</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label">Seed from model</label>
+                <button type="button" class="button" @onclick="SeedFromModel"
+                        disabled="@string.IsNullOrWhiteSpace(_selectedModelPath)">
+                    Use selected model
+                </button>
+            </div>
+        </div>
+
+        <div class="training-form">
+            <div class="field">
+                <label class="field-label">Hidden width</label>
+                <input class="input" type="number" min="8" step="8" value="@_template.HiddenDim"
+                       @onchange="e => _template = _template with { HiddenDim = ParseInt(e.Value, _template.HiddenDim) }" />
+            </div>
+            <div class="field">
+                <label class="field-label">Layers</label>
+                <input class="input" type="number" min="1" max="128" value="@_template.NumLayers"
+                       @onchange="e => SetLayerCount(ParseInt(e.Value, _template.NumLayers))" />
+            </div>
+            <div class="field">
+                <label class="field-label">Heads</label>
+                <input class="input" type="number" min="1" value="@_template.NumHeads"
+                       @onchange="e => _template = _template with { NumHeads = ParseInt(e.Value, _template.NumHeads) }" />
+            </div>
+            <div class="field">
+                <label class="field-label">KV heads</label>
+                <input class="input" type="number" min="1" value="@_template.NumKvHeads"
+                       @onchange="e => _template = _template with { NumKvHeads = ParseInt(e.Value, _template.NumKvHeads) }" />
+            </div>
+            <div class="field">
+                <label class="field-label">FFN width</label>
+                <input class="input" type="number" min="8" step="8" value="@_template.FfnDim"
+                       @onchange="e => _template = _template with { FfnDim = ParseInt(e.Value, _template.FfnDim) }" />
+            </div>
+            <div class="field">
+                <label class="field-label">Context length</label>
+                <input class="input" type="number" min="8" step="8" value="@_template.MaxSeqLen"
+                       @onchange="e => _template = _template with { MaxSeqLen = ParseInt(e.Value, _template.MaxSeqLen) }" />
+            </div>
+            <div class="field">
+                <label class="field-label">Sliding window</label>
+                <input class="input" type="number" min="0" step="8" value="@_template.SlidingWindowSize"
+                       @onchange="e => _template = _template with { SlidingWindowSize = ParseInt(e.Value, 0) }" />
+            </div>
+        </div>
+
+        <div class="spread">
+            <div>
+                <div class="eyebrow">Layer plan</div>
+                <span class="faint small">Full or sliding, in order. Add, insert or remove blocks.</span>
+            </div>
+            <button type="button" class="button" @onclick="AddLayer">Add layer</button>
+        </div>
+        <div class="agent-layer-plan">
+            @for (int index = 0; index < _template.LayerTypes.Count; index++)
+            {
+                int layerIndex = index;
+                <div class="agent-layer-row">
+                    <span class="mono faint">@(layerIndex + 1)</span>
+                    <select class="input" value="@_template.LayerTypes[layerIndex]"
+                            @onchange="e => SetLayerType(layerIndex, e.Value?.ToString())">
+                        <option value="Full">Full attention</option>
+                        <option value="Sliding">Sliding window</option>
+                    </select>
+                    <button type="button" class="button" title="Insert a layer after this one"
+                            @onclick="() => InsertLayerAfter(layerIndex)">Insert</button>
+                    <button type="button" class="button danger" title="Remove this layer"
+                            @onclick="() => RemoveLayer(layerIndex)"
+                            disabled="@(_template.LayerTypes.Count <= 1)">Remove</button>
+                </div>
+            }
+        </div>
+
+        <div class="row">
+            <button type="button" class="button primary" @onclick="ApplyTemplateToTraining">
+                Use in New model
+            </button>
+            <button type="button" class="button" @onclick="ResetTemplate">New blank template</button>
+            @if (_templateStatus is { } templateStatus)
+            {
+                <span class="status-line">@templateStatus</span>
+            }
+        </div>
+    </div>
+</details>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Activation capture</div>
+            <h2>One prompt, one forward pass</h2>
+        </div>
+        <span class="faint small mono">load - capture - release</span>
+    </div>
+    <div class="panel-body stack">
+        @if (Visual.IsRunning)
+        {
+            <div class="load-panel">
+                <div class="load-panel-row">
+                    <span class="spinner-ring"></span>
+                    <span>@Visual.Status</span>
+                    <button type="button" class="button" @onclick="Visual.Cancel">Interrupt</button>
+                </div>
+            </div>
+        }
         <div class="row">
             <div class="field grow">
                 <label class="field-label">Model</label>
@@ -130,10 +270,14 @@
     private string _selectedModelPath = "";
     private string _prompt = "The quick brown fox jumps over the lazy dog.";
     private int _maxTokens = 64;
+    private ModelArchitectureTemplate _template = new();
+    private string? _templateStatus;
 
     protected override async Task OnInitializedAsync()
     {
         Visual.Changed += OnVisualChanged;
+        if (_template.LayerTypes.Count != _template.NumLayers)
+            SetLayerCount(_template.NumLayers);
         await LoadModelsAsync();
     }
 
@@ -153,6 +297,79 @@
         if (model is null) return;
         await Visual.RunAsync(model, _prompt, Math.Clamp(_maxTokens, 1, 256));
     }
+
+    private void SetTemplateName(string? name)
+    {
+        _template = _template with
+        {
+            Name = string.IsNullOrWhiteSpace(name) ? "visualizer-template" : name.Trim(),
+        };
+    }
+
+    private void SeedFromModel()
+    {
+        ModelDescriptor? model = _models.FirstOrDefault(item => item.Path == _selectedModelPath);
+        if (model is null) return;
+        _template = ModelArchitectureTemplate.FromDescriptor(model, model.DisplayName);
+        _templateStatus = $"Seeded from {model.FileName}.";
+    }
+
+    private void ResetTemplate()
+    {
+        _template = new ModelArchitectureTemplate();
+        _templateStatus = "Blank template.";
+    }
+
+    private void AddLayer()
+    {
+        List<string> layers = [.. _template.LayerTypes, "Full"];
+        _template = _template with { LayerTypes = layers, NumLayers = layers.Count };
+    }
+
+    private void InsertLayerAfter(int index)
+    {
+        List<string> layers = [.. _template.LayerTypes];
+        layers.Insert(Math.Clamp(index + 1, 0, layers.Count), "Full");
+        _template = _template with { LayerTypes = layers, NumLayers = layers.Count };
+    }
+
+    private void RemoveLayer(int index)
+    {
+        if (_template.LayerTypes.Count <= 1) return;
+        List<string> layers = [.. _template.LayerTypes];
+        if ((uint)index < (uint)layers.Count) layers.RemoveAt(index);
+        _template = _template with { LayerTypes = layers, NumLayers = layers.Count };
+    }
+
+    private void SetLayerType(int index, string? type)
+    {
+        List<string> layers = [.. _template.LayerTypes];
+        if ((uint)index >= (uint)layers.Count) return;
+        layers[index] = ModelArchitectureTemplate.Normalize(type);
+        _template = _template with { LayerTypes = layers };
+    }
+
+    private void SetLayerCount(int count)
+    {
+        int target = Math.Clamp(count, 1, 128);
+        List<string> layers = [.. _template.LayerTypes];
+        while (layers.Count < target) layers.Add("Full");
+        if (layers.Count > target) layers.RemoveRange(target, layers.Count - target);
+        _template = _template with { NumLayers = target, LayerTypes = layers };
+    }
+
+    private void ApplyTemplateToTraining()
+    {
+        TrainingJobSettings job = Training.Draft?.Clone() ?? new TrainingJobSettings();
+        _template.ApplyTo(job);
+        Training.Draft = job;
+        Training.PendingTemplate = _template;
+        _templateStatus = "Sent to Training > New model.";
+        Nav.NavigateTo("/training?tab=new");
+    }
+
+    private static int ParseInt(object? value, int fallback) =>
+        int.TryParse(value?.ToString(), out int parsed) ? parsed : fallback;
 
     private string TokenLabel(int token) =>
         token < Visual.TokenText.Length ? Visual.TokenText[token] : "";

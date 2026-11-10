@@ -41,6 +41,9 @@
     <a class="settings-tab @(_tab == "data" ? "selected" : "")" href="/training?tab=data" data-enhance-nav="false">Data</a>
     <a class="settings-tab @(_tab == "runs" ? "selected" : "")" href="/training?tab=runs" data-enhance-nav="false">Runs</a>
     <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/training?tab=models" data-enhance-nav="false">Models</a>
+    <span style="margin-left:auto">
+        <WikiGuideLink Page="training" Label="Training guide" Class="settings-tab" />
+    </span>
 </div>
 
 @if (_tab == "new")

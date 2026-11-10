@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   1.1.1 engine packages and compiles the same audio/labs code as the source
   solution; CI checks out the engine and packs those packages first. The 1.1.0
   packages are no longer the development baseline.
+- **Wiki navigation** - Labs is back in the deployed wiki navigation and the
+  in-app link now uses the real `wiki/labs.html` path. A new Settings guide joins
+  the wiki index, and Chat, Work, Training, Labs and Settings each link to their
+  guide. The site sidebar links to the wiki index everywhere.
 - **Agent definitions** - the Agents tab defines specialists (name, purpose, rules,
   inherit current or named model, temperature, seed, TTL, enabled, max delegation
   depth, allowed tools and file/web Ask/Allow/Deny permissions). Enabled agents are
@@ -71,7 +75,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The Model visualizer tab
   captures one prompt through the activation hook and draws attention/FFN RMS
   heatmaps over layers and tokens on a log scale; a right-hand column labels
-  each layer as full/sliding attention, linear or recurrent. The Latent space tab projects
+  each layer as full/sliding attention, linear or recurrent. An architecture-template
+  editor beside it builds a model shape without a capture: hidden/FFN width, depth,
+  heads, KV heads, context and a per-layer full/sliding plan with add, insert and
+  remove. It can be seeded from the selected model and sent to Training > New model;
+  the same plan can be edited there and trains with per-layer sliding windows. The
+  visualizer and latent tabs show loading status and an Interrupt button for both
+  weight loading and the forward pass. The Latent space tab projects
   the prompt's final hidden states to two dimensions with classical MDS, labels
   each point with its decoded token and draws a hoverable scatter with the
   explained variance; an Aggregate option keeps earlier prompts in the plot
