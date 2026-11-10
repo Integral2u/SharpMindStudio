@@ -12,11 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   1.1.1 engine packages and compiles the same audio/labs code as the source
   solution; CI checks out the engine and packs those packages first. The 1.1.0
   packages are no longer the development baseline.
-- **Provider programs** - Vast.ai and MaxCloudOn appear as manual remote-host
-  presets in Providers > Compute. The Vast.ai, EuroRouter and Novita sign-up
-  links are available; the other programs are listed as program links until
-  their integrations are ready. The provider page lists the available programs
-  and integration status; the model routers still need a generic
+- **Provider programs** - Vast.ai, MaxCloudOn and Novita appear as manual
+  remote-host presets in Providers > Compute. The Vast.ai, EuroRouter and Novita
+  sign-up links are available; the other programs are listed as program links
+  until their integrations are ready. The provider page lists the available
+  programs and integration status; the model routers still need a generic
   OpenAI-compatible provider integration.
 - **Wiki navigation** - Labs is back in the deployed wiki navigation and the
   in-app link now uses the real `wiki/labs.html` path. A new Settings guide joins

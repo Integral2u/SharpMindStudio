@@ -108,6 +108,7 @@ public static class ComputeProviderPrefabs
     public const string Vultr = "vultr";
     public const string VastAi = "vast-ai";
     public const string MaxCloudOn = "maxcloudon";
+    public const string Novita = "novita";
     public const string Custom = "custom";
 
     public static IReadOnlyList<ComputeProviderPrefab> All { get; } =
@@ -128,6 +129,10 @@ public static class ComputeProviderPrefabs
             "A MaxCloudOn GPU instance running the SharpMind Server image. Paste its public URL and token.",
             Docker: false, Runpod: false,
             ProgramUrl: "https://maxcloudon.com/affiliate-program/"),
+        new(Novita, "Novita GPU", ComputeProviderKinds.Remote,
+            "A Novita GPU instance running the SharpMind Server image. Paste its public URL and token.",
+            Docker: false, Runpod: false,
+            ReferralUrl: "https://novita.ai/?ref=zgq0ymmy&utm_source=affiliate"),
         new(Custom, "Custom remote server", ComputeProviderKinds.Remote,
             "Any machine that already runs the SharpMind Server image.", Docker: false, Runpod: false),
     ];
