@@ -116,6 +116,89 @@ public sealed class StudioLatentService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Projects several prompts with one model load. Used by the prompt-file import;
+    /// the current <see cref="Aggregate"/> setting decides whether earlier runs stay.
+    /// </summary>
+    public async Task RunManyAsync(
+        ModelDescriptor descriptor,
+        IReadOnlyList<string> prompts,
+        int maxTokens)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(prompts);
+        if (prompts.Count == 0) return;
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (IsRunning) return;
+            IsRunning = true;
+            Error = null;
+            ElapsedSeconds = 0;
+            ModelName = descriptor.FileName;
+            _cts = new CancellationTokenSource();
+            Status = $"Loading {descriptor.FileName}...";
+            Notify();
+
+            ResolvedInference resolved = _inference.Resolve(
+                descriptor.Family.Id, descriptor.Path, session: null);
+            _loaded = await _host.LoadAsync(descriptor, resolved, progress: null, _cts.Token)
+                .ConfigureAwait(false);
+
+            if (!Aggregate) _runs.Clear();
+            var watch = Stopwatch.StartNew();
+            int total = prompts.Count;
+            int done = 0;
+            foreach (string prompt in prompts)
+            {
+                if (string.IsNullOrWhiteSpace(prompt)) continue;
+                done++;
+                Status = $"Projecting {done}/{total}: {Shorten(prompt)}";
+                Notify();
+                int[] ids = _loaded.Tokenizer.Encode(prompt, addBos: true, addEos: false);
+                LatentSpaceMap map = await Task.Run(
+                    () => LatentSpaceAnalyzer.Capture(
+                        _loaded.Model, ids, id => _loaded.Tokenizer.Decode([id]) ?? "",
+                        maxTokens, _cts.Token),
+                    _cts.Token).ConfigureAwait(false);
+                _runs.Add(new LatentRun(prompt, descriptor.FileName, map));
+                Map = map;
+            }
+            watch.Stop();
+            ElapsedSeconds = watch.Elapsed.TotalSeconds;
+            Status = $"Projected {done} prompt(s) in {ElapsedSeconds:F1}s; {_runs.Count} in the plot.";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "Latent projection cancelled.";
+        }
+        catch (Exception ex)
+        {
+            Error = $"{ex.GetType().Name}: {ex.Message}";
+            Status = "Latent projection failed.";
+        }
+        finally
+        {
+            if (_loaded is not null)
+            {
+                _host.Release(_loaded);
+                _loaded = null;
+            }
+            _cts?.Dispose();
+            _cts = null;
+            IsRunning = false;
+            _gate.Release();
+            Notify();
+        }
+    }
+
+    private static string Shorten(string prompt)
+    {
+        string flat = prompt.ReplaceLineEndings(" ").Trim();
+        return flat.Length <= 48 ? flat : flat[..48] + "...";
+    }
+
     public void Cancel() => _cts?.Cancel();
 
     private void Notify() => Changed?.Invoke();

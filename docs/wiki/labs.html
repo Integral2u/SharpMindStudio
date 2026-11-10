@@ -143,9 +143,18 @@
                 hidden width, depth, heads, KV heads, FFN width and context, then choose full or
                 sliding for each layer. <strong>Add layer</strong>, <strong>Insert</strong> and
                 <strong>Remove</strong> change the depth; the layer list is the ordered plan.
-                <strong>Use selected model</strong> seeds the shape from the model in the picker.
+                <strong>Use selected model</strong> seeds the shape from the model in the picker,
+                including sliding patterns and non-attention layers. <strong>Open template</strong>
+                and <strong>Save template</strong> read and write the plan as JSON.
                 <strong>Use in New model</strong> sends the dimensions and layer plan to Training,
-                where the same plan can be viewed or edited as a comma-separated list.
+                where the same plan can be viewed or edited as a comma-separated list, or loaded
+                again with the <strong>Open template</strong> button beside Tiny, Small and Medium.
+            </p>
+            <p>
+                A seeded Gemma-3 model shows its full/sliding pattern even when the GGUF stores a
+                sliding-window period instead of an explicit per-layer mask. Linear and recurrent
+                layers can be kept in the visual plan; the current training kernel trains those as
+                full attention and the editor says so.
             </p>
             <p>
                 Loading and capture are interruptible. The status row shows whether Studio is
@@ -163,6 +172,12 @@
             <p>
                 <strong>Aggregate</strong> keeps earlier prompts in the plot instead of replacing
                 it, with one colour per prompt. <strong>Clear plot</strong> starts over.
+                <strong>Import prompts</strong> reads a text file (one prompt per line) or a
+                JSON/JSONL file with <span class="mono">prompt</span>,
+                <span class="mono">text</span>, <span class="mono">content</span> or
+                <span class="mono">message</span> fields, then projects the batch with one model
+                load. <strong>Export points</strong> writes the run, prompt, token, projected X/Y
+                and explained variance as JSONL.
             </p>
 
             <h2 id="agents">Agents</h2>

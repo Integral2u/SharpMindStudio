@@ -25,8 +25,12 @@ public sealed record ModelDescriptor
     public int KeyLength { get; init; }
     public int ValueLength { get; init; }
     public int SlidingWindowSize { get; init; }
+    public int? SlidingWindowPattern { get; init; }
+    public bool IsHybridSlidingWindow { get; init; }
     public bool[]? SwaLayers { get; init; }
     public int[]? LayerKvHeads { get; init; }
+    public bool HasDeltaNet { get; init; }
+    public int? FullAttentionInterval { get; init; }
 }
 
 public sealed class ModelCatalog
@@ -113,8 +117,12 @@ public sealed class ModelCatalog
             NumHeads = config.NumHeads,
             FfnDim = config.FfnDim,
             SlidingWindowSize = config.SlidingWindowSize,
+            SlidingWindowPattern = config.SlidingWindowPattern,
+            IsHybridSlidingWindow = config.IsHybridSlidingWindow,
             SwaLayers = config.SwaLayers,
             LayerKvHeads = config.LayerKvHeads,
+            HasDeltaNet = config.HasDeltaNet,
+            FullAttentionInterval = config.FullAttentionInterval,
             KeyLength = config.KeyLength ?? config.HeadDimOverride ?? (config.NumHeads > 0 ? config.HiddenDim / config.NumHeads : 0),
             ValueLength = config.ValueLength ?? config.KeyLength ?? config.HeadDimOverride ?? (config.NumHeads > 0 ? config.HiddenDim / config.NumHeads : 0),
         };

@@ -97,4 +97,77 @@ public sealed class ModelArchitectureTemplateTests
         Assert.Equal(4096, template.MaxSeqLen);
         Assert.Equal(["Full", "Sliding", "Full"], template.LayerTypes);
     }
+
+    [Fact]
+    public void FromDescriptor_ResolvesSlidingPatternWhenNoMaskIsStored()
+    {
+        var descriptor = new ModelDescriptor
+        {
+            Path = "gemma-3.gguf",
+            FileName = "gemma-3.gguf",
+            SizeBytes = 1,
+            LastWriteUtc = DateTimeOffset.UnixEpoch,
+            DisplayName = "gemma-3",
+            Family = new ModelFamily("gemma3", "Gemma 3"),
+            Architecture = "gemma3",
+            ContextLength = 4096,
+            NumLayers = 6,
+            NumKvHeads = 4,
+            HiddenDim = 256,
+            NumHeads = 8,
+            FfnDim = 1024,
+            SlidingWindowSize = 512,
+            SlidingWindowPattern = 6,
+        };
+
+        ModelArchitectureTemplate template = ModelArchitectureTemplate.FromDescriptor(descriptor);
+
+        Assert.Equal(
+            ["Sliding", "Sliding", "Sliding", "Sliding", "Sliding", "Full"],
+            template.LayerTypes);
+    }
+
+    [Fact]
+    public void FromDescriptor_MapsNonAttentionBlockToLinear()
+    {
+        var descriptor = new ModelDescriptor
+        {
+            Path = "lfm3.gguf",
+            FileName = "lfm3.gguf",
+            SizeBytes = 1,
+            LastWriteUtc = DateTimeOffset.UnixEpoch,
+            DisplayName = "lfm3",
+            Family = new ModelFamily("lfm3", "LFM3"),
+            Architecture = "lfm3",
+            NumLayers = 3,
+            NumKvHeads = 4,
+            HiddenDim = 256,
+            NumHeads = 4,
+            FfnDim = 1024,
+            LayerKvHeads = [4, 0, 4],
+        };
+
+        ModelArchitectureTemplate template = ModelArchitectureTemplate.FromDescriptor(descriptor);
+
+        Assert.Equal(["Full", "Linear", "Full"], template.LayerTypes);
+    }
+
+    [Fact]
+    public void SaveAndLoad_RoundTripsLayerPlan()
+    {
+        using var temp = new TempDirectory();
+        string path = Path.Combine(temp.Path, "shape.json");
+        var template = new ModelArchitectureTemplate
+        {
+            Name = "saved-shape",
+            NumLayers = 4,
+            LayerTypes = ["Full", "Sliding", "Linear", "Recurrent"],
+        };
+
+        template.Save(path);
+        ModelArchitectureTemplate loaded = ModelArchitectureTemplate.Load(path);
+
+        Assert.Equal(template.Name, loaded.Name);
+        Assert.Equal(template.LayerTypes, loaded.LayerTypes);
+    }
 }

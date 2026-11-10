@@ -1,8 +1,11 @@
-﻿@using SharpMind.Model.Analysis
+﻿@using System.Text.Json
+@using SharpMind.Model.Analysis
+@using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Services
 @inject ModelCatalogService Catalog
 @inject StudioLatentService Latent
 @inject ThemeService Theme
+@inject PathPickerService Picker
 @implements IDisposable
 
 <div class="page-head">
@@ -61,6 +64,14 @@
                     disabled="@(Latent.IsRunning || Latent.Runs.Count == 0)">
                 Clear plot
             </button>
+            <button type="button" class="button" @onclick="ImportPromptsAsync"
+                    disabled="@(Latent.IsRunning || string.IsNullOrWhiteSpace(_selectedModelPath))">
+                Import prompts...
+            </button>
+            <button type="button" class="button" @onclick="ExportPointsAsync"
+                    disabled="@(Latent.IsRunning || Latent.Runs.Count == 0)">
+                Export points...
+            </button>
             <label class="small">
                 <input type="checkbox" @bind="Latent.Aggregate" disabled="@Latent.IsRunning" />
                 Aggregate runs
@@ -75,6 +86,10 @@
         @if (Latent.Error is { } error)
         {
             <div class="error-line">@error</div>
+        }
+        @if (_importError is { } importError)
+        {
+            <div class="error-line">@importError</div>
         }
     </div>
 </section>
@@ -148,6 +163,7 @@
     private string _prompt = "The quick brown fox jumps over the lazy dog.";
     private int _maxTokens = 64;
     private bool _showLabels = true;
+    private string? _importError;
 
     private sealed record PlotPoint(
         double X, double Y, double RawX, double RawY,
@@ -182,6 +198,139 @@
         ModelDescriptor? model = _models.FirstOrDefault(item => item.Path == _selectedModelPath);
         if (model is null) return;
         await Latent.RunAsync(model, _prompt, Math.Clamp(_maxTokens, 1, 256));
+    }
+
+    private async Task ImportPromptsAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StudioPaths.Training,
+            "Import prompt list",
+            "*.*");
+        string? path = selection?.All.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        ModelDescriptor? model = _models.FirstOrDefault(item => item.Path == _selectedModelPath);
+        if (model is null) return;
+
+        try
+        {
+            IReadOnlyList<string> prompts = ReadPrompts(path);
+            if (prompts.Count == 0)
+            {
+                _importError = "The selected file contains no prompts.";
+                return;
+            }
+            _importError = null;
+            await Latent.RunManyAsync(model, prompts, Math.Clamp(_maxTokens, 1, 256));
+        }
+        catch (Exception ex)
+        {
+            _importError = $"Could not import prompts: {ex.Message}";
+        }
+    }
+
+    private async Task ExportPointsAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.SaveFile,
+            StudioPaths.Training,
+            "Export latent points",
+            "*.jsonl");
+        string? path = selection?.All.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(path)) return;
+        if (!path.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase) &&
+            !path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            path += ".jsonl";
+        }
+
+        try
+        {
+            await using var writer = new StreamWriter(path);
+            for (int runIndex = 0; runIndex < Latent.Runs.Count; runIndex++)
+            {
+                LatentRun run = Latent.Runs[runIndex];
+                foreach (LatentPoint point in run.Map.Points)
+                {
+                    string line = JsonSerializer.Serialize(new
+                    {
+                        run = runIndex,
+                        prompt = run.Prompt,
+                        model = run.ModelName,
+                        token_id = point.TokenId,
+                        token = point.Text,
+                        x = point.X,
+                        y = point.Y,
+                        explained_variance = run.Map.ExplainedVariance,
+                    });
+                    await writer.WriteLineAsync(line);
+                }
+            }
+            _importError = null;
+        }
+        catch (Exception ex)
+        {
+            _importError = $"Could not export points: {ex.Message}";
+        }
+    }
+
+    private static IReadOnlyList<string> ReadPrompts(string path)
+    {
+        string text = File.ReadAllText(path);
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+        if (extension is ".json" or ".jsonl")
+        {
+            var prompts = new List<string>();
+            if (extension == ".json")
+            {
+                using JsonDocument document = JsonDocument.Parse(text);
+                AddPromptElements(document.RootElement, prompts);
+            }
+            else
+            {
+                foreach (string line in text.Split('\n'))
+                {
+                    string trimmed = line.Trim();
+                    if (trimmed.Length == 0) continue;
+                    using JsonDocument document = JsonDocument.Parse(trimmed);
+                    AddPromptElements(document.RootElement, prompts);
+                }
+            }
+            return prompts;
+        }
+
+        return [.. text
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => line.Length > 0)];
+    }
+
+    private static void AddPromptElements(JsonElement element, List<string> prompts)
+    {
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+                AddPromptElements(item, prompts);
+            return;
+        }
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            string value = element.GetString()?.Trim() ?? "";
+            if (value.Length > 0) prompts.Add(value);
+            return;
+        }
+        if (element.ValueKind != JsonValueKind.Object) return;
+
+        foreach (string name in new[] { "prompt", "text", "content", "message" })
+        {
+            if (element.TryGetProperty(name, out JsonElement value) &&
+                value.ValueKind == JsonValueKind.String)
+            {
+                string prompt = value.GetString()?.Trim() ?? "";
+                if (prompt.Length > 0) prompts.Add(prompt);
+                return;
+            }
+        }
     }
 
     private IReadOnlyList<PlotPoint> PlotPoints()

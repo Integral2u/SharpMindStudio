@@ -3,6 +3,7 @@
 @using SharpMind.Core.Plugins
 @using SharpMind.Model.Config
 @using SharpMind.Studio.Core.Compute
+@using SharpMind.Studio.Core.Serialization
 @using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Services
@@ -18,9 +19,14 @@
             <button type="button" class="button" @onclick="() => ApplySize(64, 2, 4, 4, 256, 128)">Tiny</button>
             <button type="button" class="button" @onclick="() => ApplySize(128, 4, 8, 8, 512, 256)">Small</button>
             <button type="button" class="button" @onclick="() => ApplySize(384, 6, 6, 6, 1536, 256)">Medium</button>
+            <button type="button" class="button" @onclick="OpenTemplateAsync">Open template...</button>
         </div>
     </div>
 
+    @if (_templateError is not null)
+    {
+        <div class="error-line">@_templateError</div>
+    }
     <div class="training-form">
         <div class="field">
             <label class="field-label" for="job-name">Model name</label>
@@ -134,8 +140,9 @@
                    @onchange="e => SetLayerPlanText(e.Value?.ToString())"
                    placeholder="Full, Full, Sliding, Full" />
             <span class="small faint">
-                One entry per layer: Full or Sliding. A blank plan keeps the global attention
-                setting. The Model visualizer can generate this plan and the dimensions above.
+                One entry per layer: Full, Sliding, Linear or Recurrent. A blank plan keeps the
+                global attention setting. Linear and Recurrent are preserved in the plan but train
+                as full attention. The Model visualizer can generate this plan and the dimensions.
             </span>
         </div>
         <div class="field">
@@ -684,6 +691,31 @@
             : [.. parts.Select(ModelArchitectureTemplate.Normalize)];
         if (Job.LayerTypes.Count > 0)
             Job.NumLayers = Job.LayerTypes.Count;
+    }
+
+    private string? _templateError;
+
+    private async Task OpenTemplateAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StudioPaths.Training,
+            "Open architecture template",
+            "*.json");
+        string? path = selection?.All.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try
+        {
+            ModelArchitectureTemplate template = ModelArchitectureTemplate.Load(path);
+            template.ApplyTo(Job);
+            Training.PendingTemplate = template;
+            _templateError = null;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _templateError = $"Could not open template: {ex.Message}";
+        }
     }
 
     private void ApplyVisualizerTemplate()

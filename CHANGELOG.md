@@ -94,7 +94,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   remove. It can be seeded from the selected model and sent to Training > New model;
   the same plan can be edited there and trains with per-layer sliding windows. The
   visualizer and latent tabs show loading status and an Interrupt button for both
-  weight loading and the forward pass. The Latent space tab projects
+  weight loading and the forward pass. Architecture templates can be opened and
+  saved as JSON, and the New model editor has the same Open template action beside
+  Tiny/Small/Medium. Seeded Gemma-3 models resolve their stored sliding pattern,
+  and the layer plan can show Full, Sliding, Linear or Recurrent. The latent
+  space tab can import a prompt list (TXT, JSON or JSONL) and export projected
+  tokens as JSONL. The Latent space tab projects
   the prompt's final hidden states to two dimensions with classical MDS, labels
   each point with its decoded token and draws a hoverable scatter with the
   explained variance; an Aggregate option keeps earlier prompts in the plot

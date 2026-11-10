@@ -1,11 +1,13 @@
 ﻿@using SharpMind.Model.Config
 @using SharpMind.Model.Analysis
+@using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Services
 @inject ModelCatalogService Catalog
 @inject StudioVisualizerService Visual
 @inject StudioTrainingService Training
 @inject ThemeService Theme
+@inject PathPickerService Picker
 @inject NavigationManager Nav
 @implements IDisposable
 
@@ -103,7 +105,7 @@
         <div class="spread">
             <div>
                 <div class="eyebrow">Layer plan</div>
-                <span class="faint small">Full or sliding, in order. Add, insert or remove blocks.</span>
+                <span class="faint small">Full, sliding, linear or recurrent, in order. Add, insert or remove blocks.</span>
             </div>
             <button type="button" class="button" @onclick="AddLayer">Add layer</button>
         </div>
@@ -117,6 +119,8 @@
                             @onchange="e => SetLayerType(layerIndex, e.Value?.ToString())">
                         <option value="Full">Full attention</option>
                         <option value="Sliding">Sliding window</option>
+                        <option value="Linear">Linear / no attention</option>
+                        <option value="Recurrent">Recurrent (DeltaNet)</option>
                     </select>
                     <button type="button" class="button" title="Insert a layer after this one"
                             @onclick="() => InsertLayerAfter(layerIndex)">Insert</button>
@@ -127,7 +131,16 @@
             }
         </div>
 
+        @if (_template.HasUnsupportedTrainingLayers)
+        {
+            <div class="small faint">
+                Linear and recurrent layers are kept in the visual plan. The current training
+                kernel trains them as full attention; only Full/Sliding are applied at training time.
+            </div>
+        }
         <div class="row">
+            <button type="button" class="button" @onclick="OpenTemplateAsync">Open template...</button>
+            <button type="button" class="button" @onclick="SaveTemplateAsync">Save template...</button>
             <button type="button" class="button primary" @onclick="ApplyTemplateToTraining">
                 Use in New model
             </button>
@@ -365,6 +378,48 @@
         while (layers.Count < target) layers.Add("Full");
         if (layers.Count > target) layers.RemoveRange(target, layers.Count - target);
         _template = _template with { NumLayers = target, LayerTypes = layers };
+    }
+
+    private async Task OpenTemplateAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StudioPaths.Training,
+            "Open architecture template",
+            "*.json");
+        string? path = selection?.All.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try
+        {
+            _template = ModelArchitectureTemplate.Load(path);
+            _templateStatus = $"Opened {Path.GetFileName(path)}.";
+        }
+        catch (Exception ex)
+        {
+            _templateStatus = $"Could not open template: {ex.Message}";
+        }
+    }
+
+    private async Task SaveTemplateAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.SaveFile,
+            StudioPaths.Training,
+            "Save architecture template",
+            "*.json");
+        string? path = selection?.All.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(path)) return;
+        if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            path += ".json";
+        try
+        {
+            _template.Save(path);
+            _templateStatus = $"Saved {Path.GetFileName(path)}.";
+        }
+        catch (Exception ex)
+        {
+            _templateStatus = $"Could not save template: {ex.Message}";
+        }
     }
 
     private void ApplyTemplateToTraining()
