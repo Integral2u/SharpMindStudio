@@ -10,6 +10,7 @@ sessions and checkpoints stay on your machine until you explicitly send a job to
 compute host or a prompt to OpenRouter.
 
 - **Site and wiki:** <https://integral2u.github.io/SharpMindStudio/>
+- **Watch:** [SharpMind Studio in 60 seconds](https://youtu.be/LOI6OTCJvio) · [YouTube channel](https://www.youtube.com/@Integral2u)
 - **Installer:** <https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMind.Studio.Setup.msi.zip>
 - **Zip:** <https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMindStudio.zip>
 - **Source:** <https://github.com/Integral2u/SharpMindStudio>
