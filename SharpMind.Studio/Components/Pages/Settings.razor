@@ -241,6 +241,12 @@ else if (_tab == "openrouter")
                                         Sign up
                                     </a>
                                 }
+                                @if (ComputeProviderPrefabs.Find(_computePrefab) is { AffiliateCode.Length: > 0 } withCode)
+                                {
+                                    <span class="small faint">
+                                        Code: <strong class="mono">@withCode.AffiliateCode</strong>
+                                    </span>
+                                }
                             </div>
                             <span class="small faint">@ComputeProviderPrefabs.Find(_computePrefab).Description</span>
                         </div>

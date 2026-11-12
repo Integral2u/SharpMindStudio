@@ -25,11 +25,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Provider copy** - Chat now says "local, OpenRouter or Compute"; Work still
   says local or OpenRouter because Compute hosts are inference-only. The wiki
   provider table compares all three.
-- **Remote hosts and routers** - Vast.ai and Novita appear as manual remote-host
-  presets in Providers > Compute, OpenRouter is listed as integrated, and the
-  Vast.ai, EuroRouter and Novita sign-up links are available. The provider page
-  groups hosts and routers with their integration status; EuroRouter still needs
-  a generic OpenAI-compatible provider integration.
+- **Remote hosts and routers** - Vast.ai, MaxCloudOn and Novita appear as manual
+  remote-host presets in Providers > Compute, OpenRouter is listed as integrated,
+  and the Vast.ai, EuroRouter and Novita sign-up links are available. MaxCloudOn
+  code **SharpMindStudio** takes 20% off. The provider page groups hosts and
+  routers with their integration status; EuroRouter still needs a generic
+  OpenAI-compatible provider integration.
 - **Wiki navigation** - Labs is back in the deployed wiki navigation and the
   in-app link now uses the real `wiki/labs.html` path. A new Settings guide joins
   the wiki index, and Chat, Work, Training, Labs and Settings each link to their

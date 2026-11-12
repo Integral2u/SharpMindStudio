@@ -98,7 +98,8 @@ public sealed record ComputeProviderPrefab(
     string Description,
     bool Docker,
     bool Runpod,
-    string? ReferralUrl = null);
+    string? ReferralUrl = null,
+    string? AffiliateCode = null);
 
 public static class ComputeProviderPrefabs
 {
@@ -106,6 +107,7 @@ public static class ComputeProviderPrefabs
     public const string Runpod = "runpod";
     public const string Vultr = "vultr";
     public const string VastAi = "vast-ai";
+    public const string MaxCloudOn = "maxcloudon";
     public const string Novita = "novita";
     public const string Custom = "custom";
 
@@ -123,6 +125,11 @@ public static class ComputeProviderPrefabs
             "A Vast.ai GPU instance running the SharpMind Server image. Paste its public URL and token.",
             Docker: false, Runpod: false,
             ReferralUrl: "https://cloud.vast.ai/?ref_id=854920"),
+        new(MaxCloudOn, "MaxCloudOn GPU", ComputeProviderKinds.Remote,
+            "A MaxCloudOn GPU instance running the SharpMind Server image. Paste its public URL and token.",
+            Docker: false, Runpod: false,
+            ReferralUrl: "https://maxcloudon.com/",
+            AffiliateCode: "SharpMindStudio"),
         new(Novita, "Novita GPU", ComputeProviderKinds.Remote,
             "A Novita GPU instance running the SharpMind Server image. Paste its public URL and token.",
             Docker: false, Runpod: false,
