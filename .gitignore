@@ -16,3 +16,6 @@ SharpMind.Studio Setup/Debug/
 SharpMind.Studio Setup/Release/
 UpgradeLog*.htm
 /docs/studio.pdn
+
+# Video production pack: scripts, raw captures and the promo build stay local.
+/video/
