@@ -457,6 +457,24 @@
     text-transform: uppercase;
 }
 
+.sidebar-foot .github-link {
+    align-self: flex-start;
+    margin-top: .1rem;
+    padding: .2rem .55rem;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: .62rem;
+    letter-spacing: .02em;
+    text-decoration: none;
+}
+.sidebar-foot .github-link:hover {
+    color: var(--accent);
+    border-color: rgba(var(--accent-rgb), .45);
+    background: rgba(var(--accent-rgb), .06);
+}
+
 .studio-version {
     margin-top: .2rem;
     color: var(--faint);
@@ -520,6 +538,19 @@
     color: var(--accent);
     border-color: rgba(var(--accent-rgb), .55);
     background: rgba(var(--accent-rgb), .08);
+}
+.topbar-links .powered {
+    padding: .24rem .7rem;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    color: var(--faint);
+    font-size: .7rem;
+    text-decoration: none;
+}
+.topbar-links .powered:hover {
+    color: var(--text);
+    border-color: var(--line-strong);
+    background: rgba(255, 255, 255, .04);
 }
 @media (max-width: 700px) {
     .topbar-links .powered { display: none; }

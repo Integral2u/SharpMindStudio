@@ -124,8 +124,23 @@ code, pre, .mono { font-family: var(--mono); }
     background: var(--teal);
     box-shadow: 0 0 10px var(--teal);
 }
-.github-link { font-size: .7rem; color: var(--faint); }
-.github-link:hover { color: var(--text); }
+.sidebar-foot .github-link {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: .2rem .55rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: .62rem;
+    text-decoration: none;
+}
+.sidebar-foot .github-link:hover {
+    color: var(--text);
+    border-color: var(--line-2);
+    background: rgba(255, 255, 255, .03);
+}
 
 .main { margin-left: var(--sidebar); max-width: 100vw; overflow-x: hidden; }
 .wrap { width: min(1180px, calc(100% - 4rem)); margin: 0 auto; }
