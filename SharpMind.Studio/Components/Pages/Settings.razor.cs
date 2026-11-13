@@ -90,6 +90,10 @@ public partial class Settings
     private IReadOnlyDictionary<string, string>? _modelSources;
     private ResolvedInference? _familyResolved;
     private ResolvedInference? _modelResolved;
+    private bool _modelTuning;
+    private string _modelTuneStatus = "";
+    private CancellationTokenSource? _modelTuneCts;
+    private bool _disposed;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -1418,5 +1422,77 @@ public partial class Settings
         Inference.DeleteModel(_selectedModelPath);
         _modelDraft = new InferenceOverrides();
         _status = "Model overrides cleared.";
+    }
+
+    private async Task TuneSelectedModelAsync()
+    {
+        ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
+        if (model is null || _modelTuning) return;
+
+        _modelTuning = true;
+        _modelTuneStatus = "Starting...";
+        _modelTuneCts = new CancellationTokenSource();
+        var progress = new Progress<ModelTuneProgress>(update =>
+        {
+            if (_disposed) return;
+            _modelTuneStatus = update.Total > 0
+                ? $"{update.Message} ({Math.Min(update.Completed + 1, update.Total)}/{update.Total})"
+                : update.Message;
+            StateHasChanged();
+        });
+
+        try
+        {
+            await ModelTune.TuneAsync(model, TuneTarget.Chat, progress, _modelTuneCts.Token);
+            await ModelTune.TuneAsync(model, TuneTarget.Work, progress, _modelTuneCts.Token);
+            _modelTuneStatus = "Tuned Chat and Work.";
+        }
+        catch (OperationCanceledException)
+        {
+            _modelTuneStatus = "Tuning cancelled.";
+        }
+        catch (Exception ex)
+        {
+            _modelTuneStatus = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _modelTuning = false;
+            _modelTuneCts?.Dispose();
+            _modelTuneCts = null;
+            if (!_disposed) StateHasChanged();
+        }
+    }
+
+    private void CancelModelTune() => _modelTuneCts?.Cancel();
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _modelTuneCts?.Cancel();
+        _modelTuneCts?.Dispose();
+    }
+
+    private async Task StartModelSessionAsync(bool work)
+    {
+        ModelDescriptor? model = _models.FirstOrDefault(value => value.Path == _selectedModelPath);
+        if (model is null) return;
+
+        TuneTarget target = work ? TuneTarget.Work : TuneTarget.Chat;
+        TuneProfile? tune = Inference.TuneProfile(model.Path, target, TunePreset.Balanced);
+        await ChatService.NewChatAsync(
+            model,
+            systemPrompt: null,
+            overrides: tune?.Overrides,
+            mode: work ? "work" : "chat",
+            tunePreset: tune is null ? null : TunePreset.Balanced.ToString(),
+            tuneTarget: target.ToString());
+
+        if (ChatService.Document is not null)
+        {
+            Nav.NavigateTo(work
+                ? $"/work/{ChatService.Document.Id}"
+                : $"/chat/{ChatService.Document.Id}");
+        }
     }
 }

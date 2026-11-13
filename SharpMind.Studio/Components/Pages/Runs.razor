@@ -1,11 +1,14 @@
 @page "/runs"
 @implements IDisposable
+@using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Core.Jobs
 @using SharpMind.Studio.Core.Runs
 @using SharpMind.Studio.Services
 @inject StudioWorkspaceService Workspace
 @inject StudioCanaryService Canary
 @inject InferenceSettingsService Inference
+@inject ModelCatalogService Catalog
+@inject ModelTuneService ModelTune
 @inject IJSRuntime JS
 
 <PageTitle>Tests - SharpMind Studio</PageTitle>
@@ -67,7 +70,13 @@
             <h2>@FilteredRuns.Count of @_runs.Count runs</h2>
         </div>
         <div class="row">
-            <button type="button" class="button" @onclick="ReloadAsync" disabled="@Canary.IsRunning">
+            @if (_tuning)
+            {
+                <button type="button" class="button danger" @onclick="CancelTune">
+                    Cancel tune
+                </button>
+            }
+            <button type="button" class="button" @onclick="ReloadAsync" disabled="@(Canary.IsRunning || _tuning)">
                 Refresh
             </button>
         </div>
@@ -117,6 +126,10 @@
         </div>
 
         <div class="status-line">@_statusMessage</div>
+        @if (_tuneStatus.Length > 0)
+        {
+            <div class="status-line">@_tuneStatus</div>
+        }
         @if (_error is not null)
         {
             <div class="error-line">@_error</div>
@@ -167,6 +180,10 @@ else
                             <span class="run-star silver">&#9733;</span> @groupSilver.TokensPerSecond.ToString("F2") tok/s
                         </a>
                     }
+                    <button type="button" class="button" @onclick="() => TuneGroupAsync(group)"
+                            disabled="@(Canary.IsRunning || _tuning)" title="Tune every model in this group">
+                        Tune all
+                    </button>
                     <button type="button" class="button" @onclick="() => RerunGroupAsync(group)"
                             disabled="@Canary.IsRunning" title="Re-run every model in this group">
                         Re-run all
@@ -177,19 +194,19 @@ else
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>Run</th>
-                            <th>Subject</th>
+                            <th><button type="button" class="sort-button" @onclick='() => SortBy("run")'>Run @SortMark("run")</button></th>
+                            <th><button type="button" class="sort-button" @onclick='() => SortBy("subject")'>Subject @SortMark("subject")</button></th>
                             <th>Type</th>
-                            <th>Status</th>
-                            <th>Tool</th>
-                            <th>tok/s</th>
-                            <th>Steps</th>
-                            <th>When</th>
+                            <th><button type="button" class="sort-button" @onclick='() => SortBy("status")'>Status @SortMark("status")</button></th>
+                            <th><button type="button" class="sort-button" @onclick='() => SortBy("tool")'>Tool @SortMark("tool")</button></th>
+                            <th><button type="button" class="sort-button" @onclick='() => SortBy("tps")'>tok/s @SortMark("tps")</button></th>
+                            <th><button type="button" class="sort-button" @onclick='() => SortBy("steps")'>Steps @SortMark("steps")</button></th>
+                            <th><button type="button" class="sort-button" @onclick='() => SortBy("when")'>When @SortMark("when")</button></th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (RunSummary run in group.Runs)
+                        @foreach (RunSummary run in Sort(group.Runs))
                         {
                             <tr>
                                 <td>
@@ -224,12 +241,16 @@ else
                                 <td class="num faint">@FormatWhen(run.StartedUtc)</td>
                                 <td>
                                     <div class="row" style="gap: .35rem; flex-wrap: nowrap;">
+                                        <button type="button" class="button" @onclick="() => TuneRunAsync(run)"
+                                                disabled="@(Canary.IsRunning || _tuning)" title="Tune this model">
+                                            Tune
+                                        </button>
                                         <button type="button" class="button" @onclick="() => RerunAsync(run)"
-                                                disabled="@Canary.IsRunning" title="Run this model again with its tuned Performance settings">
+                                                disabled="@(Canary.IsRunning || _tuning)" title="Run this model again with its tuned Performance settings">
                                             Re-run
                                         </button>
                                         <button type="button" class="button danger" @onclick="() => DeleteRunAsync(run)"
-                                                disabled="@Canary.IsRunning" title="Delete this run">
+                                                disabled="@(Canary.IsRunning || _tuning)" title="Delete this run">
                                             Delete
                                         </button>
                                     </div>
@@ -253,6 +274,12 @@ else
     private string _statusMessage = "Ready.";
     private string? _error;
     private bool _wasRunning;
+    private string _sortColumn = "when";
+    private bool _sortDescending = true;
+    private bool _tuning;
+    private string _tuneStatus = "";
+    private CancellationTokenSource? _tuneCts;
+    private bool _disposed;
 
     private RunSummary? FastestWithTools => RunGrouping.FastestWithTools(_runs);
     private RunSummary? FastestWithoutTools => RunGrouping.FastestWithoutTools(_runs);
@@ -289,7 +316,13 @@ else
         await ReloadAsync();
     }
 
-    public void Dispose() => Canary.Changed -= OnCanaryChanged;
+    public void Dispose()
+    {
+        _disposed = true;
+        Canary.Changed -= OnCanaryChanged;
+        _tuneCts?.Cancel();
+        _tuneCts?.Dispose();
+    }
 
     private void OnCanaryChanged() => _ = InvokeAsync(async () =>
     {
@@ -373,6 +406,145 @@ else
             : $"Re-running {plan.Request.Models.Count} model(s); skipped {plan.Skipped} run(s) whose model file is missing.";
         _ = Canary.StartAsync(plan.Request, Workspace.Runs);
     }
+
+    private IEnumerable<RunSummary> Sort(IReadOnlyList<RunSummary> runs) => _sortColumn switch
+    {
+        "run" => _sortDescending
+            ? runs.OrderByDescending(run => run.RunId, StringComparer.OrdinalIgnoreCase)
+            : runs.OrderBy(run => run.RunId, StringComparer.OrdinalIgnoreCase),
+        "subject" => _sortDescending
+            ? runs.OrderByDescending(run => run.Subject ?? "", StringComparer.OrdinalIgnoreCase)
+            : runs.OrderBy(run => run.Subject ?? "", StringComparer.OrdinalIgnoreCase),
+        "status" => _sortDescending
+            ? runs.OrderByDescending(run => run.Status, StringComparer.OrdinalIgnoreCase)
+            : runs.OrderBy(run => run.Status, StringComparer.OrdinalIgnoreCase),
+        "tool" => _sortDescending
+            ? runs.OrderByDescending(run => run.ToolStatus, StringComparer.OrdinalIgnoreCase)
+            : runs.OrderBy(run => run.ToolStatus, StringComparer.OrdinalIgnoreCase),
+        "tps" => _sortDescending
+            ? runs.OrderByDescending(run => run.TokensPerSecond)
+            : runs.OrderBy(run => run.TokensPerSecond),
+        "steps" => _sortDescending
+            ? runs.OrderByDescending(run => run.Steps)
+            : runs.OrderBy(run => run.Steps),
+        _ => _sortDescending
+            ? runs.OrderByDescending(run => run.StartedUtc ?? DateTimeOffset.MinValue)
+            : runs.OrderBy(run => run.StartedUtc ?? DateTimeOffset.MinValue),
+    };
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortDescending = !_sortDescending;
+            return;
+        }
+
+        _sortColumn = column;
+        _sortDescending = column is "when" or "tps" or "steps";
+    }
+
+    private string SortMark(string column) =>
+        _sortColumn == column ? (_sortDescending ? " v" : " ^") : "";
+
+    private ModelDescriptor? ModelFor(RunSummary run)
+    {
+        string? path = Workspace.ResolveModelPath(run.ModelPath) ??
+                       Workspace.ResolveModelPath(run.Subject);
+        return path is null ? null : Catalog.Find(path);
+    }
+
+    private static TuneTarget TargetFor(RunSummary run) =>
+        run.ToolStatus is "Yes" or "No" ? TuneTarget.Work : TuneTarget.Chat;
+
+    private async Task TuneRunAsync(RunSummary run)
+    {
+        if (_tuning || Canary.IsRunning) return;
+        ModelDescriptor? model = ModelFor(run);
+        if (model is null)
+        {
+            _error = "Could not find the model file for this run.";
+            return;
+        }
+
+        await TuneModelsAsync([(model, TargetFor(run))]);
+    }
+
+    private async Task TuneGroupAsync(RunGroup group)
+    {
+        if (_tuning || Canary.IsRunning) return;
+
+        var targets = new Dictionary<string, (ModelDescriptor Model, TuneTarget Target)>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (RunSummary run in group.Runs)
+        {
+            ModelDescriptor? model = ModelFor(run);
+            if (model is null) continue;
+            TuneTarget target = TargetFor(run);
+            if (!targets.TryGetValue(model.Path, out var existing) ||
+                (existing.Target == TuneTarget.Chat && target == TuneTarget.Work))
+            {
+                targets[model.Path] = (model, target);
+            }
+        }
+
+        if (targets.Count == 0)
+        {
+            _error = "Could not find the model files for this group.";
+            return;
+        }
+
+        await TuneModelsAsync([.. targets.Values]);
+    }
+
+    private async Task TuneModelsAsync(
+        IReadOnlyList<(ModelDescriptor Model, TuneTarget Target)> targets)
+    {
+        _tuning = true;
+        _error = null;
+        _tuneStatus = "Starting...";
+        _tuneCts = new CancellationTokenSource();
+        var progress = new Progress<ModelTuneProgress>(update =>
+        {
+            if (_disposed) return;
+            _tuneStatus = update.Total > 0
+                ? $"{update.Message} ({Math.Min(update.Completed + 1, update.Total)}/{update.Total})"
+                : update.Message;
+            StateHasChanged();
+        });
+
+        try
+        {
+            for (int i = 0; i < targets.Count; i++)
+            {
+                (ModelDescriptor model, TuneTarget target) = targets[i];
+                _tuneStatus = $"Tuning {model.FileName} for {target} ({i + 1}/{targets.Count})...";
+                StateHasChanged();
+                await ModelTune.TuneAsync(model, target, progress, _tuneCts.Token);
+            }
+
+            _tuneStatus = $"Tuned {targets.Count} model(s).";
+            await ReloadAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            _tuneStatus = "Tuning cancelled.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+            _tuneStatus = "";
+        }
+        finally
+        {
+            _tuning = false;
+            _tuneCts?.Dispose();
+            _tuneCts = null;
+            if (!_disposed) StateHasChanged();
+        }
+    }
+
+    private void CancelTune() => _tuneCts?.Cancel();
 
     private static string ShortRun(string runId) =>
         runId.Length <= 22 ? runId : runId[..22] + "...";

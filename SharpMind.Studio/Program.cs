@@ -69,6 +69,7 @@ builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
 }));
 builder.Services.AddSingleton<WorkToolService>();
 builder.Services.AddSingleton<TuneRunnerService>();
+builder.Services.AddScoped<ModelTuneService>();
 builder.Services.AddSingleton<StudioTrainingService>();
 builder.Services.AddSingleton<StudioConversionService>();
 builder.Services.AddSingleton<StudioExamService>();

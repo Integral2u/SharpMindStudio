@@ -1,5 +1,6 @@
 ﻿@page "/runs/{RunId}"
 @implements IDisposable
+@using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Core.Jobs
 @using SharpMind.Studio.Core.Runs
 @using SharpMind.Studio.Services
@@ -7,6 +8,9 @@
 @inject ThemeService Theme
 @inject StudioCanaryService Canary
 @inject InferenceSettingsService Inference
+@inject ModelCatalogService Catalog
+@inject ModelTuneService ModelTune
+@inject StudioChatService ChatService
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
@@ -85,15 +89,34 @@ else
         <button type="button" class="button primary" @onclick="RerunAsync" disabled="@Canary.IsRunning">
             @(Canary.IsRunning ? "Running..." : "Re-run")
         </button>
+        <button type="button" class="button" @onclick="TuneAsync" disabled="@(Canary.IsRunning || _tuning)">
+            @(_tuning ? "Tuning..." : "Tune")
+        </button>
+        <button type="button" class="button" @onclick="() => StartSessionAsync(work: false)"
+                disabled="@(Canary.IsRunning || _tuning)">
+            Chat
+        </button>
+        <button type="button" class="button" @onclick="() => StartSessionAsync(work: true)"
+                disabled="@(Canary.IsRunning || _tuning)">
+            Work
+        </button>
+        @if (_tuning)
+        {
+            <button type="button" class="button danger" @onclick="CancelTune">Cancel tune</button>
+        }
         @if (Canary.IsRunning)
         {
             <span class="spinner-ring" title="Re-run active"></span>
         }
-        <button type="button" class="button danger" @onclick="DeleteAsync" disabled="@Canary.IsRunning">
+        <button type="button" class="button danger" @onclick="DeleteAsync" disabled="@(Canary.IsRunning || _tuning)">
             Delete run
         </button>
         <span class="status-line">@_rerunStatus</span>
     </div>
+    @if (_tuneStatus.Length > 0)
+    {
+        <div class="status-line" style="margin-top: .35rem;">@_tuneStatus</div>
+    }
     @if (_rerunError is not null)
     {
         <div class="error-line" style="margin-top: .6rem;">@_rerunError</div>
@@ -166,6 +189,10 @@ else
     private bool IsRunning => Canary.IsRunning;
     private string _rerunStatus = "";
     private string? _rerunError;
+    private bool _tuning;
+    private string _tuneStatus = "";
+    private CancellationTokenSource? _tuneCts;
+    private bool _disposed;
 
     protected override void OnInitialized()
     {
@@ -174,7 +201,13 @@ else
         if (Canary.IsRunning) _rerunStatus = Canary.Status;
     }
 
-    public void Dispose() => Canary.Changed -= OnCanaryChanged;
+    public void Dispose()
+    {
+        _disposed = true;
+        Canary.Changed -= OnCanaryChanged;
+        _tuneCts?.Cancel();
+        _tuneCts?.Dispose();
+    }
 
     private void OnCanaryChanged() => _ = InvokeAsync(() =>
     {
@@ -259,6 +292,92 @@ else
         _rerunStatus = "Starting...";
         _ = Canary.StartAsync(plan.Request, Workspace.Runs);
     }
+
+    private ModelDescriptor? ModelForRun()
+    {
+        if (_summary is null) return null;
+        string? path = Workspace.ResolveModelPath(_summary.ModelPath) ??
+                       Workspace.ResolveModelPath(_summary.Subject);
+        return path is null ? null : Catalog.Find(path);
+    }
+
+    private async Task TuneAsync()
+    {
+        if (_tuning || Canary.IsRunning) return;
+        ModelDescriptor? model = ModelForRun();
+        if (model is null)
+        {
+            _rerunError = "Could not find the model for this run.";
+            return;
+        }
+
+        _tuning = true;
+        _tuneStatus = "Starting...";
+        _tuneCts = new CancellationTokenSource();
+        var progress = new Progress<ModelTuneProgress>(update =>
+        {
+            if (_disposed) return;
+            _tuneStatus = update.Total > 0
+                ? $"{update.Message} ({Math.Min(update.Completed + 1, update.Total)}/{update.Total})"
+                : update.Message;
+            StateHasChanged();
+        });
+
+        try
+        {
+            TuneTarget target = _summary?.ToolStatus is "Yes" or "No"
+                ? TuneTarget.Work
+                : TuneTarget.Chat;
+            await ModelTune.TuneAsync(model, target, progress, _tuneCts.Token);
+            _tuneStatus = $"Tuned {target}.";
+        }
+        catch (OperationCanceledException)
+        {
+            _tuneStatus = "Tuning cancelled.";
+        }
+        catch (Exception ex)
+        {
+            _rerunError = $"{ex.GetType().Name}: {ex.Message}";
+            _tuneStatus = "";
+        }
+        finally
+        {
+            _tuning = false;
+            _tuneCts?.Dispose();
+            _tuneCts = null;
+            if (!_disposed) StateHasChanged();
+        }
+    }
+
+    private void CancelTune() => _tuneCts?.Cancel();
+
+    private async Task StartSessionAsync(bool work)
+    {
+        ModelDescriptor? model = ModelForRun();
+        if (model is null)
+        {
+            _rerunError = "Could not find the model for this run.";
+            return;
+        }
+
+        TuneTarget target = work ? TuneTarget.Work : TuneTarget.Chat;
+        TuneProfile? tune = Inference.TuneProfile(model.Path, target, TunePreset.Balanced);
+        await ChatService.NewChatAsync(
+            model,
+            systemPrompt: null,
+            overrides: tune?.Overrides,
+            mode: work ? "work" : "chat",
+            tunePreset: tune is null ? null : TunePreset.Balanced.ToString(),
+            tuneTarget: target.ToString());
+
+        if (ChatService.Document is not null)
+        {
+            Nav.NavigateTo(work
+                ? $"/work/{ChatService.Document.Id}"
+                : $"/chat/{ChatService.Document.Id}");
+        }
+    }
+
     private static async Task<List<RunEvent>> ReadAllAsync(RunHandle handle)
     {
         var events = new List<RunEvent>();

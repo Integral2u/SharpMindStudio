@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [1.1.2.0] - 2026-11-11
 
+### Added
+
+- **Tune from Tests** - every run row on the Tests page has a **Tune** button,
+  and each family, model or run-type group has **Tune all**. A run with a tool
+  probe tunes Work; the rest tune Chat. Progress and cancellation are shown in
+  the filter panel.
+- **Sortable Tests tables** - each group on the Tests page has the same
+  sortable column headers as the dashboard: run, subject, status, tool,
+  tok/s, steps and when.
+- **Model actions** - the Settings model panel and a run detail now offer
+  **Tune**, **Chat** and **Work** for the model in view. Tune runs the measured
+  presets and saves them; Chat and Work start a session with the tuned
+  Balanced profile.
+
 ### Changed
 
 - Version bumped to **1.1.2.0** for the next development cycle.

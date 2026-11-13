@@ -1,4 +1,5 @@
 @page "/settings"
+@implements IDisposable
 @using Microsoft.AspNetCore.Components
 @using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.Inference
@@ -15,6 +16,9 @@
 @inject SshHostService Ssh
 @inject HuggingFaceService HuggingFace
 @inject ModelCatalogService Catalog
+@inject ModelTuneService ModelTune
+@inject StudioChatService ChatService
+@inject NavigationManager Nav
 @inject GatewayService Gateway
 @inject PathPickerService Picker
 @inject IJSRuntime JS
@@ -946,6 +950,27 @@ else if (_tab == "models")
             @if (_selectedModelPath is not null)
             {
                 <div class="small faint mono">@_selectedModelPath</div>
+                <div class="row" style="margin-bottom: .4rem;">
+                    <button type="button" class="button primary" @onclick="TuneSelectedModelAsync"
+                            disabled="@_modelTuning" title="Tune Chat and Work for this model">
+                        @(_modelTuning ? "Tuning..." : "Tune")
+                    </button>
+                    <button type="button" class="button" @onclick="() => StartModelSessionAsync(work: false)"
+                            disabled="@_modelTuning" title="Start a chat with this model">
+                        Chat
+                    </button>
+                    <button type="button" class="button" @onclick="() => StartModelSessionAsync(work: true)"
+                            disabled="@_modelTuning" title="Start Work with this model">
+                        Work
+                    </button>
+                    @if (_modelTuning)
+                    {
+                        <button type="button" class="button danger" @onclick="CancelModelTune">
+                            Cancel
+                        </button>
+                    }
+                    <span class="status-line">@_modelTuneStatus</span>
+                </div>
                 <InferenceProfileEditor Value="_modelDraft" ValueChanged="SaveModelFromEditor"
                                         AllowInherit="true"
                                         Sources="_modelSources"
