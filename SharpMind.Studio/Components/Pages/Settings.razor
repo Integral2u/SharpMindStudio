@@ -821,6 +821,17 @@ else if (_tab == "openrouter")
                                 </div>
                             </div>
                             <div class="small faint">@Compute.DescribeSsh(provider.Id)</div>
+                            <div class="spread" style="align-items: center; gap: .6rem;">
+                                <span class="small faint mono">Host key: @SshHostKeyLabel(provider.Id)</span>
+                                @if (SshHasKnownHostKey(provider.Id))
+                                {
+                                    <button type="button" class="button"
+                                            @onclick="() => ForgetSshHostKey(provider.Id)"
+                                            title="Forget the pinned host key. The next connection trusts the current host key.">
+                                        Forget host key
+                                    </button>
+                                }
+                            </div>
                             @if (SshSetupScript.LooksUnpublished(Compute.SshImage(provider.Id)))
                             {
                                 <div class="error-line">

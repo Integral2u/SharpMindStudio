@@ -34,6 +34,7 @@ builder.Services.AddSingleton<ComputeProviderService>();
 builder.Services.AddSingleton<ComputeChatBackend>();
 builder.Services.AddSingleton<DockerHostService>();
 builder.Services.AddSingleton<RunpodService>();
+builder.Services.AddSingleton(SshKnownHosts.Default);
 builder.Services.AddSingleton<SshHostService>();
 builder.Services.AddHttpClient<OpenRouterClient>(client =>
 {

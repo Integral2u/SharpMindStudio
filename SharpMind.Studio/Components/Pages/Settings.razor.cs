@@ -624,6 +624,31 @@ public partial class Settings
         _ => "Working…",
     };
 
+    private string SshHostKeyLabel(string id)
+    {
+        SshTarget? target = Compute.SshTargetFor(id);
+        if (target is null) return "not configured";
+        return Ssh.KnownFingerprint(target) ?? "not pinned yet";
+    }
+
+    private bool SshHasKnownHostKey(string id)
+    {
+        SshTarget? target = Compute.SshTargetFor(id);
+        return target is not null && Ssh.KnownFingerprint(target) is not null;
+    }
+
+    private void ForgetSshHostKey(string id)
+    {
+        SshTarget? target = Compute.SshTargetFor(id);
+        if (target is null) return;
+
+        bool removed = Ssh.ForgetHostKey(target);
+        _sshStage = removed
+            ? $"Forgot the SSH host key for {target.Host}:{target.Port}. "
+              + "The next connect will trust the current key."
+            : $"No SSH host key was saved for {target.Host}:{target.Port}.";
+    }
+
     private async Task TestSshAsync(string id)
     {
         if (_sshBusy) return;

@@ -188,6 +188,13 @@ public sealed class ComputeProviderService
             _store.SshPassword(id));
     }
 
+    /// <summary>The SSH endpoint only, without decrypting key or password material.</summary>
+    public SshTarget? SshTargetFor(string id)
+    {
+        ComputeProviderSettings? provider = _store.Find(id);
+        return provider is null ? null : SshTargets.FromSettings(provider);
+    }
+
     public bool HasSshPassword(string id) => !string.IsNullOrWhiteSpace(_store.SshPassword(id));
 
     public string DescribeSsh(string id)

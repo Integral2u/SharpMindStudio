@@ -18,6 +18,34 @@ public sealed class SshHostService
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromMinutes(60);
 
+    private readonly SshKnownHosts _knownHosts;
+
+    public SshHostService() : this(SshKnownHosts.Default)
+    {
+    }
+
+    public SshHostService(SshKnownHosts knownHosts)
+    {
+        _knownHosts = knownHosts ?? throw new ArgumentNullException(nameof(knownHosts));
+    }
+
+    /// <summary>The pinned host-key fingerprint for this endpoint, if any.</summary>
+    public string? KnownFingerprint(SshTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        return _knownHosts.Find(target.Host, target.Port)?.Fingerprint;
+    }
+
+    /// <summary>
+    /// Forgets the pinned key so the next connection can trust the current host
+    /// key again. Use this after rebuilding or replacing the host.
+    /// </summary>
+    public bool ForgetHostKey(SshTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        return _knownHosts.Forget(target.Host, target.Port);
+    }
+
     public async Task<SshProbe> ProbeAsync(
         SshCredentials credentials,
         IProgress<SshProgress>? progress = null,
@@ -54,7 +82,7 @@ public sealed class SshHostService
 
         if (!probe.HasDocker)
         {
-            Report(progress, "docker", "Docker is not installed. Installing it now…");
+            Report(progress, "docker", "Docker is not installed. Installing it now...");
             await RunAsync(
                 client,
                 SshSetupScript.InstallDocker(),
@@ -81,7 +109,7 @@ public sealed class SshHostService
 
             if (!probe.HasNvidiaToolkit)
             {
-                Report(progress, "toolkit", "Installing the NVIDIA container toolkit…");
+                Report(progress, "toolkit", "Installing the NVIDIA container toolkit...");
                 await RunAsync(
                     client,
                     SshSetupScript.InstallNvidiaToolkit(),
@@ -117,7 +145,7 @@ public sealed class SshHostService
                 + "or publish the image from this panel first.");
         }
 
-        Report(progress, "pull", $"Pulling {request.Image}. The first pull can take a few minutes…");
+        Report(progress, "pull", $"Pulling {request.Image}. The first pull can take a few minutes...");
         await RunAsync(
             client,
             SshSetupScript.Pull(request.Image),
@@ -125,7 +153,7 @@ public sealed class SshHostService
             progress,
             cancellationToken).ConfigureAwait(false);
 
-        Report(progress, "run", "Starting the SharpMind Server container…");
+        Report(progress, "run", "Starting the SharpMind Server container...");
         await RunAsync(
             client,
             SshSetupScript.Run(request),
@@ -241,7 +269,7 @@ public sealed class SshHostService
         progress?.Report(new SshProgress(stage, SshSetupScript.FormatLogLine(line)));
     }
 
-    private static async Task<SshClient> ConnectAsync(
+    private async Task<SshClient> ConnectAsync(
         SshCredentials credentials,
         CancellationToken cancellationToken)
     {
@@ -294,13 +322,45 @@ public sealed class SshHostService
                 Timeout = ConnectTimeout,
             };
             var client = new SshClient(info);
-            // Trust on first use: the key is accepted but not pinned. The host is
-            // reached over the provider's network and the user chose the address.
-            client.HostKeyReceived += (_, e) => e.CanTrust = true;
+            string? hostKeyError = null;
+            client.HostKeyReceived += (sender, e) =>
+            {
+                byte[]? key = e.HostKey is { Length: > 0 } presented
+                    ? presented
+                    : e.FingerPrint;
+                if (key is not { Length: > 0 })
+                {
+                    hostKeyError =
+                        $"The SSH server at {target.Host}:{target.Port} did not present a host key.";
+                    e.CanTrust = false;
+                    return;
+                }
+
+                string fingerprint = SshKnownHosts.Fingerprint(key);
+                SshHostKeyStatus status = _knownHosts.Verify(
+                    target.Host, target.Port, e.HostKeyName, fingerprint, out _);
+
+                if (status == SshHostKeyStatus.Changed)
+                {
+                    hostKeyError =
+                        $"The SSH host key for {target.Host}:{target.Port} does not match the saved key. "
+                        + "The host may have been rebuilt, or the connection may be intercepted. "
+                        + "If you rebuilt the host, press Forget host key in Settings and connect again.";
+                    e.CanTrust = false;
+                    return;
+                }
+
+                e.CanTrust = true;
+            };
 
             try
             {
                 await Task.Run(client.Connect, cancellationToken).ConfigureAwait(false);
+            }
+            catch (SshConnectionException ex) when (hostKeyError is not null)
+            {
+                client.Dispose();
+                throw new InvalidOperationException(hostKeyError, ex);
             }
             catch
             {
