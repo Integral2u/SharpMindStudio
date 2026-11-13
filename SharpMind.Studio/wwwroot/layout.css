@@ -457,6 +457,18 @@
     text-transform: uppercase;
 }
 
+.beta-pill {
+    align-self: center;
+    padding: .1rem .4rem;
+    border: 1px solid rgba(var(--accent-rgb), .3);
+    border-radius: 999px;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: .58rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
 .sidebar-foot .github-link {
     align-self: flex-start;
     margin-top: .1rem;

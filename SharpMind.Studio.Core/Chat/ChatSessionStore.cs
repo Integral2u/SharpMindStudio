@@ -1,4 +1,5 @@
 ﻿using SharpMind.Inference.Chat;
+using SharpMind.Studio.Core.OpenRouter;
 using SharpMind.Studio.Core.Serialization;
 
 namespace SharpMind.Studio.Core.Chat;
@@ -134,29 +135,33 @@ public sealed class ChatSessionStore
     }
 
     /// <summary>
-    /// Creates a chat backed by an OpenRouter model. Remote chats keep the same
-    /// document/history shape as local ones, so the transcript, rename, delete
-    /// and session list all work unchanged. <see cref="ModelPath"/> is only a
-    /// stable label; <see cref="ChatSessionDocument.RemoteModel"/> is the model
-    /// id sent to OpenRouter.
+    /// Creates a chat backed by a remote provider model. Remote chats keep the
+    /// same document/history shape as local ones, so the transcript, rename,
+    /// delete and session list all work unchanged. <see cref="ModelPath"/> is
+    /// only a stable label; <see cref="ChatSessionDocument.RemoteModel"/> is the
+    /// model id sent to the provider and <see cref="ChatSessionDocument.RemoteProvider"/>
+    /// names the provider profile.
     /// </summary>
     public ChatSessionDocument CreateRemote(
         string modelId,
         string? systemPrompt,
-        string mode = "chat")
+        string mode = "chat",
+        string? providerId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
+        RemoteProviderPreset preset = RemoteProviders.Find(providerId);
         string id = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("n")[..8]}";
         string cleanModel = modelId.Trim();
         var document = new ChatSessionDocument
         {
             Id = id,
-            Name = $"{cleanModel} chat",
+            Name = $"{cleanModel} via {preset.Name}",
             ModelPath = "openrouter",
             Provider = "openrouter",
+            RemoteProvider = preset.Id,
             RemoteModel = cleanModel,
-            FamilyId = "openrouter",
-            FamilyName = "OpenRouter",
+            FamilyId = preset.Id,
+            FamilyName = preset.Name,
             InferenceVersion = typeof(IChatSession).Assembly.GetName().Version?.ToString(),
             Mode = mode,
             SystemPrompt = systemPrompt,

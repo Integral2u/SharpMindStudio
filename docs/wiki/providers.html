@@ -144,9 +144,8 @@
                 Vast.ai, MaxCloudOn and Novita have manual remote-host presets under
                 Settings &gt; Providers &gt; Compute; paste the instance URL and token after
                 creating the GPU. MaxCloudOn code <span class="mono">SharpMindStudio</span>
-                takes 20% off. OpenRouter is already integrated in Studio. EuroRouter still
-                needs a generic OpenAI-compatible provider integration before it can appear as an
-                inference provider.
+                takes 20% off. OpenRouter and EuroRouter (beta) are integrated in Studio;
+                each keeps its own key, base URL and model list.
             </p>
             <div class="table-wrap">
                 <table>
@@ -179,12 +178,20 @@
                         <tr>
                             <td>EuroRouter</td>
                             <td>Router</td>
-                            <td>Integration pending</td>
+                            <td><a href="settings.html#providers">Integrated (beta)</a></td>
                             <td><a href="https://www.eurouter.ai?ref=ZLSG4A2M" target="_blank" rel="sponsored noopener">Sign up</a></td>
                         </tr>
                     </tbody>
                 </table>
             </div>
+            <p>
+                EuroRouter keeps a profile beside OpenRouter:
+                <span class="mono">https://api.eurouter.ai/api/v1</span>, an
+                <span class="mono">eur_...</span> key and its own model list.
+                <strong>Test key</strong> validates the key without spending credit and
+                reports the remaining balance. The beta badge stays until a live
+                completion has been verified.
+            </p>
 
             <h2 id="contract">The shared contract</h2>
             <p>Every host follows the same rules, which is why the workflow does not change:</p>

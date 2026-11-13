@@ -19,6 +19,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **Tune**, **Chat** and **Work** for the model in view. Tune runs the measured
   presets and saves them; Chat and Work start a session with the tuned
   Balanced profile.
+- **Remote provider profiles** - OpenRouter and EuroRouter keep separate API
+  keys, base URLs and model lists. The existing `openrouter.json` layout is
+  migrated into the OpenRouter profile on load, and each chat document records
+  which remote profile it uses.
+- **EuroRouter (beta)** - a second integrated router with
+  `https://api.eurouter.ai`, an `eur_...` key and its own model picker. Fetch
+  models works before a key is saved; **Test key** validates the saved key with
+  `GET /api/v1/key` without spending credit and reports the remaining balance.
+  Responses carry EUR cost, and a 402 shows a clear balance message.
 
 ### Changed
 

@@ -49,7 +49,7 @@
                     <h2>@(_workMode ? "What should we work on?" : "What do you want to ask?")</h2>
                 </div>
                 <div class="row">
-                    <span class="faint small mono">@(_workMode ? "local or OpenRouter" : "local, OpenRouter or Compute")</span>
+                    <span class="faint small mono">@(_workMode ? "local or remote" : "local, remote or Compute")</span>
                     <WikiGuideLink Page="inference" Label="Chat guide" />
                 </div>
             </div>
@@ -104,7 +104,13 @@
                         <label class="field-label" for="chat-provider">Provider</label>
                         <select id="chat-provider" class="input" @onchange="SetProvider">
                             <option value="local" selected="@(!_remoteChat)">Local model</option>
-                            <option value="openrouter" selected="@(_remoteChat && _computeProviderId is null)">OpenRouter</option>
+                            @foreach (RemoteProviderPreset provider in RemoteProviders.All)
+                            {
+                                <option value="@provider.Id"
+                                        selected="@(_remoteChat && _computeProviderId is null && _remoteProviderId == provider.Id)">
+                                    @provider.Name@(provider.Beta ? " (beta)" : "")
+                                </option>
+                            }
                             @foreach (ComputeProviderSettings host in Compute.Providers)
                             {
                                 <option value="@($"compute:{host.Id}")" selected="@(_computeProviderId == host.Id)"
@@ -144,7 +150,13 @@
                     else
                     {
                         <div class="field">
-                            <label class="field-label" for="chat-remote-model">Model</label>
+                            <div class="field-label-row">
+                                <label class="field-label" for="chat-remote-model">Model</label>
+                                @if (_computeProviderId is null && RemotePreset.Beta)
+                                {
+                                    <span class="beta-pill">beta</span>
+                                }
+                            </div>
                             @if (_computeProviderId is not null)
                             {
                                 ComputeProvider? host = Compute.Resolve(_computeProviderId);
@@ -166,15 +178,19 @@
                                 <select id="chat-remote-model" class="input" @bind="_remoteModel"
                                         @bind:after="SaveRemoteModelChoice"
                                         @onfocus="EnsureActiveModels">
-                                    @if (OpenRouter.ActiveModels.Count == 0)
+                                    @if (RemoteActiveModels.Count == 0)
                                     {
-                                        <option value="">@(OpenRouter.HasApiKey ? "Loading models..." : "No active models")</option>
+                                        <option value="">@(RemoteHasApiKey ? "Loading models..." : "No active models")</option>
                                     }
-                                    @foreach (string model in OpenRouter.ActiveModels)
+                                    @foreach (string model in RemoteActiveModels)
                                     {
                                         <option value="@model">@model</option>
                                     }
                                 </select>
+                                @if (RemoteActiveModels.Count == 0)
+                                {
+                                    <a class="small" href="/settings?tab=openrouter">Add models in Settings</a>
+                                }
                             }
                         </div>
                     }
@@ -184,18 +200,23 @@
                 {
                     <div class="welcome-model-status">
                         <span class="small faint">
-                            @(OpenRouter.HasApiKey ? "OpenRouter key configured" : "No OpenRouter key")
+                            @(RemoteHasApiKey ? $"{RemotePreset.Name} key configured" : $"No {RemotePreset.Name} key")
                         </span>
                     </div>
-                    @if (!OpenRouter.HasApiKey)
+                    @if (!RemoteHasApiKey)
                     {
                         <div class="tool-warning">
                             <div>
-                                <strong>OpenRouter needs an API key.</strong>
+                                <strong>@RemotePreset.Name needs an API key.</strong>
                                 <span class="small faint">Add it in Settings, then return here.</span>
                             </div>
                             <div class="row">
                                 <button type="button" class="button" @onclick="OpenRouterSettings">Open Settings</button>
+                                @if (RemotePreset.HasSignup)
+                                {
+                                    <a class="button" href="@RemotePreset.SignupUrl" target="_blank"
+                                       rel="sponsored noopener">Sign up</a>
+                                }
                             </div>
                         </div>
                     }
@@ -203,7 +224,7 @@
                     {
                         <div class="small faint">
                             Chat uses the selected remote model. Work keeps the local project tools;
-                            only the model runs remotely. OpenRouter models are inference-only, so
+                            only the model runs remotely. @RemotePreset.Name models are inference-only, so
                             local tuning is unavailable.
                         </div>
                     }
@@ -231,7 +252,7 @@
                     else
                     {
                         <div class="small faint">
-                            Inference runs on @host.Name. Work tools need a local model or OpenRouter; Compute is inference-only.
+                            Inference runs on @host.Name. Work tools need a local model or a remote provider; Compute is inference-only.
                         </div>
                     }
                 }
@@ -702,10 +723,15 @@ else
     private bool _allowFailedTools;
     private bool _remoteChat;
     private string? _computeProviderId;
+    private string _remoteProviderId = RemoteProviders.OpenRouter;
     private string _remoteModel = "";
     private string? _selectedModelPath;
     private string _input = "";
     private readonly List<ChatArtifact> _pendingArtifacts = [];
+
+    private RemoteProviderPreset RemotePreset => RemoteProviders.Find(_remoteProviderId);
+    private IReadOnlyList<string> RemoteActiveModels => OpenRouter.ActiveModelsFor(_remoteProviderId);
+    private bool RemoteHasApiKey => OpenRouter.HasApiKeyFor(_remoteProviderId);
 
     private bool RemoteReady => _remoteChat
         && !string.IsNullOrWhiteSpace(_remoteModel)
@@ -713,8 +739,8 @@ else
             ? Compute.Resolve(computeId) is { IsUsable: true } host
               && (host.Models.Count == 0
                   || host.Models.Any(model => model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)))
-            : OpenRouter.HasApiKey
-              && OpenRouter.ActiveModels.Any(model =>
+            : RemoteHasApiKey
+              && RemoteActiveModels.Any(model =>
                   model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)));
 
     private string? SelectedFileName =>
@@ -766,7 +792,8 @@ else
             _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
                 ? Theme.LastChatModel
                 : _models.FirstOrDefault()?.Path;
-            _remoteModel = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
+            _remoteModel = OpenRouter.DefaultModelFor(_remoteProviderId) ??
+                           OpenRouter.ActiveModelsFor(_remoteProviderId).FirstOrDefault() ?? "";
             UpdateLatestModelRun();
         }
 
@@ -865,13 +892,14 @@ else
             _computeProviderId = ChatService.ComputeProviderId;
             if (_remoteChat)
             {
+                _remoteProviderId = ChatService.RemoteProviderId ?? RemoteProviders.OpenRouter;
                 _remoteModel = ChatService.RemoteModel ?? _remoteModel;
                 if (_computeProviderId is null
                     && !string.IsNullOrWhiteSpace(_remoteModel)
-                    && !OpenRouter.ActiveModels.Any(model =>
+                    && !OpenRouter.ActiveModelsFor(_remoteProviderId).Any(model =>
                         model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)))
                 {
-                    OpenRouter.AddActiveModel(_remoteModel);
+                    OpenRouter.AddActiveModelFor(_remoteProviderId, _remoteModel);
                 }
             }
             else
@@ -906,7 +934,8 @@ else
                 await ChatService.NewRemoteChatAsync(
                     _remoteModel.Trim(),
                     systemPrompt: null,
-                    mode: _workMode ? "work" : "chat");
+                    mode: _workMode ? "work" : "chat",
+                    providerId: _remoteProviderId);
             }
 
             if (ChatService.Document is not null)
@@ -976,7 +1005,7 @@ else
         if (_computeProviderId is { } id)
             Compute.RememberModel(id, _remoteModel);
         else
-            OpenRouter.SetDefaultModel(_remoteModel);
+            OpenRouter.SetDefaultModelFor(_remoteProviderId, _remoteModel);
     }
 
     private void UpdateLatestModelRun()
@@ -1022,6 +1051,7 @@ else
                       string.Equals(current.Provider, "openrouter", StringComparison.OrdinalIgnoreCase);
         if (_remoteChat)
         {
+            _remoteProviderId = ChatService.RemoteProviderId ?? RemoteProviders.OpenRouter;
             _remoteModel = ChatService.Document?.RemoteModel ?? _remoteModel;
         }
         else if (ChatService.Document is { } local)
@@ -1068,7 +1098,14 @@ else
         else
         {
             _computeProviderId = null;
-            _remoteChat = string.Equals(value, "openrouter", StringComparison.OrdinalIgnoreCase);
+            _remoteChat = string.Equals(value, RemoteProviders.OpenRouter, StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(value, RemoteProviders.EuroRouter, StringComparison.OrdinalIgnoreCase);
+            if (_remoteChat)
+            {
+                _remoteProviderId = RemoteProviders.NormalizeId(value);
+                _remoteModel = OpenRouter.DefaultModelFor(_remoteProviderId) ??
+                               OpenRouter.ActiveModelsFor(_remoteProviderId).FirstOrDefault() ?? "";
+            }
         }
 
         UpdateLatestModelRun();
@@ -1080,14 +1117,18 @@ else
 
     private async Task EnsureActiveModels()
     {
-        if (!_remoteChat || !OpenRouter.HasApiKey) return;
+        if (!_remoteChat || !RemoteHasApiKey) return;
 
-        if (OpenRouter.ActiveModels.Count == 0 || !OpenRouter.FreeModelsSeeded)
+        // Only OpenRouter has a free default seed. EuroRouter users pick models
+        // in Settings after fetching the public catalog.
+        if (_remoteProviderId == RemoteProviders.OpenRouter &&
+            (OpenRouter.ActiveModelsFor(_remoteProviderId).Count == 0 ||
+             !OpenRouter.FreeModelsSeededFor(_remoteProviderId)))
         {
             try
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-                await OpenRouter.SeedDefaultModelsAsync(timeout.Token);
+                await OpenRouter.SeedDefaultModelsForAsync(_remoteProviderId, timeout.Token);
             }
             catch
             {
@@ -1095,10 +1136,12 @@ else
             }
         }
 
-        if (!OpenRouter.ActiveModels.Any(model =>
+        IReadOnlyList<string> models = OpenRouter.ActiveModelsFor(_remoteProviderId);
+        if (!models.Any(model =>
                 model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)))
         {
-            _remoteModel = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
+            _remoteModel = OpenRouter.DefaultModelFor(_remoteProviderId) ??
+                           models.FirstOrDefault() ?? "";
         }
 
         await InvokeAsync(StateHasChanged);

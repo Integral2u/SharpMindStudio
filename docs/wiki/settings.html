@@ -125,9 +125,13 @@
 
             <h2 id="providers">Providers</h2>
             <p>
-                Providers holds local weights, OpenRouter, HuggingFace access and Compute hosts.
-                Probe a provider before saving it; a failed probe stays visible instead of silently
-                falling back. See <a href="openrouter.html">OpenRouter</a> and
+                Providers holds local weights, OpenRouter, EuroRouter (beta), HuggingFace access
+                and Compute hosts. Each remote provider keeps its own encrypted key, base URL and
+                model list, so OpenRouter and EuroRouter can be configured side by side.
+                <strong>Test key</strong> validates the saved key without spending credit and
+                reports the remaining balance. Probe a provider before saving it; a failed probe
+                stays visible instead of silently falling back. See
+                <a href="openrouter.html">OpenRouter</a> and
                 <a href="providers.html">Compare providers</a> for the setup paths.
             </p>
 

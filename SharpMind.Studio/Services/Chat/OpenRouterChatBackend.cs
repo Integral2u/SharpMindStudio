@@ -22,12 +22,14 @@ public sealed class OpenRouterChatBackend(
 
     public string? Validate(ChatSessionDocument document)
     {
-        if (!settings.Connection.IsUsable)
-            return "OpenRouter is not configured. Add an API key in Settings.";
+        string providerId = RemoteProviders.NormalizeId(document.RemoteProvider);
+        RemoteProviderPreset preset = RemoteProviders.Find(providerId);
+        if (!settings.ConnectionFor(providerId).IsUsable)
+            return $"{preset.Name} is not configured. Add an API key in Settings.";
 
-        return ResolveModel(document) is { Length: > 0 }
+        return ResolveModel(document, providerId) is { Length: > 0 }
             ? null
-            : "Choose an OpenRouter model id first.";
+            : $"Choose a {preset.Name} model id first.";
     }
 
     public async Task RunTurnAsync(
@@ -35,8 +37,10 @@ public sealed class OpenRouterChatBackend(
         CancellationToken cancellationToken)
     {
         ChatSessionDocument document = context.Document;
-        OpenRouterConnection connection = settings.Connection;
-        string model = ResolveModel(document) ?? "";
+        string providerId = RemoteProviders.NormalizeId(document.RemoteProvider);
+        RemoteProviderPreset preset = RemoteProviders.Find(providerId);
+        OpenRouterConnection connection = settings.ConnectionFor(providerId);
+        string model = ResolveModel(document, providerId) ?? "";
 
         IAgentBuilder? agent = context.Agent;
         if (agent is not null)
@@ -62,6 +66,7 @@ public sealed class OpenRouterChatBackend(
         int? promptTokens = null;
         int? completionTokens = null;
         decimal? cost = null;
+        string? costCurrency = null;
         double? lastTps = null;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         ChatMessage assistant = context.Assistant;
@@ -93,6 +98,8 @@ public sealed class OpenRouterChatBackend(
                 if (entry.PromptTokens is int prompt) promptTokens = prompt;
                 if (entry.CompletionTokens is int completion) completionTokens = completion;
                 if (entry.Cost is decimal entryCost) cost = entryCost;
+                if (!string.IsNullOrWhiteSpace(entry.CostCurrency))
+                    costCurrency = entry.CostCurrency;
 
                 if (entry.ToolCalls is { Count: > 0 })
                 {
@@ -199,15 +206,15 @@ public sealed class OpenRouterChatBackend(
         document.LastCompletionTokens = completionTokens;
         document.LastToolCalls = toolCallsUsed;
         context.SetStatus(cost is { } spent
-            ? $"Ready. OpenRouter cost {spent:0.000000}."
+            ? $"Ready. {preset.Name} cost {spent:0.000000}{(string.IsNullOrWhiteSpace(costCurrency) ? "" : " " + costCurrency)}."
             : promptTokens is int promptUsed && completionTokens is int completionUsed
                 ? $"Ready. {promptUsed:N0} prompt / {completionUsed:N0} completion tokens."
                 : "Ready.");
     }
 
-    private string? ResolveModel(ChatSessionDocument document) =>
+    private string? ResolveModel(ChatSessionDocument document, string providerId) =>
         string.IsNullOrWhiteSpace(document.RemoteModel)
-            ? settings.DefaultModel
+            ? settings.DefaultModelFor(providerId)
             : document.RemoteModel;
 
     private static void AccumulateToolCall(

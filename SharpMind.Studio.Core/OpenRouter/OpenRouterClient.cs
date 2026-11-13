@@ -23,9 +23,21 @@ public sealed record OpenRouterStreamEvent
     public int? PromptTokens { get; init; }
     public int? CompletionTokens { get; init; }
     public decimal? Cost { get; init; }
+
+    /// <summary>Native currency of <see cref="Cost"/>: USD for OpenRouter, EUR for EuroRouter.</summary>
+    public string? CostCurrency { get; init; }
     public bool IsComplete { get; init; }
     public string? Error { get; init; }
 }
+
+/// <summary>Metadata returned by a provider's <c>/key</c> endpoint.</summary>
+public sealed record RemoteKeyInfo(
+    string? Label,
+    string? Name,
+    decimal? Limit,
+    decimal? Remaining,
+    decimal? Usage,
+    string? Currency);
 
 /// <summary>A catalog entry returned by OpenRouter's <c>/models</c> endpoint.</summary>
 public sealed record OpenRouterModel(
@@ -132,6 +144,37 @@ public sealed class OpenRouterClient
             .ThenBy(model => model.Id, StringComparer.OrdinalIgnoreCase)];
     }
 
+    public async Task<RemoteKeyInfo> GetKeyInfoAsync(
+        OpenRouterConnection connection,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, Endpoint(connection, "key"));
+        ApplyHeaders(request, connection);
+
+        using HttpResponseMessage response = await _http
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw await ToExceptionAsync(response, cancellationToken).ConfigureAwait(false);
+
+        await using Stream stream = await response.Content
+            .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using JsonDocument document = await JsonDocument
+            .ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        JsonElement data = document.RootElement.TryGetProperty("data", out JsonElement nested)
+            ? nested
+            : document.RootElement;
+
+        return new RemoteKeyInfo(
+            ReadString(data, "label"),
+            ReadString(data, "name"),
+            ReadDecimal(data, "limit"),
+            ReadDecimal(data, "limit_remaining"),
+            ReadDecimal(data, "usage"),
+            ReadString(data, "currency"));
+    }
+
     public async IAsyncEnumerable<OpenRouterStreamEvent> StreamAsync(
         OpenRouterRequest request,
         OpenRouterConnection connection,
@@ -139,7 +182,8 @@ public sealed class OpenRouterClient
     {
         ArgumentNullException.ThrowIfNull(request);
         if (!connection.IsUsable)
-            throw new OpenRouterException("OpenRouter is not configured. Add an API key in Settings.");
+            throw new OpenRouterException(
+                "The remote provider is not configured. Add an API key in Settings.");
 
         using var httpRequest = new HttpRequestMessage(
             HttpMethod.Post, Endpoint(connection, "chat/completions"));
@@ -237,6 +281,7 @@ public sealed class OpenRouterClient
             int? promptTokens = null;
             int? completionTokens = null;
             decimal? cost = null;
+            string? costCurrency = null;
             if (root.TryGetProperty("usage", out JsonElement usage) && usage.ValueKind == JsonValueKind.Object)
             {
                 promptTokens = ReadInt(usage, "prompt_tokens");
@@ -245,6 +290,7 @@ public sealed class OpenRouterClient
                     && costElement.ValueKind == JsonValueKind.Number
                     && costElement.TryGetDecimal(out decimal parsedCost))
                     cost = parsedCost;
+                costCurrency = ReadString(usage, "cost_currency");
             }
 
             string? delta = null;
@@ -308,6 +354,7 @@ public sealed class OpenRouterClient
                 PromptTokens = promptTokens,
                 CompletionTokens = completionTokens,
                 Cost = cost,
+                CostCurrency = costCurrency,
                 IsComplete = terminal,
             };
         }
@@ -358,8 +405,14 @@ public sealed class OpenRouterClient
 
         if (string.IsNullOrWhiteSpace(message))
             message = string.IsNullOrWhiteSpace(body)
-                ? $"OpenRouter returned HTTP {statusCode} ({response.ReasonPhrase})."
+                ? $"The model provider returned HTTP {statusCode} ({response.ReasonPhrase})."
                 : body.Trim();
+
+        if (statusCode == 402 &&
+            !message.Contains("balance", StringComparison.OrdinalIgnoreCase))
+        {
+            message = $"The provider balance is too low. {message}";
+        }
 
         return new OpenRouterException(message, statusCode, errorCode, ReadRetryAfter(response));
     }
@@ -379,7 +432,8 @@ public sealed class OpenRouterClient
 
     private static void ApplyHeaders(HttpRequestMessage request, OpenRouterConnection connection)
     {
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", connection.ApiKey);
+        if (!string.IsNullOrWhiteSpace(connection.ApiKey))
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", connection.ApiKey);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
         request.Headers.UserAgent.ParseAdd("SharpMind-Studio/1.0");
         if (!string.IsNullOrWhiteSpace(connection.Referer))
@@ -398,10 +452,11 @@ public sealed class OpenRouterClient
 
     private static string ReadErrorMessage(JsonElement error)
     {
-        if (error.ValueKind == JsonValueKind.String) return error.GetString() ?? "OpenRouter error.";
+        if (error.ValueKind == JsonValueKind.String)
+            return error.GetString() ?? "The model provider returned an error.";
         if (error.ValueKind == JsonValueKind.Object)
-            return ReadString(error, "message") ?? "OpenRouter error.";
-        return "OpenRouter error.";
+            return ReadString(error, "message") ?? "The model provider returned an error.";
+        return "The model provider returned an error.";
     }
 
     private static string? ReadString(JsonElement element, string name)
@@ -413,6 +468,13 @@ public sealed class OpenRouterClient
         => element.TryGetProperty(name, out JsonElement value)
            && value.ValueKind == JsonValueKind.Number
            && value.TryGetInt32(out int parsed)
+            ? parsed
+            : null;
+
+    private static decimal? ReadDecimal(JsonElement element, string name)
+        => element.TryGetProperty(name, out JsonElement value)
+           && value.ValueKind == JsonValueKind.Number
+           && value.TryGetDecimal(out decimal parsed)
             ? parsed
             : null;
 

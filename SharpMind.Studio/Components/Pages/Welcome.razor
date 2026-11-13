@@ -20,8 +20,8 @@
     <div class="welcome-head">
         <h1>@(_mode == "work" ? "What do you want to work on?" : "What do you want to ask?")</h1>
         <p>@(_mode == "work"
-            ? "Start a project-backed session with tools. Choose local weights or OpenRouter; Compute is inference-only."
-            : "Start a chat with local weights, OpenRouter or a Compute host.")</p>
+            ? "Start a project-backed session with tools. Choose local weights or a remote provider; Compute is inference-only."
+            : "Start a chat with local weights, a remote provider or a Compute host.")</p>
     </div>
 
     <div class="welcome-compose">
@@ -42,7 +42,7 @@
         </button>
         <button type="button" class="welcome-mode @(_mode == "work" ? "selected" : "")"
                 @onclick='() => SetMode("work")' disabled="@(_computeProviderId is not null)"
-                title="@(_computeProviderId is not null ? "Work tools need a local model or OpenRouter; Compute is inference-only." : null)">
+                title="@(_computeProviderId is not null ? "Work tools need a local model or a remote provider; Compute is inference-only." : null)">
             <span class="welcome-mode-name">Work</span>
             <span class="welcome-mode-hint">Start a project-backed session with tools</span>
         </button>
@@ -61,7 +61,13 @@
             <label class="field-label" for="welcome-provider">Provider</label>
             <select id="welcome-provider" class="input" @onchange="SetProvider">
                 <option value="local" selected="@(!_remoteChat)">Local model</option>
-                <option value="openrouter" selected="@(_remoteChat && _computeProviderId is null)">OpenRouter</option>
+                @foreach (RemoteProviderPreset provider in RemoteProviders.All)
+                {
+                    <option value="@provider.Id"
+                            selected="@(_remoteChat && _computeProviderId is null && _remoteProviderId == provider.Id)">
+                        @provider.Name@(provider.Beta ? " (beta)" : "")
+                    </option>
+                }
                 @foreach (ComputeProviderSettings host in Compute.Providers)
                 {
                     <option value="@($"compute:{host.Id}")" selected="@(_computeProviderId == host.Id)"
@@ -93,19 +99,29 @@
         else if (_remoteChat)
         {
             <div class="field welcome-model">
-                <label class="field-label" for="welcome-remote-model">OpenRouter model</label>
+                <div class="field-label-row">
+                    <label class="field-label" for="welcome-remote-model">@RemotePreset.Name model</label>
+                    @if (RemotePreset.Beta)
+                    {
+                        <span class="beta-pill">beta</span>
+                    }
+                </div>
                 <select id="welcome-remote-model" class="input" @bind="_remoteModel"
                         @bind:after="SaveRemoteModelChoice"
                         @onfocus="EnsureActiveModels">
-                    @if (OpenRouter.ActiveModels.Count == 0)
+                    @if (RemoteActiveModels.Count == 0)
                     {
-                        <option value="">@(OpenRouter.HasApiKey ? "Loading models..." : "No active models")</option>
+                        <option value="">@(RemoteHasApiKey ? "Loading models..." : "No active models")</option>
                     }
-                    @foreach (string model in OpenRouter.ActiveModels)
+                    @foreach (string model in RemoteActiveModels)
                     {
                         <option value="@model">@model</option>
                     }
                 </select>
+                @if (RemoteActiveModels.Count == 0)
+                {
+                    <a class="small" href="/settings?tab=openrouter">Add models in Settings</a>
+                }
             </div>
         }
         else
@@ -151,22 +167,27 @@
             </div>
         }
     </div>
-    @if (_remoteChat && _computeProviderId is null && !OpenRouter.HasApiKey)
+    @if (_remoteChat && _computeProviderId is null && !RemoteHasApiKey)
     {
         <div class="tool-warning">
             <div>
-                <strong>OpenRouter needs an API key.</strong>
+                <strong>@RemotePreset.Name needs an API key.</strong>
                 <span class="small faint">Add it in Settings, then return here.</span>
             </div>
             <div class="row">
                 <button type="button" class="button" @onclick="OpenRouterSettings">Open Settings</button>
+                @if (RemotePreset.HasSignup)
+                {
+                    <a class="button" href="@RemotePreset.SignupUrl" target="_blank"
+                       rel="sponsored noopener">Sign up</a>
+                }
             </div>
         </div>
     }
-    @if (_remoteChat && _computeProviderId is null && OpenRouter.HasApiKey)
+    @if (_remoteChat && _computeProviderId is null && RemoteHasApiKey)
     {
         <div class="small faint">
-            OpenRouter models are inference-only; local tuning is unavailable. Work tools stay on this machine.
+            @RemotePreset.Name models are inference-only; local tuning is unavailable. Work tools stay on this machine.
         </div>
     }
     @if (_computeProviderId is { } selectedHostId)
@@ -199,7 +220,7 @@
         else
         {
             <div class="small faint">
-                Inference runs on @selectedHost.Name. Work tools need a local model or OpenRouter; Compute is inference-only.
+                Inference runs on @selectedHost.Name. Work tools need a local model or a remote provider; Compute is inference-only.
             </div>
         }
     }
@@ -280,6 +301,7 @@
     private string? _selectedModelPath;
     private bool _remoteChat;
     private string? _computeProviderId;
+    private string _remoteProviderId = RemoteProviders.OpenRouter;
     private string _remoteModel = "";
     private string _prompt = "";
     private string _mode = "chat";
@@ -289,14 +311,18 @@
     private bool _busy;
     private string? _error;
 
+    private RemoteProviderPreset RemotePreset => RemoteProviders.Find(_remoteProviderId);
+    private IReadOnlyList<string> RemoteActiveModels => OpenRouter.ActiveModelsFor(_remoteProviderId);
+    private bool RemoteHasApiKey => OpenRouter.HasApiKeyFor(_remoteProviderId);
+
     private bool RemoteReady => _remoteChat
         && !string.IsNullOrWhiteSpace(_remoteModel)
         && (_computeProviderId is { } computeId
             ? Compute.Resolve(computeId) is { IsUsable: true } host
               && (host.Models.Count == 0
                   || host.Models.Any(model => model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)))
-            : OpenRouter.HasApiKey
-              && OpenRouter.ActiveModels.Any(model =>
+            : RemoteHasApiKey
+              && RemoteActiveModels.Any(model =>
                   model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)));
 
     private string? SelectedFileName =>
@@ -315,7 +341,8 @@
         _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
             ? Theme.LastChatModel
             : _models.FirstOrDefault()?.Path;
-        _remoteModel = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
+        _remoteModel = OpenRouter.DefaultModelFor(_remoteProviderId) ??
+                       OpenRouter.ActiveModelsFor(_remoteProviderId).FirstOrDefault() ?? "";
         UpdateLatestRun();
         RefreshTuneSelection();
     }
@@ -356,7 +383,7 @@
     private void SaveRemoteModelChoice()
     {
         if (!string.IsNullOrWhiteSpace(_remoteModel))
-            OpenRouter.SetDefaultModel(_remoteModel);
+            OpenRouter.SetDefaultModelFor(_remoteProviderId, _remoteModel);
     }
 
     private void SaveComputeModelChoice()
@@ -398,7 +425,7 @@
             {
                 _error = _computeProviderId is not null
                     ? "Choose a Compute host with a token and a model first."
-                    : "Choose an OpenRouter model and add an API key first.";
+                    : $"Choose a {RemotePreset.Name} model and add an API key first.";
                 return;
             }
 
@@ -413,7 +440,11 @@
                 }
                 else
                 {
-                    await ChatService.NewRemoteChatAsync(_remoteModel.Trim(), systemPrompt: null, mode: _mode);
+                    await ChatService.NewRemoteChatAsync(
+                        _remoteModel.Trim(),
+                        systemPrompt: null,
+                        mode: _mode,
+                        providerId: _remoteProviderId);
                 }
 
                 if (ChatService.Document is null)
@@ -546,7 +577,14 @@
         else
         {
             _computeProviderId = null;
-            _remoteChat = string.Equals(value, "openrouter", StringComparison.OrdinalIgnoreCase);
+            _remoteChat = string.Equals(value, RemoteProviders.OpenRouter, StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(value, RemoteProviders.EuroRouter, StringComparison.OrdinalIgnoreCase);
+            if (_remoteChat)
+            {
+                _remoteProviderId = RemoteProviders.NormalizeId(value);
+                _remoteModel = OpenRouter.DefaultModelFor(_remoteProviderId) ??
+                               OpenRouter.ActiveModelsFor(_remoteProviderId).FirstOrDefault() ?? "";
+            }
         }
 
         UpdateLatestRun();
@@ -558,14 +596,16 @@
 
     private async Task EnsureActiveModels()
     {
-        if (!_remoteChat || !OpenRouter.HasApiKey) return;
+        if (!_remoteChat || !RemoteHasApiKey) return;
 
-        if (OpenRouter.ActiveModels.Count == 0 || !OpenRouter.FreeModelsSeeded)
+        if (_remoteProviderId == RemoteProviders.OpenRouter &&
+            (OpenRouter.ActiveModelsFor(_remoteProviderId).Count == 0 ||
+             !OpenRouter.FreeModelsSeededFor(_remoteProviderId)))
         {
             try
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-                await OpenRouter.SeedDefaultModelsAsync(timeout.Token);
+                await OpenRouter.SeedDefaultModelsForAsync(_remoteProviderId, timeout.Token);
             }
             catch
             {
@@ -573,10 +613,12 @@
             }
         }
 
-        if (!OpenRouter.ActiveModels.Any(model =>
+        IReadOnlyList<string> models = OpenRouter.ActiveModelsFor(_remoteProviderId);
+        if (!models.Any(model =>
                 model.Equals(_remoteModel, StringComparison.OrdinalIgnoreCase)))
         {
-            _remoteModel = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
+            _remoteModel = OpenRouter.DefaultModelFor(_remoteProviderId) ??
+                           models.FirstOrDefault() ?? "";
         }
 
         await InvokeAsync(StateHasChanged);

@@ -155,6 +155,156 @@ public sealed class OpenRouterClientTests
         Assert.True(models[1].SupportsTools);
     }
 
+    [Fact]
+    public async Task Stream_DoesNotSendAttributionForEuroRouter()
+    {
+        HttpRequestMessage? captured = null;
+        var handler = new StubHandler(request =>
+        {
+            captured = request;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+            };
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        var euro = new OpenRouterConnection(
+            "eur_secret", "https://api.eurouter.ai/api/v1", Referer: null, Title: null);
+        await foreach (OpenRouterStreamEvent _ in client.StreamAsync(
+            new OpenRouterRequest
+            {
+                Model = "openai/gpt-4.1",
+                Messages = [OpenRouterMessageBuilder.User("hi")],
+            },
+            euro))
+        {
+        }
+
+        Assert.NotNull(captured);
+        Assert.Equal("https://api.eurouter.ai/api/v1/chat/completions",
+            captured!.RequestUri!.ToString());
+        Assert.False(captured.Headers.Contains("HTTP-Referer"));
+        Assert.False(captured.Headers.Contains("X-OpenRouter-Title"));
+    }
+
+    [Fact]
+    public async Task Stream_ParsesCostCurrency()
+    {
+        const string sse = """
+            data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"cost":0.0042,"cost_currency":"EUR"}}
+            data: [DONE]
+
+            """;
+
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        var events = new List<OpenRouterStreamEvent>();
+        await foreach (OpenRouterStreamEvent entry in client.StreamAsync(
+            new OpenRouterRequest
+            {
+                Model = "openai/gpt-4.1",
+                Messages = [OpenRouterMessageBuilder.User("hi")],
+            },
+            new OpenRouterConnection("eur_secret", "https://api.eurouter.ai/api/v1")))
+        {
+            events.Add(entry);
+        }
+
+        OpenRouterStreamEvent usage = events.Last(entry => entry.Cost is not null);
+        Assert.Equal(0.0042m, usage.Cost);
+        Assert.Equal("EUR", usage.CostCurrency);
+    }
+
+    [Fact]
+    public async Task GetKeyInfo_ParsesEuroRouterUsage()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                {"data":{"name":"SharpMind","label":"Studio key","limit":20,"limit_remaining":12.5,"usage":7.5}}
+                """,
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        RemoteKeyInfo info = await client.GetKeyInfoAsync(
+            new OpenRouterConnection("eur_secret", "https://api.eurouter.ai/api/v1"));
+
+        Assert.Equal("Studio key", info.Label);
+        Assert.Equal("SharpMind", info.Name);
+        Assert.Equal(20m, info.Limit);
+        Assert.Equal(12.5m, info.Remaining);
+        Assert.Equal(7.5m, info.Usage);
+    }
+
+    [Fact]
+    public async Task Http402_AddsBalanceHint()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.PaymentRequired)
+        {
+            Content = new StringContent(
+                """{"error":{"code":402,"message":"Insufficient credits"}}""",
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        OpenRouterException error = await Assert.ThrowsAsync<OpenRouterException>(async () =>
+        {
+            await foreach (OpenRouterStreamEvent _ in client.StreamAsync(
+                new OpenRouterRequest
+                {
+                    Model = "openai/gpt-4.1",
+                    Messages = [OpenRouterMessageBuilder.User("hi")],
+                },
+                new OpenRouterConnection("eur_secret", "https://api.eurouter.ai/api/v1")))
+            {
+            }
+        });
+
+        Assert.Equal(402, error.StatusCode);
+        Assert.Contains("balance is too low", error.Message);
+        Assert.Contains("Insufficient credits", error.Message);
+    }
+
+    [Fact]
+    public async Task ListModels_WorksWithoutAKey()
+    {
+        HttpRequestMessage? captured = null;
+        var handler = new StubHandler(request =>
+        {
+            captured = request;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"data":[{"id":"openai/gpt-4.1","name":"GPT-4.1"}]}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        IReadOnlyList<OpenRouterModel> models = await client.ListModelsAsync(
+            new OpenRouterConnection("", "https://api.eurouter.ai/api/v1", null, null));
+
+        Assert.Single(models);
+        Assert.Equal("openai/gpt-4.1", models[0].Id);
+        Assert.NotNull(captured);
+        Assert.Null(captured!.Headers.Authorization);
+    }
+
     private sealed class StubHandler(
         Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {

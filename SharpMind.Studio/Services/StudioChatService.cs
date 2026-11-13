@@ -122,9 +122,16 @@ public sealed class StudioChatService : IAsyncDisposable
     public bool SupportsVision => false;
 #endif
     public string? ComputeProviderId => _document?.RemoteProvider;
+    public string? RemoteProviderId => IsCompute
+        ? null
+        : IsOpenRouter
+            ? RemoteProviders.NormalizeId(_document?.RemoteProvider)
+            : null;
     public string? RemoteProviderName => IsCompute
         ? _compute.Find(_document?.RemoteProvider)?.Name ?? "SharpMind Compute"
-        : IsOpenRouter ? "OpenRouter" : null;
+        : IsOpenRouter
+            ? RemoteProviders.Find(_document?.RemoteProvider).Name
+            : null;
     public bool IsWorkMode => string.Equals(_document?.Mode, "work", StringComparison.OrdinalIgnoreCase);
     public bool IsChatActive => (_loading || _streaming) && !IsWorkMode;
     public bool IsWorkActive => (_loading || _streaming) && IsWorkMode;
@@ -132,7 +139,8 @@ public sealed class StudioChatService : IAsyncDisposable
     public string? LoadDetail => _loadDetail;
     public bool IsOpen => _document is not null;
     public string? RemoteModel => _document?.RemoteModel;
-    public bool OpenRouterConfigured => _openRouter.IsConfigured;
+    public bool OpenRouterConfigured => _openRouter.IsConfiguredFor(
+        IsOpenRouter ? _document?.RemoteProvider : null);
     public string Status => _status;
     public string? Error => _error;
     public string? CacheWarning => _cacheWarning;
@@ -552,30 +560,32 @@ public sealed class StudioChatService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Starts a chat backed by OpenRouter. No local weights are loaded; the
-    /// document keeps the same transcript/history shape as a local chat.
+    /// Starts a chat backed by a remote provider. No local weights are loaded;
+    /// the document keeps the same transcript/history shape as a local chat.
     /// </summary>
     public async Task NewRemoteChatAsync(
         string modelId,
         string? systemPrompt,
         string mode = "chat",
-        InferenceOverrides? overrides = null)
+        InferenceOverrides? overrides = null,
+        string? providerId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
 
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
+            RemoteProviderPreset preset = RemoteProviders.Find(providerId);
             EndSession();
-            _document = _store.CreateRemote(modelId.Trim(), systemPrompt, mode);
+            _document = _store.CreateRemote(modelId.Trim(), systemPrompt, mode, preset.Id);
             _document.Overrides = overrides ?? new InferenceOverrides();
             _model = null;
             _resolved = null;
             _error = null;
-            _status = "Ready (OpenRouter).";
+            _status = $"Ready ({preset.Name}).";
             _cacheWarning = null;
-            _openRouter.RememberModel(modelId);
-            _openRouter.SetDefaultModel(modelId.Trim());
+            _openRouter.RememberModelFor(preset.Id, modelId);
+            _openRouter.SetDefaultModelFor(preset.Id, modelId.Trim());
             Notify();
         }
         finally

@@ -7,30 +7,52 @@
 <details class="settings-subgroup">
     <summary class="settings-subgroup-head">
         <div>
-            <div class="eyebrow">Model provider</div>
-            <h3>OpenRouter</h3>
+            <div class="eyebrow">Model providers</div>
+            <h3>Remote providers</h3>
         </div>
         <div class="row" style="align-items:center; gap:.45rem;">
-            <span class="provider-dot @(OpenRouter.HasApiKey ? "on" : "off")"></span>
-            <span class="faint small mono">@(OpenRouter.HasApiKey ? "key configured" : "no key")</span>
+            <span class="provider-dot @(OpenRouter.HasApiKeyFor(_providerId) ? "on" : "off")"></span>
+            <span class="faint small mono">@(OpenRouter.HasApiKeyFor(_providerId) ? "key configured" : "no key")</span>
         </div>
     </summary>
     <div class="settings-subgroup-body stack">
         <p class="small faint">
-            Chat and Work can use OpenRouter models. The API key is encrypted with a local
-            key file and never written to the chat documents. Leave the key field blank to
-            keep the existing key.
+            Chat and Work can use a remote provider. Each provider keeps its own encrypted
+            key, base URL and model list. Leave the key field blank to keep the existing key.
         </p>
+
+        <div class="field">
+            <label class="field-label" for="remote-provider">Provider</label>
+            <div class="row" style="gap:.5rem;">
+                <select id="remote-provider" class="input" style="max-width: 18rem;"
+                        @bind="_providerId" @bind:after="OnProviderChanged">
+                    @foreach (RemoteProviderPreset provider in RemoteProviders.All)
+                    {
+                        <option value="@provider.Id">@provider.Name@(provider.Beta ? " (beta)" : "")</option>
+                    }
+                </select>
+                @if (_preset.Beta)
+                {
+                    <span class="beta-pill">beta</span>
+                }
+                @if (_preset.HasSignup)
+                {
+                    <a class="button" href="@_preset.SignupUrl" target="_blank"
+                       rel="sponsored noopener">Sign up</a>
+                }
+            </div>
+        </div>
+
         <div class="training-form">
             <div class="field training-form-wide">
-                <label class="field-label" for="openrouter-key">API key</label>
-                <input id="openrouter-key" class="input" type="password" @bind="_key"
-                       placeholder="sk-or-... (leave blank to keep)" autocomplete="off" />
+                <label class="field-label" for="remote-key">API key</label>
+                <input id="remote-key" class="input" type="password" @bind="_key"
+                       placeholder="@_preset.KeyHint (leave blank to keep)" autocomplete="off" />
                 <span class="small faint">Stored encrypted under <span class="mono">@StudioPaths.OpenRouterFile</span>.</span>
             </div>
             <div class="field training-form-wide">
-                <label class="field-label" for="openrouter-base">Base URL</label>
-                <input id="openrouter-base" class="input" @bind="_baseUrl" />
+                <label class="field-label" for="remote-base">Base URL</label>
+                <input id="remote-base" class="input" @bind="_baseUrl" />
             </div>
         </div>
         <div class="row">
@@ -38,6 +60,10 @@
             <button type="button" class="button" @onclick="FetchModelsAsync"
                     disabled="@_testing">
                 @(_testing ? "Fetching..." : "Fetch models")
+            </button>
+            <button type="button" class="button" @onclick="TestKeyAsync"
+                    disabled="@(_testing || !OpenRouter.HasApiKeyFor(_providerId))">
+                Test key
             </button>
             <button type="button" class="button danger" @onclick="DeleteKeyAsync">Delete key</button>
         </div>
@@ -53,15 +79,15 @@
         <div class="training-subsection">
             <div class="training-subsection-head">
                 <label class="field-label">Active models</label>
-                <span class="faint small">@OpenRouter.ActiveModels.Count model(s)</span>
+                <span class="faint small">@OpenRouter.ActiveModelsFor(_providerId).Count model(s)</span>
             </div>
-            @if (OpenRouter.ActiveModels.Count == 0)
+            @if (OpenRouter.ActiveModelsFor(_providerId).Count == 0)
             {
                 <div class="small faint">No active models yet. Fetch models and add some below.</div>
             }
             else
             {
-                @foreach (string model in OpenRouter.ActiveModels)
+                @foreach (string model in OpenRouter.ActiveModelsFor(_providerId))
                 {
                     <div class="spread">
                         <span class="mono small">@model</span>
@@ -71,10 +97,10 @@
                 }
             }
             <div class="field">
-                <label class="field-label" for="openrouter-default">Default model</label>
-                <select id="openrouter-default" class="input" @bind="_model"
+                <label class="field-label" for="remote-default">Default model</label>
+                <select id="remote-default" class="input" @bind="_model"
                         @bind:after="SaveDefaultModel">
-                    @foreach (string model in OpenRouter.ActiveModels)
+                    @foreach (string model in OpenRouter.ActiveModelsFor(_providerId))
                     {
                         <option value="@model">@model</option>
                     }
@@ -93,8 +119,8 @@
                 </div>
             </div>
             <div class="field">
-                <label class="field-label" for="openrouter-fetched">Add a fetched model</label>
-                <select id="openrouter-fetched" class="input" @bind="_fetchedModelChoice"
+                <label class="field-label" for="remote-fetched">Add a fetched model</label>
+                <select id="remote-fetched" class="input" @bind="_fetchedModelChoice"
                         @bind:after="AddFetchedModel" @onfocus="EnsureFetchedModelsAsync">
                     <option value="">@(_models.Count == 0 ? "Open to load models..." : "Choose a model...")</option>
                     @foreach (OpenRouterModel model in _models
@@ -115,6 +141,7 @@
 </details>
 
 @code {
+    private string _providerId = RemoteProviders.OpenRouter;
     private string _key = "";
     private string _baseUrl = "";
     private string _model = "";
@@ -124,22 +151,37 @@
     private IReadOnlyList<OpenRouterModel> _models = [];
     private string? _fetchedModelChoice;
 
-    protected override void OnInitialized()
+    private RemoteProviderPreset _preset => RemoteProviders.Find(_providerId);
+
+    protected override void OnInitialized() => LoadProfile();
+
+    private void LoadProfile()
     {
-        _baseUrl = OpenRouter.BaseUrl;
-        _model = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
+        _baseUrl = OpenRouter.BaseUrlFor(_providerId);
+        _model = OpenRouter.DefaultModelFor(_providerId) ?? "";
+    }
+
+    private void OnProviderChanged()
+    {
+        _key = "";
+        _models = [];
+        _fetchedModelChoice = null;
+        _status = null;
+        _error = null;
+        LoadProfile();
     }
 
     private void Save()
     {
         try
         {
-            OpenRouter.Save(
+            OpenRouter.SaveFor(
+                _providerId,
                 string.IsNullOrWhiteSpace(_key) ? null : _key,
                 _baseUrl,
                 _model);
             _key = "";
-            _status = "OpenRouter settings saved.";
+            _status = $"{_preset.Name} settings saved.";
             _error = null;
         }
         catch (Exception ex)
@@ -150,12 +192,12 @@
 
     private void SaveDefaultModel()
     {
-        OpenRouter.SetDefaultModel(_model);
+        OpenRouter.SetDefaultModelFor(_providerId, _model);
         _status = $"Default model set to {_model}.";
     }
 
     private bool IsActiveModel(string modelId) =>
-        OpenRouter.ActiveModels.Any(value =>
+        OpenRouter.ActiveModelsFor(_providerId).Any(value =>
             value.Equals(modelId, StringComparison.OrdinalIgnoreCase));
 
     private async Task FetchModelsAsync()
@@ -166,7 +208,7 @@
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            _models = await OpenRouter.FetchModelsAsync(timeout.Token);
+            _models = await OpenRouter.FetchModelsForAsync(_providerId, timeout.Token);
             int free = _models.Count(model => model.IsFree);
             _status = $"Fetched {_models.Count:N0} model(s), {free:N0} free.";
         }
@@ -180,6 +222,39 @@
         }
     }
 
+    private async Task TestKeyAsync()
+    {
+        _error = null;
+        _status = "";
+        _testing = true;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            RemoteKeyInfo info = await OpenRouter.TestKeyAsync(_providerId, timeout.Token);
+            string label = info.Label ?? info.Name ?? "key";
+            string limit = info.Remaining is { } remaining
+                ? $", {remaining:0.##}{CurrencySuffix(info)} remaining"
+                : "";
+            string usage = info.Usage is { } used
+                ? $", {used:0.##}{CurrencySuffix(info)} used"
+                : "";
+            _status = $"{_preset.Name} key '{label}' is valid{limit}{usage}.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    private string CurrencySuffix(RemoteKeyInfo info) =>
+        !string.IsNullOrWhiteSpace(info.Currency)
+            ? " " + info.Currency
+            : _providerId == RemoteProviders.EuroRouter ? " EUR" : "";
+
     private async Task EnsureFetchedModelsAsync()
     {
         if (_models.Count > 0 || _testing) return;
@@ -191,7 +266,7 @@
         if (string.IsNullOrWhiteSpace(_fetchedModelChoice)) return;
         string model = _fetchedModelChoice;
         _fetchedModelChoice = "";
-        if (OpenRouter.AddActiveModel(model))
+        if (OpenRouter.AddActiveModelFor(_providerId, model))
             _status = $"Added {model} to active models.";
         else
             _status = $"{model} is already active.";
@@ -206,10 +281,10 @@
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            _models = await OpenRouter.FetchModelsAsync(timeout.Token);
-            int added = OpenRouter.AddActiveModels(
+            _models = await OpenRouter.FetchModelsForAsync(_providerId, timeout.Token);
+            int added = OpenRouter.AddActiveModelsFor(_providerId,
                 _models.Where(model => model.IsFree).Select(model => model.Id));
-            OpenRouter.MarkFreeModelsSeeded();
+            OpenRouter.MarkFreeModelsSeededFor(_providerId);
             _status = added == 0
                 ? "All free models are already active."
                 : $"Added {added:N0} free model(s) to active models.";
@@ -226,21 +301,21 @@
 
     private void RemoveActiveModel(string model)
     {
-        if (!OpenRouter.RemoveActiveModel(model)) return;
+        if (!OpenRouter.RemoveActiveModelFor(_providerId, model)) return;
         if (string.Equals(_model, model, StringComparison.OrdinalIgnoreCase))
-            _model = OpenRouter.DefaultModel ?? OpenRouter.ActiveModels.FirstOrDefault() ?? "";
+            _model = OpenRouter.DefaultModelFor(_providerId) ?? "";
         _status = $"Removed {model} from active models.";
     }
 
     private async Task DeleteKeyAsync()
     {
         bool confirmed = await JS.InvokeAsync<bool>(
-            "confirm", "Delete the saved OpenRouter API key?");
+            "confirm", $"Delete the saved {_preset.Name} API key?");
         if (!confirmed) return;
 
-        OpenRouter.ClearApiKey();
+        OpenRouter.ClearApiKeyFor(_providerId);
         _key = "";
-        _status = "OpenRouter API key deleted.";
+        _status = $"{_preset.Name} API key deleted.";
         _error = null;
     }
 }

@@ -7,7 +7,7 @@ already have.
 SharpMind Studio is the front end for the [SharpMind](https://github.com/Integral2u/SharpMind)
 libraries and shares their model, tokenizer and run formats. Models, datasets,
 sessions and checkpoints stay on your machine until you explicitly send a job to a
-compute host or a prompt to OpenRouter.
+compute host or a prompt to a remote provider.
 
 - **Site and wiki:** <https://integral2u.github.io/SharpMindStudio/>
 - **Watch:** [SharpMind Studio in 60 seconds](https://youtu.be/LOI6OTCJvio) · [YouTube channel](https://www.youtube.com/@Integral2u)
@@ -57,13 +57,13 @@ projects. The package solution is the clean-clone and published-package
 compatibility check; CI builds it directly from nuget.org.
 
 Open <http://127.0.0.1:5117>. Add a `.smm` or GGUF model in **Training → Models**,
-or connect OpenRouter or a SharpMind Compute host.
+or connect a remote provider or a SharpMind Compute host.
 
 ## What is in it
 
 | Mode | What it does |
 |---|---|
-| **Chat** | Local models, OpenRouter or a Compute host; saved sessions, system prompt, tools drawer. |
+| **Chat** | Local models, a remote provider or a Compute host; saved sessions, system prompt, tools drawer. |
 | **Work** | Project spaces with scoped file/web tools, skills, memory and explicit permissions. |
 | **Training** | New model (pretrain), Improve (LoRA/SFT), Playbooks, Data, Runs and Models. |
 | **Data Factory** | Source → clean/filter → provider transform → review → chat or text JSONL. |
@@ -96,6 +96,7 @@ The wiki is the reference; this README is the short version.
 - [Models and local chat](docs/wiki/inference.html)
 - [HuggingFace](docs/wiki/huggingface.html)
 - [OpenRouter](docs/wiki/openrouter.html)
+- [EuroRouter (beta)](docs/wiki/providers.html#partners)
 - [Training](docs/wiki/training.html)
 - [Work](docs/wiki/work.html)
 - [Phone pairing](docs/wiki/pairing.html)
