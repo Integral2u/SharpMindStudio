@@ -26,6 +26,96 @@ public static class RunGrouping
             .ThenByDescending(run => run.StartedUtc ?? DateTimeOffset.MinValue)
             .ThenBy(run => run.RunId, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Folds a tool-probe run into its benchmark row. Linked probes are already
+    /// recorded on the benchmark through <see cref="RunSummary.ToolRunId"/>;
+    /// older tune runs created the probe as a separate run, so those are paired
+    /// by model and time. Either way the benchmark reports Yes/No/N/A in its
+    /// Tool column and the duplicate line disappears. Probes without a parent
+    /// stay visible.
+    /// </summary>
+    public static IReadOnlyList<RunSummary> WithoutLinkedToolProbes(IEnumerable<RunSummary> runs)
+    {
+        ArgumentNullException.ThrowIfNull(runs);
+
+        IReadOnlyList<RunSummary> list = runs as IReadOnlyList<RunSummary> ?? [.. runs];
+
+        var linked = new HashSet<string>(
+            list.Where(run => !string.IsNullOrWhiteSpace(run.ToolRunId))
+                .Select(run => run.ToolRunId!),
+            StringComparer.OrdinalIgnoreCase);
+
+        List<RunSummary> benchmarks = [.. list.Where(IsBenchmark)];
+        var merged = new Dictionary<string, RunSummary>(StringComparer.OrdinalIgnoreCase);
+        var folded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Newest probe first, so a retry wins over the attempt before it.
+        foreach (RunSummary probe in list
+            .Where(IsProbe)
+            .Where(run => !linked.Contains(run.RunId))
+            .OrderByDescending(run => run.StartedUtc ?? DateTimeOffset.MinValue))
+        {
+            RunSummary? bench = benchmarks
+                .Where(run => !merged.ContainsKey(run.RunId))
+                .Where(run => string.IsNullOrWhiteSpace(run.ToolRunId))
+                .Where(run => SameModel(run, probe) && WithinWindow(run, probe))
+                .OrderBy(run => Distance(run, probe))
+                .FirstOrDefault();
+            if (bench is null) continue;
+
+            merged[bench.RunId] = bench with
+            {
+                ToolStatus = probe.ToolStatus,
+                ToolRunId = probe.RunId,
+            };
+            folded.Add(probe.RunId);
+        }
+
+        if (linked.Count == 0 && merged.Count == 0) return list;
+
+        return
+        [
+            .. list
+                .Where(run => !linked.Contains(run.RunId) && !folded.Contains(run.RunId))
+                .Select(run => merged.TryGetValue(run.RunId, out RunSummary? updated) ? updated : run)
+        ];
+    }
+
+    private static bool IsBenchmark(RunSummary run) =>
+        string.Equals(run.Kind, "model-bench", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsProbe(RunSummary run) =>
+        string.Equals(run.Kind, "tool-probe", StringComparison.OrdinalIgnoreCase);
+
+    private static bool SameModel(RunSummary left, RunSummary right)
+    {
+        if (!string.IsNullOrWhiteSpace(left.ModelPath) &&
+            !string.IsNullOrWhiteSpace(right.ModelPath))
+        {
+            return string.Equals(left.ModelPath, right.ModelPath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return !string.IsNullOrWhiteSpace(left.Subject) &&
+               string.Equals(left.Subject, right.Subject, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool WithinWindow(RunSummary bench, RunSummary probe)
+    {
+        DateTimeOffset start = bench.StartedUtc ?? DateTimeOffset.MinValue;
+        DateTimeOffset end = bench.FinishedUtc is { } finished
+            ? finished.AddMinutes(30)
+            : start.AddHours(6);
+        DateTimeOffset at = probe.StartedUtc ?? DateTimeOffset.MinValue;
+        return at >= start.AddMinutes(-1) && at <= end;
+    }
+
+    private static long Distance(RunSummary bench, RunSummary probe)
+    {
+        DateTimeOffset start = bench.StartedUtc ?? DateTimeOffset.MinValue;
+        DateTimeOffset at = probe.StartedUtc ?? DateTimeOffset.MinValue;
+        return Math.Abs((at - start).Ticks);
+    }
+
     public static RunSummary? FastestWithTools(IEnumerable<RunSummary> runs) =>
         Measured(runs)
             .Where(run => string.Equals(run.ToolStatus, "Yes", StringComparison.OrdinalIgnoreCase))

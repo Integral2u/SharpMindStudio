@@ -33,7 +33,7 @@
 <section class="metric-grid">
     <div class="metric">
         <div class="metric-label">Runs recorded</div>
-        <div class="metric-value">@_runs.Count</div>
+        <div class="metric-value">@VisibleRuns.Count</div>
     </div>
     <div class="metric">
         <div class="metric-label">Best decode</div>
@@ -247,12 +247,12 @@
             <h2>TESTS</h2>
         </div>
         <div class="row">
-            <span class="faint small mono">@_runs.Count total | inference @InferenceVersion</span>
+            <span class="faint small mono">@VisibleRuns.Count total | inference @InferenceVersion</span>
             <a class="button" href="/runs">View all runs</a>
         </div>
     </div>
     <div class="panel-body" style="padding-top: .35rem;">
-        @if (_runs.Count == 0)
+        @if (VisibleRuns.Count == 0)
         {
             <div class="empty">No runs yet. The canary starts the record.</div>
         }
@@ -369,36 +369,46 @@
         ? id[..8]
         : Workspace.Project.Document.Id;
 
-    private RunSummary? LatestRun => _runs.FirstOrDefault();
-    private RunSummary? BestRun => _runs
+    private RunSummary? LatestRun => VisibleRuns.FirstOrDefault();
+    private RunSummary? BestRun => VisibleRuns
         .Where(run => run.TokensPerSecond > 0)
         .MaxBy(run => run.TokensPerSecond);
     private string BestTokensPerSecond => BestRun is { } best ? $"{best.TokensPerSecond:F2} tok/s" : "-";
 
-    private IEnumerable<RunSummary> SortedRuns => _sortColumn switch
+    /// <summary>One row per model run: a linked tool probe is folded into its benchmark row.</summary>
+    private IReadOnlyList<RunSummary> VisibleRuns => RunGrouping.WithoutLinkedToolProbes(_runs);
+
+    private IEnumerable<RunSummary> SortedRuns
     {
-        "run" => _sortDescending
-            ? _runs.OrderByDescending(r => r.RunId, StringComparer.OrdinalIgnoreCase)
-            : _runs.OrderBy(r => r.RunId, StringComparer.OrdinalIgnoreCase),
-        "subject" => _sortDescending
-            ? _runs.OrderByDescending(r => r.Subject ?? "", StringComparer.OrdinalIgnoreCase)
-            : _runs.OrderBy(r => r.Subject ?? "", StringComparer.OrdinalIgnoreCase),
-        "status" => _sortDescending
-            ? _runs.OrderByDescending(r => r.Status, StringComparer.OrdinalIgnoreCase)
-            : _runs.OrderBy(r => r.Status, StringComparer.OrdinalIgnoreCase),
-        "tool" => _sortDescending
-            ? _runs.OrderByDescending(r => r.ToolStatus, StringComparer.OrdinalIgnoreCase)
-            : _runs.OrderBy(r => r.ToolStatus, StringComparer.OrdinalIgnoreCase),
-        "tps" => _sortDescending
-            ? _runs.OrderByDescending(r => r.TokensPerSecond)
-            : _runs.OrderBy(r => r.TokensPerSecond),
-        "steps" => _sortDescending
-            ? _runs.OrderByDescending(r => r.Steps)
-            : _runs.OrderBy(r => r.Steps),
-        _ => _sortDescending
-            ? _runs.OrderByDescending(r => r.StartedUtc ?? DateTimeOffset.MinValue)
-            : _runs.OrderBy(r => r.StartedUtc ?? DateTimeOffset.MinValue),
-    };
+        get
+        {
+            IReadOnlyList<RunSummary> runs = VisibleRuns;
+            return _sortColumn switch
+            {
+                "run" => _sortDescending
+                    ? runs.OrderByDescending(r => r.RunId, StringComparer.OrdinalIgnoreCase)
+                    : runs.OrderBy(r => r.RunId, StringComparer.OrdinalIgnoreCase),
+                "subject" => _sortDescending
+                    ? runs.OrderByDescending(r => r.Subject ?? "", StringComparer.OrdinalIgnoreCase)
+                    : runs.OrderBy(r => r.Subject ?? "", StringComparer.OrdinalIgnoreCase),
+                "status" => _sortDescending
+                    ? runs.OrderByDescending(r => r.Status, StringComparer.OrdinalIgnoreCase)
+                    : runs.OrderBy(r => r.Status, StringComparer.OrdinalIgnoreCase),
+                "tool" => _sortDescending
+                    ? runs.OrderByDescending(r => r.ToolStatus, StringComparer.OrdinalIgnoreCase)
+                    : runs.OrderBy(r => r.ToolStatus, StringComparer.OrdinalIgnoreCase),
+                "tps" => _sortDescending
+                    ? runs.OrderByDescending(r => r.TokensPerSecond)
+                    : runs.OrderBy(r => r.TokensPerSecond),
+                "steps" => _sortDescending
+                    ? runs.OrderByDescending(r => r.Steps)
+                    : runs.OrderBy(r => r.Steps),
+                _ => _sortDescending
+                    ? runs.OrderByDescending(r => r.StartedUtc ?? DateTimeOffset.MinValue)
+                    : runs.OrderBy(r => r.StartedUtc ?? DateTimeOffset.MinValue),
+            };
+        }
+    }
 
     private void SortBy(string column)
     {

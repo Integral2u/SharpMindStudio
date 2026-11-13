@@ -60,6 +60,18 @@ public sealed class TuneRunnerService
                     ToolCallRecovery = recovery,
                 }, probeRun, probeEvents, cancellationToken);
                 toolPassed = probe.Passed;
+
+                // Record the probe on the benchmark run so the Tests list can
+                // fold the two into one row.
+                await using (RunEventWriter linkEvents = run.OpenWriter())
+                {
+                    await linkEvents.WriteAsync(new ToolProbeCompleted
+                    {
+                        Status = probe.Passed ? "Yes" : "No",
+                        Detail = $"toolCalled={probe.ToolCalled}; options=[{string.Join(", ", probe.Options)}]; call={probe.Response}",
+                        ToolRunId = probe.RunId,
+                    }, cancellationToken);
+                }
             }
 
             return new TuneMeasurement

@@ -348,7 +348,7 @@ else
     {
         if (Canary.IsRunning) return;
         Workspace.InvalidateRuns();
-        _runs = await Workspace.RecentRunsAsync();
+        _runs = RunGrouping.WithoutLinkedToolProbes(await Workspace.RecentRunsAsync());
         _error = null;
         _statusMessage = $"Loaded {_runs.Count} runs.";
     }

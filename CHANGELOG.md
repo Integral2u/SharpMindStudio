@@ -22,6 +22,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **One row per run** - a tool probe that a benchmark links to is folded into
+  its model-bench row in TESTS and the dashboard list. The Tool column already
+  reports Yes/No/N/A, so the probe no longer appears as a second line; its
+  detail page stays reachable from that column.
 - Version bumped to **1.1.2.0** for the next development cycle.
 - Source development continues to use the sibling SharpMind project
   references. The package solution keeps the published **1.1.1** packages as
