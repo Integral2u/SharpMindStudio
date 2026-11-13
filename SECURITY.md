@@ -48,7 +48,7 @@ The 1.1.1 MSI is not code-signed, so Windows SmartScreen shows an unknown publis
 
 ### Models, plugins and containers
 
-GGUF files are untrusted binary input and exercise `unsafe` kernels. Accelerator plugins are arbitrary code by design. Do not load either from a source you do not trust. The GPU image runs the Studio web UI and Compute API; set `SHARPMIND_TOKEN`, expose only the ports you need, and keep the container's data volume private.
+GGUF files are untrusted binary input and exercise `unsafe` kernels. Accelerator plugins are arbitrary code by design. Do not load either from a source you do not trust. The GPU image runs the Studio web UI and Compute API as the unprivileged `sharpmind` user (UID 10001) after fixing data and plugin folder ownership; set `SHARPMIND_TOKEN`, expose only the ports you need, and keep the container's data volume private.
 
 ## Out of scope
 

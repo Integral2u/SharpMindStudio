@@ -3,6 +3,19 @@
 # /data/SharpMind. Either process exiting stops the container.
 set -euo pipefail
 
+if [ "$(id -u)" -eq 0 ]; then
+  data="${SHARPMIND_DATA:-/data/SharpMind}"
+  plugins="${SHARPMIND_PLUGINS:-/app/plugins}"
+  mkdir -p "$data" "$plugins"
+  if [ "$(stat -c '%u' "$data" 2>/dev/null || echo 0)" != "10001" ]; then
+    chown -R sharpmind:sharpmind "$data"
+  fi
+  if [ "$(stat -c '%u' "$plugins" 2>/dev/null || echo 0)" != "10001" ]; then
+    chown -R sharpmind:sharpmind "$plugins"
+  fi
+  exec setpriv --reuid=sharpmind --regid=sharpmind --init-groups "$0" "$@"
+fi
+
 if [ -z "${SHARPMIND_TOKEN:-}" ]; then
   echo "[sharpmind] WARNING: SHARPMIND_TOKEN is not set; the Compute API returns 503 until it is."
 fi

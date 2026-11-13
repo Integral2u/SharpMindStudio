@@ -46,6 +46,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reports Yes/No/N/A, so the probe no longer appears as a second line; its
   detail page stays reachable from that column.
 - **Sidebar** - removed the non-interactive local-first pill.
+- **Containers run unprivileged** - the images create a `sharpmind` user
+  (UID 10001); the entrypoint fixes data and plugin folder ownership, then
+  drops root before starting Studio or the Compute host. Port exposure and
+  token behaviour are unchanged.
 - Version bumped to **1.1.2.0** for the next development cycle.
 - Source development continues to use the sibling SharpMind project
   references. The package solution keeps the published **1.1.1** packages as

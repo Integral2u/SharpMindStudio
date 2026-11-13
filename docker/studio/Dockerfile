@@ -15,14 +15,26 @@ RUN dotnet publish SharpMind.Studio/SharpMind.Studio.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
+COPY docker/entrypoint-drop.sh /app/entrypoint.sh
+# Start as root only long enough to fix mounted-folder ownership, then drop to
+# the unprivileged sharpmind user (UID 10001).
+RUN sed -i 's/\r$//' /app/entrypoint.sh \
+    && chmod +x /app/entrypoint.sh \
+    && groupadd --gid 10001 sharpmind \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin sharpmind \
+    && (getent group video >/dev/null && usermod -aG video sharpmind || true) \
+    && mkdir -p /app/plugins /data/SharpMind \
+    && chown -R sharpmind:sharpmind /app /data/SharpMind
 
 ENV ASPNETCORE_ENVIRONMENT=Production \
     Studio__Root=/data/SharpMind \
     Studio__Url=http://0.0.0.0:5117 \
     Studio__LanUrl=http://0.0.0.0:5118 \
-    Studio__LanEnabled=true
+    Studio__LanEnabled=true \
+    SHARPMIND_DATA=/data/SharpMind \
+    SHARPMIND_PLUGINS=/app/plugins
 
 EXPOSE 5117 5118
 VOLUME ["/data/SharpMind"]
 
-ENTRYPOINT ["dotnet", "SharpMind.Studio.dll"]
+ENTRYPOINT ["/app/entrypoint.sh", "dotnet", "SharpMind.Studio.dll"]

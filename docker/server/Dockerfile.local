@@ -28,9 +28,15 @@ WORKDIR /app
 COPY --from=build /app/studio /app/studio
 COPY --from=build /app/compute /app/compute
 COPY SharpMind.Studio/docker/server/entrypoint.sh /app/entrypoint.sh
+# Start as root only long enough to fix mounted-folder ownership, then drop to
+# the unprivileged sharpmind user (UID 10001).
 RUN sed -i 's/\r$//' /app/entrypoint.sh \
     && chmod +x /app/entrypoint.sh \
-    && mkdir -p /app/plugins /data/SharpMind
+    && groupadd --gid 10001 sharpmind \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin sharpmind \
+    && (getent group video >/dev/null && usermod -aG video sharpmind || true) \
+    && mkdir -p /app/plugins /data/SharpMind \
+    && chown -R sharpmind:sharpmind /app /data/SharpMind
 
 ENV ASPNETCORE_ENVIRONMENT=Production \
     Studio__Root=/data/SharpMind \
