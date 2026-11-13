@@ -148,6 +148,7 @@
             </button>
             @if (_running)
             {
+                <span class="spinner-ring" title="Tuning"></span>
                 <button type="button" class="button danger" @onclick="CancelTune">Cancel</button>
             }
             @if (_profiles.Count > 0)

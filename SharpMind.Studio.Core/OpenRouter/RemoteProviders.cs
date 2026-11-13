@@ -13,7 +13,8 @@ public sealed record RemoteProviderPreset(
     string? SignupUrl = null,
     bool Beta = false,
     bool AttributionHeaders = false,
-    string? DefaultModelId = null)
+    string? DefaultModelId = null,
+    string Currency = "USD")
 {
     public bool HasSignup => !string.IsNullOrWhiteSpace(SignupUrl);
 }
@@ -33,7 +34,8 @@ public static class RemoteProviders
         "sk-or-...",
         SignupUrl: "https://openrouter.ai/",
         AttributionHeaders: true,
-        DefaultModelId: "openrouter/free");
+        DefaultModelId: "openrouter/free",
+        Currency: "USD");
 
     public static readonly RemoteProviderPreset EuroRouterPreset = new(
         EuroRouter,
@@ -41,7 +43,8 @@ public static class RemoteProviders
         EuroRouterDefaultBaseUrl,
         "eur_...",
         SignupUrl: "https://www.eurouter.ai?ref=ZLSG4A2M",
-        Beta: true);
+        Beta: true,
+        Currency: "EUR");
 
     public static IReadOnlyList<RemoteProviderPreset> All { get; } =
         [OpenRouterPreset, EuroRouterPreset];

@@ -28,13 +28,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   models works before a key is saved; **Test key** validates the saved key with
   `GET /api/v1/key` without spending credit and reports the remaining balance.
   Responses carry EUR cost, and a 402 shows a clear balance message.
+- **Switch models in an open chat** - the chat header has a **Model** button
+  that switches to another local model, another model on the same remote
+  provider, or another model on the same Compute host. The transcript stays;
+  a local switch loads the target weights on the next turn and applies that
+  model's tuned profile for Chat or Work.
+- **Currency on costs** - chat costs and key balances now show the ISO currency
+  returned by the provider (USD, EUR, ...) instead of a bare symbol.
 
 ### Changed
 
+- **Tests page** - family, model and run-type groups collapse, the redundant
+  Type column is gone, and the group Tune/Re-run buttons no longer wrap. Tuning
+  shows the loading ring while it runs.
 - **One row per run** - a tool probe that a benchmark links to is folded into
   its model-bench row in TESTS and the dashboard list. The Tool column already
   reports Yes/No/N/A, so the probe no longer appears as a second line; its
   detail page stays reachable from that column.
+- **Sidebar** - removed the non-interactive local-first pill.
 - Version bumped to **1.1.2.0** for the next development cycle.
 - Source development continues to use the sibling SharpMind project
   references. The package solution keeps the published **1.1.1** packages as

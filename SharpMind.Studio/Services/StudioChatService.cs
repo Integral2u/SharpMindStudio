@@ -146,6 +146,7 @@ public sealed class StudioChatService : IAsyncDisposable
     public string? CacheWarning => _cacheWarning;
     public double? LastTokensPerSecond => _document?.LastTokensPerSecond;
     public decimal? LastCost => _document?.LastCost;
+    public string? LastCostCurrency => _document?.LastCostCurrency;
     public int? LastPromptTokens => _document?.LastPromptTokens;
     public int? LastCompletionTokens => _document?.LastCompletionTokens;
 
@@ -586,6 +587,108 @@ public sealed class StudioChatService : IAsyncDisposable
             _cacheWarning = null;
             _openRouter.RememberModelFor(preset.Id, modelId);
             _openRouter.SetDefaultModelFor(preset.Id, modelId.Trim());
+            Notify();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Switches an open local chat to another local model. The transcript,
+    /// system prompt and mode stay; the session is rebuilt and the next turn
+    /// loads the new weights and re-prefills the history.
+    /// </summary>
+    public async Task SwitchLocalModelAsync(
+        ModelDescriptor model,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_document is null || _streaming || _loading) return;
+            if (!string.Equals(_document.Provider, "local", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            EndSession();
+            TuneTarget target = string.Equals(
+                _document.Mode, "work", StringComparison.OrdinalIgnoreCase)
+                ? TuneTarget.Work
+                : TuneTarget.Chat;
+            TuneProfile? tune = _inference.TuneProfile(model.Path, target, TunePreset.Balanced);
+
+            _document.ModelPath = model.Path;
+            _document.FamilyId = model.Family.Id;
+            _document.FamilyName = model.Family.DisplayName;
+            _document.ModelFingerprint = TuneFingerprint.ForModel(model.Path);
+            _document.Overrides = tune?.Overrides ?? new InferenceOverrides();
+            _document.TunePreset = tune is null ? null : TunePreset.Balanced.ToString();
+            _document.TuneTarget = tune is null ? null : target.ToString();
+            _document.LastCost = null;
+            _document.LastCostCurrency = null;
+            _document.LastTokensPerSecond = null;
+
+            _model = model;
+            _resolved = ResolveInference(model.Family.Id, model.Path, _document.Overrides);
+#if SHARPMIND_AUDIO
+            _supportsAudio = null;
+            _supportsTts = null;
+            _isTtsModel = null;
+            _isAudioModel = null;
+#endif
+#if SHARPMIND_SOURCE
+            _supportsVision = null;
+#endif
+            _error = null;
+            _status = "Ready.";
+            _cacheWarning = null;
+            _store.Save(_document);
+            Notify();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Switches an open remote chat to another model on the same provider or
+    /// Compute host. The next turn uses the new model id; no weights reload.
+    /// </summary>
+    public async Task SwitchRemoteModelAsync(
+        string modelId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_document is null || _streaming || _loading || !IsRemote) return;
+
+            string clean = modelId.Trim();
+            _document.RemoteModel = clean;
+
+            if (IsOpenRouter)
+            {
+                string providerId = RemoteProviders.NormalizeId(_document.RemoteProvider);
+                _openRouter.RememberModelFor(providerId, clean);
+                _openRouter.SetDefaultModelFor(providerId, clean);
+            }
+            else if (IsCompute && _document.RemoteProvider is { } hostId)
+            {
+                _compute.RememberModel(hostId, clean);
+            }
+
+            _document.LastCost = null;
+            _document.LastCostCurrency = null;
+            _document.LastTokensPerSecond = null;
+            _error = null;
+            _status = "Ready.";
+            _store.Save(_document);
             Notify();
         }
         finally

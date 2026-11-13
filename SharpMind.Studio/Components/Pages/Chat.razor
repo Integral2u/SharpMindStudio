@@ -340,7 +340,7 @@ else
                             }
                             @if (ChatService.LastCost is { } cost)
                             {
-                                <span class="small faint">$@cost.ToString("0.000000")</span>
+                                <span class="small faint">@FormatCost(cost)</span>
                             }
                         </div>
                     }
@@ -348,6 +348,10 @@ else
                 @if (!DeviceAccess.IsMobile)
                 {
                     <div class="row">
+                        <button type="button" class="button" @onclick="ToggleModelSwitch"
+                                disabled="@(ChatService.IsStreaming || ChatService.IsLoading)">
+                            Model
+                        </button>
                         @if (!ChatService.IsRemote)
                         {
                             <button type="button" class="button" @onclick="ToggleOptions">
@@ -358,6 +362,47 @@ else
                     </div>
                 }
             </div>
+
+            @if (_showModelSwitch)
+            {
+                <div class="panel-body" style="border-bottom: 1px solid var(--line);">
+                    <div class="row" style="align-items: end; gap: .6rem;">
+                        <div class="field" style="flex: 1; min-width: 12rem;">
+                            <label class="field-label" for="switch-model">Switch to</label>
+                            <select id="switch-model" class="input" @bind="_switchModelChoice">
+                                @if (ChatService.Document?.Provider == "local")
+                                {
+                                    @foreach (var model in _models)
+                                    {
+                                        <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
+                                    }
+                                }
+                                else if (_computeProviderId is { } switchHostId)
+                                {
+                                    ComputeProvider? switchHost = Compute.Resolve(switchHostId);
+                                    @foreach (string model in switchHost?.Models ?? [])
+                                    {
+                                        <option value="@model">@model</option>
+                                    }
+                                }
+                                else
+                                {
+                                    @foreach (string model in RemoteActiveModels)
+                                    {
+                                        <option value="@model">@model</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <button type="button" class="button primary" @onclick="ApplyModelSwitchAsync"
+                                disabled="@(ChatService.IsStreaming || ChatService.IsLoading || string.IsNullOrWhiteSpace(_switchModelChoice))">
+                            Switch
+                        </button>
+                        <button type="button" class="button" @onclick="CloseModelSwitch">Cancel</button>
+                    </div>
+                    <div class="small faint">The transcript stays. The next turn uses the new model.</div>
+                </div>
+            }
 
             <div id="chat-transcript" class="chat-transcript">
                 @if (_messages.Count == 0)
@@ -752,6 +797,8 @@ else
     private bool _startingNew = true;
     private bool _loadingModels = true;
     private bool _showOptions;
+    private bool _showModelSwitch;
+    private string _switchModelChoice = "";
     private bool _wasStreaming;
     private bool _initialized;
     private bool _workMode;
@@ -1041,6 +1088,17 @@ else
         "No" => "failed",
         _ => "unknown",
     };
+
+    private string FormatCost(decimal cost)
+    {
+        string? currency = ChatService.LastCostCurrency;
+        if (string.IsNullOrWhiteSpace(currency) && ChatService.IsOpenRouter)
+            currency = RemoteProviders.Find(ChatService.RemoteProviderId).Currency;
+
+        return string.IsNullOrWhiteSpace(currency)
+            ? cost.ToString("0.000000")
+            : $"{cost:0.000000} {currency}";
+    }
     private void BeginNewChat()
     {
         _startingNew = true;
@@ -1371,6 +1429,49 @@ else
     {
         _showOptions = !_showOptions;
         if (_showOptions) SyncFromChat();
+    }
+
+    private void ToggleModelSwitch()
+    {
+        _showModelSwitch = !_showModelSwitch;
+        if (_showModelSwitch)
+        {
+            _switchModelChoice = ChatService.Document?.Provider == "local"
+                ? ChatService.Document.ModelPath
+                : ChatService.RemoteModel ?? "";
+        }
+    }
+
+    private void CloseModelSwitch() => _showModelSwitch = false;
+
+    private async Task ApplyModelSwitchAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_switchModelChoice) ||
+            ChatService.IsStreaming || ChatService.IsLoading)
+        {
+            return;
+        }
+
+        if (ChatService.Document?.Provider == "local")
+        {
+            ModelDescriptor? model = _models.FirstOrDefault(value =>
+                value.Path == _switchModelChoice);
+            if (model is null) return;
+
+            await ChatService.SwitchLocalModelAsync(model);
+            _selectedModelPath = model.Path;
+            await Theme.SetLastChatModelAsync(model.Path);
+        }
+        else
+        {
+            await ChatService.SwitchRemoteModelAsync(_switchModelChoice);
+            _remoteModel = _switchModelChoice;
+        }
+
+        _showModelSwitch = false;
+        SyncFromChat();
+        RefreshTuneSelection();
+        UpdateLatestModelRun();
     }
 
     private async Task ApplyOptionsAsync()

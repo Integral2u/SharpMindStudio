@@ -126,7 +126,14 @@
         </div>
 
         <div class="status-line">@_statusMessage</div>
-        @if (_tuneStatus.Length > 0)
+        @if (_tuning)
+        {
+            <div class="row" style="align-items:center; gap:.5rem;">
+                <span class="spinner-ring" title="Tuning"></span>
+                <span class="status-line">@_tuneStatus</span>
+            </div>
+        }
+        else if (_tuneStatus.Length > 0)
         {
             <div class="status-line">@_tuneStatus</div>
         }
@@ -160,9 +167,17 @@ else
         var stars = GroupStars(group);
         <section class="panel runs-group" style="margin-top: 1.2rem;">
             <div class="panel-head">
-                <div>
-                    <div class="eyebrow">@GroupEyebrow</div>
-                    <h2>@group.Title</h2>
+                <div class="row" style="gap: .5rem; align-items: center;">
+                    <button type="button" class="button runs-group-toggle"
+                            @onclick="() => ToggleGroup(group.Key)"
+                            aria-expanded="@(!IsCollapsed(group))"
+                            title="@(IsCollapsed(group) ? "Expand this group" : "Collapse this group")">
+                        @(IsCollapsed(group) ? "▸" : "▾")
+                    </button>
+                    <div>
+                        <div class="eyebrow">@GroupEyebrow</div>
+                        <h2>@group.Title</h2>
+                    </div>
                 </div>
                 <div class="row" style="gap: .6rem;">
                     <span class="faint small mono">
@@ -180,6 +195,10 @@ else
                             <span class="run-star silver">&#9733;</span> @groupSilver.TokensPerSecond.ToString("F2") tok/s
                         </a>
                     }
+                    @if (_tuning)
+                    {
+                        <span class="spinner-ring" title="Tuning"></span>
+                    }
                     <button type="button" class="button" @onclick="() => TuneGroupAsync(group)"
                             disabled="@(Canary.IsRunning || _tuning)" title="Tune every model in this group">
                         Tune all
@@ -190,22 +209,23 @@ else
                     </button>
                 </div>
             </div>
-            <div class="panel-body">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th><button type="button" class="sort-button" @onclick='() => SortBy("run")'>Run @SortMark("run")</button></th>
-                            <th><button type="button" class="sort-button" @onclick='() => SortBy("subject")'>Subject @SortMark("subject")</button></th>
-                            <th>Type</th>
-                            <th><button type="button" class="sort-button" @onclick='() => SortBy("status")'>Status @SortMark("status")</button></th>
-                            <th><button type="button" class="sort-button" @onclick='() => SortBy("tool")'>Tool @SortMark("tool")</button></th>
-                            <th><button type="button" class="sort-button" @onclick='() => SortBy("tps")'>tok/s @SortMark("tps")</button></th>
-                            <th><button type="button" class="sort-button" @onclick='() => SortBy("steps")'>Steps @SortMark("steps")</button></th>
-                            <th><button type="button" class="sort-button" @onclick='() => SortBy("when")'>When @SortMark("when")</button></th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
+            @if (!IsCollapsed(group))
+            {
+                <div class="panel-body">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th><button type="button" class="sort-button" @onclick='() => SortBy("run")'>Run @SortMark("run")</button></th>
+                                <th><button type="button" class="sort-button" @onclick='() => SortBy("subject")'>Subject @SortMark("subject")</button></th>
+                                <th><button type="button" class="sort-button" @onclick='() => SortBy("status")'>Status @SortMark("status")</button></th>
+                                <th><button type="button" class="sort-button" @onclick='() => SortBy("tool")'>Tool @SortMark("tool")</button></th>
+                                <th><button type="button" class="sort-button" @onclick='() => SortBy("tps")'>tok/s @SortMark("tps")</button></th>
+                                <th><button type="button" class="sort-button" @onclick='() => SortBy("steps")'>Steps @SortMark("steps")</button></th>
+                                <th><button type="button" class="sort-button" @onclick='() => SortBy("when")'>When @SortMark("when")</button></th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
                         @foreach (RunSummary run in Sort(group.Runs))
                         {
                             <tr>
@@ -224,7 +244,6 @@ else
                                     <div>@(run.Subject ?? "-")</div>
                                     <div class="small faint mono">@run.FamilyName</div>
                                 </td>
-                                <td class="mono small">@(run.Kind ?? "-")</td>
                                 <td><span class="status @StatusClass(run.Status)">@run.Status</span></td>
                                 <td>
                                     @if (run.ToolRunId is not null)
@@ -259,7 +278,8 @@ else
                         }
                     </tbody>
                 </table>
-            </div>
+                </div>
+            }
         </section>
     }
 }
@@ -279,6 +299,7 @@ else
     private bool _tuning;
     private string _tuneStatus = "";
     private CancellationTokenSource? _tuneCts;
+    private readonly HashSet<string> _collapsedGroups = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
     private RunSummary? FastestWithTools => RunGrouping.FastestWithTools(_runs);
@@ -355,6 +376,14 @@ else
 
     private (RunSummary? Gold, RunSummary? Silver) GroupStars(RunGroup group) =>
         (RunGrouping.FastestWithTools(group.Runs), RunGrouping.FastestWithoutTools(group.Runs));
+
+    private bool IsCollapsed(RunGroup group) => _collapsedGroups.Contains(group.Key);
+
+    private void ToggleGroup(string key)
+    {
+        if (!_collapsedGroups.Add(key))
+            _collapsedGroups.Remove(key);
+    }
 
     private static bool MatchesSearch(RunSummary run, string search) =>
         Contains(run.Subject, search) ||

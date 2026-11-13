@@ -253,7 +253,7 @@
     private string CurrencySuffix(RemoteKeyInfo info) =>
         !string.IsNullOrWhiteSpace(info.Currency)
             ? " " + info.Currency
-            : _providerId == RemoteProviders.EuroRouter ? " EUR" : "";
+            : " " + _preset.Currency;
 
     private async Task EnsureFetchedModelsAsync()
     {

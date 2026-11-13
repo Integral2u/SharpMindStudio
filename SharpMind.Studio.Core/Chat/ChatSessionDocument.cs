@@ -10,17 +10,17 @@ public sealed record ChatSessionDocument
     public string Schema { get; init; } = CurrentSchema;
     public required string Id { get; init; }
     public string Name { get; set; } = "New chat";
-    public required string ModelPath { get; init; }
+    public required string ModelPath { get; set; }
     public string Provider { get; set; } = "local";
     public string? RemoteModel { get; set; }
     /// <summary>Compute provider id when <see cref="Provider"/> is "compute".</summary>
     public string? RemoteProvider { get; set; }
-    public string? ModelFingerprint { get; init; }
-    public string? FamilyId { get; init; }
-    public string? FamilyName { get; init; }
+    public string? ModelFingerprint { get; set; }
+    public string? FamilyId { get; set; }
+    public string? FamilyName { get; set; }
     public string? InferenceVersion { get; init; }
-    public string? TunePreset { get; init; }
-    public string? TuneTarget { get; init; }
+    public string? TunePreset { get; set; }
+    public string? TuneTarget { get; set; }
     public string Mode { get; init; } = "chat";
     public string? SystemPrompt { get; set; }
     public DateTimeOffset CreatedUtc { get; init; } = DateTimeOffset.UtcNow;
@@ -29,6 +29,9 @@ public sealed record ChatSessionDocument
     public InferenceOverrides Overrides { get; set; } = new();
     public double? LastTokensPerSecond { get; set; }
     public decimal? LastCost { get; set; }
+
+    /// <summary>ISO currency of <see cref="LastCost"/>, e.g. USD or EUR.</summary>
+    public string? LastCostCurrency { get; set; }
     public int? LastPromptTokens { get; set; }
     public int? LastCompletionTokens { get; set; }
     public int? LastToolCalls { get; set; }

@@ -92,6 +92,10 @@ else
         <button type="button" class="button" @onclick="TuneAsync" disabled="@(Canary.IsRunning || _tuning)">
             @(_tuning ? "Tuning..." : "Tune")
         </button>
+        @if (_tuning)
+        {
+            <span class="spinner-ring" title="Tuning"></span>
+        }
         <button type="button" class="button" @onclick="() => StartSessionAsync(work: false)"
                 disabled="@(Canary.IsRunning || _tuning)">
             Chat

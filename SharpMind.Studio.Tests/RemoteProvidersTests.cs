@@ -16,6 +16,7 @@ public sealed class RemoteProvidersTests
         Assert.True(preset.Beta);
         Assert.False(preset.AttributionHeaders);
         Assert.Null(preset.DefaultModelId);
+        Assert.Equal("EUR", preset.Currency);
     }
 
     [Fact]
@@ -26,6 +27,7 @@ public sealed class RemoteProvidersTests
         Assert.True(preset.AttributionHeaders);
         Assert.False(preset.Beta);
         Assert.Equal("openrouter/free", preset.DefaultModelId);
+        Assert.Equal("USD", preset.Currency);
     }
 
     [Fact]

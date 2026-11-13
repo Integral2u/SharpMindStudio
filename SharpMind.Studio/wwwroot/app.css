@@ -578,6 +578,21 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     vertical-align: middle;
 }
 
+.runs-group .panel-head {
+    gap: .75rem;
+}
+
+.runs-group .panel-head .button {
+    white-space: nowrap;
+}
+
+.runs-group-toggle {
+    min-width: 1.7rem;
+    padding: .15rem .35rem;
+    font-size: .78rem;
+    line-height: 1;
+}
+
 .empty {
     padding: 2rem 1rem;
     color: var(--muted);

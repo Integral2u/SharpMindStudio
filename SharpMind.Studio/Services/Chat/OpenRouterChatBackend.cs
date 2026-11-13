@@ -202,11 +202,14 @@ public sealed class OpenRouterChatBackend(
 
         document.LastTokensPerSecond = lastTps;
         document.LastCost = cost;
+        document.LastCostCurrency = cost is null
+            ? null
+            : string.IsNullOrWhiteSpace(costCurrency) ? preset.Currency : costCurrency;
         document.LastPromptTokens = promptTokens;
         document.LastCompletionTokens = completionTokens;
         document.LastToolCalls = toolCallsUsed;
         context.SetStatus(cost is { } spent
-            ? $"Ready. {preset.Name} cost {spent:0.000000}{(string.IsNullOrWhiteSpace(costCurrency) ? "" : " " + costCurrency)}."
+            ? $"Ready. {preset.Name} cost {spent:0.000000} {document.LastCostCurrency}."
             : promptTokens is int promptUsed && completionTokens is int completionUsed
                 ? $"Ready. {promptUsed:N0} prompt / {completionUsed:N0} completion tokens."
                 : "Ready.");

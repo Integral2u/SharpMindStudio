@@ -955,6 +955,10 @@ else if (_tab == "models")
                             disabled="@_modelTuning" title="Tune Chat and Work for this model">
                         @(_modelTuning ? "Tuning..." : "Tune")
                     </button>
+                    @if (_modelTuning)
+                    {
+                        <span class="spinner-ring" title="Tuning"></span>
+                    }
                     <button type="button" class="button" @onclick="() => StartModelSessionAsync(work: false)"
                             disabled="@_modelTuning" title="Start a chat with this model">
                         Chat

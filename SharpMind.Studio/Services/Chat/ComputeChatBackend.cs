@@ -107,6 +107,7 @@ public sealed class ComputeChatBackend(ComputeProviderService compute) : IChatBa
 
         document.LastTokensPerSecond = tps;
         document.LastCost = null;
+        document.LastCostCurrency = null;
         document.LastPromptTokens = promptTokens;
         document.LastCompletionTokens = completionTokens;
         document.LastToolCalls = 0;
