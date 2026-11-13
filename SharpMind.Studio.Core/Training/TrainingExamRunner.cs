@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using SharpMind.Core.Tensors;
 using SharpMind.Data;
 using SharpMind.Data.Batching;
 using SharpMind.Data.Pipeline;
@@ -10,6 +12,9 @@ using SharpMind.Training.Sft;
 
 namespace SharpMind.Studio.Core.Training;
 
+/// <summary>One exam document's contribution, used for the paired bootstrap.</summary>
+public sealed record ExamDocumentScore(string Key, double Loss, long Tokens, long Bytes);
+
 /// <summary>Held-out exam score for one packaged model.</summary>
 public sealed class TrainingExamResult
 {
@@ -20,6 +25,7 @@ public sealed class TrainingExamResult
     public long Tokens { get; init; }
     public long Bytes { get; init; }
     public double BitsPerByte { get; init; }
+    public List<ExamDocumentScore> Documents { get; init; } = [];
     public DateTime EvaluatedUtc { get; init; } = DateTime.UtcNow;
 }
 
@@ -28,15 +34,19 @@ public sealed class TrainingExamResult
 /// the same deterministic, content-hashed slice the training run excluded, so
 /// the document set was never trained on or used to pick a checkpoint.
 ///
-/// The exam loads the model and its embedded tokenizer, rebuilds the job's
-/// cleaned corpus pipeline and reads a bounded number of test batches. It is
-/// deliberately separate from <see cref="TrainingRunner"/>: training must never
-/// look at this slice, and the exam must be runnable later against any exported
-/// candidate.
+/// Each document is scored once and its loss is retained, which gives the
+/// promotion report a paired sample for a bootstrap instead of one aggregate
+/// number. The run is bounded by <see cref="MaxDocuments"/> and
+/// <see cref="MaxTokens"/> so a large corpus cannot turn an exam into a full
+/// evaluation pass.
 /// </summary>
 public static class TrainingExamRunner
 {
-    public const int MaxBatches = 8;
+    /// <summary>Upper bound on documents scored by one exam.</summary>
+    public const int MaxDocuments = 1024;
+
+    /// <summary>Upper bound on loss-bearing tokens scored by one exam.</summary>
+    public const long MaxTokens = 200_000;
 
     public static async Task<TrainingExamResult> RunAsync(
         TrainingJobSettings job,
@@ -72,55 +82,59 @@ public static class TrainingExamRunner
 
         int seqLen = job.SeqLen > 0 ? job.SeqLen : 64;
         if (config.MaxSeqLen > 0) seqLen = Math.Min(seqLen, config.MaxSeqLen);
+        seqLen = Math.Max(1, seqLen);
 
-        var batcher = new RandomWindowBatcher(
-            batchSize: Math.Max(1, job.BatchSize),
-            seqLen: Math.Max(1, seqLen),
-            seed: job.Seed + 2);
-        long textBytes = 0;
-        var loader = new DataLoader(testNode, text =>
+        var evaluator = new Evaluator(model, new CrossEntropyLoss());
+        var scores = new List<ExamDocumentScore>();
+        double weightedLoss = 0;
+        long totalTokens = 0;
+        long totalBytes = 0;
+
+        await foreach (string doc in testNode.ReadAsync(cancellationToken))
         {
-            Interlocked.Add(ref textBytes, Encoding.UTF8.GetByteCount(text));
-            return tokenizer.Encode(text);
-        }, batcher, prefetchBuffer: 1);
+            if (string.IsNullOrWhiteSpace(doc)) continue;
 
-        var batches = new List<TrainingBatch>();
-        try
-        {
-            await foreach (TrainingBatch batch in loader.LoadAsync(cancellationToken: cancellationToken))
-            {
-                batches.Add(batch);
-                if (batches.Count >= MaxBatches) break;
-            }
+            int[] ids = tokenizer.Encode(doc);
+            int rowLen = Math.Min(ids.Length - 1, seqLen);
+            if (rowLen <= 0) continue;
 
-            if (batches.Count == 0)
-                throw new InvalidOperationException(
-                    "The held-out exam produced no documents. The corpus is too small for the "
-                    + "requested exam percentage, or the split filtered everything out.");
+            using TrainingBatch batch = BuildTextBatch(ids, rowLen);
+            (float loss, _) = evaluator.Evaluate([batch]);
+            long bytes = Encoding.UTF8.GetByteCount(doc);
 
-            var evaluator = new Evaluator(model, new CrossEntropyLoss());
-            (float loss, float perplexity) = evaluator.Evaluate(batches);
-            long tokens = batches.Sum(batch => (long)batch.RealTokenCount);
-            double bitsPerByte = ExamMetrics.BitsPerByte(loss, tokens, textBytes);
+            scores.Add(new ExamDocumentScore(DocumentKey(doc), loss, batch.RealTokenCount, bytes));
+            weightedLoss += loss * (double)batch.RealTokenCount;
+            totalTokens += batch.RealTokenCount;
+            totalBytes += bytes;
 
-            log?.Invoke($"Exam: loss {loss:0.0000}, ppl {perplexity:0.00}, "
-                + $"{bitsPerByte:0.0000} bits/byte on {batches.Count} batch(es), {tokens:N0} tokens.");
-
-            return new TrainingExamResult
-            {
-                ModelPath = modelPath,
-                Loss = loss,
-                Perplexity = perplexity,
-                Batches = batches.Count,
-                Tokens = tokens,
-                Bytes = textBytes,
-                BitsPerByte = bitsPerByte,
-            };
+            if (scores.Count >= MaxDocuments || totalTokens >= MaxTokens) break;
         }
-        finally
+
+        if (scores.Count == 0)
         {
-            foreach (TrainingBatch batch in batches) batch.Dispose();
+            throw new InvalidOperationException(
+                "The held-out exam produced no documents. The corpus is too small for the "
+                + "requested exam percentage, or the split filtered everything out.");
         }
+
+        double averageLoss = totalTokens > 0 ? weightedLoss / totalTokens : double.NaN;
+        double perplexity = double.IsFinite(averageLoss) ? Math.Exp(averageLoss) : double.NaN;
+        double bitsPerByte = ExamMetrics.BitsPerByte(averageLoss, totalTokens, totalBytes);
+
+        log?.Invoke($"Exam: loss {averageLoss:0.0000}, ppl {perplexity:0.00}, "
+            + $"{bitsPerByte:0.0000} bits/byte on {scores.Count:N0} document(s), {totalTokens:N0} tokens.");
+
+        return new TrainingExamResult
+        {
+            ModelPath = modelPath,
+            Loss = averageLoss,
+            Perplexity = perplexity,
+            Batches = scores.Count,
+            Tokens = totalTokens,
+            Bytes = totalBytes,
+            BitsPerByte = bitsPerByte,
+            Documents = scores,
+        };
     }
 
     /// <summary>
@@ -153,53 +167,108 @@ public static class TrainingExamRunner
 
         var conversation = new ConversationTokenizer(
             TrainingRunner.ResolveSftFormatter(job.SftFormatter, chatTemplate), tokenizer);
-        var batcher = new SftBatcher(
-            batchSize: Math.Max(1, job.BatchSize),
-            maxSeqLen: seqLen,
-            padTokenId: tokenizer.PadId);
-        long textBytes = 0;
-        var loader = new RecordDataLoader(examSource, batcher, record =>
+        var evaluator = new Evaluator(model, new CrossEntropyLoss());
+        var scores = new List<ExamDocumentScore>();
+        double weightedLoss = 0;
+        long totalTokens = 0;
+        long totalBytes = 0;
+
+        await foreach (DataRecord record in examSource.ReadRecordsAsync(cancellationToken))
         {
-            Interlocked.Add(ref textBytes, Encoding.UTF8.GetByteCount(record.Text));
-            return conversation.Encode(record);
-        });
+            TokenizedExample example = conversation.Encode(record);
+            int rowLen = Math.Min(example.TokenIds.Count, seqLen);
+            if (rowLen <= 0) continue;
 
-        var batches = new List<TrainingBatch>();
-        try
-        {
-            await foreach (TrainingBatch batch in loader.LoadAsync(cancellationToken: cancellationToken))
-            {
-                batches.Add(batch);
-                if (batches.Count >= MaxBatches) break;
-            }
+            using TrainingBatch batch = BuildSftBatch(example, rowLen);
+            if (batch.RealTokenCount <= 0) continue;
 
-            if (batches.Count == 0)
-                throw new InvalidOperationException(
-                    "The held-out exam produced no conversations. The corpus is too small for the "
-                    + "requested exam percentage, or the split filtered everything out.");
+            (float loss, _) = evaluator.Evaluate([batch]);
+            long bytes = Encoding.UTF8.GetByteCount(record.Text);
 
-            var evaluator = new Evaluator(model, new CrossEntropyLoss());
-            (float loss, float perplexity) = evaluator.Evaluate(batches);
-            long tokens = batches.Sum(batch => (long)batch.RealTokenCount);
-            double bitsPerByte = ExamMetrics.BitsPerByte(loss, tokens, textBytes);
+            scores.Add(new ExamDocumentScore(RecordGrouping.SplitKey(record), loss, batch.RealTokenCount, bytes));
+            weightedLoss += loss * (double)batch.RealTokenCount;
+            totalTokens += batch.RealTokenCount;
+            totalBytes += bytes;
 
-            log?.Invoke($"Exam: loss {loss:0.0000}, ppl {perplexity:0.00}, "
-                + $"{bitsPerByte:0.0000} bits/byte on {batches.Count} batch(es), {tokens:N0} tokens.");
-
-            return new TrainingExamResult
-            {
-                ModelPath = modelPath,
-                Loss = loss,
-                Perplexity = perplexity,
-                Batches = batches.Count,
-                Tokens = tokens,
-                Bytes = textBytes,
-                BitsPerByte = bitsPerByte,
-            };
+            if (scores.Count >= MaxDocuments || totalTokens >= MaxTokens) break;
         }
-        finally
+
+        if (scores.Count == 0)
         {
-            foreach (TrainingBatch batch in batches) batch.Dispose();
+            throw new InvalidOperationException(
+                "The held-out exam produced no conversations. The corpus is too small for the "
+                + "requested exam percentage, or the split filtered everything out.");
         }
+
+        double averageLoss = totalTokens > 0 ? weightedLoss / totalTokens : double.NaN;
+        double perplexity = double.IsFinite(averageLoss) ? Math.Exp(averageLoss) : double.NaN;
+        double bitsPerByte = ExamMetrics.BitsPerByte(averageLoss, totalTokens, totalBytes);
+
+        log?.Invoke($"Exam: loss {averageLoss:0.0000}, ppl {perplexity:0.00}, "
+            + $"{bitsPerByte:0.0000} bits/byte on {scores.Count:N0} conversation(s), {totalTokens:N0} tokens.");
+
+        return new TrainingExamResult
+        {
+            ModelPath = modelPath,
+            Loss = averageLoss,
+            Perplexity = perplexity,
+            Batches = scores.Count,
+            Tokens = totalTokens,
+            Bytes = totalBytes,
+            BitsPerByte = bitsPerByte,
+            Documents = scores,
+        };
     }
+
+    private static TrainingBatch BuildTextBatch(int[] ids, int rowLen)
+    {
+        var tokenIds = new Tensor<int>(1, rowLen);
+        var labels = new Tensor<int>(1, rowLen);
+        var attentionMask = new Tensor<float>(1, rowLen);
+
+        Span<int> tokens = tokenIds.RowSpan(0);
+        Span<int> targets = labels.RowSpan(0);
+        Span<float> mask = attentionMask.RowSpan(0);
+
+        for (int i = 0; i < rowLen; i++)
+        {
+            tokens[i] = ids[i];
+            targets[i] = ids[i + 1];
+            mask[i] = 1f;
+        }
+
+        return new TrainingBatch(tokenIds, labels, attentionMask, rowLen);
+    }
+
+    private static TrainingBatch BuildSftBatch(TokenizedExample example, int rowLen)
+    {
+        var tokenIds = new Tensor<int>(1, rowLen);
+        var labels = new Tensor<int>(1, rowLen);
+        var attentionMask = new Tensor<float>(1, rowLen);
+
+        Span<int> tokens = tokenIds.RowSpan(0);
+        Span<int> targets = labels.RowSpan(0);
+        Span<float> mask = attentionMask.RowSpan(0);
+
+        int scored = 0;
+        for (int i = 0; i < rowLen; i++)
+        {
+            tokens[i] = example.TokenIds[i];
+            mask[i] = 1f;
+            if (i + 1 < rowLen && example.IsAssistant(i + 1))
+            {
+                targets[i] = example.TokenIds[i + 1];
+                scored++;
+            }
+            else
+            {
+                targets[i] = -100;
+            }
+        }
+
+        return new TrainingBatch(tokenIds, labels, attentionMask, scored);
+    }
+
+    private static string DocumentKey(string text) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 }

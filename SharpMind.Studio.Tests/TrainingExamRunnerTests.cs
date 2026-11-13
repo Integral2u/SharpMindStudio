@@ -98,6 +98,9 @@ public sealed class TrainingExamRunnerTests
             Assert.True(double.IsFinite(exam.Perplexity));
             Assert.True(exam.Batches > 0);
             Assert.True(exam.Tokens > 0);
+            Assert.True(exam.Documents.Count > 0);
+            Assert.Equal(exam.Documents.Count, exam.Batches);
+            Assert.All(exam.Documents, doc => Assert.True(double.IsFinite(doc.Loss)));
             Assert.Equal(run.ExportPath, exam.ModelPath);
             Assert.Contains(log, line => line.Contains("Exam: loss", StringComparison.Ordinal));
         }

@@ -781,16 +781,24 @@ public partial class Training
     {
         get
         {
-            if (CompareA?.ExamLoss is { } candidate
-                && CompareB?.ExamLoss is { } baseline
-                && baseline > 0)
+            if (CompareA is { } candidate && CompareB is { } baseline)
             {
-                double delta = (candidate - baseline) / baseline;
-                if (delta < -0.005) return "Promote A over B";
-                if (delta > 0.005) return "Write comparison report";
-                return "Write inconclusive report";
+                try
+                {
+                    TrainingPromotionReport preview = TrainingPromotionReport.Compare(candidate, baseline);
+                    return preview.Verdict switch
+                    {
+                        TrainingPromotionReport.Better => "Promote A over B",
+                        TrainingPromotionReport.Worse => "Write comparison report",
+                        _ => "Write inconclusive report",
+                    };
+                }
+                catch
+                {
+                    // Missing or incomparable exam data; the button still writes a report.
+                }
             }
-            return "Promote A over B";
+            return "Write promotion report";
         }
     }
 

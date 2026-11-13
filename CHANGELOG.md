@@ -35,6 +35,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   model's tuned profile for Chat or Work.
 - **Currency on costs** - chat costs and key balances now show the ISO currency
   returned by the provider (USD, EUR, ...) instead of a bare symbol.
+- **Promotion bootstrap** - the exam scores each held-out document and stores
+  its loss, token and byte counts. A promotion verdict now uses a paired 95%
+  bootstrap over at least 100 shared documents and 10,000 tokens; a change is
+  called better or worse only when the interval clears zero and the 0.5%
+  practical threshold. Aggregate-only older runs keep the previous threshold and
+  the report says the result was not bootstrapped.
 
 ### Changed
 

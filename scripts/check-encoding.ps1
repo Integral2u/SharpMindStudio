@@ -26,7 +26,7 @@ $markers = @(
 $files = Get-ChildItem $Root -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object {
         $extensions -contains $_.Extension -and
-        $_.FullName -notmatch '\\(bin|obj|\.git|\.vs|node_modules|TestResults|nupkg|publish|\.tools|venv)\\' -and
+        $_.FullName -notmatch '\\(bin|obj|\.git|\.vs|node_modules|TestResults|nupkg|publish|\.tools|venv|video)\\' -and
         $_.Length -lt 8MB
     }
 

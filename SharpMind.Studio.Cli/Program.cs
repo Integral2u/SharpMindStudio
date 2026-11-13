@@ -526,6 +526,7 @@ internal static class StudioCli
             Console.WriteLine($"PPL      {result.Perplexity:0.00}");
             Console.WriteLine($"BPB      {result.BitsPerByte:0.0000}");
             Console.WriteLine($"Batches  {result.Batches}");
+            Console.WriteLine($"Documents {result.Documents.Count:N0}");
             Console.WriteLine($"Tokens   {result.Tokens:N0}");
             Console.WriteLine($"Bytes    {result.Bytes:N0}");
             Console.WriteLine($"At       {result.EvaluatedUtc.ToLocalTime():g}");
@@ -540,6 +541,7 @@ internal static class StudioCli
                     : null;
                 record.ExamBatches = result.Batches;
                 record.ExamTokens = result.Tokens;
+                record.ExamDocumentScores = result.Documents;
                 record.ExamEvaluatedUtc = result.EvaluatedUtc;
                 TrainingRunStore.Update(recordPath, record);
                 Console.WriteLine($"Record   {recordPath}");

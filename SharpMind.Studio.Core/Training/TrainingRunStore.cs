@@ -66,6 +66,9 @@ public sealed class TrainingRunRecord
     public long ExamTokens { get; set; }
     public DateTime? ExamEvaluatedUtc { get; set; }
 
+    /// <summary>Per-document exam losses for the paired promotion bootstrap.</summary>
+    public List<ExamDocumentScore> ExamDocumentScores { get; set; } = [];
+
     /// <summary>Last logged training loss, when the run logged at least one step.</summary>
     public double? FinalLoss { get; set; }
 

@@ -81,6 +81,7 @@ public sealed class StudioExamService(StudioTrainingService training)
             run.Record.ExamBitsPerByte = double.IsFinite(result.BitsPerByte) ? result.BitsPerByte : null;
             run.Record.ExamBatches = result.Batches;
             run.Record.ExamTokens = result.Tokens;
+            run.Record.ExamDocumentScores = result.Documents;
             run.Record.ExamEvaluatedUtc = result.EvaluatedUtc;
             TrainingRunStore.Update(run.Path, run.Record);
             _training.RefreshRunHistory();
