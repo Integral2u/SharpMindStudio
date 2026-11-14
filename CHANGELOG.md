@@ -103,6 +103,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   refused connection used to fail the whole deploy. Deploy now waits up to five
   minutes for TCP 22, reports each attempt, then runs the setup. The SSH error
   text also notes that a new instance can refuse connections for a minute.
+- **SSH setup on Windows** - remote scripts kept the source file's CRLF line
+  endings, so bash read the carriage return as part of each command and the
+  probe failed with `set: -` or a syntax error before setup could start. Scripts
+  are now sent to the host with LF endings.
 
 ## [1.1.1.0] - 2026-11-08
 

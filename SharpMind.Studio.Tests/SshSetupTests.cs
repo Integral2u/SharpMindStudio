@@ -101,6 +101,17 @@ public sealed class SshSetupTests
     }
 
     [Fact]
+    public void Scripts_AreSentWithUnixNewlines()
+    {
+        Assert.Equal(
+            "set -u\necho hi\n",
+            SshSetupScript.ToUnixNewlines("set -u\r\necho hi\r\n"));
+
+        Assert.DoesNotContain('\r', SshSetupScript.ToUnixNewlines(SshSetupScript.Probe()));
+        Assert.DoesNotContain('\r', SshSetupScript.ToUnixNewlines(SshSetupScript.InstallDocker()));
+    }
+
+    [Fact]
     public void RunScript_EmbedsValuesAndAddsGpuOnlyWhenRequested()
     {
         var request = new SshSetupRequest

@@ -150,6 +150,14 @@ public static class SshSetupScript
     public static string Quote(string value) =>
         "'" + (value ?? "").Replace("'", "'\\''", StringComparison.Ordinal) + "'";
 
+    /// <summary>
+    /// Raw string literals inherit the source file's line endings, which are CRLF
+    /// on Windows. bash reads the trailing carriage return as part of a command
+    /// (for example <c>set: -</c>), so scripts are sent with LF only.
+    /// </summary>
+    public static string ToUnixNewlines(string script) =>
+        script.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+
     /// <summary>Prints SM_* key=value lines that <see cref="SshProbe.Parse"/> reads.</summary>
     public static string Probe() => """
         set -u

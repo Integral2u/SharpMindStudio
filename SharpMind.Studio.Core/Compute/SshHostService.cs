@@ -453,7 +453,9 @@ public sealed class SshHostService
         CancellationToken cancellationToken)
     {
         // Base64 keeps the script out of the shell's quoting rules entirely.
-        string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(script));
+        // LF line endings keep bash from reading the CR in CRLF as part of a word.
+        string encoded = Convert.ToBase64String(
+            Encoding.UTF8.GetBytes(SshSetupScript.ToUnixNewlines(script)));
         using SshCommand command = client.CreateCommand($"echo {encoded} | base64 -d | bash");
         command.CommandTimeout = CommandTimeout;
 
