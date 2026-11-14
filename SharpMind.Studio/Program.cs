@@ -34,6 +34,8 @@ builder.Services.AddSingleton<ComputeProviderService>();
 builder.Services.AddSingleton<ComputeChatBackend>();
 builder.Services.AddSingleton<DockerHostService>();
 builder.Services.AddSingleton<RunpodService>();
+builder.Services.AddSingleton<VultrService>();
+builder.Services.AddSingleton<ComputeDashboardService>();
 builder.Services.AddSingleton(SshKnownHosts.Default);
 builder.Services.AddSingleton<SshHostService>();
 builder.Services.AddHttpClient<OpenRouterClient>(client =>
@@ -45,6 +47,10 @@ builder.Services.AddHttpClient<ComputeClient>(client =>
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
 builder.Services.AddHttpClient<RunpodClient>(client =>
+{
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddHttpClient<VultrClient>(client =>
 {
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
@@ -107,6 +113,7 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapGatewayEndpoints();
+app.MapComputeEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

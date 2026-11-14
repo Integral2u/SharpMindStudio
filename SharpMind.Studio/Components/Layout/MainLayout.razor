@@ -7,6 +7,7 @@
 @inject SharpMind.Studio.Services.StudioTrainingService Training
 @inject SharpMind.Studio.Services.StudioRehearsalService Rehearsal
 @inject SharpMind.Studio.Services.StudioExamService Exam
+@inject SharpMind.Studio.Services.ComputeDashboardService Compute
 @inject Microsoft.AspNetCore.Components.NavigationManager Nav
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthState
@@ -149,8 +150,21 @@
 
             @if (!DeviceAccess.IsMobile)
             {
+                <NavLink class="nav-link" href="compute">
+                    <span class="nav-index">05</span> Compute
+                    @if (Compute.RunningCount > 0)
+                    {
+                        <span class="nav-badge" title="@Compute.RunningCount running; billed hourly">
+                            @Compute.RunningCount
+                        </span>
+                    }
+                    else if (Compute.IsRefreshing)
+                    {
+                        <span class="spinner-ring" title="Checking compute"></span>
+                    }
+                </NavLink>
                 <NavLink class="nav-link" href="training">
-                    <span class="nav-index">05</span> Training
+                    <span class="nav-index">06</span> Training
                     @if (Training.IsRunning || Rehearsal.IsRunning || Exam.IsRunning)
                     {
                         <span class="spinner-ring" title="Training active"></span>
@@ -159,11 +173,11 @@
                 @if (LayerLabAvailable)
                 {
                     <NavLink class="nav-link" href="lab">
-                        <span class="nav-index">06</span> Labs
+                        <span class="nav-index">07</span> Labs
                     </NavLink>
                 }
                 <NavLink class="nav-link" href="settings">
-                    <span class="nav-index">07</span> Settings
+                    <span class="nav-index">08</span> Settings
                 </NavLink>
             }        </nav>
 
@@ -209,6 +223,18 @@
             </div>
         </header>
 
+        @if (Compute.RunningCount > 0 && !IsComputePage)
+        {
+            <div class="compute-banner">
+                <span class="compute-banner-dot" aria-hidden="true"></span>
+                <span>
+                    @Compute.RunningCount compute instance@(Compute.RunningCount == 1 ? "" : "s")
+                    running &middot; $@Compute.HourlyCost.ToString("0.00")/hour
+                </span>
+                <a href="compute">Review</a>
+            </div>
+        }
+
         <div class="page">
             @if (DeviceAccess.IsMobile && !MobileAllows(Nav.ToBaseRelativePath(Nav.Uri)))
             {
@@ -243,7 +269,9 @@
         Exam.Changed += OnBackgroundChanged;
         Workspace.ProjectChanged += OnWorkspaceChanged;
         Nav.LocationChanged += OnLocationChanged;
+        Compute.Changed += OnComputeChanged;
         LoadChats();
+        _ = Compute.RefreshAsync();
     }
 
     public void Dispose()
@@ -256,7 +284,13 @@
         Exam.Changed -= OnBackgroundChanged;
         Workspace.ProjectChanged -= OnWorkspaceChanged;
         Nav.LocationChanged -= OnLocationChanged;
+        Compute.Changed -= OnComputeChanged;
     }
+
+    private bool IsComputePage =>
+        Nav.ToBaseRelativePath(Nav.Uri).StartsWith("compute", StringComparison.OrdinalIgnoreCase);
+
+    private void OnComputeChanged() => _ = InvokeAsync(StateHasChanged);
 
 #if SHARPMIND_SOURCE
     private const bool LayerLabAvailable = true;

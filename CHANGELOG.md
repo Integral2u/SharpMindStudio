@@ -47,6 +47,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   text runs with held-out splits skip the packed-data cache so the group key is
   not lost. Plain text sources keep the content hash, and incremental runs keep
   the text-hash fallback because their sources are already reduced to deltas.
+- **Vultr deploy and teardown from the API** - save a Vultr personal access
+  token in Settings → Providers → Vultr, pick a region, plan, Ubuntu 24.04 and
+  an SSH key that already exists on the account, then press **Deploy instance**.
+  Studio creates a firewall with TCP 22, 5117 and 8080, labels and tags the
+  instance `sharpmind-<short-id>`, waits for the public IP, and runs the same SSH
+  setup as a manual host. It never uploads an SSH key.
+- **Compute page** - a new left-menu item with a running count, the instance
+  list, IP, uptime, hourly rate and estimated spend, per-row **Destroy**, and
+  **Destroy all running**. It also hosts the Vultr deploy form. **Create
+  compute** on Training jumps there with a GPU plan preselected.
+- **Exit guard** - closing Studio with instances still running shows a prompt
+  with **Keep running** as the default, **Cancel**, and **Destroy and exit**.
+  Tagged instances that Studio is not tracking are detected at startup, listed
+  on Compute, and included in the teardown.
 
 ### Changed
 

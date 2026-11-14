@@ -1,0 +1,131 @@
+<Window x:Class="SharpMind.Studio.UI.RunningComputeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SharpMind Studio"
+        Width="560"
+        SizeToContent="Height"
+        MaxHeight="640"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="False"
+        Topmost="True"
+        KeyDown="OnKeyDown">
+    <Border Background="#101821"
+            BorderBrush="#2A3948"
+            BorderThickness="1"
+            CornerRadius="10"
+            Padding="20">
+        <StackPanel>
+            <TextBlock Text="SharpMind Studio"
+                       Foreground="#5EEAD4"
+                       FontFamily="Consolas"
+                       FontSize="12"
+                       FontWeight="Bold" />
+            <TextBlock Text="Compute is still running"
+                       Foreground="#E6EDF3"
+                       FontFamily="Segoe UI"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Margin="0,10,0,0" />
+            <TextBlock x:Name="SummaryText"
+                       Foreground="#8FA3B8"
+                       FontFamily="Segoe UI"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       Margin="0,8,0,0" />
+
+            <Border Background="#0B131A"
+                    BorderBrush="#1F2C38"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="10"
+                    Margin="0,12,0,0">
+                <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="InstanceList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding Label}"
+                                                   Foreground="#E6EDF3"
+                                                   FontFamily="Segoe UI"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Detail}"
+                                                   Foreground="#5E7185"
+                                                   FontFamily="Consolas"
+                                                   FontSize="10"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                                        <TextBlock Text="{Binding CostText}"
+                                                   Foreground="#FBBF24"
+                                                   FontFamily="Consolas"
+                                                   FontSize="11"
+                                                   HorizontalAlignment="Right" />
+                                        <TextBlock Text="{Binding UptimeText}"
+                                                   Foreground="#5E7185"
+                                                   FontFamily="Segoe UI"
+                                                   FontSize="10"
+                                                   HorizontalAlignment="Right" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+
+            <TextBlock Text="Vultr bills stopped instances too; only destroying stops the meter. Destroying deletes each disk, so download exported models first."
+                       Foreground="#5E7185"
+                       FontFamily="Segoe UI"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Margin="0,12,0,0" />
+            <TextBlock Text="Keep running closes Studio and leaves the instances up. Cancel stays in Studio."
+                       Foreground="#5E7185"
+                       FontFamily="Segoe UI"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Margin="0,6,0,0" />
+
+            <WrapPanel Orientation="Horizontal"
+                       HorizontalAlignment="Right"
+                       Margin="0,18,0,0">
+                <Button Content="Cancel"
+                        Click="OnCancel"
+                        Padding="12,6"
+                        Margin="0,0,8,0"
+                        Background="Transparent"
+                        BorderBrush="#2A3948"
+                        Foreground="#8FA3B8"
+                        Cursor="Hand" />
+                <Button Content="Destroy and exit"
+                        Click="OnDestroy"
+                        Padding="12,6"
+                        Margin="0,0,8,0"
+                        Background="Transparent"
+                        BorderBrush="#7F1D1D"
+                        Foreground="#F87171"
+                        Cursor="Hand" />
+                <Button x:Name="KeepButton"
+                        Content="Keep running"
+                        Click="OnKeep"
+                        Padding="12,6"
+                        Background="#5EEAD4"
+                        BorderBrush="#5EEAD4"
+                        Foreground="#06121A"
+                        FontWeight="SemiBold"
+                        Cursor="Hand" />
+            </WrapPanel>
+        </StackPanel>
+    </Border>
+</Window>

@@ -579,9 +579,7 @@ else if (_tab == "openrouter")
                     }
                     @if (provider.Prefab == ComputeProviderPrefabs.Vultr)
                     {
-                        <div class="small faint">
-                            A Vultr instance running the server image.
-                        </div>
+                        <VultrPanel ProviderId="provider.Id" OnChanged="RefreshComputeView" />
                     }
                     @if (needsDeploy)
                     {

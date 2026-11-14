@@ -1,0 +1,392 @@
+@using SharpMind.Studio.Core.Compute
+@using SharpMind.Studio.Services
+@inject ComputeProviderService Compute
+@inject VultrService Vultr
+@inject IJSRuntime JS
+
+<div class="training-subsection">
+    <div class="training-subsection-head">
+        <label class="field-label">Vultr API</label>
+        <div class="row" style="align-items:center; gap:.5rem;">
+            <span class="small mono">@StatusLabel</span>
+            @if (_busy)
+            {
+                <span class="spinner-ring" title="Working"></span>
+            }
+            <button type="button" class="button" @onclick="LoadAsync" disabled="@_busy">
+                @(_busy ? "Working..." : "Load plans")
+            </button>
+        </div>
+    </div>
+
+    <div class="training-form">
+        <div class="field training-form-wide">
+            <label class="field-label" for="vultr-key-@ProviderId">API key</label>
+            <input id="vultr-key-@ProviderId" class="input" type="password"
+                   @bind="_apiKey" autocomplete="off"
+                   placeholder="@(HasSavedKey ? "saved; leave blank to keep" : "Vultr personal access token")" />
+            <span class="small faint">Stored encrypted. Only account-level Vultr keys can create instances.</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="vultr-region-@ProviderId">Region</label>
+            <select id="vultr-region-@ProviderId" class="input"
+                    @bind="_region" @bind:after="OnRegionChanged">
+                @foreach (VultrRegion region in _regions)
+                {
+                    <option value="@region.Id">@region.Display</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="vultr-plan-@ProviderId">Plan</label>
+            <select id="vultr-plan-@ProviderId" class="input" @bind="_planId">
+                @foreach (VultrPlan plan in VisiblePlans)
+                {
+                    <option value="@plan.Id">@PlanLabel(plan)</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="vultr-os-@ProviderId">Operating system</label>
+            <select id="vultr-os-@ProviderId" class="input" @bind="_osId">
+                @foreach (VultrOs system in _systems)
+                {
+                    <option value="@system.Id">@system.Name (@system.Arch)</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="vultr-ssh-@ProviderId">Vultr SSH key</label>
+            <select id="vultr-ssh-@ProviderId" class="input" @bind="_sshKeyId">
+                @foreach (VultrSshKey key in _keys)
+                {
+                    <option value="@key.Id">@key.Name</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="small faint">@CostLabel</div>
+    @if (Purpose == "training")
+    {
+        <div class="small faint">
+            Training preselected the cheapest GPU plan in this region. Change the plan if you want
+            more VRAM. The instance is billed hourly until it is destroyed.
+        </div>
+    }
+    <div class="small faint">
+        @if (_account is { } account)
+        {
+            <text>Balance $@account.Balance.ToString("0.00") · pending $@account.PendingCharges.ToString("0.00").</text>
+        }
+        else if (HasSavedKey)
+        {
+            <text>Press Load plans to read the account, plans and SSH keys.</text>
+        }
+        else
+        {
+            <text>Save a Vultr API key, then load plans.</text>
+        }
+    </div>
+
+    <div class="row">
+        <button type="button" class="button primary" @onclick="DeployAsync"
+                disabled="@(_busy || !CanDeploy)">
+            Deploy instance
+        </button>
+        <button type="button" class="button" @onclick="RefreshAsync"
+                disabled="@(_busy || !HasInstance)">
+            Refresh
+        </button>
+        <button type="button" class="button danger" @onclick="DestroyAsync"
+                disabled="@(_busy || !HasInstance)">
+            Destroy instance
+        </button>
+    </div>
+
+    @if (_status is { Length: > 0 })
+    {
+        <div class="status-line">@_status</div>
+    }
+    @if (_error is not null)
+    {
+        <div class="error-line">@_error</div>
+    }
+    @if (_lines.Count > 0)
+    {
+        <pre class="small mono" style="max-height:14rem;overflow:auto;">@string.Join("\n", _lines)</pre>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string ProviderId { get; set; } = "";
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>Set to <c>training</c> to preselect the cheapest GPU plan.</summary>
+    [Parameter] public string? Purpose { get; set; }
+
+    private string _apiKey = "";
+    private string _region = "";
+    private string _planId = "";
+    private int _osId;
+    private string _sshKeyId = "";
+    private string? _status;
+    private string? _error;
+    private bool _busy;
+    private bool _loaded;
+    private VultrAccount? _account;
+    private IReadOnlyList<VultrPlan> _plans = [];
+    private IReadOnlyList<VultrRegion> _regions = [];
+    private IReadOnlyList<VultrOs> _systems = [];
+    private IReadOnlyList<VultrSshKey> _keys = [];
+    private readonly List<string> _lines = [];
+
+    private ComputeProviderSettings? Provider => Compute.Find(ProviderId);
+    private bool HasSavedKey => Vultr.HasApiKey(ProviderId);
+    private bool HasInstance => !string.IsNullOrWhiteSpace(Provider?.VultrInstanceId);
+    private string StatusLabel => Provider?.VultrInstanceStatus ?? "no instance";
+
+    private IEnumerable<VultrPlan> VisiblePlans =>
+        _plans.Where(plan =>
+            string.IsNullOrWhiteSpace(_region)
+            || plan.Regions.Count == 0
+            || plan.Regions.Contains(_region, StringComparer.OrdinalIgnoreCase));
+
+    private VultrPlan? SelectedPlan =>
+        _plans.FirstOrDefault(plan => plan.Id == _planId);
+
+    private bool CanDeploy =>
+        !string.IsNullOrWhiteSpace(ProviderId)
+        && (HasSavedKey || !string.IsNullOrWhiteSpace(_apiKey))
+        && !string.IsNullOrWhiteSpace(_region)
+        && !string.IsNullOrWhiteSpace(_planId)
+        && _osId > 0
+        && !string.IsNullOrWhiteSpace(_sshKeyId)
+        && !string.IsNullOrWhiteSpace(Provider?.SshKeyPath);
+
+    private string CostLabel
+    {
+        get
+        {
+            VultrPlan? plan = SelectedPlan;
+            return plan is null
+                ? "No plan selected."
+                : $"${plan.HourlyCost:0.000}/hour · ${plan.MonthlyCost:0.00}/month · "
+                  + $"{plan.VcpuCount} vCPU, {plan.RamMb / 1024.0:0.#} GB RAM"
+                  + (plan.GpuVramGb > 0 ? $", {plan.GpuVramGb} GB VRAM" : "");
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_loaded) return;
+        ComputeProviderSettings? provider = Provider;
+        if (provider is null) return;
+        _loaded = true;
+        _region = provider.VultrRegion ?? "";
+        _planId = provider.VultrPlanId ?? "";
+        _osId = provider.VultrOsId ?? 0;
+        _sshKeyId = provider.VultrSshKeyId ?? "";
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        _status = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_apiKey))
+            {
+                Compute.SetVultr(ProviderId, _apiKey.Trim(), null, null, null, null, null, null);
+                _apiKey = "";
+            }
+
+            _account = await Vultr.ValidateAsync(ProviderId);
+            _regions = await Vultr.ListRegionsAsync(ProviderId);
+            _plans = await Vultr.ListPlansAsync(ProviderId);
+            _systems = await Vultr.ListOsAsync(ProviderId);
+            _keys = await Vultr.ListSshKeysAsync(ProviderId);
+
+            if (_region.Length == 0 || _regions.All(r => r.Id != _region))
+                _region = _regions.FirstOrDefault()?.Id ?? "";
+            if (_planId.Length == 0 || _plans.All(p => p.Id != _planId)
+                || !VisiblePlans.Any(p => p.Id == _planId))
+            {
+                _planId = DefaultPlanId();
+            }
+            if (_osId == 0 || _systems.All(s => s.Id != _osId))
+            {
+                _osId = _systems.FirstOrDefault(system =>
+                    system.Name.Contains("Ubuntu 24.04", StringComparison.OrdinalIgnoreCase)
+                    && system.Arch.Equals("x64", StringComparison.OrdinalIgnoreCase))?.Id
+                    ?? _systems.FirstOrDefault()?.Id ?? 0;
+            }
+            if (_sshKeyId.Length == 0 || _keys.All(k => k.Id != _sshKeyId))
+            {
+                _sshKeyId = _keys.FirstOrDefault()?.Id
+                    ?? Provider?.VultrSshKeyId
+                    ?? "";
+            }
+
+            _status = $"Loaded {_plans.Count} plan(s), {_regions.Count} region(s), "
+                + $"{_keys.Count} SSH key(s).";
+        }
+        catch (VultrException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OnRegionChanged()
+    {
+        if (!VisiblePlans.Any(plan => plan.Id == _planId))
+            _planId = DefaultPlanId();
+    }
+
+    private string DefaultPlanId()
+    {
+        if (Purpose == "training")
+        {
+            VultrPlan? gpu = VisiblePlans.FirstOrDefault(plan => plan.IsGpu);
+            if (gpu is not null) return gpu.Id;
+        }
+
+        VultrPlan? cheap = VisiblePlans
+            .Where(plan => !plan.IsGpu)
+            .OrderBy(plan => plan.HourlyCost)
+            .FirstOrDefault();
+        return cheap?.Id ?? VisiblePlans.FirstOrDefault()?.Id ?? "";
+    }
+
+    private async Task DeployAsync()
+    {
+        if (_busy) return;
+        ComputeProviderSettings? provider = Provider;
+        if (provider is null) return;
+        if (string.IsNullOrWhiteSpace(provider.SshKeyPath))
+        {
+            _error = "Press Edit and add the local private key that matches the selected Vultr SSH key.";
+            return;
+        }
+
+        VultrPlan? plan = SelectedPlan;
+        if (plan is null)
+        {
+            _error = "Choose a Vultr plan.";
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _status = "Creating the Vultr instance...";
+        _lines.Clear();
+        try
+        {
+            var options = new VultrDeployOptions(
+                plan.Id,
+                _region,
+                _osId,
+                _sshKeyId,
+                plan.HourlyCost,
+                Compute.SshImage(ProviderId),
+                provider.SshContainerName ?? "sharpmind",
+                provider.UseGpu);
+
+            var progress = new Progress<SshProgress>(update =>
+            {
+                _lines.Add($"[{update.Stage}] {update.Line}");
+                _ = InvokeAsync(StateHasChanged);
+            });
+
+            VultrInstance instance = await Vultr.DeployAsync(ProviderId, options, progress);
+            _status = $"Instance {instance.Id} is {instance.Status}"
+                + (string.IsNullOrWhiteSpace(instance.MainIp) ? "." : $" at {instance.MainIp}.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (VultrException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            VultrInstance instance = await Vultr.RefreshAsync(ProviderId);
+            _status = $"Instance {instance.Id}: {instance.Status} / {instance.PowerStatus}"
+                + (string.IsNullOrWhiteSpace(instance.MainIp) ? "." : $", {instance.MainIp}.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (VultrException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DestroyAsync()
+    {
+        if (_busy || !HasInstance) return;
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            "Destroy this Vultr instance? The instance disk is deleted and billing stops. "
+            + "Download any exported models first.");
+        if (!confirmed) return;
+
+        _busy = true;
+        _error = null;
+        _status = "Destroying the instance...";
+        try
+        {
+            await Vultr.DestroyAsync(ProviderId);
+            _status = "Instance destroyed.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (VultrException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string PlanLabel(VultrPlan plan) =>
+        $"{plan.Id} · {plan.VcpuCount} vCPU · {plan.RamMb / 1024.0:0.#} GB RAM"
+        + (plan.GpuVramGb > 0 ? $" · {plan.GpuVramGb} GB VRAM" : "")
+        + $" · ${plan.HourlyCost:0.000}/h";
+}

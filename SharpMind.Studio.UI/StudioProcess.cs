@@ -148,6 +148,87 @@ internal sealed class StudioProcess : IAsyncDisposable
     }
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 
+    /// <summary>
+    /// Reads running compute from the local Studio host. Returns null when the
+    /// host cannot be reached or nothing is running, so the exit path stays quiet
+    /// unless there is something that costs money.
+    /// </summary>
+    public async Task<RunningComputeSummary?> GetRunningComputeAsync(
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            using var response = await client
+                .GetAsync(new Uri(BaseUri, "compute/api/running"), cancellationToken)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return null;
+
+            string json = await response.Content
+                .ReadAsStringAsync(cancellationToken)
+                .ConfigureAwait(false);
+            RunningComputePayload? payload = JsonSerializer
+                .Deserialize<RunningComputePayload>(json, ComputeJson);
+            if (payload is null || payload.Count <= 0 || payload.Instances.Count == 0)
+                return null;
+
+            return new RunningComputeSummary(
+                payload.Count, payload.HourlyCost, payload.EstimatedCost, payload.Instances);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Destroys every running instance; used by Destroy and exit.</summary>
+    public async Task<(bool Ok, string Message)> DestroyRunningComputeAsync(
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
+            using var response = await client
+                .PostAsync(new Uri(BaseUri, "compute/api/destroy-running"), null, cancellationToken)
+                .ConfigureAwait(false);
+            string json = await response.Content
+                .ReadAsStringAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return (false, $"Vultr teardown returned HTTP {(int)response.StatusCode}.");
+            }
+
+            DestroyRunningPayload? payload = JsonSerializer
+                .Deserialize<DestroyRunningPayload>(json, ComputeJson);
+            if (payload is null) return (false, "Vultr teardown returned no result.");
+
+            if (payload.Failures.Count == 0)
+                return (true, $"Destroyed {payload.Destroyed} instance(s). Billing stopped.");
+
+            return (false,
+                $"Destroyed {payload.Destroyed} instance(s), but {payload.Failures.Count} failed: "
+                + string.Join(" ", payload.Failures));
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Could not destroy compute: {ex.Message}");
+        }
+    }
+
+    private static readonly JsonSerializerOptions ComputeJson = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private sealed record RunningComputePayload(
+        int Count,
+        double HourlyCost,
+        double EstimatedCost,
+        List<RunningComputeItem> Instances);
+
+    private sealed record DestroyRunningPayload(int Destroyed, List<string> Failures);
+
     private async Task<bool> IsHealthyAsync(CancellationToken cancellationToken)
     {
         try
@@ -306,6 +387,51 @@ internal sealed class StudioProcess : IAsyncDisposable
 internal sealed class RemoteStudioUnavailableException(Uri uri)
     : Exception($"SharpMind Studio is not reachable at {uri}.")
 {
+}
+
+/// <summary>Running compute as reported by the local Studio host.</summary>
+public sealed record RunningComputeSummary(
+    int Count,
+    double HourlyCost,
+    double EstimatedCost,
+    IReadOnlyList<RunningComputeItem> Instances);
+
+/// <summary>One running instance shown in the exit prompt.</summary>
+public sealed record RunningComputeItem(
+    string InstanceId,
+    string Label,
+    string ProviderName,
+    string Status,
+    string? MainIp,
+    double HourlyCost,
+    double EstimatedCost,
+    double UptimeMinutes,
+    bool Orphan)
+{
+    public string Detail
+    {
+        get
+        {
+            var parts = new List<string>(3);
+            if (!string.IsNullOrWhiteSpace(ProviderName)) parts.Add(ProviderName);
+            if (!string.IsNullOrWhiteSpace(MainIp)) parts.Add(MainIp);
+            parts.Add(Status);
+            return string.Join("  ·  ", parts);
+        }
+    }
+
+    public string CostText => HourlyCost > 0 ? $"${HourlyCost:0.000}/hour" : "cost unknown";
+
+    public string UptimeText
+    {
+        get
+        {
+            if (UptimeMinutes < 1) return "just started";
+            if (UptimeMinutes < 60) return $"{(int)UptimeMinutes} min";
+            if (UptimeMinutes < 1440) return $"{(int)(UptimeMinutes / 60)} h {UptimeMinutes % 60:0} min";
+            return $"{(int)(UptimeMinutes / 1440)} d {(int)(UptimeMinutes % 1440 / 60)} h";
+        }
+    }
 }
 
 

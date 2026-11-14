@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private readonly StudioProcess _studio = new();
     private WinForms.NotifyIcon? _tray;
     private bool _exiting;
+    private bool _checkingExit;
     private bool _balloonShown;
 
     public MainWindow()
@@ -244,12 +245,71 @@ public partial class MainWindow : Window
 
     private void BeginExit()
     {
-        if (_exiting) return;
+        if (_exiting || _checkingExit) return;
         if (!Dispatcher.CheckAccess())
         {
             _ = Dispatcher.BeginInvoke(new Action(BeginExit));
             return;
         }
+
+        _checkingExit = true;
+        _ = ConfirmAndExitAsync();
+    }
+
+    /// <summary>
+    /// Warns about Vultr instances that are still billing before shutting down.
+    /// Keep running is the default; destroying requires an explicit click.
+    /// </summary>
+    private async Task ConfirmAndExitAsync()
+    {
+        try
+        {
+            StatusText.Text = "Checking for running compute...";
+            RunningComputeSummary? summary = await _studio.GetRunningComputeAsync()
+                .ConfigureAwait(true);
+
+            if (summary is not null)
+            {
+                ShowFromTray();
+                var dialog = new RunningComputeWindow(summary) { Owner = this };
+                dialog.ShowDialog();
+                if (dialog.Choice == ExitComputeChoice.Cancel)
+                {
+                    StatusText.Text = "Exit cancelled; compute is unchanged.";
+                    _checkingExit = false;
+                    return;
+                }
+
+                if (dialog.Choice == ExitComputeChoice.Destroy)
+                {
+                    StatusText.Text = "Destroying compute instances...";
+                    (bool ok, string message) = await _studio.DestroyRunningComputeAsync()
+                        .ConfigureAwait(true);
+                    StatusText.Text = message;
+                    if (!ok)
+                    {
+                        System.Windows.MessageBox.Show(
+                            this,
+                            message,
+                            "Compute teardown",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Never block shutdown because the check itself failed.
+        }
+
+        _checkingExit = false;
+        FinishExit();
+    }
+
+    private void FinishExit()
+    {
+        if (_exiting) return;
 
         _exiting = true;
         if (_tray is not null)

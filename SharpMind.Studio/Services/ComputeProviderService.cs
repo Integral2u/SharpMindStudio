@@ -148,6 +148,36 @@ public sealed class ComputeProviderService
         if (_store.SetRunpodPod(id, podId, status)) Changed?.Invoke();
     }
 
+    public string? VultrApiKey(string id) => _store.VultrApiKey(id);
+
+    public bool HasVultrApiKey(string id) => !string.IsNullOrWhiteSpace(_store.VultrApiKey(id));
+
+    public void SetVultr(
+        string id,
+        string? apiKey,
+        string? planId,
+        string? region,
+        int? osId,
+        string? sshKeyId,
+        string? sshKeyName,
+        double? hourlyCost)
+    {
+        if (_store.SetVultr(id, apiKey, planId, region, osId, sshKeyId, sshKeyName, hourlyCost))
+            Changed?.Invoke();
+    }
+
+    public void SetVultrInstance(
+        string id,
+        string? instanceId,
+        string? status,
+        string? label,
+        DateTimeOffset? createdUtc,
+        string? firewallGroupId)
+    {
+        if (_store.SetVultrInstance(id, instanceId, status, label, createdUtc, firewallGroupId))
+            Changed?.Invoke();
+    }
+
     public void SetSsh(
         string id,
         string? host,

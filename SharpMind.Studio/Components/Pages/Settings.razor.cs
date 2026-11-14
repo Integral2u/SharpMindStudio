@@ -469,6 +469,8 @@ public partial class Settings
         _sshPublicKey = "";
     }
 
+    private void RefreshComputeView() => StateHasChanged();
+
     private void LoadSshEditor(ComputeProviderSettings provider)
     {
         _computeSshHost = provider.SshHost ?? "";

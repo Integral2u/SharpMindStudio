@@ -139,6 +139,12 @@
                         disabled="@(Lab.IsRunning || Rehearsal.IsRunning || _starting)">
                     @(Lab.IsRunning ? "Training..." : "Start training")
                 </button>
+                <button type="button" class="button"
+                        @onclick='() => Nav.NavigateTo("/compute?purpose=training")'
+                        disabled="@Lab.IsRunning"
+                        title="Deploy a Vultr GPU instance for training">
+                    Create compute
+                </button>
                 <button type="button" class="button" @onclick="StartNewJob"
                         disabled="@Lab.IsRunning">
                     New job
@@ -458,6 +464,12 @@ else if (_tab == "improve")
                         }
                     }
                 </div>
+                <button type="button" class="button"
+                        @onclick='() => Nav.NavigateTo("/compute?purpose=training")'
+                        disabled="@Lab.IsRunning"
+                        title="Deploy a Vultr GPU instance for training">
+                    Create compute
+                </button>
                 <button type="button" class="button primary" @onclick="StartFineTune"
                         disabled="@(Lab.IsRunning || Rehearsal.IsRunning || _tuning)">
                     @(Lab.IsRunning ? "Training..." : _tuneSft ? "Start SFT" : "Start fine-tune")

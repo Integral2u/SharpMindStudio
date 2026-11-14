@@ -66,6 +66,22 @@ public sealed class ComputeProviderSettings
     public string? RunpodPodId { get; set; }
     public string? RunpodPodStatus { get; set; }
 
+    // --- Vultr helper ---------------------------------------------------
+    // Optional: lets Studio create and destroy a Vultr instance through Vultr's
+    // API and then run the existing SSH setup against it.
+    public string? VultrApiKeyProtected { get; set; }
+    public string? VultrInstanceId { get; set; }
+    public string? VultrInstanceStatus { get; set; }
+    public string? VultrPlanId { get; set; }
+    public string? VultrRegion { get; set; }
+    public int? VultrOsId { get; set; }
+    public string? VultrSshKeyId { get; set; }
+    public string? VultrSshKeyName { get; set; }
+    public double? VultrHourlyCost { get; set; }
+    public DateTimeOffset? VultrCreatedUtc { get; set; }
+    public string? VultrFirewallGroupId { get; set; }
+    public string? VultrLabel { get; set; }
+
     public DateTimeOffset? LastSeenUtc { get; set; }
     public string? LastStatus { get; set; }
 
@@ -539,6 +555,80 @@ public sealed class ComputeSettingsStore
 
             provider.RunpodPodId = string.IsNullOrWhiteSpace(podId) ? null : podId.Trim();
             provider.RunpodPodStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+            SaveLocked();
+            return true;
+        }
+    }
+
+    /// <summary>The decrypted Vultr API key, or null when none is saved.</summary>
+    public string? VultrApiKey(string id)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            return provider is null
+                ? null
+                : GatewaySecretBox.Unprotect(provider.VultrApiKeyProtected, _keyFile);
+        }
+    }
+
+    /// <summary>Stores the Vultr deployment defaults. A null key keeps the current one.</summary>
+    public bool SetVultr(
+        string id,
+        string? apiKey,
+        string? planId,
+        string? region,
+        int? osId,
+        string? sshKeyId,
+        string? sshKeyName,
+        double? hourlyCost)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            if (apiKey is not null)
+            {
+                provider.VultrApiKeyProtected = string.IsNullOrWhiteSpace(apiKey)
+                    ? null
+                    : GatewaySecretBox.Protect(apiKey.Trim(), _keyFile);
+            }
+
+            if (!string.IsNullOrWhiteSpace(planId)) provider.VultrPlanId = planId.Trim();
+            if (!string.IsNullOrWhiteSpace(region)) provider.VultrRegion = region.Trim();
+            if (osId is > 0) provider.VultrOsId = osId;
+            if (!string.IsNullOrWhiteSpace(sshKeyId)) provider.VultrSshKeyId = sshKeyId.Trim();
+            if (!string.IsNullOrWhiteSpace(sshKeyName)) provider.VultrSshKeyName = sshKeyName.Trim();
+            if (hourlyCost is > 0) provider.VultrHourlyCost = hourlyCost;
+            SaveLocked();
+            return true;
+        }
+    }
+
+    public bool SetVultrInstance(
+        string id,
+        string? instanceId,
+        string? status,
+        string? label,
+        DateTimeOffset? createdUtc,
+        string? firewallGroupId)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.VultrInstanceId = string.IsNullOrWhiteSpace(instanceId) ? null : instanceId.Trim();
+            provider.VultrInstanceStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+            provider.VultrLabel = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
+            provider.VultrCreatedUtc = instanceId is null ? null : createdUtc;
+            provider.VultrFirewallGroupId = string.IsNullOrWhiteSpace(firewallGroupId)
+                ? null
+                : firewallGroupId.Trim();
             SaveLocked();
             return true;
         }

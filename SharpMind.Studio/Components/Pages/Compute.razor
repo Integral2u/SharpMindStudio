@@ -1,0 +1,193 @@
+@page "/compute"
+@implements IDisposable
+@using SharpMind.Studio.Core.Compute
+@using SharpMind.Studio.Services
+@inject ComputeDashboardService Dashboard
+@inject ComputeProviderService Hosts
+@inject IJSRuntime JS
+
+<PageTitle>Compute - SharpMind Studio</PageTitle>
+
+<div class="spread" style="margin-bottom: 1rem; align-items: flex-start;">
+    <div class="hero-copy">
+        <div class="eyebrow">Compute</div>
+        <h1>Rent the machine.</h1>
+        <p>
+            Vultr instances created here run the SharpMind Server image, train and serve a model,
+            and bill by the hour until they are destroyed. Closing Studio warns about anything
+            still running.
+        </p>
+    </div>
+    <div class="row">
+        <button type="button" class="button" @onclick="RefreshAsync"
+                disabled="@Dashboard.IsRefreshing">
+            @(Dashboard.IsRefreshing ? "Checking..." : "Refresh")
+        </button>
+        <button type="button" class="button danger" @onclick="DestroyAllAsync"
+                disabled="@(Dashboard.IsRefreshing || Dashboard.RunningCount == 0)">
+            Destroy all running
+        </button>
+    </div>
+</div>
+
+@if (Purpose == "training")
+{
+    <div class="compute-banner">
+        <span>
+            From Training: a GPU plan is preselected below. Deploy, then pick the host under
+            <a href="/training">Training &rarr; Run on</a>.
+        </span>
+    </div>
+}
+
+<section class="metric-grid">
+    <div class="metric">
+        <div class="metric-label">Running</div>
+        <div class="metric-value">@Dashboard.RunningCount</div>
+        <div class="small faint">instance@(Dashboard.RunningCount == 1 ? "" : "s")</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Hourly burn</div>
+        <div class="metric-value">$@Dashboard.HourlyCost.ToString("0.00")</div>
+        <div class="small faint">while running</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Estimated spend</div>
+        <div class="metric-value">$@Dashboard.EstimatedCost.ToString("0.00")</div>
+        <div class="small faint">this uptime</div>
+    </div>
+    <div class="metric">
+        <div class="metric-label">Checked</div>
+        <div class="metric-value" style="font-size:1rem;">
+            @(Dashboard.RefreshedUtc is { } when
+                ? when.ToLocalTime().ToString("HH:mm:ss")
+                : "-")
+        </div>
+        <div class="small faint">Vultr API</div>
+    </div>
+</section>
+
+@if (_error is not null)
+{
+    <div class="error-line" style="margin-top: .8rem;">@_error</div>
+}
+@if (_status is { Length: > 0 })
+{
+    <div class="status-line" style="margin-top: .8rem;">@_status</div>
+}
+
+<section class="panel" style="margin-top: 1.2rem;">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Instances</div>
+            <h2>@Dashboard.Instances.Count listed</h2>
+        </div>
+        <span class="small faint">Tagged <span class="mono">sharpmind</span> instances are listed even without a saved host.</span>
+    </div>
+    @if (Dashboard.Instances.Count == 0)
+    {
+        <div class="panel-body">
+            <div class="empty">No Vultr instances yet. Deploy one below.</div>
+        </div>
+    }
+    else
+    {
+        <div class="panel-body">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Instance</th>
+                        <th>Host</th>
+                        <th>Status</th>
+                        <th>Uptime</th>
+                        <th class="num">Hourly</th>
+                        <th class="num">Spent</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (VultrComputeInstance instance in Dashboard.Instances)
+                    {
+                        <tr>
+                            <td>
+                                <div>@instance.Label</div>
+                                <div class="small faint mono">@instance.InstanceId</div>
+                            </td>
+                            <td>@instance.OwnerName</td>
+                            <td>
+                                <span class="status @(instance.IsRunning ? "ok" : "running")">
+                                    @instance.StatusLabel
+                                </span>
+                                @if (!string.IsNullOrWhiteSpace(instance.MainIp))
+                                {
+                                    <div class="small faint mono">@instance.MainIp</div>
+                                }
+                            </td>
+                            <td class="num">@FormatUptime(instance.Uptime)</td>
+                            <td class="num">$@instance.HourlyCost.ToString("0.000")</td>
+                            <td class="num">$@instance.EstimatedCost.ToString("0.00")</td>
+                            <td>
+                                <button type="button" class="button danger"
+                                        @onclick="() => DestroyAsync(instance)"
+                                        disabled="@_busy">
+                                    Destroy
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<div class="settings-tabs training-tabs" style="margin-top: 1.4rem;">
+    <span class="settings-tab selected">Provision</span>
+    <span class="small faint" style="margin-left:auto; align-self:center;">
+        Existing Vultr SSH keys only; Studio never uploads a key.
+    </span>
+</div>
+
+@if (VultrProviders.Count == 0)
+{
+    <section class="panel">
+        <div class="panel-body stack">
+            <p class="small faint">
+                Add a Vultr host under <a href="/settings">Settings &rarr; Providers</a>, save an
+                API key, then come back here to deploy an instance.
+            </p>
+        </div>
+    </section>
+}
+else
+{
+    @foreach (ComputeProviderSettings provider in VultrProviders)
+    {
+        <section class="panel">
+            <div class="panel-head">
+                <div>
+                    <div class="eyebrow">Vultr</div>
+                    <h2>@provider.Name</h2>
+                </div>
+                <span class="small faint mono">@provider.BaseUrl</span>
+            </div>
+            <div class="panel-body">
+                <VultrPanel ProviderId="provider.Id" Purpose="Purpose"
+                            OnChanged="RefreshFromPanelAsync" />
+            </div>
+        </section>
+    }
+}
+
+@code {
+    private bool _busy;
+    private string? _error;
+    private string? _status;
+
+    /// <summary><c>training</c> arrives from the Training shortcut.</summary>
+    [Microsoft.AspNetCore.Components.SupplyParameterFromQuery(Name = "purpose")]
+    public string? Purpose { get; set; }
+
+    private IReadOnlyList<ComputeProviderSettings> VultrProviders =>
+        [.. Hosts.Providers.Where(provider => provider.Prefab == ComputeProviderPrefabs.Vultr)];
+}

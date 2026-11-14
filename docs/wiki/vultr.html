@@ -51,6 +51,7 @@
             <a href="#create">Create the instance</a>
             <a href="#ssh-key">Add an SSH key</a>
             <a href="#add-host">Add the host in Studio</a>
+            <a href="#api">Deploy from the API</a>
             <a href="#deploy">Set up &amp; deploy</a>
             <a href="#verify">Verify</a>
             <a href="#first-run">Upload and train</a>
@@ -94,6 +95,7 @@
                 <li>SharpMind Studio running on this PC, with the server image pushed to Docker Hub (or use <span class="mono">integral2u/sharpmind-server:gpu</span>).</li>
                 <li>A GPU plan and a region near you. The tested plan is <span class="mono">vcg-a16-6c-60g-16vram</span>.</li>
                 <li>An SSH key, or the instance root password. Studio can create a key for you.</li>
+                <li>For <strong>Deploy from the API</strong>, an SSH key that already exists in your Vultr account; Studio never uploads a key.</li>
             </ul>
 
             <h2 id="create">Create the instance</h2>
@@ -183,6 +185,53 @@ chmod 600 /root/.ssh/authorized_keys</code></pre>
                 <li><strong>Save host.</strong></li>
             </ol>
 
+            <h2 id="api">Deploy from the API</h2>
+            <p>
+                The host card also creates and destroys the instance through the Vultr API. This is
+                the zero-step path: Studio makes the firewall, creates the instance, waits for the
+                public IP and then runs the same SSH setup as above.
+            </p>
+            <ol class="steps">
+                <li>
+                    <strong>Save an API key.</strong>
+                    In Settings → Providers → Vultr, paste a Vultr personal access token created
+                    with <em>all</em> permissions for instances and firewalls, then press
+                    <strong>Load plans</strong>. It is stored encrypted and never shown again.
+                </li>
+                <li>
+                    <strong>Pick the instance.</strong>
+                    Choose a region, a plan, Ubuntu 24.04 and one of the SSH keys that already
+                    exists on your Vultr account. The matching private key must be selected in the
+                    host's Edit panel; Deploy stays disabled until both are present.
+                </li>
+                <li>
+                    <strong>Deploy instance.</strong>
+                    Studio creates a firewall with TCP 22, 5117 and 8080 open, labels the instance
+                    <span class="mono">sharpmind-&lt;short-id&gt;</span>, tags it
+                    <span class="mono">sharpmind</span>, and waits for it to become active.
+                    The first boot usually takes two to five minutes.
+                </li>
+                <li>
+                    <strong>Watch it on Compute.</strong>
+                    The left menu gains a <strong>Compute</strong> item with a count badge whenever
+                    something is running. The page lists every instance, its IP, uptime, hourly cost
+                    and estimated spend, with a <strong>Destroy</strong> button per row.
+                </li>
+                <li>
+                    <strong>Close safely.</strong>
+                    Exiting Studio warns about running instances and offers
+                    <strong>Keep running</strong> (default), <strong>Cancel</strong> and
+                    <strong>Destroy and exit</strong>. Untracked instances that carry the
+                    <span class="mono">sharpmind</span> tag are detected at startup and shown on
+                    Compute so they can be destroyed too.
+                </li>
+            </ol>
+            <div class="callout warn">
+                <strong>No key upload.</strong> Studio lists the SSH keys already in your Vultr
+                account and requires the matching private key on this PC before it deploys. It
+                never adds a key to the account, so a saved token cannot quietly install new access.
+            </div>
+
             <h2 id="deploy">Set up &amp; deploy</h2>
             <p>
                 On the host card press <strong>Test SSH</strong> first. You should see the OS,
@@ -247,6 +296,8 @@ chmod 600 /root/.ssh/authorized_keys</code></pre>
             <ul>
                 <li>The A16 plan is roughly <span class="mono">$0.47/hour</span>; a day is about <span class="mono">$11</span>.</li>
                 <li><strong>Stopping is not enough.</strong> Destroy the instance to stop billing.</li>
+                <li>The <strong>Compute</strong> page shows the hourly rate and estimated spend per instance, and can destroy everything in one click.</li>
+                <li>Closing Studio checks for running instances; <strong>Keep running</strong> is the default, so read the prompt before dismissing it.</li>
                 <li>Download any exported model first. The host's <span class="mono">/data/SharpMind</span> is deleted with the instance unless it is a separate block volume.</li>
                 <li>A snapshot costs a small monthly storage fee and is only worth it for data you cannot recreate.</li>
                 <li>Rotate the host token if you shared it, and remove the instance's firewall rules with the instance.</li>
