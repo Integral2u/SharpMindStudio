@@ -231,6 +231,12 @@
                 machine. It is optional: a host that already runs the image only needs a Base URL,
                 token and <strong>Test</strong>.
             </p>
+            <p>
+                For an API deploy, Studio only uses SSH keys that already exist on the Vultr
+                account; it never uploads one. Create or copy the key in Edit, add it once in the
+                Vultr console, then select it in the Vultr panel. See
+                <a href="vultr.html#ssh-key">Add an SSH key</a>.
+            </p>
             <p>The helper performs these steps, one at a time, with streamed output:</p>
             <ol class="steps">
                 <li><strong>Probe</strong> the host: OS, architecture, Docker version, NVIDIA GPU and free disk.</li>

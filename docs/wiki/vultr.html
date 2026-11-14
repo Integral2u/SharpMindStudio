@@ -94,8 +94,10 @@
                 <li>A <a href="https://www.vultr.com/?ref=9933964">Vultr account</a> with billing enabled.</li>
                 <li>SharpMind Studio running on this PC, with the server image pushed to Docker Hub (or use <span class="mono">integral2u/sharpmind-server:gpu</span>).</li>
                 <li>A GPU plan and a region near you. The tested plan is <span class="mono">vcg-a16-6c-60g-16vram</span>.</li>
-                <li>An SSH key, or the instance root password. Studio can create a key for you.</li>
-                <li>For <strong>Deploy from the API</strong>, an SSH key that already exists in your Vultr account; Studio never uploads a key.</li>
+                <li>An SSH key. Studio can create one for you, and adding it to your Vultr account
+                    does not need an instance.</li>
+                <li>For <strong>Deploy from the API</strong>, the key must already exist in your
+                    Vultr account; Studio never uploads a key.</li>
             </ul>
 
             <h2 id="create">Create the instance</h2>
@@ -128,25 +130,52 @@
             </ol>
             <div class="callout">
                 <strong>No SSH key at creation?</strong> You can add one once from the Vultr web
-                console. The console is the bootstrap step; everything after it can be done from
-                Studio:
+                console; the console is the bootstrap step. See
+                <a href="#ssh-key">Add an SSH key</a> below for the exact commands.
+            </div>
+
+            <h2 id="ssh-key">Add an SSH key</h2>
+            <p>
+                Vultr SSH keys belong to the <em>account</em>, not to an instance, so add one once
+                before you deploy. Adding a key does not start or need an instance. Studio creates
+                the private half on this PC and never uploads anything to your account.
+            </p>
+            <ol class="steps">
+                <li>
+                    <strong>Create or pick the key in Studio.</strong>
+                    In <strong>Settings &rarr; Providers &rarr; Compute &rarr; Edit</strong> on the
+                    Vultr host, the private key row offers:
+                    <ul class="checklist">
+                        <li><strong>Create key</strong> generates <span class="mono">~/.ssh/sharpmind_ed25519</span> (ed25519, no passphrase) and shows the public key.</li>
+                        <li><strong>Browse</strong> selects an existing OpenSSH/PEM private key instead.</li>
+                        <li><strong>Copy public key</strong> puts the full line on the clipboard.</li>
+                    </ul>
+                </li>
+                <li>
+                    <strong>Add the public key to Vultr.</strong>
+                    Open <a href="https://console.vultr.com/sshkeys/" target="_blank" rel="noopener">console.vultr.com/sshkeys</a>,
+                    or in the console use the account menu &rarr; <strong>Account</strong> &rarr;
+                    <strong>SSH Keys</strong> (under <em>Other</em>) &rarr;
+                    <strong>Add SSH Key</strong>. Name it <span class="mono">sharpmind-studio</span>
+                    and paste the whole line, including the trailing comment:
+                    <span class="mono">ssh-ed25519 AAAA&hellip; sharpmind-studio</span>.
+                </li>
+                <li>
+                    <strong>Select it in Studio.</strong>
+                    Press <strong>Load plans</strong> on the Vultr panel and pick the key under
+                    <strong>Vultr SSH key</strong>. Deploy stays disabled until a key is selected and
+                    the matching private key is set on the host.
+                </li>
+            </ol>
+            <div class="callout">
+                <strong>Already-running instance?</strong> Add the public key to
+                <span class="mono">/root/.ssh/authorized_keys</span> once from the Vultr web console:
                 <pre><code>mkdir -p /root/.ssh
 echo 'ssh-ed25519 AAAA...your-public-key... sharpmind-studio' \
   &gt;&gt; /root/.ssh/authorized_keys
 chmod 700 /root/.ssh
 chmod 600 /root/.ssh/authorized_keys</code></pre>
             </div>
-
-            <h2 id="ssh-key">Add an SSH key to Studio</h2>
-            <p>
-                In <strong>Settings → Providers → Compute → Edit</strong> on the Vultr host:
-            </p>
-            <ul class="checklist">
-                <li><strong>Create key</strong> generates <span class="mono">~/.ssh/sharpmind_ed25519</span> (ed25519, no passphrase) and shows the public key.</li>
-                <li><strong>Copy public key</strong> puts it on the clipboard for the Vultr console or the instance creation form.</li>
-                <li><strong>Browse</strong> selects an existing OpenSSH/PEM private key instead.</li>
-                <li>A root <strong>password</strong> also works; it is stored encrypted with the host token.</li>
-            </ul>
             <p>
                 The private key never leaves this PC. The host key is trusted on first use; this is
                 a convenience for a fresh cloud box, not a substitute for pinning if you need it.
@@ -188,34 +217,47 @@ chmod 600 /root/.ssh/authorized_keys</code></pre>
             <h2 id="api">Deploy from the API</h2>
             <p>
                 The host card also creates and destroys the instance through the Vultr API. This is
-                the zero-step path: Studio makes the firewall, creates the instance, waits for the
+                the API path: Studio makes the firewall, creates the instance, waits for the
                 public IP and then runs the same SSH setup as above.
             </p>
             <ol class="steps">
                 <li>
                     <strong>Save an API key.</strong>
-                    In Settings → Providers → Vultr, paste a Vultr personal access token created
+                    In Settings &rarr; Providers &rarr; Compute &rarr; Vultr, paste a Vultr
+                    personal access token created
                     with <em>all</em> permissions for instances and firewalls, then press
-                    <strong>Load plans</strong>. It is stored encrypted and never shown again.
+                    <strong>Load plans</strong>. Studio checks the key before saving it; a rejected
+                    key stays in the field with the Vultr error. A saved key is stored encrypted and
+                    never shown again.
                 </li>
                 <li>
                     <strong>Pick the instance.</strong>
-                    Choose a region, a plan, Ubuntu 24.04 and one of the SSH keys that already
-                    exists on your Vultr account. The matching private key must be selected in the
-                    host's Edit panel; Deploy stays disabled until both are present.
+                    Choose a region, Ubuntu 24.04, one of the SSH keys that already exists on your
+                    Vultr account, and a plan. GPU plans start with <span class="mono">vcg-</span>
+                    (for example <span class="mono">vcg-a16-6c-60g-16vram</span>); the cheaper
+                    <span class="mono">vc2-</span> plans are CPU-only. GPU plans are listed first,
+                    but the panel preselects the cheapest CPU plan when it is opened from Settings,
+                    so check the plan ID before deploying. The matching private key must be selected
+                    in the host's Edit panel; Deploy stays disabled until both are present.
                 </li>
                 <li>
                     <strong>Deploy instance.</strong>
                     Studio creates a firewall with TCP 22, 5117 and 8080 open, labels the instance
                     <span class="mono">sharpmind-&lt;short-id&gt;</span>, tags it
                     <span class="mono">sharpmind</span>, and waits for it to become active.
-                    The first boot usually takes two to five minutes.
+                    It then waits for SSH on port 22 (up to five minutes) before running the setup;
+                    a fresh instance can refuse connections for about a minute after it reports
+                    running. The first boot usually takes two to five minutes. The host card's Base
+                    URL and SSH host are filled with the new IP as soon as Vultr assigns it.
                 </li>
                 <li>
                     <strong>Watch it on Compute.</strong>
                     The left menu gains a <strong>Compute</strong> item with a count badge whenever
-                    something is running. The page lists every instance, its IP, uptime, hourly cost
-                    and estimated spend, with a <strong>Destroy</strong> button per row.
+                    something is running. Expand it to list every instance with its state, hourly
+                    rate and a <strong>Destroy</strong> button; a pulsing dot marks a host that is in
+                    active use (training, rehearsal, exam, or a chat/work turn running against it),
+                    and destroying an in-use instance asks for a second confirmation. The page lists
+                    the same instances with IP, uptime and estimated spend.
                 </li>
                 <li>
                     <strong>Close safely.</strong>
@@ -227,6 +269,12 @@ chmod 600 /root/.ssh/authorized_keys</code></pre>
                 </li>
             </ol>
             <div class="callout warn">
+                <strong>Match the plan to the GPU checkbox.</strong> A <span class="mono">vcg-</span>
+                plan needs <strong>GPU host</strong> ticked. A <span class="mono">vc2-</span> plan has
+                no GPU, so setup stops with <span class="mono">No NVIDIA driver found</span> if the
+                checkbox is on; untick it for a CPU-only test host.
+            </div>
+            <div class="callout warn">
                 <strong>No key upload.</strong> Studio lists the SSH keys already in your Vultr
                 account and requires the matching private key on this PC before it deploys. It
                 never adds a key to the account, so a saved token cannot quietly install new access.
@@ -234,9 +282,11 @@ chmod 600 /root/.ssh/authorized_keys</code></pre>
 
             <h2 id="deploy">Set up &amp; deploy</h2>
             <p>
-                On the host card press <strong>Test SSH</strong> first. You should see the OS,
-                Docker version, GPU name and free disk. Then press <strong>Set up &amp; deploy</strong>.
-                The helper streams each stage:
+                On the host card press <strong>Test SSH</strong> first. It connects to the address
+                already stored in the host card, so it only works after the instance exists and the
+                card has its IP; before a deploy it tests whatever URL is saved. You should see the
+                OS, Docker version, GPU name and free disk. Then press
+                <strong>Set up &amp; deploy</strong>. The helper streams each stage:
             </p>
             <pre><code>[connect] Connected to root@203.0.113.10:22.
 [probe]   Ubuntu 24.04 LTS · x86_64 · Docker 29.9.2 · NVIDIA A16 · 288G free
@@ -296,7 +346,7 @@ chmod 600 /root/.ssh/authorized_keys</code></pre>
             <ul>
                 <li>The A16 plan is roughly <span class="mono">$0.47/hour</span>; a day is about <span class="mono">$11</span>.</li>
                 <li><strong>Stopping is not enough.</strong> Destroy the instance to stop billing.</li>
-                <li>The <strong>Compute</strong> page shows the hourly rate and estimated spend per instance, and can destroy everything in one click.</li>
+                <li>The <strong>Compute</strong> page shows the hourly rate and estimated spend per instance, and can destroy everything in one click. The left menu's expandable Compute list has a <strong>Destroy</strong> button per instance too.</li>
                 <li>Closing Studio checks for running instances; <strong>Keep running</strong> is the default, so read the prompt before dismissing it.</li>
                 <li>Download any exported model first. The host's <span class="mono">/data/SharpMind</span> is deleted with the instance unless it is a separate block volume.</li>
                 <li>A snapshot costs a small monthly storage fee and is only worth it for data you cannot recreate.</li>
@@ -332,6 +382,18 @@ chmod 600 /root/.ssh/authorized_keys</code></pre>
                         <tr>
                             <td><span class="mono">Could not reach host:22</span></td>
                             <td>The instance is down, the IP changed, or the provider firewall blocks SSH.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">Connection refused</span> right after the instance starts</td>
+                            <td>Vultr reports <span class="mono">active running</span> a few seconds before SSH listens. Deploy waits for port 22 automatically; for a manual test, wait a minute and retry.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">No NVIDIA driver found</span></td>
+                            <td>The plan has no GPU (a <span class="mono">vc2-</span> plan) or the image is not a GPU image. Use a <span class="mono">vcg-</span> plan, or untick <strong>GPU host</strong> for a CPU-only test.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="mono">Invalid API token</span> / 401 when loading plans</td>
+                            <td>Vultr rejected the pasted token and Studio did not save it. Create a token with instance and firewall access, paste it again and press <strong>Load plans</strong>.</td>
                         </tr>
                         <tr>
                             <td><span class="mono">SSH login failed</span></td>

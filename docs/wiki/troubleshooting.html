@@ -90,6 +90,10 @@
                             <td>The instance is stopped, the IP changed, or the firewall blocks 22. Check the provider console.</td>
                         </tr>
                         <tr>
+                            <td><span class="mono">actively refused</span> right after boot</td>
+                            <td>The instance is up but SSH has not started yet. Deploy waits for port 22 for five minutes; for a manual test, wait a minute and retry.</td>
+                        </tr>
+                        <tr>
                             <td><span class="mono">SSH login failed</span></td>
                             <td>Wrong user, wrong key, or the public key is not in <span class="mono">authorized_keys</span>. Add it once from the web console; use the <strong>Copy public key</strong> button.</td>
                         </tr>
@@ -159,7 +163,7 @@
                     </tr>
                     <tr>
                         <td><span class="mono">No NVIDIA driver found</span></td>
-                        <td>The helper does not install drivers. Use a GPU provider image or install the driver and reboot.</td>
+                        <td>The helper does not install drivers. Use a GPU provider image or install the driver and reboot. A <span class="mono">vc2-</span> Vultr plan has no GPU either; use a <span class="mono">vcg-</span> plan, or untick <strong>GPU host</strong> for a CPU-only test.</td>
                     </tr>
                     <tr>
                         <td><span class="mono">LayerNorm, only RMSNorm</span></td>
