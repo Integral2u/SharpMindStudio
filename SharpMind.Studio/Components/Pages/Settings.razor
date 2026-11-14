@@ -579,7 +579,7 @@ else if (_tab == "openrouter")
                     }
                     @if (provider.Prefab == ComputeProviderPrefabs.Vultr)
                     {
-                        <VultrPanel ProviderId="provider.Id" OnChanged="RefreshComputeView" />
+                        <VultrPanel ProviderId="@provider.Id" OnChanged="RefreshComputeView" />
                     }
                     @if (needsDeploy)
                     {

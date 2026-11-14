@@ -23,7 +23,7 @@
         <div class="field training-form-wide">
             <label class="field-label" for="vultr-key-@ProviderId">API key</label>
             <input id="vultr-key-@ProviderId" class="input" type="password"
-                   @bind="_apiKey" autocomplete="off"
+                   @bind="_apiKey" @bind:event="oninput" autocomplete="off"
                    placeholder="@(HasSavedKey ? "saved; leave blank to keep" : "Vultr personal access token")" />
             <span class="small faint">Stored encrypted. Only account-level Vultr keys can create instances.</span>
         </div>
@@ -197,17 +197,33 @@
         _status = null;
         try
         {
-            if (!string.IsNullOrWhiteSpace(_apiKey))
+            if (Provider is null)
             {
-                Compute.SetVultr(ProviderId, _apiKey.Trim(), null, null, null, null, null, null);
-                _apiKey = "";
+                _error = "This host entry was not found. Reload the page and try again.";
+                return;
             }
 
-            _account = await Vultr.ValidateAsync(ProviderId);
-            _regions = await Vultr.ListRegionsAsync(ProviderId);
-            _plans = await Vultr.ListPlansAsync(ProviderId);
-            _systems = await Vultr.ListOsAsync(ProviderId);
-            _keys = await Vultr.ListSshKeysAsync(ProviderId);
+            string? typed = string.IsNullOrWhiteSpace(_apiKey) ? null : _apiKey.Trim();
+            if (typed is null && !HasSavedKey)
+            {
+                _error = "Paste a Vultr API key, then press Load plans.";
+                return;
+            }
+
+            // Use the pasted key directly for every call. It is only saved once
+            // the account call accepts it, so a typo is not stored and the field
+            // keeps the text for an easy correction.
+            _account = await Vultr.ValidateAsync(ProviderId, typed);
+            _regions = await Vultr.ListRegionsAsync(ProviderId, typed);
+            _plans = await Vultr.ListPlansAsync(ProviderId, typed);
+            _systems = await Vultr.ListOsAsync(ProviderId, typed);
+            _keys = await Vultr.ListSshKeysAsync(ProviderId, typed);
+
+            if (typed is not null)
+            {
+                Compute.SetVultr(ProviderId, typed, null, null, null, null, null, null);
+                _apiKey = "";
+            }
 
             if (_region.Length == 0 || _regions.All(r => r.Id != _region))
                 _region = _regions.FirstOrDefault()?.Id ?? "";

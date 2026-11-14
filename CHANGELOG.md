@@ -89,6 +89,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   references. The package solution keeps the published **1.1.1** packages as
   its compatibility baseline until the 1.1.2 engine packages are published.
 
+### Fixed
+
+- **Vultr settings panel did not load plans** - Settings passed the literal
+  text `provider.Id` instead of the host id, so the panel never found the host
+  and **Load plans** could not save the key. The Compute page's deploy panel
+  had the same mistake, which also defeated the Training plan preselection.
+  The panel now also reads the key as it is typed, uses the pasted key for the
+  account, plan, region, OS and SSH-key calls, and only stores it after Vultr
+  accepts it; a rejected key stays in the field with the Vultr error shown.
+
 ## [1.1.1.0] - 2026-11-08
 
 ### Added

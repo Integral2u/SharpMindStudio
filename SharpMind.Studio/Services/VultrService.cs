@@ -47,23 +47,27 @@ public sealed class VultrService
 
     public Task<IReadOnlyList<VultrPlan>> ListPlansAsync(
         string id,
+        string? apiKey = null,
         CancellationToken cancellationToken = default) =>
-        _client.ListPlansAsync(Key(id), cancellationToken);
+        _client.ListPlansAsync(Key(id, apiKey), cancellationToken);
 
     public Task<IReadOnlyList<VultrRegion>> ListRegionsAsync(
         string id,
+        string? apiKey = null,
         CancellationToken cancellationToken = default) =>
-        _client.ListRegionsAsync(Key(id), cancellationToken);
+        _client.ListRegionsAsync(Key(id, apiKey), cancellationToken);
 
     public Task<IReadOnlyList<VultrOs>> ListOsAsync(
         string id,
+        string? apiKey = null,
         CancellationToken cancellationToken = default) =>
-        _client.ListOsAsync(Key(id), cancellationToken);
+        _client.ListOsAsync(Key(id, apiKey), cancellationToken);
 
     public Task<IReadOnlyList<VultrSshKey>> ListSshKeysAsync(
         string id,
+        string? apiKey = null,
         CancellationToken cancellationToken = default) =>
-        _client.ListSshKeysAsync(Key(id), cancellationToken);
+        _client.ListSshKeysAsync(Key(id, apiKey), cancellationToken);
 
     public Task<IReadOnlyList<VultrInstance>> ListInstancesAsync(
         string id,
