@@ -98,6 +98,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The panel now also reads the key as it is typed, uses the pasted key for the
   account, plan, region, OS and SSH-key calls, and only stores it after Vultr
   accepts it; a rejected key stays in the field with the Vultr error shown.
+- **Deploy no longer fails while SSH is starting** - a fresh Vultr instance can
+  report `active running` before `sshd` accepts connections, and the first
+  refused connection used to fail the whole deploy. Deploy now waits up to five
+  minutes for TCP 22, reports each attempt, then runs the setup. The SSH error
+  text also notes that a new instance can refuse connections for a minute.
 
 ## [1.1.1.0] - 2026-11-08
 

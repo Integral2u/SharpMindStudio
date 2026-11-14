@@ -380,13 +380,15 @@ public sealed class SshHostService
         {
             throw new InvalidOperationException(
                 $"Could not reach {target.Host}:{target.Port} over SSH: {ex.Message} "
-                + "Check the address, the provider firewall, and that the instance is running.", ex);
+                + "Check the address, the provider firewall, and that the instance is running. "
+                + "A newly started instance can refuse connections for a minute while SSH starts.", ex);
         }
         catch (SshConnectionException ex)
         {
             throw new InvalidOperationException(
                 $"Could not reach {target.Host}:{target.Port} over SSH: {ex.Message} "
-                + "Check the provider firewall (TCP 22) and that the instance is running.", ex);
+                + "Check the provider firewall (TCP 22) and that the instance is running. "
+                + "A newly started instance can refuse connections for a minute while SSH starts.", ex);
         }
         catch (SshException ex)
         {

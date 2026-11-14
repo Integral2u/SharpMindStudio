@@ -1,4 +1,5 @@
 using SharpMind.Studio.Core.Compute;
+using System.Net.Sockets;
 
 namespace SharpMind.Studio.Services;
 
@@ -177,6 +178,8 @@ public sealed class VultrService
             UseGpu = options.UseGpu,
         };
 
+        await WaitForSshAsync(credentials, progress, cancellationToken).ConfigureAwait(false);
+
         await _ssh.SetupAsync(credentials, request, progress, cancellationToken)
             .ConfigureAwait(false);
 
@@ -286,6 +289,67 @@ public sealed class VultrService
         throw new VultrException(
             "Vultr did not finish booting the instance within 20 minutes. "
             + "Use Refresh to check it again, or Destroy instance to stop billing.");
+    }
+
+    /// <summary>
+    /// A fresh instance can report active/running before sshd accepts
+    /// connections. Wait for TCP 22 instead of failing the whole deploy on the
+    /// first refused connection.
+    /// </summary>
+    private static async Task WaitForSshAsync(
+        SshCredentials credentials,
+        IProgress<SshProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        SshTarget target = credentials.Target;
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(5);
+        for (int attempt = 1; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await CanConnectAsync(target, cancellationToken).ConfigureAwait(false))
+            {
+                if (attempt > 1)
+                {
+                    progress?.Report(new SshProgress(
+                        "ssh", $"{target.Display} is accepting connections."));
+                }
+
+                return;
+            }
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                throw new VultrException(
+                    $"SSH on {target.Display} did not open within 5 minutes. The instance is "
+                    + "running; check that the Vultr firewall allows TCP 22, then press Test SSH.");
+            }
+
+            progress?.Report(new SshProgress(
+                "ssh", $"Waiting for SSH on {target.Display} (attempt {attempt})..."));
+            await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<bool> CanConnectAsync(
+        SshTarget target,
+        CancellationToken cancellationToken)
+    {
+        using var client = new TcpClient();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(8));
+        try
+        {
+            await client.ConnectAsync(target.Host, target.Port, timeout.Token).ConfigureAwait(false);
+            return client.Connected;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
     }
 
     private async Task<string> EnsureFirewallAsync(
