@@ -41,6 +41,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   called better or worse only when the interval clears zero and the 0.5%
   practical threshold. Aggregate-only older runs keep the previous threshold and
   the report says the result was not bootstrapped.
+- **Group-aware text splits** - Data Factory text JSONL uses its `source` and
+  `id` fields as the split key, so every variant of one document stays in
+  train, validation or exam. Splits are applied at the source before cleaning;
+  text runs with held-out splits skip the packed-data cache so the group key is
+  not lost. Plain text sources keep the content hash, and incremental runs keep
+  the text-hash fallback because their sources are already reduced to deltas.
 
 ### Changed
 

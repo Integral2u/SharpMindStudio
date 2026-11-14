@@ -98,7 +98,9 @@ public static class TrainingRunner
         string? DataFingerprint,
         bool SourcesChanged,
         Dictionary<string, Dictionary<string, string>> CurrentFileHashes,
-        TrainingRunResult? EarlyResult);
+        TrainingRunResult? EarlyResult,
+        PipelineNode? ValidationPipeline = null,
+        PipelineNode? TrainPipeline = null);
 
     /// <summary>
     /// Resolves the incremental source plan, builds the cleaning pipeline and
@@ -138,29 +140,24 @@ public static class TrainingRunner
         }
 
         var sources = plan.Sources;
-        var sourceNodes = new List<PipelineNode>();
-        for (int i = 0; i < job.Sources.Count; i++)
-        {
-            if (plan.SkipSource[i]) continue;
-            var node = PipelineNode.From(sources[i]);
-            foreach (var stage in job.Sources[i].Stages)
-            {
-                var descriptor = ComponentRegistry.Find(stage.TypeName, components)
-                    ?? throw new InvalidOperationException($"Unknown stage '{stage.TypeName}'.");
-                node = node.Pipe((ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, stage.Args));
-            }
-            sourceNodes.Add(node);
-        }
+        bool incremental = job.IncrementalMode;
+        PipelineNode pipeline = BuildPipeline(
+            job, components, sources, plan.SkipSource, split: null, incremental);
 
-        PipelineNode pipeline = sourceNodes.Count == 1
-            ? sourceNodes[0]
-            : CleaningPipeline.Merge(sourceNodes);
-        foreach (var g in job.GlobalStages)
-        {
-            var descriptor = ComponentRegistry.Find(g.TypeName, components)
-                ?? throw new InvalidOperationException($"Unknown stage '{g.TypeName}'.");
-            pipeline = pipeline.Pipe((ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, g.Args));
-        }
+        double testFraction = Math.Clamp(job.TestPercent, 0, 90) / 100.0;
+        double valFraction = Math.Clamp(job.ValidationPercent, 0, 90) / 100.0;
+        int examThreshold = (int)Math.Round(testFraction * DeterministicSplit.Buckets);
+        int valThreshold = (int)Math.Round((testFraction + valFraction) * DeterministicSplit.Buckets);
+        bool hasSplits = !job.IsSft && (testFraction > 0 || valFraction > 0);
+
+        PipelineNode? valPipeline = !job.IsSft && valFraction > 0
+            ? BuildPipeline(job, components, sources, plan.SkipSource,
+                new DeterministicSplitRange(examThreshold, valThreshold), incremental)
+            : null;
+        PipelineNode? trainPipeline = hasSplits
+            ? BuildPipeline(job, components, sources, plan.SkipSource,
+                new DeterministicSplitRange(valThreshold, DeterministicSplit.Buckets), incremental)
+            : null;
 
         var compositeSource = sources.Count == 1 ? sources[0] : new CompositeSource(sources);
         log(job.IsSft
@@ -186,7 +183,8 @@ public static class TrainingRunner
             job.SourceHashes = sourceHashes;
 
         return new TrainingInputPlan(
-            sources, pipeline, compositeSource, dataFingerprint, changed, plan.CurrentFileHashes, null);
+            sources, pipeline, compositeSource, dataFingerprint, changed, plan.CurrentFileHashes, null,
+            valPipeline, trainPipeline);
     }
 
     private sealed record TrainingDataPlan(
@@ -200,6 +198,8 @@ public static class TrainingRunner
         TrainingJobSettings job,
         IReadOnlyList<ComponentDescriptor> components,
         PipelineNode pipeline,
+        PipelineNode? trainPipeline,
+        PipelineNode? validationPipeline,
         Tokenizer tokenizer,
         ModelConfig modelConfig,
         string? baseChatTemplate,
@@ -351,23 +351,15 @@ public static class TrainingRunner
 
         if (testFraction > 0)
         {
-            int examThreshold = (int)Math.Round(testFraction * DeterministicSplit.Buckets);
-            var (_, trainVal) = pipeline.Branch(
-                "exam", doc => DeterministicSplit.Bucket(doc, job.Seed) < examThreshold);
-            pipeline = trainVal;
             log($"Exam: {job.TestPercent:0.#}% of documents held out for the promotion exam "
                 + "(excluded from training and validation).");
         }
 
         if (valFraction > 0)
         {
-            // The val range starts above the exam's, so the two slices stay
-            // disjoint even though both are keyed by the same content hash.
-            int valThreshold = (int)Math.Round((testFraction + valFraction) * DeterministicSplit.Buckets);
-            var (valNode, trainNode) = pipeline.Branch(
-                "val", doc => DeterministicSplit.Bucket(doc, job.Seed) < valThreshold);
-            pipeline = trainNode;
-
+            PipelineNode valNode = validationPipeline
+                ?? throw new InvalidOperationException(
+                    "The validation split was not prepared for this run.");
             IBatchStrategy valBatcher = job.UsesRandomWindowBatching
                 ? new RandomWindowBatcher(batchSize: job.BatchSize, seqLen: job.SeqLen, seed: job.Seed + 1)
                 : new PackingBatcher(
@@ -417,7 +409,8 @@ public static class TrainingRunner
                 maxSeqLen: job.SeqLen,
                 eosTokenId: tokenizer.EosId,
                 padTokenId: tokenizer.PadId);
-        var dataLoader = new DataLoader(pipeline, tokenise, batcher, prefetchBuffer: 4,
+        PipelineNode trainNode = trainPipeline ?? pipeline;
+        var dataLoader = new DataLoader(trainNode, tokenise, batcher, prefetchBuffer: 4,
             maxBatches: job.TotalSteps * job.GradAccumSteps,
             skipProgress: (done, total) =>
                 log($"Data cursor: replayed {done:N0}/{total:N0} batches..."));
@@ -1429,9 +1422,18 @@ public static class TrainingRunner
             // change. A hit skips re-reading and re-cleaning the source files.
             if (!job.IsSft)
             {
-                pipeline = await CacheOrReuseDataAsync(
-                    job, pipeline, recipeDataHash, recipeFolder, Log, cancellationToken)
-                    .ConfigureAwait(false);
+                bool hasSplits = job.TestPercent > 0 || job.ValidationPercent > 0;
+                if (hasSplits)
+                {
+                    Log("Data cache: skipped because the run has held-out splits; "
+                        + "splits are applied at the source before cleaning.");
+                }
+                else
+                {
+                    pipeline = await CacheOrReuseDataAsync(
+                        job, pipeline, recipeDataHash, recipeFolder, Log, cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
             else
             {
@@ -1450,7 +1452,8 @@ public static class TrainingRunner
             // The tokenizer still trains over the full corpus: it learns the token
             // inventory, not the loss being measured.
             TrainingDataPlan dataPlan = await BuildDataPlanAsync(
-                job, components, pipeline, tokenizer, modelConfig, baseChatTemplate,
+                job, components, pipeline, input.TrainPipeline, input.ValidationPipeline,
+                tokenizer, modelConfig, baseChatTemplate,
                 Log, cancellationToken).ConfigureAwait(false);
             if (dataPlan.EarlyResult is not null) return dataPlan.EarlyResult;
             List<TrainingBatch> validationBatches = dataPlan.ValidationBatches;
@@ -1900,17 +1903,55 @@ public static class TrainingRunner
     /// the held-out slice.
     /// </summary>
     public static PipelineNode BuildCleanPipeline(TrainingJobSettings job, string pluginsFolder)
+        => BuildCleanPipeline(job, pluginsFolder, split: null);
+
+    /// <summary>
+    /// Builds the cleaned pipeline, optionally keeping only one deterministic
+    /// split. The split is applied at the source, before cleaning, so Data
+    /// Factory text JSONL variants that share a <c>source</c>+<c>id</c> always
+    /// stay on the same side.
+    /// </summary>
+    public static PipelineNode BuildCleanPipeline(
+        TrainingJobSettings job,
+        string pluginsFolder,
+        DeterministicSplitRange? split)
     {
         ArgumentNullException.ThrowIfNull(job);
-        var registry = ComponentRegistry.ScanFolder(pluginsFolder, out _);
-        var nodes = new List<PipelineNode>();
+        IReadOnlyList<ComponentDescriptor> components = ComponentRegistry.ScanFolder(pluginsFolder, out _);
+        var sources = new List<IDataSource>();
         foreach (JobSource source in job.Sources)
+            sources.Add(BuildSource(source.Component!, components));
+
+        return BuildPipeline(
+            job, components, sources, new bool[job.Sources.Count], split, incremental: false);
+    }
+
+    private static PipelineNode BuildPipeline(
+        TrainingJobSettings job,
+        IReadOnlyList<ComponentDescriptor> components,
+        IReadOnlyList<IDataSource> sources,
+        IReadOnlyList<bool> skipSource,
+        DeterministicSplitRange? split,
+        bool incremental)
+    {
+        var nodes = new List<PipelineNode>();
+        int sourceIndex = 0;
+        for (int i = 0; i < job.Sources.Count; i++)
         {
-            if (source.Component is null) continue;
-            PipelineNode node = PipelineNode.From(BuildSource(source.Component, registry));
-            foreach (JobComponent stage in source.Stages)
+            if (i < skipSource.Count && skipSource[i]) continue;
+            if (sourceIndex >= sources.Count) break;
+
+            IDataSource source = sources[sourceIndex++];
+            if (split is { } range)
             {
-                var descriptor = ComponentRegistry.Find(stage.TypeName, registry)
+                source = SplitSources.Apply(
+                    source, job.Sources[i].Component, job.Seed, range, incremental);
+            }
+
+            PipelineNode node = PipelineNode.From(source);
+            foreach (JobComponent stage in job.Sources[i].Stages)
+            {
+                var descriptor = ComponentRegistry.Find(stage.TypeName, components)
                     ?? throw new InvalidOperationException($"Unknown stage '{stage.TypeName}'.");
                 node = node.Pipe((ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, stage.Args));
             }
@@ -1923,7 +1964,7 @@ public static class TrainingRunner
         PipelineNode pipeline = nodes.Count == 1 ? nodes[0] : CleaningPipeline.Merge(nodes);
         foreach (JobComponent stage in job.GlobalStages)
         {
-            var descriptor = ComponentRegistry.Find(stage.TypeName, registry)
+            var descriptor = ComponentRegistry.Find(stage.TypeName, components)
                 ?? throw new InvalidOperationException($"Unknown stage '{stage.TypeName}'.");
             pipeline = pipeline.Pipe((ICleaningStage)ComponentRegistry.Build<ICleaningStage>(descriptor, stage.Args));
         }

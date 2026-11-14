@@ -74,11 +74,10 @@ public static class TrainingExamRunner
         using Transformer model = SmmTrainingPipeline.LoadForInference(modelPath, out var tokenizer, out var config);
         log?.Invoke($"Exam: tokenizer {tokenizer.VocabSize}, context {config.MaxSeqLen}.");
 
-        PipelineNode pipeline = TrainingRunner.BuildCleanPipeline(job, pluginsFolder);
         double fraction = Math.Clamp(job.TestPercent, 0, 90) / 100.0;
         int threshold = (int)Math.Round(fraction * DeterministicSplit.Buckets);
-        var (testNode, _) = pipeline.Branch(
-            "exam", doc => DeterministicSplit.Bucket(doc, job.Seed) < threshold);
+        PipelineNode testNode = TrainingRunner.BuildCleanPipeline(
+            job, pluginsFolder, new DeterministicSplitRange(0, threshold));
 
         int seqLen = job.SeqLen > 0 ? job.SeqLen : 64;
         if (config.MaxSeqLen > 0) seqLen = Math.Min(seqLen, config.MaxSeqLen);
