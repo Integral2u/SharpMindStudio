@@ -8,6 +8,8 @@
 @inject SharpMind.Studio.Services.StudioRehearsalService Rehearsal
 @inject SharpMind.Studio.Services.StudioExamService Exam
 @inject SharpMind.Studio.Services.ComputeDashboardService Compute
+@using SharpMind.Studio.Core.Compute
+@using SharpMind.Studio.Services
 @inject Microsoft.AspNetCore.Components.NavigationManager Nav
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthState
@@ -150,19 +152,74 @@
 
             @if (!DeviceAccess.IsMobile)
             {
-                <NavLink class="nav-link" href="compute">
-                    <span class="nav-index">05</span> Compute
-                    @if (Compute.RunningCount > 0)
-                    {
-                        <span class="nav-badge" title="@Compute.RunningCount running; billed hourly">
-                            @Compute.RunningCount
-                        </span>
-                    }
-                    else if (Compute.IsRefreshing)
-                    {
-                        <span class="spinner-ring" title="Checking compute"></span>
-                    }
-                </NavLink>
+                <div class="nav-chat-row">
+                    <NavLink class="nav-link" href="compute">
+                        <span class="nav-index">05</span> Compute
+                        @if (Compute.RunningCount > 0)
+                        {
+                            <span class="nav-badge" title="@Compute.RunningCount running; billed hourly">
+                                @Compute.RunningCount
+                            </span>
+                        }
+                        else if (Compute.IsRefreshing)
+                        {
+                            <span class="spinner-ring" title="Checking compute"></span>
+                        }
+                        @if (AnyComputeInUse)
+                        {
+                            <span class="nav-use-dot" title="Compute in active use"></span>
+                        }
+                    </NavLink>
+                    <button type="button" class="nav-expand" @onclick="ToggleCompute"
+                            title="@(_computeExpanded ? "Hide instances" : "Show instances")"
+                            aria-label="@(_computeExpanded ? "Hide instances" : "Show instances")">
+                        @(_computeExpanded ? "-" : "+")
+                    </button>
+                </div>
+
+                @if (_computeExpanded)
+                {
+                    <div class="nav-chats">
+                        @if (Compute.Instances.Count == 0)
+                        {
+                            <div class="nav-chat-empty">No instances yet</div>
+                        }
+                        else
+                        {
+                            @foreach (SharpMind.Studio.Core.Compute.VultrComputeInstance instance
+                                in Compute.Instances)
+                            {
+                                string? activity = ComputeActivity(instance);
+                                <div class="nav-chat-item">
+                                    <div class="nav-chat-main">
+                                        <a href="compute" class="nav-chat-link" title="@instance.Label">
+                                            @instance.Label
+                                        </a>
+                                        <div class="nav-chat-preview">
+                                            @instance.StatusLabel · $@instance.HourlyCost.ToString("0.000")/h
+                                            @if (activity is not null)
+                                            {
+                                                <span class="nav-use"> · in use: @activity</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <button type="button" class="nav-instance-stop"
+                                            @onclick="() => DestroyFromNavAsync(instance)"
+                                            disabled="@(_computeBusy)"
+                                            title="@(activity is null
+                                                ? "Destroy this instance and stop billing"
+                                                : $"In active use ({activity}); destroying interrupts it")">
+                                        @(_destroyingId == instance.InstanceId ? "..." : "Destroy")
+                                    </button>
+                                </div>
+                            }
+                        }
+                        @if (_computeError is not null)
+                        {
+                            <div class="nav-compute-error">@_computeError</div>
+                        }
+                    </div>
+                }
                 <NavLink class="nav-link" href="training">
                     <span class="nav-index">06</span> Training
                     @if (Training.IsRunning || Rehearsal.IsRunning || Exam.IsRunning)
@@ -230,6 +287,10 @@
                 <span>
                     @Compute.RunningCount compute instance@(Compute.RunningCount == 1 ? "" : "s")
                     running &middot; $@Compute.HourlyCost.ToString("0.00")/hour
+                    @if (AnyComputeInUse)
+                    {
+                        <text> &middot; in use</text>
+                    }
                 </span>
                 <a href="compute">Review</a>
             </div>
@@ -300,6 +361,10 @@
 
     private bool _chatsExpanded;
     private bool _workChatsExpanded;
+    private bool _computeExpanded;
+    private bool _computeBusy;
+    private string? _destroyingId;
+    private string? _computeError;
     private string _chatQuery = "";
     private string _workQuery = "";
     private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> _chats = [];
@@ -343,6 +408,56 @@
     {
         _chatsExpanded = !_chatsExpanded;
         if (_chatsExpanded) LoadChats();
+    }
+
+    private void ToggleCompute()
+    {
+        _computeExpanded = !_computeExpanded;
+        if (_computeExpanded) _ = Compute.RefreshAsync();
+    }
+
+    private bool AnyComputeInUse =>
+        Compute.Instances.Any(instance => ComputeActivity(instance) is not null);
+
+    private string? ComputeActivity(VultrComputeInstance instance) =>
+        ComputeUsage.Activity(
+            instance,
+            Training.RemoteProviderId,
+            Training.IsRunning || Rehearsal.IsRunning || Exam.IsRunning,
+            ChatService.IsCompute ? ChatService.ComputeProviderId : null,
+            ChatService.IsChatActive || ChatService.IsWorkActive);
+
+    private async Task DestroyFromNavAsync(VultrComputeInstance instance)
+    {
+        if (_computeBusy) return;
+
+        string? activity = ComputeActivity(instance);
+        string message = activity is null
+            ? $"Destroy {instance.Label}? The disk is deleted and billing stops. "
+              + "Download any exported models first."
+            : $"{instance.Label} is in active use ({activity}). Destroying it interrupts that "
+              + "work, deletes the disk and stops billing. Destroy anyway?";
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", message);
+        if (!confirmed) return;
+
+        _computeBusy = true;
+        _destroyingId = instance.InstanceId;
+        _computeError = null;
+        StateHasChanged();
+        try
+        {
+            await Compute.DestroyAsync(instance);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _computeError = $"{instance.Label}: {ex.Message}";
+        }
+        finally
+        {
+            _computeBusy = false;
+            _destroyingId = null;
+            StateHasChanged();
+        }
     }
 
     private void ToggleWorkChats()

@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Components;
+﻿using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Services;
@@ -31,10 +31,12 @@ public partial class Compute : IDisposable
         {
             await Dashboard.RefreshAsync(force: true);
             _error = Dashboard.Error;
+            int inUse = Dashboard.Instances.Count(instance => ActivityFor(instance) is not null);
             _status = Dashboard.RunningCount == 0
                 ? "No compute is billed right now."
                 : $"{Dashboard.RunningCount} instance(s) running at "
-                  + $"${Dashboard.HourlyCost:0.00}/hour.";
+                  + $"${Dashboard.HourlyCost:0.00}/hour"
+                  + (inUse > 0 ? $"; {inUse} in active use." : ".");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -54,10 +56,13 @@ public partial class Compute : IDisposable
     private async Task DestroyAsync(VultrComputeInstance instance)
     {
         if (_busy) return;
-        bool confirmed = await JS.InvokeAsync<bool>(
-            "confirm",
-            $"Destroy {instance.Label} ({instance.InstanceId})? The disk is deleted and billing "
-            + "stops. Download any exported models first.");
+        string? activity = ActivityFor(instance);
+        string message = activity is null
+            ? $"Destroy {instance.Label} ({instance.InstanceId})? The disk is deleted and billing "
+              + "stops. Download any exported models first."
+            : $"{instance.Label} is in active use ({activity}). Destroying it interrupts that work, "
+              + "deletes the disk and stops billing. Destroy anyway?";
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", message);
         if (!confirmed) return;
 
         _busy = true;
@@ -112,6 +117,14 @@ public partial class Compute : IDisposable
             StateHasChanged();
         }
     }
+
+    private string? ActivityFor(VultrComputeInstance instance) =>
+        ComputeUsage.Activity(
+            instance,
+            Training.RemoteProviderId,
+            Training.IsRunning || Rehearsal.IsRunning || Exam.IsRunning,
+            ChatService.IsCompute ? ChatService.ComputeProviderId : null,
+            ChatService.IsChatActive || ChatService.IsWorkActive);
 
     private static string FormatUptime(TimeSpan? uptime)
     {

@@ -57,6 +57,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   list, IP, uptime, hourly rate and estimated spend, per-row **Destroy**, and
   **Destroy all running**. It also hosts the Vultr deploy form. **Create
   compute** on Training jumps there with a GPU plan preselected.
+- **Compute in the sidebar** - the Compute menu item expands like Chat and Work
+  and lists every Vultr instance with its state and hourly rate, plus a
+  **Destroy** button per row. Instances in active use show a pulsing dot next to
+  the menu item, an "in use" note in the list and on the Compute table; use
+  means training, rehearsal or exam on that host, or a chat/work turn loading or
+  streaming from it. Destroying an in-use instance asks for a second,
+  explicit confirmation. A stopped instance stays listed because Vultr bills it
+  until it is destroyed.
 - **Exit guard** - closing Studio with instances still running shows a prompt
   with **Keep running** as the default, **Cancel**, and **Destroy and exit**.
   Tagged instances that Studio is not tracking are detected at startup, listed

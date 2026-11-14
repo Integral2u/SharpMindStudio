@@ -1,9 +1,13 @@
-@page "/compute"
+﻿@page "/compute"
 @implements IDisposable
 @using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Services
 @inject ComputeDashboardService Dashboard
 @inject ComputeProviderService Hosts
+@inject StudioTrainingService Training
+@inject StudioRehearsalService Rehearsal
+@inject StudioExamService Exam
+@inject StudioChatService ChatService
 @inject IJSRuntime JS
 
 <PageTitle>Compute - SharpMind Studio</PageTitle>
@@ -121,6 +125,10 @@
                                 @if (!string.IsNullOrWhiteSpace(instance.MainIp))
                                 {
                                     <div class="small faint mono">@instance.MainIp</div>
+                                }
+                                @if (ActivityFor(instance) is { } activity)
+                                {
+                                    <div class="use-pill">in use · @activity</div>
                                 }
                             </td>
                             <td class="num">@FormatUptime(instance.Uptime)</td>
