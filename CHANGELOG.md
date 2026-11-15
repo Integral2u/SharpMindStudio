@@ -132,6 +132,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Model lists refresh when opened** - Chat and the labs rescan the Models
   folder on entry, so a model added from Training or the run panel appears
   without restarting Studio.
+- **Model list pauses and missing `.smm` files** - the catalog is built once at
+  startup and reused, scans are serialised, and Chat and the labs no longer
+  rescan on every open. Adding a model from Training, a HuggingFace download,
+  a conversion or a run that exports into Models updates the cache. Settings
+  → System has a **Refresh list** button for changes made outside Studio.
+  The Model visualizer and Latent space now list `.smm` models; Quantization
+  remains GGUF-only and says so.
 
 ## [1.1.1.0] - 2026-11-08
 

@@ -10,6 +10,7 @@
 @inject SharpMind.Studio.Services.ComputeDashboardService Compute
 @using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Services
+@inject SharpMind.Studio.Services.ModelCatalogService Catalog
 @inject Microsoft.AspNetCore.Components.NavigationManager Nav
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthState
@@ -333,6 +334,9 @@
         Compute.Changed += OnComputeChanged;
         LoadChats();
         _ = Compute.RefreshAsync();
+        // Build the model list once at startup; pages read the cache instead of
+        // rescanning the Models folder on every navigation.
+        _ = Catalog.RefreshAsync();
         _computeRefreshCts = new CancellationTokenSource();
         _ = RefreshComputeLoopAsync(_computeRefreshCts.Token);
     }

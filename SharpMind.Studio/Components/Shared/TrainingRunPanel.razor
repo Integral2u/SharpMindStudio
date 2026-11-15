@@ -181,6 +181,7 @@
     private string? _artifactNotice;
     private string? _artifactError;
     private string? _hostId;
+    private string? _refreshedRun;
 
     protected override void OnInitialized()
     {
@@ -198,7 +199,25 @@
             TimeSpan.FromMilliseconds(500));
     }
 
-    private void OnTrainingChanged() => Repaint(force: true);
+    private void OnTrainingChanged()
+    {
+        // A run that exported straight into the Models folder should join the
+        // open lists without a rescan on the next navigation.
+        if (Training.Result is { Success: true, ExportPath: { Length: > 0 } export }
+            && !string.Equals(export, _refreshedRun, StringComparison.OrdinalIgnoreCase)
+            && export.StartsWith(
+                Catalog.Folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            _refreshedRun = export;
+            _ = InvokeAsync(async () =>
+            {
+                await Catalog.RefreshAsync(force: true);
+                StateHasChanged();
+            });
+        }
+
+        Repaint(force: true);
+    }
 
     private void Repaint(bool force = false)
     {

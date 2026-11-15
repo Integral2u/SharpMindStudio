@@ -107,7 +107,9 @@
 
             <h2 id="quantization">Quantization</h2>
             <p>
-                The tab has two comparisons. The tensor comparison dequantizes both files and
+                Quantization compares GGUF builds only, so generated <span class="mono">.smm</span>
+                models do not appear in its pickers; use the Model visualizer or Latent space for
+                those. The tab has two comparisons. The tensor comparison dequantizes both files and
                 reports relative L2, cosine and worst tensors without a forward pass. It also
                 checks that both files are the same model: same architecture, tensor names and
                 shapes. A pruned or fine-tuned file is not a quantization pair, and the
@@ -127,6 +129,11 @@
             </p>
 
             <h2 id="visualizer">Model visualizer</h2>
+            <p>
+                The model picker lists both <span class="mono">.smm</span> and
+                <span class="mono">.gguf</span> files from the Models folder, so a model exported
+                from Training appears after <strong>Add to Models</strong>.
+            </p>
             <p>
                 One prompt runs through the activation hook. Rows are layers, columns are prompt
                 tokens, and the colour is the branch RMS on a log scale. Hover a cell for the

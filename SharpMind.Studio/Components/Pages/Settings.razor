@@ -99,12 +99,18 @@
         <div class="panel-body stack">
             <div class="field">
                 <label class="field-label" for="default-chat-model">Default chat model</label>
-                <select id="default-chat-model" class="input" @bind="_defaultModelPath" @bind:after="SaveDefaultModel">
-                    @foreach (var model in _models)
-                    {
-                        <option value="@model.Path">@model.FileName - @model.DisplayName (@model.Family.DisplayName)</option>
-                    }
-                </select>
+                <div class="row">
+                    <select id="default-chat-model" class="input" @bind="_defaultModelPath" @bind:after="SaveDefaultModel">
+                        @foreach (var model in _models)
+                        {
+                            <option value="@model.Path">@model.FileName - @model.DisplayName (@model.Family.DisplayName)</option>
+                        }
+                    </select>
+                    <button type="button" class="button" @onclick="RefreshModels"
+                            title="Rescan the Models folder and reopen any model added outside Studio.">
+                        Refresh list
+                    </button>
+                </div>
                 <div class="small faint">Used by the welcome screen until you choose another model there.</div>
             </div>
 

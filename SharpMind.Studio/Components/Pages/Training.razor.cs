@@ -65,6 +65,7 @@ public partial class Training
     private string? _modelBusy;
     private string? _modelNotice;
     private string? _modelError;
+    private string? _refreshedConversion;
     private string _playbookStatus = "";
     private string _mergeSource = "";
     private string _mergeOutput = "";
@@ -203,8 +204,15 @@ public partial class Training
         _sftPreviewCancel?.Dispose();
     }
 
-    private void OnTrainingChanged() => _ = InvokeAsync(() =>
+    private void OnTrainingChanged() => _ = InvokeAsync(async () =>
     {
+        if (Convert.Result is { Success: true, DestinationPath: { Length: > 0 } converted }
+            && !string.Equals(converted, _refreshedConversion, StringComparison.OrdinalIgnoreCase))
+        {
+            _refreshedConversion = converted;
+            await Catalog.RefreshAsync(force: true);
+        }
+
         if (_tab == "runs") EnsureCompareSelection();
         // A finished run may have written a new adapter checkpoint; the resume
         // picker should see it next time the Improve tab renders.
@@ -214,10 +222,11 @@ public partial class Training
 
     private void OnExamChanged() => _ = InvokeAsync(StateHasChanged);
 
-    private void OnModelDownloaded(string path) => _ = InvokeAsync(() =>
+    private void OnModelDownloaded(string path) => _ = InvokeAsync(async () =>
     {
         _convertSource = path;
         SuggestDestination();
+        await Catalog.RefreshAsync(force: true);
         StateHasChanged();
     });
 

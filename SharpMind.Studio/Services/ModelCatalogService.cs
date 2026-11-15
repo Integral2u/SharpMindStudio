@@ -6,6 +6,7 @@ public sealed class ModelCatalogService
 {
     private readonly ModelCatalog _catalog;
     private readonly string _folder;
+    private readonly SemaphoreSlim _gate = new(1, 1);
     private IReadOnlyList<ModelDescriptor> _models = [];
 
     public ModelCatalogService(StudioWorkspaceService workspace)
@@ -77,8 +78,18 @@ public sealed class ModelCatalogService
         bool force = false,
         CancellationToken cancellationToken = default)
     {
-        _models = await _catalog.GetAsync(force, cancellationToken);
-        return _models;
+        // A scan reads every model header; serialise them so startup, a manual
+        // refresh and a page open do not scan the folder at the same time.
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _models = await _catalog.GetAsync(force, cancellationToken).ConfigureAwait(false);
+            return _models;
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public ModelDescriptor? Find(string? path)

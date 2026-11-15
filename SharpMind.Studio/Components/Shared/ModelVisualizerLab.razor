@@ -301,7 +301,7 @@
 
     private async Task LoadModelsAsync()
     {
-        _models = [.. (await Catalog.RefreshAsync(force: true)).Where(model => model.Path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))];
+        _models = await Catalog.RefreshAsync();
         _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
             ? Theme.LastChatModel!
             : _models.FirstOrDefault()?.Path ?? "";

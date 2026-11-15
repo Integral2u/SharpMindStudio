@@ -39,6 +39,11 @@
             </div>
         </div>
 
+        <div class="small faint">
+            GGUF pairs only. Generated <span class="mono">.smm</span> models appear in Visualizer
+            and Latent space, not here.
+        </div>
+
         @if (_checkingCompatibility)
         {
             <div class="small faint">Checking the pair...</div>
@@ -342,7 +347,7 @@
 
     private async Task LoadModelsAsync()
     {
-        _models = [.. (await Catalog.RefreshAsync(force: true))
+        _models = [.. (await Catalog.RefreshAsync())
             .Where(model => model.Path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))];
         _referencePath = _models.Any(model => model.Path == Theme.LastChatModel)
             ? Theme.LastChatModel!
