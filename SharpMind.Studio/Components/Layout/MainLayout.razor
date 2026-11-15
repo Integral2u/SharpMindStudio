@@ -333,6 +333,8 @@
         Compute.Changed += OnComputeChanged;
         LoadChats();
         _ = Compute.RefreshAsync();
+        _computeRefreshCts = new CancellationTokenSource();
+        _ = RefreshComputeLoopAsync(_computeRefreshCts.Token);
     }
 
     public void Dispose()
@@ -346,6 +348,39 @@
         Workspace.ProjectChanged -= OnWorkspaceChanged;
         Nav.LocationChanged -= OnLocationChanged;
         Compute.Changed -= OnComputeChanged;
+        _computeRefreshCts?.Cancel();
+        _computeRefreshCts?.Dispose();
+        _computeRefreshCts = null;
+    }
+
+    /// <summary>
+    /// Keeps the sidebar count and the billing banner current without opening
+    /// Compute, so an instance created in the Vultr console is noticed too.
+    /// </summary>
+    private async Task RefreshComputeLoopAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                try
+                {
+                    await Compute.RefreshAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch
+                {
+                    // A failed poll must not stop the loop; the page shows the error.
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private bool IsComputePage =>
@@ -365,6 +400,7 @@
     private bool _computeBusy;
     private string? _destroyingId;
     private string? _computeError;
+    private CancellationTokenSource? _computeRefreshCts;
     private string _chatQuery = "";
     private string _workQuery = "";
     private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> _chats = [];

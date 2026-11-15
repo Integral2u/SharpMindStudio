@@ -117,6 +117,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   endings, so bash read the carriage return as part of each command and the
   probe failed with `set: -` or a syntax error before setup could start. Scripts
   are now sent to the host with LF endings.
+- **JSONL sources kept a blank text source** - a new job starts with one empty
+  text source as a convenience; adding a JSONL or other source now replaces it,
+  so the "A text source has no path" warning does not stick.
+- **Compute count without opening the page** - the sidebar and billing banner
+  refresh every 30 seconds, so an instance created in the Vultr console is
+  noticed without visiting the Compute page.
 
 ## [1.1.1.0] - 2026-11-08
 

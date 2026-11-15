@@ -248,8 +248,15 @@
     private void AddSource(string? key)
     {
         if (FindSource(key) is not { } descriptor) return;
+        // A new job starts with one blank text source as a convenience; adding a
+        // real source replaces it instead of leaving an empty "no path" entry.
+        Job.Sources.RemoveAll(source => IsBlankTextSource(source.Component));
         Job.Sources.Add(new JobSource { Component = JobComponentFactory.Create(descriptor) });
     }
+
+    private static bool IsBlankTextSource(JobComponent component) =>
+        component.TypeName.Contains("TextFileSource", StringComparison.Ordinal)
+        && (!component.Args.TryGetValue("path", out string? path) || string.IsNullOrWhiteSpace(path));
 
     private void AddStage(JobSource source, string? key)
     {
