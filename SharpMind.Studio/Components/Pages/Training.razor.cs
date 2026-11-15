@@ -62,6 +62,9 @@ public partial class Training
     private string? _runNotice;
     private string? _planId;
     private string? _ruleSetVersion;
+    private string? _modelBusy;
+    private string? _modelNotice;
+    private string? _modelError;
     private string _playbookStatus = "";
     private string _mergeSource = "";
     private string _mergeOutput = "";
@@ -156,7 +159,21 @@ public partial class Training
 
     protected override void OnInitialized()
     {
-        _job = Lab.Draft ?? CreateDefaultJob();
+        // A fine-tune's inputs live outside the pretrain draft. While a run is
+        // active, show the values it is actually using; otherwise restore the
+        // last Improve draft.
+        if (Lab.IsRunning && Lab.Job is { IsFineTune: true } runningFineTune)
+        {
+            ApplyFineTuneJob(runningFineTune);
+        }
+        else if (Lab.FineTuneDraft is { } fineTuneDraft)
+        {
+            ApplyFineTuneDraft(fineTuneDraft);
+        }
+
+        _job = Lab.IsRunning && Lab.Job is { IsFineTune: false } runningJob
+            ? runningJob
+            : Lab.Draft ?? CreateDefaultJob();
         Lab.Draft = _job;
         _mergeOutput = Path.Combine(StudioPaths.Corpus, "merged.jsonl");
         _mergeSource = _job.Sources
@@ -178,6 +195,7 @@ public partial class Training
 
     public void Dispose()
     {
+        Lab.FineTuneDraft = CaptureFineTuneDraft();
         Lab.Changed -= OnTrainingChanged;
         Convert.Changed -= OnTrainingChanged;
         Exam.Changed -= OnExamChanged;
@@ -248,6 +266,78 @@ public partial class Training
     }
 
     private static string Megabytes(long bytes) => (bytes / 1024d / 1024d).ToString("0.0");
+
+    private bool InModelsFolder(FileInfo file)
+    {
+        if (file.DirectoryName is not { } directory) return false;
+        string full = Path.GetFullPath(directory);
+        string models = Catalog.Folder;
+        return full.Equals(models, StringComparison.OrdinalIgnoreCase)
+            || full.StartsWith(models + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool InModelList(FileInfo file) =>
+        InModelsFolder(file) || File.Exists(Path.Combine(Catalog.Folder, file.Name));
+
+    private string ModelListPath(FileInfo file) =>
+        InModelsFolder(file) ? file.FullName : Path.Combine(Catalog.Folder, file.Name);
+
+    private async Task AddModelClickedAsync(FileInfo file) => await AddModelToCatalogAsync(file);
+
+    private async Task<bool> AddModelToCatalogAsync(FileInfo file)
+    {
+        _modelError = null;
+        _modelNotice = null;
+        try
+        {
+            if (InModelList(file))
+            {
+                _modelNotice = $"{file.Name} is already in the model list.";
+                return true;
+            }
+
+            _modelBusy = file.FullName;
+            bool replace = false;
+            string destination = Path.Combine(Catalog.Folder, file.Name);
+            if (File.Exists(destination))
+            {
+                replace = await JS.InvokeAsync<bool>(
+                    "confirm", $"Replace {file.Name} in the model list?");
+                if (!replace) return false;
+            }
+
+            string added = await Catalog.AddAsync(file.FullName, overwrite: replace);
+            _modelNotice = $"Added {Path.GetFileName(added)} to the model list.";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _modelError = ex.Message;
+            return false;
+        }
+        finally
+        {
+            _modelBusy = null;
+        }
+    }
+
+    private async Task ChatWithCatalogModelAsync(FileInfo file)
+    {
+        if (!await AddModelToCatalogAsync(file)) return;
+
+        string modelPath = ModelListPath(file);
+        if (!File.Exists(modelPath)) return;
+
+        try
+        {
+            await Theme.SetLastChatModelAsync(modelPath);
+            Nav.NavigateTo("/chat");
+        }
+        catch (Exception ex)
+        {
+            _modelError = $"Could not open Chat: {ex.Message}";
+        }
+    }
 
     private void PickBase(ChangeEventArgs args)
     {
@@ -474,6 +564,7 @@ public partial class Training
             }
             else
             {
+                Lab.FineTuneDraft = CaptureFineTuneDraft();
                 await ScrollToRunAsync();
             }
         }
@@ -640,8 +731,7 @@ public partial class Training
     }
 
     private void ApplyFineTuneJob(TrainingJobSettings job)
-    {
-        _tuneBase = job.BaseModelPath ?? "";
+    {        _tuneBase = job.BaseModelPath ?? "";
         _tuneCorpusPath = job.Sources.FirstOrDefault()?.Component.Args.TryGetValue("path", out string? tuneCorpus) == true
             ? tuneCorpus
             : "";
@@ -666,6 +756,56 @@ public partial class Training
         _ruleSetVersion = job.RuleSetVersion;
         _tuneError = null;
     }
+
+    private void ApplyFineTuneDraft(FineTuneDraft draft)
+    {
+        _tuneBase = draft.BaseModelPath;
+        _tuneCorpusPath = draft.CorpusPath;
+        _tuneSft = draft.Sft;
+        _tuneSftFormatter = draft.SftFormatter;
+        _tuneSftSeqLen = draft.SftSeqLen;
+        _tuneName = draft.Name;
+        _tuneSteps = draft.Steps;
+        _tuneValidationPercent = draft.ValidationPercent;
+        _tuneTestPercent = draft.TestPercent;
+        _tuneRank = draft.Rank;
+        _tuneAlpha = draft.Alpha;
+        _tuneLr = draft.LearningRate;
+        _tuneExport = draft.Export;
+        _tuneOutput = draft.Output;
+        _tuneAdapterPath = draft.AdapterPath;
+        _tuneResume = draft.Resume;
+        _tuneStartFresh = draft.StartFresh;
+        _tuneTargets.Clear();
+        foreach (string target in draft.Targets) _tuneTargets.Add(target);
+        _planId = draft.PlanId;
+        _ruleSetVersion = draft.RuleSetVersion;
+        _tuneError = null;
+    }
+
+    private FineTuneDraft CaptureFineTuneDraft() => new()
+    {
+        BaseModelPath = _tuneBase,
+        CorpusPath = _tuneCorpusPath,
+        Sft = _tuneSft,
+        SftFormatter = _tuneSftFormatter,
+        SftSeqLen = _tuneSftSeqLen,
+        Name = _tuneName,
+        Steps = _tuneSteps,
+        ValidationPercent = _tuneValidationPercent,
+        TestPercent = _tuneTestPercent,
+        Rank = _tuneRank,
+        Alpha = _tuneAlpha,
+        LearningRate = _tuneLr,
+        Export = _tuneExport,
+        Output = _tuneOutput,
+        AdapterPath = _tuneAdapterPath,
+        Resume = _tuneResume,
+        StartFresh = _tuneStartFresh,
+        Targets = [.. _tuneTargets],
+        PlanId = _planId,
+        RuleSetVersion = _ruleSetVersion,
+    };
 
     private void LoadJob(string path, bool navigate = true)
     {

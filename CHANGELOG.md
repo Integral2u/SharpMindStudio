@@ -19,6 +19,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **Tune**, **Chat** and **Work** for the model in view. Tune runs the measured
   presets and saves them; Chat and Work start a session with the tuned
   Balanced profile.
+- **Checkpoints and exports in Chat** - the run panel lists the finished model
+  and the newest checkpoints. **Add to Models** copies a `.smm` into the Models
+  folder, **Chat** opens a chat with it, and **Send to host** uploads it to a
+  Compute host and activates it there. The Models tab offers the same for files
+  in the Training folder. Fine-tune checkpoints are adapters only, so the panel
+  says to export a merged model instead.
+- **Training form follows the run** - coming back to Training restores the
+  active run's inputs, or the last Improve draft, instead of showing defaults.
+  The run panel also explains a missing validation line: either no split was
+  set or the split produced no held-out documents, and the run log says which.
 - **Remote provider profiles** - OpenRouter and EuroRouter keep separate API
   keys, base URLs and model lists. The existing `openrouter.json` layout is
   migrated into the OpenRouter profile on load, and each chat document records

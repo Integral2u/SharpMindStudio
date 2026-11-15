@@ -16,6 +16,8 @@
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject PathPickerService Picker
+@inject ModelCatalogService Catalog
+@inject ThemeService Theme
 
 <PageTitle>Training - SharpMind Studio</PageTitle>
 
@@ -1152,6 +1154,14 @@ else if (_tab == "models")
             <a class="button" href="/settings?tab=models">Model settings</a>
         </div>
         <div class="panel-body stack">
+            @if (_modelNotice is { Length: > 0 })
+            {
+                <div class="status-line">@_modelNotice</div>
+            }
+            @if (_modelError is { Length: > 0 })
+            {
+                <div class="error-line">@_modelError</div>
+            }
             @if (Models.Count == 0)
             {
                 <div class="empty">No model files yet. Finished runs export an <span class="mono">.smm</span> or <span class="mono">.smlora</span> here, and conversions land beside their source.</div>
@@ -1169,6 +1179,24 @@ else if (_tab == "models")
                             <div class="row">
                                 <span class="training-chip">@file.Extension.TrimStart('.').ToUpperInvariant()</span>
                                 <span class="small faint mono">@Megabytes(file.Length) MB</span>
+                                @if (file.Extension.Equals(".smm", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    @if (!InModelList(file))
+                                    {
+                                        <button type="button" class="button"
+                                                @onclick="() => AddModelClickedAsync(file)"
+                                                disabled="@(_modelBusy is not null)"
+                                                title="Copy this model into the Models folder so Chat and the labs can see it.">
+                                            Add to Models
+                                        </button>
+                                    }
+                                    <button type="button" class="button primary"
+                                            @onclick="() => ChatWithCatalogModelAsync(file)"
+                                            disabled="@(_modelBusy is not null)"
+                                            title="Add it to the model list and open a chat with it.">
+                                        Chat
+                                    </button>
+                                }
                             </div>
                         </div>
                     }

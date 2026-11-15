@@ -1,6 +1,14 @@
 @using SharpMind.Studio.Services
+@using SharpMind.Studio.Core.Compute
+@using SharpMind.Studio.Core.Training
+@using SharpMind.Training
 @implements IDisposable
 @inject StudioTrainingService Training
+@inject ModelCatalogService Catalog
+@inject ThemeService Theme
+@inject ComputeProviderService Hosts
+@inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <section class="panel training-run" id="training-run">
     <div class="panel-head">
@@ -57,6 +65,16 @@
                            BestStep="@Training.BestValStep"
                            BestLoss="@Training.BestValLoss" />
 
+        @if (Training.Job is { } validationJob && Training.ValLoss is null
+             && (Training.IsRunning || Training.Result is not null))
+        {
+            <div class="small faint">
+                @(validationJob.ValidationPercent > 0
+                    ? "Val loss is evaluated at each log interval. The run log says so when the split produced no held-out data."
+                    : "This job has no validation split. Set it under Checkpoints & splits on New model, or Validation split on Improve.")
+            </div>
+        }
+
         @if (Training.ExportPath is { } export)
         {
             <div class="small faint">
@@ -68,6 +86,82 @@
         {
             <div class="small faint">
                 Saved adapters: <span class="mono">@adapter</span>
+            </div>
+        }
+
+        @if (Artifacts.Count > 0)
+        {
+            <div class="training-subsection">
+                <div class="training-subsection-head">
+                    <div class="eyebrow">Test in Chat</div>
+                </div>
+                <div class="training-jobs">
+                    @foreach (CheckpointEntry entry in Artifacts)
+                    {
+                        <div class="training-job">
+                            <div>
+                                <strong class="mono">@entry.Label</strong>
+                                <div class="small faint" title="@entry.Path">
+                                    @entry.Name &middot; @entry.SizeLabel
+                                </div>
+                            </div>
+                            <div class="row">
+                                @if (entry.IsModel)
+                                {
+                                    <button type="button" class="button"
+                                            @onclick="() => AddAsync(entry.Path, entry.Name)"
+                                            disabled="@(_busyPath is not null)"
+                                            title="Copy this model into the Models folder so Chat and the labs can see it.">
+                                        Add to Models
+                                    </button>
+                                    <button type="button" class="button primary"
+                                            @onclick="() => ChatAsync(entry.Path, entry.Name)"
+                                            disabled="@(_busyPath is not null)"
+                                            title="Add it to the model list and open a chat with it.">
+                                        Chat
+                                    </button>
+                                    @if (_hostId is not null)
+                                    {
+                                        <button type="button" class="button"
+                                                @onclick="() => SendAsync(entry.Path)"
+                                                disabled="@(_busyPath is not null)"
+                                                title="Upload this model to a Compute host and activate it there.">
+                                            Send to host
+                                        </button>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="small faint">
+                                        Adapter only. Export a merged model from Improve to chat with it.
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @if (_hostId is not null)
+                {
+                    <div class="row" style="align-items:center; gap:.4rem;">
+                        <span class="small faint">Send to</span>
+                        <select class="input" style="max-width:14rem;" @bind="_hostId">
+                            @foreach (ComputeProviderSettings host in Hosts.Providers)
+                            {
+                                <option value="@host.Id">@host.Name</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                @if (_artifactNotice is { Length: > 0 })
+                {
+                    <div class="status-line">@_artifactNotice</div>
+                }
+                @if (_artifactError is { Length: > 0 })
+                {
+                    <div class="error-line">@_artifactError</div>
+                }
             </div>
         }
 
@@ -83,10 +177,17 @@
 @code {
     private System.Threading.Timer? _refresh;
     private volatile bool _disposed;
+    private string? _busyPath;
+    private string? _artifactNotice;
+    private string? _artifactError;
+    private string? _hostId;
 
     protected override void OnInitialized()
     {
         Training.Changed += OnTrainingChanged;
+        _hostId = Training.RemoteProviderId
+            ?? Hosts.DefaultProviderId
+            ?? Hosts.Providers.FirstOrDefault()?.Id;
         // The panel reads the service directly, so it must repaint itself. A
         // timer also covers a circuit that missed a Changed notification while
         // a remote job was being polled.
@@ -134,4 +235,149 @@
     }
 
     private static string Number(double? value) => value?.ToString("0.####") ?? "—";
+
+    private IReadOnlyList<CheckpointEntry> Artifacts
+    {
+        get
+        {
+            var entries = new List<CheckpointEntry>();
+            if (Training.ExportPath is { Length: > 0 } export
+                && export.EndsWith(".smm", StringComparison.OrdinalIgnoreCase)
+                && File.Exists(export))
+            {
+                entries.Add(new CheckpointEntry(
+                    int.MaxValue, export, Path.GetFileName(export),
+                    new FileInfo(export).Length, IsModel: true));
+            }
+
+            if (Training.Job is { } job && Directory.Exists(job.CheckpointDir))
+            {
+                string jobName = SafeName(job.Name, "model");
+                foreach (string directory in Directory.EnumerateDirectories(job.CheckpointDir))
+                {
+                    int step = StepOf(directory);
+                    string model = Path.Combine(directory, "model.smm");
+                    string adapter = Path.Combine(
+                        directory, "adapters" + TrainingJobSettings.AdapterExtension);
+                    if (File.Exists(model))
+                    {
+                        entries.Add(new CheckpointEntry(
+                            step, model, $"{jobName}-step-{step}.smm",
+                            new FileInfo(model).Length, IsModel: true));
+                    }
+                    else if (File.Exists(adapter))
+                    {
+                        entries.Add(new CheckpointEntry(
+                            step, adapter, Path.GetFileName(adapter),
+                            new FileInfo(adapter).Length, IsModel: false));
+                    }
+                }
+            }
+
+            return [.. entries.OrderByDescending(entry => entry.Step)];
+        }
+    }
+
+    private static int StepOf(string directory)
+    {
+        try
+        {
+            return Checkpoint.ReadMeta(directory).Step;
+        }
+        catch
+        {
+            string digits = new([.. Path.GetFileName(directory).Where(char.IsDigit)]);
+            return int.TryParse(digits, out int step) ? step : 0;
+        }
+    }
+
+    private async Task AddAsync(string path, string? fileName = null) =>
+        await AddModelAsync(path, fileName);
+
+    private async Task<string?> AddModelAsync(string path, string? fileName)
+    {
+        _artifactError = null;
+        _artifactNotice = null;
+        string name = string.IsNullOrWhiteSpace(fileName)
+            ? Path.GetFileName(path)
+            : Path.GetFileName(fileName);
+        string destination = Path.Combine(Catalog.Folder, name);
+        try
+        {
+            if (string.Equals(
+                Path.GetFullPath(path), Path.GetFullPath(destination),
+                StringComparison.OrdinalIgnoreCase))
+            {
+                _artifactNotice = "Already in the model list.";
+                return destination;
+            }
+
+            bool replace = false;
+            if (File.Exists(destination))
+            {
+                replace = await JS.InvokeAsync<bool>(
+                    "confirm", $"Replace {name} in the model list?");
+                if (!replace) return null;
+            }
+
+            _busyPath = path;
+            string added = await Catalog.AddAsync(path, name, overwrite: replace);
+            _artifactNotice = $"Added {Path.GetFileName(added)} to the model list.";
+            return added;
+        }
+        catch (Exception ex)
+        {
+            _artifactError = ex.Message;
+            return null;
+        }
+        finally
+        {
+            _busyPath = null;
+        }
+    }
+
+    private async Task ChatAsync(string path, string? fileName = null)
+    {
+        string? model = await AddModelAsync(path, fileName);
+        if (model is null || !File.Exists(model)) return;
+
+        await Theme.SetLastChatModelAsync(model);
+        Nav.NavigateTo("/chat");
+    }
+
+    private async Task SendAsync(string path)
+    {
+        if (_hostId is not { Length: > 0 }) return;
+        _artifactError = null;
+        _artifactNotice = null;
+        _busyPath = path;
+        try
+        {
+            ComputeUploadResult result = await Hosts.UploadModelAsync(_hostId, path);
+            _artifactNotice = $"Uploaded {result.Name} to "
+                + $"{Hosts.Find(_hostId)?.Name ?? "the host"}. Open Chat, choose that host, then the model.";
+        }
+        catch (Exception ex)
+        {
+            _artifactError = ex.Message;
+        }
+        finally
+        {
+            _busyPath = null;
+        }
+    }
+
+    private sealed record CheckpointEntry(int Step, string Path, string Name, long Size, bool IsModel)
+    {
+        public string Label => Step == int.MaxValue ? "Finished model" : $"Step {Step}";
+
+        public string SizeLabel => (Size / 1024d / 1024d).ToString("0.0") + " MB";
+    }
+
+    private static string SafeName(string? name, string fallback)
+    {
+        string safe = new([.. (name ?? "").Where(character =>
+            char.IsLetterOrDigit(character) || character is '-' or '_' or '.')]);
+        return safe.Length > 0 ? safe : fallback;
+    }
 }

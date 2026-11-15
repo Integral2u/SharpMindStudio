@@ -54,6 +54,8 @@
             <a href="#data">Choosing data</a>
             <a href="#remote">Remote runs</a>
             <a href="#progress">Progress and interrupt</a>
+            <a href="#splits">Validation and exam splits</a>
+            <a href="#checkpoints">Checkpoints and chat</a>
             <a href="#errors">Accelerator errors</a>
         </aside>
 
@@ -207,11 +209,53 @@ Retrying on the CPU. Set SHARPMIND_ACCELERATOR_FALLBACK=false to fail instead.</
                 and an <strong>Interrupt</strong> button. Starting a run scrolls it into view. The
                 panel repaints itself while the job is active, including remote jobs.
             </p>
+            <p>
+                Leaving Training and coming back restores the form from the active run, or from the
+                last draft when nothing is running, so the fields keep the values that started the
+                run. A finished run is also saved under the job's name; <strong>Load latest</strong>
+                brings it back after a restart.
+            </p>
             <div class="callout">
                 <strong>Do not interrupt during "Downloading the trained model…"</strong> unless
                 you mean it. The host has finished, but the local copy is cancelled. The export
                 remains on the host; rerun or download it again.
             </div>
+
+            <h2 id="splits">Validation and exam splits</h2>
+            <p>
+                Set the validation split under <strong>New model &rarr; Checkpoints &amp; splits</strong>
+                (<strong>Validation split (%)</strong> and <strong>Held-out exam (%)</strong>), or on
+                <strong>Improve</strong> (<strong>Validation split</strong> and <strong>Exam split</strong>).
+                Both default to 10% and must stay below 100% together. The exam slice is excluded
+                from training and validation and is scored after the run for the promotion verdict.
+            </p>
+            <p>
+                Val loss is evaluated at each log interval, so the line stays
+                <span class="mono">&mdash;</span> until the first logged step. If the split produces
+                no held-out documents, the run log says so and training continues without a
+                validation curve; load the job to see the percentages it actually used.
+            </p>
+
+            <h2 id="checkpoints">Checkpoints and chat</h2>
+            <p>
+                Checkpoints are written under the job's export folder
+                (<span class="mono">Training/checkpoints-&lt;name&gt;</span>). A pretrain checkpoint
+                holds a complete <span class="mono">model.smm</span>; a fine-tune checkpoint holds
+                <span class="mono">adapters.smlora</span>.
+            </p>
+            <ul class="checklist">
+                <li><strong>Add to Models</strong> copies a finished model or checkpoint into the Models folder, so Chat, Work and the labs see it.</li>
+                <li><strong>Chat</strong> does that and opens a chat with the model selected.</li>
+                <li><strong>Send to host</strong> uploads the model to a Compute host and activates it there; then pick that host in Chat.</li>
+                <li>Fine-tune checkpoints are adapters only and cannot load in Chat. Rerun the fine-tune with <strong>Output = merged</strong> (optionally resuming the checkpoint) to get a merged <span class="mono">.smm</span>.</li>
+                <li>For a remote run, the final export downloads back to this PC; the step checkpoints stay on the host.</li>
+                <li>Interrupting a run keeps the latest checkpoint. Resume from it instead of starting over; <strong>Start fresh</strong> ignores it.</li>
+            </ul>
+            <p>
+                The <strong>Models</strong> tab lists files in the Training and Models folders.
+                Anything still in Training shows <strong>Add to Models</strong>; a model already in
+                the Models folder only shows <strong>Chat</strong>.
+            </p>
 
             <h2 id="errors">Accelerator errors</h2>
             <table>

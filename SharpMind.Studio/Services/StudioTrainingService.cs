@@ -76,6 +76,9 @@ public sealed class StudioTrainingService : IDisposable
         set { lock (_gate) _draft = value; }
     }
 
+    /// <summary>The Improve form's values, kept across page navigation.</summary>
+    public FineTuneDraft? FineTuneDraft { get; set; }
+
     /// <summary>
     /// The architecture template last sent from the Model visualizer. The New
     /// model editor can re-apply it after other fields change.
