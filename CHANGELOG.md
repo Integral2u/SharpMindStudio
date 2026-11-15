@@ -81,6 +81,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with **Keep running** as the default, **Cancel**, and **Destroy and exit**.
   Tagged instances that Studio is not tracking are detected at startup, listed
   on Compute, and included in the teardown.
+- **Validated end to end** - the Vultr API deploy, SSH setup, training path and
+  the new checkpoint/model-list flow were exercised on a live instance, and the
+  walkthrough was recorded.
 
 ### Changed
 
