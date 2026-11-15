@@ -100,6 +100,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   attachment hint, so other vision models read the same way.
 - **CPU tier options** - the inference profile reads its choices from the
   `HardwareTier` enum, so Arm64 and future tiers appear without a UI change.
+- **Agent prompts** - the parent prompt now explains `delegate`/`spawn_agent`,
+  lists the saved agents and says the specialist cannot see the chat and must be
+  given the full task. A delegated agent is told to return a self-contained
+  answer and not ask the user questions.
 - **Containers run unprivileged** - the images create a `sharpmind` user
   (UID 10001); the entrypoint fixes data and plugin folder ownership, then
   drops root before starting Studio or the Compute host. Port exposure and

@@ -88,6 +88,7 @@ public sealed class StudioAgentRunner
             IAgentBuilder? tools = _work.CreateAgentTools(agent);
             if (tools is AgentBuilder builder)
             {
+                builder.WithAdditionalSystemPrompt(AgentPromptText.DelegatedTask);
                 builder.PluginCompactors = _plugins.Compactors;
                 builder.PluginPreProcessors = _plugins.PreProcessors;
                 builder.PluginPostProcessors = _plugins.PostProcessors;
@@ -104,7 +105,8 @@ public sealed class StudioAgentRunner
                     string rules = string.IsNullOrWhiteSpace(agent.Rules)
                         ? $"You are {agent.Name}. {agent.Description}"
                         : agent.Rules;
-                    session.AddMessage(ChatRole.System, rules);
+                    session.AddMessage(
+                        ChatRole.System, $"{rules.Trim()}\n\n{AgentPromptText.DelegatedTask}");
                 }
 
                 var text = new System.Text.StringBuilder();
@@ -161,6 +163,9 @@ public sealed class StudioAgentRunner
             !string.Equals(agent.Id, parent.Id, StringComparison.Ordinal) &&
             !string.Equals(agent.Name, parent.Name, StringComparison.OrdinalIgnoreCase))];
         if (candidates.Count == 0) return;
+
+        if (tools is AgentBuilder builder)
+            builder.WithAdditionalSystemPrompt(AgentPromptText.Parent(candidates));
 
         var names = candidates
             .Select(agent => (JsonNode)JsonValue.Create(agent.Name)!)

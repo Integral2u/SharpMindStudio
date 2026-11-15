@@ -194,7 +194,13 @@
                 model, tools and permissions. <span class="mono">spawn_agent</span> creates a
                 temporary specialist from parameters in the call (name, rules, optional model and
                 tools); it is not saved and starts with Ask permissions. Saved agents are shown to
-                the parent model as an enum of names with their purposes.
+                the parent model as an enum of names with their purposes, and the prompt also
+                explains when to delegate and what to pass.
+            </p>
+            <p>
+                A delegated agent is told it is running one self-contained task for another agent:
+                it cannot see the parent's conversation or ask the user questions, and its reply
+                is a report the parent turns into the final answer.
             </p>
             <ul>
                 <li><strong>Inherit current model</strong> agents run on the same weights. Studio runs the agent in its own session so the agent's own tools and permissions still apply.</li>

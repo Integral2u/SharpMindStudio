@@ -1,5 +1,6 @@
 ﻿using System.Text.Json.Nodes;
 using SharpMind.Inference.Agent;
+using SharpMind.Studio.Core.Agents;
 using SharpMind.Studio.Core.Work;
 
 namespace SharpMind.Studio.Services;
@@ -179,13 +180,16 @@ public sealed class StudioWorkService : IDisposable
                 builder.WithAdditionalSystemPrompt($"## Project memory\n{_memory.Trim()}");
         }
 
+        // The delegation rules belong in the prompt, not only in the tool schema:
+        // the model needs to know when to hand off and what the specialist sees.
+        builder.WithAdditionalSystemPrompt(AgentPromptText.Parent(agents));
+
         if (agents.Count > 0)
         {
             // Studio runs every delegated agent itself so it can apply the agent's
             // model, tools and permissions. Registering engine sub-agents would
             // intercept "delegate" before that path and drop those settings.
-            var names = agents
-                .Select(agent => (JsonNode)JsonValue.Create(agent.Name)!)
+            var names = agents                .Select(agent => (JsonNode)JsonValue.Create(agent.Name)!)
                 .ToList();
             var purposes = agents.Select(agent =>
                 string.IsNullOrWhiteSpace(agent.Description)
