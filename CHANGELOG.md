@@ -98,6 +98,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Chat model switcher** - the header's **Model** control is a dropdown that
   switches immediately, and the composer no longer names LFM3-VL in its
   attachment hint, so other vision models read the same way.
+- **CPU tier options** - the inference profile reads its choices from the
+  `HardwareTier` enum, so Arm64 and future tiers appear without a UI change.
 - **Containers run unprivileged** - the images create a `sharpmind` user
   (UID 10001); the entrypoint fixes data and plugin folder ownership, then
   drops root before starting Studio or the Compute host. Port exposure and
