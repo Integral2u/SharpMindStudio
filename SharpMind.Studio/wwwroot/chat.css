@@ -66,6 +66,13 @@
     color: var(--accent);
 }
 
+.chat-model-select {
+    max-width: 18rem;
+    min-height: 2rem;
+    padding: .3rem .5rem;
+    font-size: .78rem;
+}
+
 .chat-head {
     position: sticky;
     top: 0;

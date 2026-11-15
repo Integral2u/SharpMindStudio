@@ -40,7 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   models works before a key is saved; **Test key** validates the saved key with
   `GET /api/v1/key` without spending credit and reports the remaining balance.
   Responses carry EUR cost, and a 402 shows a clear balance message.
-- **Switch models in an open chat** - the chat header has a **Model** button
+- **Switch models in an open chat** - the chat header has a **Model** dropdown
   that switches to another local model, another model on the same remote
   provider, or another model on the same Compute host. The transcript stays;
   a local switch loads the target weights on the next turn and applies that
@@ -95,6 +95,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reports Yes/No/N/A, so the probe no longer appears as a second line; its
   detail page stays reachable from that column.
 - **Sidebar** - removed the non-interactive local-first pill.
+- **Chat model switcher** - the header's **Model** control is a dropdown that
+  switches immediately, and the composer no longer names LFM3-VL in its
+  attachment hint, so other vision models read the same way.
 - **Containers run unprivileged** - the images create a `sharpmind` user
   (UID 10001); the entrypoint fixes data and plugin folder ownership, then
   drops root before starting Studio or the Compute host. Port exposure and
