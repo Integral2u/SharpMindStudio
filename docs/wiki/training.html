@@ -175,12 +175,23 @@ Retrying on the CPU. Set SHARPMIND_ACCELERATOR_FALLBACK=false to fail instead.</
                     <thead><tr><th>Data</th><th>Use</th></tr></thead>
                     <tbody>
                         <tr><td>Plain <span class="mono">.txt</span></td><td>Plain LoRA fine-tune (SFT off). Shakespeare, stories, domain text.</td></tr>
-                        <tr><td>Text JSONL (<span class="mono">{"text":"…"}</span>)</td><td>Not for SFT — no assistant turn. Use the text file in plain mode.</td></tr>
+                        <tr><td>Text JSONL (<span class="mono">{"text":"…"}</span>)</td><td>Not for SFT — no assistant turn. Add it with the <strong>JSONL</strong> source so each record's <span class="mono">text</span> is one document.</td></tr>
                         <tr><td>Chat JSONL</td><td>SFT. Use <span class="mono">messages</span>, <span class="mono">conversations</span>, prompt/response or instruction/output.</td></tr>
                         <tr><td>Parquet</td><td>Not read by Studio. Convert to JSONL first.</td></tr>
                     </tbody>
                 </table>
             </div>
+            <p>
+                A JSONL file must go through the JSONL source. A text source reads the raw
+                <span class="mono">{"text":"…"}</span> line including its JSON escapes, so the model
+                learns to write <span class="mono">\u0022</span> instead of quotes. The quick
+                <strong>Add a text or JSONL corpus</strong> box picks the right source for a
+                <span class="mono">.jsonl</span> path.
+            </p>
+            <p>
+                The job editor's <strong>Randomize</strong> button next to <strong>Seed</strong>
+                changes the split, batching order and weight initialisation in one click.
+            </p>
             <p>
                 For a quick test, a 1 MB text file is enough. For a useful instruction tune, a few
                 thousand chat records are enough to see behaviour; 20k+ is a small real run.

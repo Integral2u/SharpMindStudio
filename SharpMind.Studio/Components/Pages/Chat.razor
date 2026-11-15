@@ -834,7 +834,7 @@ else
         }
         else
         {
-            _models = await Catalog.RefreshAsync();
+            _models = await Catalog.RefreshAsync(force: true);
             _loadingModels = false;
             _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
                 ? Theme.LastChatModel
@@ -857,7 +857,7 @@ else
     {
         try
         {
-            _models = await Catalog.RefreshAsync();
+            _models = await Catalog.RefreshAsync(force: true);
             if (_selectedModelPath is null)
                 _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
                     ? Theme.LastChatModel

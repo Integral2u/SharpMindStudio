@@ -14,10 +14,10 @@
 
     <div class="training-form">
         <div class="field training-form-wide">
-            <label class="field-label" for="quick-source">Add a text corpus</label>
+            <label class="field-label" for="quick-source">Add a text or JSONL corpus</label>
             <div class="row">
                 <input id="quick-source" class="input" @bind="_quickSourcePath"
-                       placeholder="C:\path\to\corpus, a folder, or C:\path\**\*.txt" />
+                       placeholder="C:\path\to\corpus, a folder, or C:\path\**\*.txt / *.jsonl" />
                 <button type="button" class="button" @onclick="BrowseSourceFileAsync">File</button>
                 <button type="button" class="button" @onclick="BrowseSourceFolderAsync">Folder</button>
                 <button type="button" class="button" @onclick="AddQuickTextSource"
@@ -220,8 +220,18 @@
         if (_sources.FirstOrDefault(d => d.Type == typeof(TextFileSource)) is not { } text) return;
 
         string path = _quickSourcePath.Trim();
+        bool jsonl = path.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
         if (Directory.Exists(path))
+        {
             path = Path.Combine(path, "**", "*.txt");
+        }
+        else if (jsonl)
+        {
+            AddJsonlSource(path);
+            _quickSourcePath = "";
+            return;
+        }
 
         JobComponent? blank = Job.Sources
             .Select(source => source.Component)
@@ -243,6 +253,20 @@
             Job.Sources.Add(new JobSource { Component = component });
         }
         _quickSourcePath = "";
+    }
+
+    /// <summary>
+    /// A JSONL file must go through the JSONL source; a text source would read
+    /// the raw JSON and teach the model the escapes.
+    /// </summary>
+    private void AddJsonlSource(string path)
+    {
+        if (_sources.FirstOrDefault(d => d.Type == typeof(JsonlSource)) is not { } jsonl) return;
+
+        Job.Sources.RemoveAll(source => IsBlankTextSource(source.Component));
+        JobComponent component = JobComponentFactory.Create(jsonl);
+        component.Args["path"] = path;
+        Job.Sources.Add(new JobSource { Component = component });
     }
 
     private void AddSource(string? key)

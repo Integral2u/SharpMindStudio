@@ -45,6 +45,17 @@ public static class TrainingJobValidation
                     && (!source.Component.Args.TryGetValue("path", out string? path)
                         || string.IsNullOrWhiteSpace(path))))
                 warnings.Add("A text source has no path.");
+
+            if (job.Sources.Any(source =>
+                    source.Component.TypeName.Contains("TextFileSource", StringComparison.Ordinal)
+                    && source.Component.Args.TryGetValue("path", out string? textPath)
+                    && !string.IsNullOrWhiteSpace(textPath)
+                    && (textPath.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)
+                        || textPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))))
+            {
+                warnings.Add(
+                    "A JSONL file is read as plain text. Use the JSONL source so each record's text is parsed.");
+            }
         }
 
         if (job.SftMode && !job.IsFineTune)

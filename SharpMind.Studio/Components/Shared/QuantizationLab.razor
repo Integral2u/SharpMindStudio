@@ -342,7 +342,7 @@
 
     private async Task LoadModelsAsync()
     {
-        _models = [.. (await Catalog.RefreshAsync())
+        _models = [.. (await Catalog.RefreshAsync(force: true))
             .Where(model => model.Path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))];
         _referencePath = _models.Any(model => model.Path == Theme.LastChatModel)
             ? Theme.LastChatModel!

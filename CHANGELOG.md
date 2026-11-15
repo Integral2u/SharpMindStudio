@@ -29,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   active run's inputs, or the last Improve draft, instead of showing defaults.
   The run panel also explains a missing validation line: either no split was
   set or the split produced no held-out documents, and the run log says which.
+- **Random seed** - the job editor has a **Randomize** button next to **Seed**
+  for a fresh split, batching order and weight initialisation.
 - **Remote provider profiles** - OpenRouter and EuroRouter keep separate API
   keys, base URLs and model lists. The existing `openrouter.json` layout is
   migrated into the OpenRouter profile on load, and each chat document records
@@ -123,6 +125,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Compute count without opening the page** - the sidebar and billing banner
   refresh every 30 seconds, so an instance created in the Vultr console is
   noticed without visiting the Compute page.
+- **JSONL files were read as raw text** - adding a `.jsonl` through the text
+  corpus box created a text source, so the model learned the JSON wrapper and
+  `\u0022` escapes. The quick add now uses the JSONL source for `.jsonl` paths,
+  and an older job with that mistake shows a warning.
+- **Model lists refresh when opened** - Chat and the labs rescan the Models
+  folder on entry, so a model added from Training or the run panel appears
+  without restarting Studio.
 
 ## [1.1.1.0] - 2026-11-08
 

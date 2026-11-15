@@ -407,7 +407,7 @@
         Chat.Changed += OnChanged;
         Work.Changed += OnChanged;
         Agents.Changed += OnChanged;
-        _models = await Catalog.RefreshAsync();
+        _models = await Catalog.RefreshAsync(force: true);
     }
 
     public void Dispose()

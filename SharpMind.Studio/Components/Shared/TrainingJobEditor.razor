@@ -208,8 +208,14 @@
         </div>
         <div class="field">
             <label class="field-label" for="job-seed">Seed</label>
-            <input id="job-seed" class="input" type="number" min="0" @bind="Job.Seed"
-                   title="Used for the train/validation/exam split, batching and weight initialisation." />
+            <div class="row">
+                <input id="job-seed" class="input" type="number" min="0" @bind="Job.Seed"
+                       title="Used for the train/validation/exam split, batching and weight initialisation." />
+                <button type="button" class="button" @onclick="RandomizeSeed"
+                        title="Use a new random seed for the split, batching and initialisation.">
+                    Randomize
+                </button>
+            </div>
         </div>
         <div class="field">
             <label class="field-label" for="job-log">Log every</label>
@@ -499,6 +505,8 @@
     private bool IsMoe => string.Equals(Job.Ffn, nameof(FfnKind.MoE), StringComparison.OrdinalIgnoreCase);
     private bool UsesSgd => string.Equals(Job.Optimizer, "SGD", StringComparison.OrdinalIgnoreCase);
     private string? QatProblem => TrainingModelOptions.ValidateQat(Job.QuantAwareTraining, Job.HiddenDim);
+    private void RandomizeSeed() => Job.Seed = Random.Shared.Next(1, int.MaxValue);
+
     private IReadOnlyList<string> Warnings => TrainingJobValidation.Warnings(Job);
 
     private string PluginList

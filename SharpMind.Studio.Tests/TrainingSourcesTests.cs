@@ -30,6 +30,32 @@ public sealed class TrainingSourcesTests
     }
 
     [Fact]
+    public void JsonlInATextSource_WarnsAboutRawJson()
+    {
+        TrainingJobSettings job = TrainingJobDefaults.Create();
+        job.Sources =
+        [
+            new JobSource
+            {
+                Component = new JobComponent
+                {
+                    DisplayName = "Text File",
+                    TypeName = typeof(TextFileSource).FullName!,
+                    Args = new Dictionary<string, string>
+                    {
+                        ["path"] = "corpus.jsonl",
+                        ["mode"] = "LinePerDoc",
+                    },
+                },
+            },
+        ];
+
+        Assert.Contains(
+            TrainingJobValidation.Warnings(job),
+            warning => warning.Contains("JSONL", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task MultiSourceJobWithAGlobalStage_TrainsAndExports()
     {
         string dir = Path.Combine(Path.GetTempPath(), "sharpmind-sources-" + Guid.NewGuid().ToString("N"));
