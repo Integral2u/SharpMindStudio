@@ -162,10 +162,6 @@
                                 @Compute.RunningCount
                             </span>
                         }
-                        else if (Compute.IsRefreshing)
-                        {
-                            <span class="spinner-ring" title="Checking compute"></span>
-                        }
                         @if (AnyComputeInUse)
                         {
                             <span class="nav-use-dot" title="Compute in active use"></span>

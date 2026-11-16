@@ -88,8 +88,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - **Tests page** - family, model and run-type groups collapse, the redundant
-  Type column is gone, and the group Tune/Re-run buttons no longer wrap. Tuning
-  shows the loading ring while it runs.
+  Type column is gone, the separate Run type filter is gone (use Group by), and
+  the group Tune/Re-run buttons no longer wrap. Tuning shows the loading ring
+  while it runs.
 - **One row per run** - a tool probe that a benchmark links to is folded into
   its model-bench row in TESTS and the dashboard list. The Tool column already
   reports Yes/No/N/A, so the probe no longer appears as a second line; its
@@ -151,6 +152,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   → System has a **Refresh list** button for changes made outside Studio.
   The Model visualizer and Latent space now list `.smm` models; Quantization
   remains GGUF-only and says so.
+- **Compute sidebar spinner** - the 30-second background refresh no longer
+  flashes the loading ring next to Compute; the count badge updates in place.
 
 ## [1.1.1.0] - 2026-11-08
 

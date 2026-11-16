@@ -97,14 +97,6 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="runs-kind">Run type</label>
-                <select id="runs-kind" class="input" @bind="_kind">
-                    <option value="">All</option>
-                    <option value="model-bench">model-bench</option>
-                    <option value="tool-probe">tool-probe</option>
-                </select>
-            </div>
-            <div class="field">
                 <label class="field-label" for="runs-status">Status</label>
                 <select id="runs-status" class="input" @bind="_status">
                     <option value="">All</option>
@@ -288,7 +280,6 @@ else
     private IReadOnlyList<RunSummary> _runs = [];
     private RunGroupMode _groupMode = RunGroupMode.Family;
     private string _search = "";
-    private string _kind = "";
     private string _status = "";
     private string _tool = "";
     private string _statusMessage = "Ready.";
@@ -321,7 +312,6 @@ else
             [
                 .. _runs.Where(run =>
                     (string.IsNullOrWhiteSpace(search) || MatchesSearch(run, search)) &&
-                    (_kind.Length == 0 || string.Equals(run.Kind, _kind, StringComparison.OrdinalIgnoreCase)) &&
                     (_status.Length == 0 || string.Equals(run.Status, _status, StringComparison.OrdinalIgnoreCase)) &&
                     (_tool.Length == 0 || string.Equals(run.ToolStatus, _tool, StringComparison.OrdinalIgnoreCase)))
             ];
