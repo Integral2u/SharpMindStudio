@@ -92,7 +92,8 @@ public sealed class StudioAgentRunner
                 builder.PluginCompactors = _plugins.Compactors;
                 builder.PluginPreProcessors = _plugins.PreProcessors;
                 builder.PluginPostProcessors = _plugins.PostProcessors;
-                builder.Compactor = _plugins.FindCompactor(_theme.PluginCompactor);
+                builder.Compactor = CompactorResolver.Resolve(profile.Compactor, _plugins.Compactors)
+                    ?? _plugins.FindCompactor(_theme.PluginCompactor);
             }
 
             AddNestedDelegate(tools, agent, loaded, profile, depth, cancellationToken);

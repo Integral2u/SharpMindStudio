@@ -1,5 +1,7 @@
 ﻿@using SharpMind.Core
 @using SharpMind.Studio.Core.Inference
+@using SharpMind.Studio.Services
+@inject StudioPluginService Plugins
 
 <div class="inference-editor">
     <div class="editor-grid">
@@ -59,6 +61,21 @@
                 <option value="Loose">Loose</option>
             </select>
             <div class="small faint editor-source">@SourceLabel("ToolCallRecovery")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">Context compactor</label>
+            <select class="input" value="@Value.Compactor" @onchange="e => Update(v => v with { Compactor = Text(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                <option value="None">None</option>
+                <option value="Summarize">Summarize — the active model reads older turns</option>
+                <option value="Truncate">Truncate — drop the oldest turns</option>
+                @foreach (var compactor in Plugins.Compactors)
+                {
+                    <option value="@compactor.Name">@compactor.Name (plugin)</option>
+                }
+            </select>
+            <div class="small faint editor-source">@SourceLabel("Compactor")</div>
         </div>
 
         <div class="field">

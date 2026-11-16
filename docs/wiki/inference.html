@@ -50,6 +50,7 @@
             <a href="#formats">Model formats</a>
             <a href="#add">Add a model</a>
             <a href="#chat">Local chat</a>
+            <a href="#compaction">Context compaction</a>
             <a href="#tuning">Inference tuning</a>
             <a href="#gpu">GPU inference</a>
             <a href="#api">Compute API</a>
@@ -124,6 +125,24 @@
                 Chat works with a local <span class="mono">.smm</span>, a local GGUF where
                 supported, OpenRouter, or a SharpMind Compute host. The provider picker is on the
                 welcome and chat screens.
+            </p>
+
+            <h2 id="compaction">Context compaction</h2>
+            <p>
+                The default profile uses <strong>Summarize</strong>. When the prompt reaches 70% of
+                the session's context, the active model reads the older turns and writes a short
+                summary. Those turns are marked <em>ignored</em> — kept in the transcript but left
+                out of later prompts — and the summary is pinned as a system message. System prompts
+                and pinned messages are never summarized, and the current turn (from the latest user
+                message onward, including its tool calls) is always kept verbatim.
+            </p>
+            <p>
+                Choose <strong>None</strong>, <strong>Summarize</strong>, <strong>Truncate</strong>
+                (drop the oldest turns) or a plugin compactor by name under the inference profile's
+                <strong>Context compactor</strong>. The system, family, model and per-session layers
+                can each override it; plugin compactors appear in the same list. A global plugin
+                compactor selected under Settings → Plugin components is used as the fallback when
+                the profile is set to <strong>None</strong>.
             </p>
 
             <h2 id="tuning">Inference tuning</h2>

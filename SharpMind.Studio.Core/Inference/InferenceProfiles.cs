@@ -71,7 +71,7 @@ public sealed record InferenceOverrides
         PromptLookupDraft = 0,
         ShowThinking = true,
         EnableThinking = false,
-        Compactor = "None",
+        Compactor = "Summarize",
     };
 }
 
@@ -177,7 +177,7 @@ public static class InferenceResolver
             PromptLookupDraft = Value("PromptLookupDraft", session?.PromptLookupDraft, model?.PromptLookupDraft, family?.PromptLookupDraft, system.PromptLookupDraft, 0),
             ShowThinking = Value("ShowThinking", session?.ShowThinking, model?.ShowThinking, family?.ShowThinking, system.ShowThinking, true),
             EnableThinking = Value("EnableThinking", session?.EnableThinking, model?.EnableThinking, family?.EnableThinking, system.EnableThinking, false),
-            Compactor = String("Compactor", session?.Compactor, model?.Compactor, family?.Compactor, system.Compactor, "None"),
+            Compactor = String("Compactor", session?.Compactor, model?.Compactor, family?.Compactor, system.Compactor, "Summarize"),
             Sources = sources,
         };
     }

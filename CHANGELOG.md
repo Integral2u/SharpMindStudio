@@ -88,6 +88,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `SharpMind.GPU` plugin into `plugins/ilgpu` with ILGPU, so the training
   Accelerator list and local chat can use CUDA/OpenCL. CPU stays the fallback,
   and a packaged install needs the plugin folder shipped beside the app.
+- **Context compaction** - the inference profile has a **Context compactor**
+  option. **Summarize** is the default: at 70% of the context the active model
+  summarizes older turns, marks them ignored and pins the summary. **Truncate**,
+  **None** and plugin compactors by name are also listed. System prompts, pinned
+  messages and the current turn are never summarized.
 
 ### Changed
 
