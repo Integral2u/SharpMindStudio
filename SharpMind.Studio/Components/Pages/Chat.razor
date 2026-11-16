@@ -2,6 +2,7 @@
 @page "/chat/{ChatId}"
 @implements IDisposable
 @using SharpMind.Inference.Chat
+@using SharpMind.Studio.Core.Chat
 @using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Core.OpenRouter
@@ -607,6 +608,17 @@ else
                     </div>
                 </div>
             }
+            @if (ToolHint is { } toolHint)
+            {
+                <div class="tool-warning chat-tool-warning">
+                    <div>
+                        <strong>@(ChatService.IsCompute
+                            ? "Compute cannot run tools."
+                            : "The model printed a tool call instead of running it.")</strong>
+                        <span class="small faint">@toolHint</span>
+                    </div>
+                </div>
+            }
             <div class="chat-composer">
                 <textarea id="chat-input" class="textarea" data-enter-send="chat-send" onkeydown="studioChat.enterSend(event, 'chat-send')" @bind="_input" @bind:event="oninput"
                           placeholder="Message the model. Enter sends; Shift+Enter adds a line."
@@ -749,6 +761,25 @@ else
 
     private string? SelectedFileName =>
         _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.FileName;
+
+    /// <summary>
+    /// A tool-call-shaped message that produced no call usually means the model
+    /// printed the schema, or a Compute host has no tool loop.
+    /// </summary>
+    private string? ToolHint
+    {
+        get
+        {
+            if (ChatService.LastToolCalls is not 0) return null;
+            ChatMessage? last = ChatService.Document?.Messages
+                .LastOrDefault(message => message.Role == ChatRole.Agent);
+            if (!ToolCallText.LooksUnparsed(last?.Content)) return null;
+
+            return ChatService.IsCompute
+                ? "A Compute host is inference-only; use a local model or OpenRouter to run tools and agents."
+                : "It may not support this tool format. Open Options, set Tool-call recovery to Loose, or choose a model with a tool template.";
+        }
+    }
 
     private string LoadPercent => ChatService.LoadProgress is { } value
         ? $"{value * 100:F0}%"

@@ -106,6 +106,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   lists the saved agents and says the specialist cannot see the chat and must be
   given the full task. A delegated agent is told to return a self-contained
   answer and not ask the user questions.
+- **Agent tool calls** - a test now drives `delegate` and `spawn_agent` through
+  the parent builder to the Studio executor and checks the returned result. If a
+  model prints a tool call instead of running it, the chat says so and points at
+  Tool-call recovery; on a Compute host it says the host is inference-only.
 - **Containers run unprivileged** - the images create a `sharpmind` user
   (UID 10001); the entrypoint fixes data and plugin folder ownership, then
   drops root before starting Studio or the Compute host. Port exposure and

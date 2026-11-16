@@ -2,6 +2,7 @@ using SharpMind.Studio.Core.Storage;
 
 namespace SharpMind.Studio.Tests;
 
+[Collection("studio-paths")]
 public sealed class StudioPathsTests
 {
     [Fact]
