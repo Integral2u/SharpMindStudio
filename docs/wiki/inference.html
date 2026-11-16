@@ -166,6 +166,13 @@
                 Unlike training, GPU inference does not require RMSNorm or a gated FFN.
             </p>
 
+            <p>
+                Local Studio uses the same optional plugin. The source build copies
+                <span class="mono">SharpMind.GPU</span> into <span class="mono">plugins/ilgpu</span>,
+                and local chat picks it up when a CUDA or OpenCL device is present. Without the
+                plugin or a device, chat runs on the CPU.
+            </p>
+
             <h2 id="api">Compute API</h2>
             <p>
                 A SharpMind Compute host serves one active model at a time, OpenAI-style. The

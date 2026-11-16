@@ -84,6 +84,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Validated end to end** - the Vultr API deploy, SSH setup, training path and
   the new checkpoint/model-list flow were exercised on a live instance, and the
   walkthrough was recorded.
+- **Local GPU accelerator** - the source build copies the optional
+  `SharpMind.GPU` plugin into `plugins/ilgpu` with ILGPU, so the training
+  Accelerator list and local chat can use CUDA/OpenCL. CPU stays the fallback,
+  and a packaged install needs the plugin folder shipped beside the app.
 
 ### Changed
 

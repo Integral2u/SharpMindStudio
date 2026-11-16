@@ -127,6 +127,14 @@ Training 100 steps (float32) — full backprop (loss → gradients → AdamW)…
 LayerNormLayer final norm — LayerNorm, only RMSNorm
 Retrying on the CPU. Set SHARPMIND_ACCELERATOR_FALLBACK=false to fail instead.</code></pre>
             <p>
+                Studio's source build copies the optional <span class="mono">SharpMind.GPU</span>
+                plugin into <span class="mono">plugins/ilgpu</span> with its ILGPU dependencies.
+                The <strong>Accelerator</strong> list then offers
+                <span class="mono">ilgpu</span> beside the built-in CPU. The plugin needs a CUDA or
+                OpenCL device; without one it declines and the CPU path runs. The plugin is not a
+                NuGet package, so a packaged install only gets it when that folder is shipped.
+            </p>
+            <p>
                 The fallback is a host policy. Set
                 <span class="mono">SHARPMIND_ACCELERATOR_FALLBACK=false</span> to fail the job
                 instead of retrying.

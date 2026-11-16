@@ -16,6 +16,54 @@
     <ProjectReference Include="..\SharpMind.Studio.Core\SharpMind.Studio.Core.csproj" />
   </ItemGroup>
 
+  <!-- Build-order only: the GPU accelerator is a plugin loaded from the plugins
+       folder. ReferenceOutputAssembly and Private keep it out of Studio's
+       compile-time references and output; the copy targets below place the
+       plugin and its ILGPU dependencies where AcceleratorLoader finds them. -->
+  <ItemGroup Condition="'$(SharpMindSource)' == 'project' and Exists('$(SharpMindRoot)SharpMind.GPU\SharpMind.GPU.csproj')">
+    <ProjectReference Include="$(SharpMindRoot)SharpMind.GPU\SharpMind.GPU.csproj"
+                      ReferenceOutputAssembly="false"
+                      Private="false"
+                      SetConfiguration="Configuration=$(Configuration)" />
+  </ItemGroup>
+
+  <Target Name="CopyGpuPlugin" AfterTargets="Build"
+          Condition="'$(SharpMindSource)' == 'project' and Exists('$(SharpMindRoot)SharpMind.GPU\SharpMind.GPU.csproj')">
+    <RemoveDir Directories="$(OutDir)plugins\cuda"
+               Condition="Exists('$(OutDir)plugins\cuda')" />
+    <ItemGroup>
+      <!-- The plugin and its own dependencies only. The host already loads the
+           SharpMind assemblies, so a second copy beside the plugin would give the
+           loader a duplicate to bind against. -->
+      <GpuPluginFiles Include="$(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\*.dll"
+                      Exclude="$(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Core.dll;
+                               $(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Data.dll;
+                               $(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Inference.dll;
+                               $(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Model.dll;
+                               $(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Tokenization.dll;
+                               $(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Training.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(GpuPluginFiles)"
+          DestinationFolder="$(OutDir)plugins\ilgpu\"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyGpuPluginToPublish" AfterTargets="Publish"
+          Condition="'$(SharpMindSource)' == 'project' and Exists('$(SharpMindRoot)SharpMind.GPU\SharpMind.GPU.csproj')">
+    <ItemGroup>
+      <GpuPublishFiles Include="$(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\*.dll"
+                       Exclude="$(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Core.dll;
+                                $(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Data.dll;
+                                $(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Inference.dll;
+                                $(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Model.dll;
+                                $(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Tokenization.dll;
+                                $(SharpMindRoot)SharpMind.GPU\bin\$(Configuration)\$(TargetFramework)\SharpMind.Training.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(GpuPublishFiles)"
+          DestinationFolder="$(PublishDir)plugins\ilgpu\"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>
 
 
