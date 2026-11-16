@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **Tune from Tests** - every run row on the Tests page has a **Tune** button,
-  and each family, model or run-type group has **Tune all**. A run with a tool
+  and each family or model group has **Tune all**. A run with a tool
   probe tunes Work; the rest tune Chat. Progress and cancellation are shown in
   the filter panel.
 - **Sortable Tests tables** - each group on the Tests page has the same
@@ -87,10 +87,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **Tests page** - family, model and run-type groups collapse, the redundant
-  Type column is gone, the separate Run type filter is gone (use Group by), and
-  the group Tune/Re-run buttons no longer wrap. Tuning shows the loading ring
-  while it runs.
+- **Tests page** - family and model groups collapse, the redundant Type column
+  and per-row kind label are gone, and the separate Run type filter and grouping
+  are gone. A tool probe folds into its benchmark, so the Tool column carries
+  Yes/No/N/A. The group Tune/Re-run buttons no longer wrap, and tuning shows the
+  loading ring while it runs.
 - **One row per run** - a tool probe that a benchmark links to is folded into
   its model-bench row in TESTS and the dashboard list. The Tool column already
   reports Yes/No/N/A, so the probe no longer appears as a second line; its
