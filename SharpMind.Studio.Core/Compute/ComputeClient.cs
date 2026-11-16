@@ -322,6 +322,30 @@ public sealed class ComputeClient
         return await ReadJobAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Lists every training job the host knows about, newest first is not guaranteed.</summary>
+    public async Task<IReadOnlyList<ComputeJob>> ListJobsAsync(
+        ComputeProvider provider,
+        CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await SendAsync(
+            provider,
+            HttpMethod.Get,
+            "v1/training/jobs",
+            content: null,
+            cancellationToken).ConfigureAwait(false);
+
+        await using Stream stream = await response.Content
+            .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using JsonDocument document = await JsonDocument
+            .ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (document.RootElement.ValueKind != JsonValueKind.Array) return [];
+
+        var jobs = new List<ComputeJob>();
+        foreach (JsonElement item in document.RootElement.EnumerateArray())
+            jobs.Add(ReadJob(item));
+        return jobs;
+    }
+
     public async Task CancelJobAsync(
         ComputeProvider provider,
         string id,
@@ -509,9 +533,11 @@ public sealed class ComputeClient
             .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using JsonDocument document = await JsonDocument
             .ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
-        JsonElement root = document.RootElement;
+        return ReadJob(document.RootElement);
+    }
 
-        return new ComputeJob(
+    private static ComputeJob ReadJob(JsonElement root) =>
+        new(
             ReadString(root, "id") ?? "",
             ReadString(root, "status") ?? "unknown",
             ReadDouble(root, "progress") ?? 0,
@@ -525,7 +551,6 @@ public sealed class ComputeClient
             ReadString(root, "exportPath"),
             ReadString(root, "adapterPath"),
             ReadString(root, "error"));
-    }
 
     private static async Task<string> ReadErrorBodyAsync(
         HttpResponseMessage response,

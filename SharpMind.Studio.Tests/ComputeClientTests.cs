@@ -57,6 +57,24 @@ public sealed class ComputeClientTests
     }
 
     [Fact]
+    public async Task Jobs_ListsTheActiveTrainingRuns()
+    {
+        var handler = new CaptureHandler(_ => Json(
+            """[{"id":"job-1","status":"running","progress":0.5,"step":10,"loss":1.2},{"id":"job-2","status":"succeeded","success":true}]"""));
+        using var http = new HttpClient(handler);
+        var client = new ComputeClient(http);
+
+        IReadOnlyList<ComputeJob> jobs = await client.ListJobsAsync(Provider);
+
+        Assert.Equal("http://127.0.0.1:8080/v1/training/jobs", handler.LastUri);
+        Assert.Equal(2, jobs.Count);
+        Assert.Equal("running", jobs[0].Status);
+        Assert.Equal(0.5, jobs[0].Progress, 3);
+        Assert.Equal("succeeded", jobs[1].Status);
+        Assert.True(jobs[1].Success);
+    }
+
+    [Fact]
     public async Task Stream_YieldsDeltasUsageAndDone()
     {
         const string sse = """

@@ -2,6 +2,7 @@
 @using SharpMind.Studio.Services
 @inject ComputeProviderService Compute
 @inject VultrService Vultr
+@inject ComputeActivityService Activity
 @inject IJSRuntime JS
 
 <div class="training-subsection">
@@ -328,6 +329,7 @@
         _error = null;
         _status = "Creating the Vultr instance...";
         _lines.Clear();
+        Activity.BeginOperation(ProviderId);
         try
         {
             var options = new VultrDeployOptions(
@@ -361,6 +363,7 @@
         }
         finally
         {
+            Activity.EndOperation(ProviderId);
             _busy = false;
         }
     }

@@ -693,6 +693,7 @@ public partial class Settings
         ComputeProviderSettings? provider = Compute.Find(id);
         if (provider is null) return;
 
+        Activity.BeginOperation(id);
         _sshBusy = true;
         _sshHostId = id;
         ResetSshLog();
@@ -759,6 +760,7 @@ public partial class Settings
         }
         finally
         {
+            Activity.EndOperation(id);
             _sshBusy = false;
             await InvokeAsync(StateHasChanged);
         }

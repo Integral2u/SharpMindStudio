@@ -95,8 +95,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   compactors by name are also listed. System prompts, pinned messages and the
   current turn are never summarized.
 - **Idle teardown** - each Vultr host chooses **15**, **30** or **60** minutes,
-  or **Never**. Training, rehearsal, exam and a busy chat/Work turn reset the
-  timer; after the window a 10-minute **Keep** countdown runs, then the instance
+  or **Never**. Training, rehearsal, exam, a busy chat/Work turn and a deploy,
+  SSH setup or model upload reset the timer. The host's job list is also checked
+  every 30 seconds, so a job that outlived a Studio restart keeps the instance
+  alive. After the window a 10-minute **Keep** countdown runs, then the instance
   and its disk are destroyed. Only instances this Studio created are eligible:
   tagged untracked instances are shown but never destroyed, including by
   **Destroy all tracked** and the exit prompt.

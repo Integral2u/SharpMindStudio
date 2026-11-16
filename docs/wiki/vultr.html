@@ -286,9 +286,11 @@ chmod 600 /root/.ssh/authorized_keys</code></pre>
                 The Vultr panel's <strong>Destroy when idle</strong> choice is 15, 30 or 60
                 minutes, or <strong>Never</strong>. It applies per host and only to instances
                 this Studio created. Training, rehearsal, exam, and a chat or Work turn loading
-                or streaming from the host reset the timer. After the idle window a banner shows
-                a 10-minute countdown with <strong>Keep</strong>; if it expires, Studio destroys
-                the instance and deletes its disk.
+                or streaming from the host reset the timer. A deploy, SSH setup or model upload
+                also counts, and the host's job list is checked every 30 seconds, so a job that
+                outlived a Studio restart keeps the instance alive. After the idle window a
+                banner shows a 10-minute countdown with <strong>Keep</strong>; if it expires,
+                Studio destroys the instance and deletes its disk.
             </p>
             <p>
                 Tagged instances that no saved host tracks (another Studio install, or a host

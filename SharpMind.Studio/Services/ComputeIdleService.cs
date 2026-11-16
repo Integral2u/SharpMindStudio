@@ -25,6 +25,7 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
     private readonly StudioExamService _exam;
     private readonly ComputeActivityService _activity;
     private readonly ComputeIdleTracker _tracker = new();
+    private readonly Dictionary<string, JobProbe> _jobProbes = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
     private readonly HashSet<string> _destroying = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<ComputeIdleNotice> _notices = [];
@@ -160,12 +161,16 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
 
             int minutes = _compute.Find(owner)?.IdleTeardownMinutes
                 ?? ComputeIdleTracker.DefaultTimeoutMinutes;
+            bool hostJob = await HasActiveJobAsync(owner, now, cancellationToken)
+                .ConfigureAwait(false);
             bool chatBusy = _activity.IsChatActive(owner);
-            string? activity = ComputeUsage.Activity(
-                instance, trainingProvider, training, owner, chatBusy);
+            bool inUse = hostJob || _activity.IsActive(owner);
+            string? activity = hostJob
+                ? "job"
+                : ComputeUsage.Activity(instance, trainingProvider, training, owner, chatBusy);
 
             ComputeIdleObservation observation = _tracker.Observe(
-                owner, minutes, activity is not null, now);
+                owner, minutes, inUse, now);
             if (observation.Phase == ComputeIdlePhase.Destroy)
             {
                 await DestroyAsync(instance, cancellationToken).ConfigureAwait(false);
@@ -183,8 +188,56 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
         {
             if (!seen.Contains(provider)) _tracker.Forget(provider);
         }
+        foreach (string provider in _jobProbes.Keys)
+        {
+            if (!seen.Contains(provider)) _jobProbes.Remove(provider);
+        }
 
         SetNotices(notices);
+    }
+
+    /// <summary>
+    /// A remote job that outlived a Studio restart still counts as use. The host
+    /// is probed at most every 30 seconds; an unreachable host is treated as busy
+    /// so a running job is not torn down.
+    /// </summary>
+    private async Task<bool> HasActiveJobAsync(
+        string providerId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (_jobProbes.TryGetValue(providerId, out JobProbe probe)
+            && now - probe.At < TimeSpan.FromSeconds(30))
+        {
+            return probe.Active;
+        }
+
+        ComputeProvider? provider = _compute.Resolve(providerId);
+        bool active = false;
+        if (provider is null || !provider.IsUsable)
+        {
+            active = true;
+        }
+        else
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            try
+            {
+                IReadOnlyList<ComputeJob> jobs = await _compute.Client
+                    .ListJobsAsync(provider, timeout.Token)
+                    .ConfigureAwait(false);
+                active = jobs.Any(job =>
+                    job.Status is "queued" or "running" or "cancelling");
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                active = true;
+            }
+        }
+
+        _jobProbes[providerId] = new JobProbe(now, active);
+        return active;
     }
 
     private async Task DestroyAsync(
@@ -260,6 +313,8 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
     }
 
     private void Notify() => Changed?.Invoke();
+
+    private sealed record JobProbe(DateTimeOffset At, bool Active);
 
     public void Dispose()
     {

@@ -12,10 +12,12 @@ public sealed class ComputeProviderService
 {
     private readonly ComputeSettingsStore _store;
     private readonly ComputeClient _client;
+    private readonly ComputeActivityService _activity;
 
-    public ComputeProviderService(ComputeClient client)
+    public ComputeProviderService(ComputeClient client, ComputeActivityService activity)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _activity = activity ?? throw new ArgumentNullException(nameof(activity));
         StudioPaths.EnsureCreated();
         _store = new ComputeSettingsStore(StudioPaths.ComputeFile, StudioPaths.ComputeKeyFile);
     }
@@ -352,13 +354,21 @@ public sealed class ComputeProviderService
         CancellationToken cancellationToken = default)
     {
         ComputeProvider provider = ResolveOrThrow(id);
-        ComputeUploadResult result = await _client.UploadModelAsync(
-            provider, localPath, activate: true, progress, cancellationToken);
+        _activity.BeginOperation(id);
+        try
+        {
+            ComputeUploadResult result = await _client.UploadModelAsync(
+                provider, localPath, activate: true, progress, cancellationToken);
 
-        _store.RememberModel(id, result.Id);
-        _store.RecordProbe(id, true, $"Model {result.Name} uploaded.");
-        Changed?.Invoke();
-        return result;
+            _store.RememberModel(id, result.Id);
+            _store.RecordProbe(id, true, $"Model {result.Name} uploaded.");
+            Changed?.Invoke();
+            return result;
+        }
+        finally
+        {
+            _activity.EndOperation(id);
+        }
     }
 
     /// <summary>Deletes a model file from the host and forgets it locally.</summary>
