@@ -135,6 +135,8 @@
                 out of later prompts — and the summary is pinned as a system message. System prompts
                 and pinned messages are never summarized, and the current turn (from the latest user
                 message onward, including its tool calls) is always kept verbatim.
+                Repeated compactions fold the previous summary into one rolling summary rather
+                than adding another pinned message.
             </p>
             <p>
                 Choose <strong>None</strong>, <strong>Summarize</strong>, <strong>Truncate</strong>

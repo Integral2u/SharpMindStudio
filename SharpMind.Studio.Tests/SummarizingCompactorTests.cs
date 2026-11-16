@@ -64,6 +64,46 @@ public sealed class SummarizingCompactorTests
     }
 
     [Fact]
+    public async Task Compact_MergesAnEarlierSummaryIntoOneRollingSummary()
+    {
+        ChatMessage system = ChatMessage.System("system prompt");
+        ChatMessage firstOld = ChatMessage.User("first old question");
+        ChatMessage current = ChatMessage.User("current question");
+        var history = new List<ChatMessage> { system, firstOld, current };
+        var prompts = new List<string>();
+        int calls = 0;
+        var context = new CompactionContext
+        {
+            History = history,
+            CurrentTokenCount = 90,
+            MaxTokens = 100,
+            SummarizeAsync = text =>
+            {
+                prompts.Add(text);
+                return Task.FromResult($"summary-{++calls}");
+            },
+        };
+        var compactor = new SummarizingCompactor();
+
+        Assert.True(await compactor.CompactAsync(context, CancellationToken.None));
+        Assert.Single(history.Where(message =>
+            message.Content.StartsWith("Summary of earlier conversation:", StringComparison.Ordinal)));
+
+        int currentIndex = history.IndexOf(current);
+        history.Insert(currentIndex, ChatMessage.User("second old question"));
+        Assert.True(await compactor.CompactAsync(context, CancellationToken.None));
+
+        ChatMessage summary = Assert.Single(history.Where(message =>
+            message.Content.StartsWith("Summary of earlier conversation:", StringComparison.Ordinal)));
+        Assert.Contains("summary-2", summary.Content);
+        Assert.Contains("summary-1", prompts[1]);
+        Assert.Contains("second old question", prompts[1]);
+        Assert.True(firstOld.Ignore);
+        Assert.False(current.Ignore);
+        Assert.DoesNotContain(history, message => message.Content.Contains("summary-1"));
+    }
+
+    [Fact]
     public async Task ShouldCompact_OnlyAboveTheThreshold()
     {
         var context = new CompactionContext
