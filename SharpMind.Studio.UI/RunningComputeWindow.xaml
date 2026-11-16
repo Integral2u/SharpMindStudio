@@ -108,7 +108,8 @@
                         BorderBrush="#2A3948"
                         Foreground="#8FA3B8"
                         Cursor="Hand" />
-                <Button Content="Destroy and exit"
+                <Button x:Name="DestroyButton"
+                        Content="Destroy and exit"
                         Click="OnDestroy"
                         Padding="12,6"
                         Margin="0,0,8,0"

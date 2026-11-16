@@ -94,6 +94,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   compactions fold into one rolling summary. **Truncate**, **None** and plugin
   compactors by name are also listed. System prompts, pinned messages and the
   current turn are never summarized.
+- **Idle teardown** - each Vultr host chooses **15**, **30** or **60** minutes,
+  or **Never**. Training, rehearsal, exam and a busy chat/Work turn reset the
+  timer; after the window a 10-minute **Keep** countdown runs, then the instance
+  and its disk are destroyed. Only instances this Studio created are eligible:
+  tagged untracked instances are shown but never destroyed, including by
+  **Destroy all tracked** and the exit prompt.
 
 ### Changed
 

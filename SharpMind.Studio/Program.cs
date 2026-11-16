@@ -36,6 +36,9 @@ builder.Services.AddSingleton<DockerHostService>();
 builder.Services.AddSingleton<RunpodService>();
 builder.Services.AddSingleton<VultrService>();
 builder.Services.AddSingleton<ComputeDashboardService>();
+builder.Services.AddSingleton<ComputeActivityService>();
+builder.Services.AddSingleton<ComputeIdleService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ComputeIdleService>());
 builder.Services.AddSingleton(SshKnownHosts.Default);
 builder.Services.AddSingleton<SshHostService>();
 builder.Services.AddHttpClient<OpenRouterClient>(client =>

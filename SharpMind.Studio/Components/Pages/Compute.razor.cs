@@ -88,11 +88,12 @@ public partial class Compute : IDisposable
 
     private async Task DestroyAllAsync()
     {
-        if (_busy || Dashboard.RunningCount == 0) return;
+        if (_busy || Dashboard.OwnedRunningCount == 0) return;
         bool confirmed = await JS.InvokeAsync<bool>(
             "confirm",
-            $"Destroy all {Dashboard.RunningCount} running instance(s) at "
-            + $"${Dashboard.HourlyCost:0.00}/hour? Any exported models on those disks are lost.");
+            $"Destroy all {Dashboard.OwnedRunningCount} tracked running instance(s) at "
+            + $"${Dashboard.OwnedHourlyCost:0.00}/hour? Any exported models on those disks are lost. "
+            + "Untracked tagged instances are left for the Vultr console.");
         if (!confirmed) return;
 
         _busy = true;

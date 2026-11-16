@@ -658,6 +658,20 @@
     white-space: nowrap;
 }
 
+.idle-banner {
+    border-color: rgba(251, 191, 36, .45);
+    background: rgba(251, 191, 36, .08);
+}
+
+.idle-banner .compute-banner-dot {
+    background: #fbbf24;
+    box-shadow: 0 0 0 .18rem rgba(251, 191, 36, .15);
+}
+
+.idle-banner .row {
+    margin-left: auto;
+}
+
 .compute-banner-dot {
     width: .5rem;
     height: .5rem;

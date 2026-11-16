@@ -52,6 +52,7 @@
             <a href="#ssh-key">Add an SSH key</a>
             <a href="#add-host">Add the host in Studio</a>
             <a href="#api">Deploy from the API</a>
+            <a href="#idle">Idle teardown</a>
             <a href="#deploy">Set up &amp; deploy</a>
             <a href="#verify">Verify</a>
             <a href="#first-run">Upload and train</a>
@@ -280,6 +281,22 @@ chmod 600 /root/.ssh/authorized_keys</code></pre>
                 never adds a key to the account, so a saved token cannot quietly install new access.
             </div>
 
+            <h2 id="idle">Idle teardown</h2>
+            <p>
+                The Vultr panel's <strong>Destroy when idle</strong> choice is 15, 30 or 60
+                minutes, or <strong>Never</strong>. It applies per host and only to instances
+                this Studio created. Training, rehearsal, exam, and a chat or Work turn loading
+                or streaming from the host reset the timer. After the idle window a banner shows
+                a 10-minute countdown with <strong>Keep</strong>; if it expires, Studio destroys
+                the instance and deletes its disk.
+            </p>
+            <p>
+                Tagged instances that no saved host tracks (another Studio install, or a host
+                entry that was deleted) are listed as <strong>untracked</strong>. Studio never
+                destroys them, including from <strong>Destroy all tracked</strong> and the exit
+                prompt; remove them in the Vultr console.
+            </p>
+
             <h2 id="deploy">Set up &amp; deploy</h2>
             <p>
                 On the host card press <strong>Test SSH</strong> first. It connects to the address
@@ -346,6 +363,7 @@ chmod 600 /root/.ssh/authorized_keys</code></pre>
             <ul>
                 <li>The A16 plan is roughly <span class="mono">$0.47/hour</span>; a day is about <span class="mono">$11</span>.</li>
                 <li><strong>Stopping is not enough.</strong> Destroy the instance to stop billing.</li>
+                <li>The host's <strong>Destroy when idle</strong> window (15/30/60 minutes or Never) tears it down after a 10-minute Keep countdown. Only instances this Studio created are eligible.</li>
                 <li>The <strong>Compute</strong> page shows the hourly rate and estimated spend per instance, and can destroy everything in one click. The left menu's expandable Compute list has a <strong>Destroy</strong> button per instance too.</li>
                 <li>Closing Studio checks for running instances; <strong>Keep running</strong> is the default, so read the prompt before dismissing it.</li>
                 <li>Download any exported model first. The host's <span class="mono">/data/SharpMind</span> is deleted with the instance unless it is a separate block volume.</li>

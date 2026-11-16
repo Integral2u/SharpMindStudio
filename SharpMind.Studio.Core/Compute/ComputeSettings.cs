@@ -82,6 +82,12 @@ public sealed class ComputeProviderSettings
     public string? VultrFirewallGroupId { get; set; }
     public string? VultrLabel { get; set; }
 
+    /// <summary>
+    /// Minutes of no training or chat before Studio offers to destroy the
+    /// instance; 0 means never. Only instances this Studio created are eligible.
+    /// </summary>
+    public int IdleTeardownMinutes { get; set; } = 30;
+
     public DateTimeOffset? LastSeenUtc { get; set; }
     public string? LastStatus { get; set; }
 
@@ -634,12 +640,26 @@ public sealed class ComputeSettingsStore
         }
     }
 
+    /// <summary>Stores the idle-teardown window; 0 means never.</summary>
+    public bool SetVultrIdle(string id, int minutes)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.IdleTeardownMinutes = Math.Clamp(minutes, 0, 24 * 60);
+            SaveLocked();
+            return true;
+        }
+    }
+
     /// <summary>
     /// Stores the SSH helper settings. Null password/passphrase keep the saved
     /// secret; a blank value clears it. Secrets are encrypted like every other key.
     /// </summary>
-    public bool SetSsh(
-        string id,
+    public bool SetSsh(        string id,
         string? host,
         int port,
         string? user,

@@ -30,9 +30,14 @@ public partial class RunningComputeWindow : Window
 
         string count = summary.Count == 1 ? "1 instance" : $"{summary.Count} instances";
         string hourly = summary.HourlyCost.ToString("0.00", CultureInfo.InvariantCulture);
+        int orphans = summary.Instances.Count(instance => instance.Orphan);
+        string orphanNote = orphans > 0
+            ? $" {orphans} tagged instance(s) were not created by this Studio; Destroy and exit leaves them for the Vultr console."
+            : "";
         SummaryText.Text =
             $"{count} are still running at ${hourly}/hour. Keeping them means the meter keeps "
-            + "running after Studio closes.";
+            + $"running after Studio closes.{orphanNote}";
+        DestroyButton.IsEnabled = summary.Instances.Any(instance => !instance.Orphan);
         KeepButton.Focus();
     }
 

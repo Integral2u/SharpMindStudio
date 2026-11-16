@@ -178,6 +178,12 @@ public sealed class ComputeProviderService
             Changed?.Invoke();
     }
 
+    public void SetVultrIdle(string id, int minutes)
+    {
+        if (_store.SetVultrIdle(id, minutes))
+            Changed?.Invoke();
+    }
+
     public void SetSsh(
         string id,
         string? host,

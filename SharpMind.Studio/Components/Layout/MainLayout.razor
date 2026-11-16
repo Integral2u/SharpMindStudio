@@ -8,6 +8,7 @@
 @inject SharpMind.Studio.Services.StudioRehearsalService Rehearsal
 @inject SharpMind.Studio.Services.StudioExamService Exam
 @inject SharpMind.Studio.Services.ComputeDashboardService Compute
+@inject SharpMind.Studio.Services.ComputeIdleService Idle
 @using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Services
 @inject SharpMind.Studio.Services.ModelCatalogService Catalog
@@ -200,6 +201,8 @@
                                             }
                                         </div>
                                     </div>
+                                @if (ComputeTeardown.IsOwned(instance))
+                                {
                                     <button type="button" class="nav-instance-stop"
                                             @onclick="() => DestroyFromNavAsync(instance)"
                                             disabled="@(_computeBusy)"
@@ -208,6 +211,13 @@
                                                 : $"In active use ({activity}); destroying interrupts it")">
                                         @(_destroyingId == instance.InstanceId ? "..." : "Destroy")
                                     </button>
+                                }
+                                else
+                                {
+                                    <span class="nav-use" title="Not created by this Studio; destroy it in the Vultr console.">
+                                        not tracked
+                                    </span>
+                                }
                                 </div>
                             }
                         }
@@ -288,8 +298,42 @@
                     {
                         <text> &middot; in use</text>
                     }
+                    @if (Compute.UntrackedRunningCount > 0)
+                    {
+                        <text> &middot; @Compute.UntrackedRunningCount untracked</text>
+                    }
                 </span>
                 <a href="compute">Review</a>
+            </div>
+        }
+
+        @if (Idle.Notices.Count > 0)
+        {
+            <div class="compute-banner idle-banner">
+                <span class="compute-banner-dot" aria-hidden="true"></span>
+                <div class="stack" style="gap: .2rem;">
+                    @foreach (SharpMind.Studio.Services.ComputeIdleNotice notice in Idle.Notices)
+                    {
+                        <div class="row" style="align-items: center; gap: .5rem;">
+                            <span>
+                                @notice.Label is idle. Destroying (disk deleted) in
+                                <strong>@SharpMind.Studio.Services.ComputeIdleService.Format(notice.Remaining)</strong>.
+                            </span>
+                            <button type="button" class="button"
+                                    @onclick="() => Idle.Keep(notice.ProviderId)"
+                                    title="Reset the idle timer; nothing is destroyed for the full window.">Keep</button>
+                            <button type="button" class="button danger"
+                                    @onclick="() => DestroyIdleAsync(notice.ProviderId)">Destroy now</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        @if (Idle.Error is { Length: > 0 } idleError)
+        {
+            <div class="compute-banner idle-banner">
+                <span class="compute-banner-dot" aria-hidden="true"></span>
+                <span>@idleError</span>
             </div>
         }
 
@@ -328,6 +372,7 @@
         Workspace.ProjectChanged += OnWorkspaceChanged;
         Nav.LocationChanged += OnLocationChanged;
         Compute.Changed += OnComputeChanged;
+        Idle.Changed += OnIdleChanged;
         LoadChats();
         _ = Compute.RefreshAsync();
         // Build the model list once at startup; pages read the cache instead of
@@ -348,6 +393,7 @@
         Workspace.ProjectChanged -= OnWorkspaceChanged;
         Nav.LocationChanged -= OnLocationChanged;
         Compute.Changed -= OnComputeChanged;
+        Idle.Changed -= OnIdleChanged;
         _computeRefreshCts?.Cancel();
         _computeRefreshCts?.Dispose();
         _computeRefreshCts = null;
@@ -387,6 +433,10 @@
         Nav.ToBaseRelativePath(Nav.Uri).StartsWith("compute", StringComparison.OrdinalIgnoreCase);
 
     private void OnComputeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnIdleChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task DestroyIdleAsync(string providerId) => await Idle.DestroyNowAsync(providerId);
 
 #if SHARPMIND_SOURCE
     private const bool LayerLabAvailable = true;

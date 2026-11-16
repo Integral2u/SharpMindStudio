@@ -30,6 +30,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly OpenRouterSettingsService _openRouter;
     private readonly OpenRouterChatBackend _openRouterBackend;
     private readonly ComputeProviderService _compute;
+    private readonly ComputeActivityService _activity;
     private readonly ComputeChatBackend _computeBackend;
     private readonly StudioModelHost _host;
     private readonly StudioWorkService _work;
@@ -72,6 +73,7 @@ public sealed class StudioChatService : IAsyncDisposable
         OpenRouterSettingsService openRouter,
         OpenRouterChatBackend openRouterBackend,
         ComputeProviderService compute,
+        ComputeActivityService activity,
         ComputeChatBackend computeBackend,
         StudioModelHost host,
         StudioWorkService work,
@@ -90,6 +92,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _openRouterBackend = openRouterBackend;
         _compute = compute;
         _computeBackend = computeBackend;
+        _activity = activity;
         _host = host;
         _work = work;
         _device = device;
@@ -1093,6 +1096,9 @@ public sealed class StudioChatService : IAsyncDisposable
         _error = null;
         _status = "Thinking...";
         _streamCts = new CancellationTokenSource();
+        bool computeTurn = IsCompute;
+        string? computeProvider = ComputeProviderId;
+        if (computeTurn) _activity.BeginChat(computeProvider);
 
         _document.Messages.Add(ChatMessage.User(text, "You"));
         ChatMessage assistant = ChatMessage.Agent("");
@@ -1131,6 +1137,7 @@ public sealed class StudioChatService : IAsyncDisposable
             _streamCts = null;
             _streaming = false;
             _store.Save(_document);
+            if (computeTurn) _activity.EndChat(computeProvider);
             Notify();
         }
     }

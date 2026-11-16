@@ -38,6 +38,19 @@
             </select>
         </div>
         <div class="field">
+            <label class="field-label" for="vultr-idle-@ProviderId">Destroy when idle</label>
+            <select id="vultr-idle-@ProviderId" class="input"
+                    value="@_idleMinutes" @onchange="OnIdleChanged">
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="60">60 minutes</option>
+                <option value="0">Never</option>
+            </select>
+            <span class="small faint">
+                Only instances this Studio created. A 10-minute Keep countdown starts first.
+            </span>
+        </div>
+        <div class="field">
             <label class="field-label" for="vultr-plan-@ProviderId">Plan</label>
             <select id="vultr-plan-@ProviderId" class="input" @bind="_planId">
                 @foreach (VultrPlan plan in VisiblePlans)
@@ -128,6 +141,7 @@
     private string _apiKey = "";
     private string _region = "";
     private string _planId = "";
+    private int _idleMinutes = ComputeIdleTracker.DefaultTimeoutMinutes;
     private int _osId;
     private string _sshKeyId = "";
     private string? _status;
@@ -185,8 +199,16 @@
         _loaded = true;
         _region = provider.VultrRegion ?? "";
         _planId = provider.VultrPlanId ?? "";
+        _idleMinutes = provider.IdleTeardownMinutes;
         _osId = provider.VultrOsId ?? 0;
         _sshKeyId = provider.VultrSshKeyId ?? "";
+    }
+
+    private void OnIdleChanged(ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out int minutes)) return;
+        _idleMinutes = Math.Clamp(minutes, 0, 24 * 60);
+        Compute.SetVultrIdle(ProviderId, _idleMinutes);
     }
 
     private async Task LoadAsync()

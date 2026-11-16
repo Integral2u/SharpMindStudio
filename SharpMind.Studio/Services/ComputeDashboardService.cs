@@ -35,7 +35,17 @@ public sealed class ComputeDashboardService
 
     public int RunningCount => _instances.Count(instance => instance.IsRunning);
 
+    public int OwnedRunningCount => _instances.Count(instance =>
+        instance.IsRunning && ComputeTeardown.IsOwned(instance));
+
+    public int UntrackedRunningCount => _instances.Count(instance =>
+        instance.IsRunning && !ComputeTeardown.IsOwned(instance));
+
     public double HourlyCost => Running.Sum(instance => instance.HourlyCost);
+
+    public double OwnedHourlyCost => Running
+        .Where(ComputeTeardown.IsOwned)
+        .Sum(instance => instance.HourlyCost);
 
     public double EstimatedCost => Running.Sum(instance => instance.EstimatedCost);
 
@@ -195,6 +205,14 @@ public sealed class ComputeDashboardService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(view);
+
+        // Never delete an instance another Studio or a deleted host entry owns.
+        if (!ComputeTeardown.IsOwned(view))
+        {
+            throw new InvalidOperationException(
+                "This instance is not tracked by this Studio. Destroy it in the Vultr console.");
+        }
+
         string? key = _compute.VultrApiKey(view.AccountProviderId);
         if (string.IsNullOrWhiteSpace(key))
             throw new VultrException("The Vultr API key for this instance is not saved.");
@@ -237,7 +255,9 @@ public sealed class ComputeDashboardService
 
         int destroyed = 0;
         var failures = new List<string>();
-        foreach (VultrComputeInstance view in Running.ToList())
+        foreach (VultrComputeInstance view in Running
+            .Where(ComputeTeardown.IsOwned)
+            .ToList())
         {
             try
             {

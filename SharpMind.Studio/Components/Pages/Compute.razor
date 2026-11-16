@@ -28,8 +28,8 @@
             @(Dashboard.IsRefreshing ? "Checking..." : "Refresh")
         </button>
         <button type="button" class="button danger" @onclick="DestroyAllAsync"
-                disabled="@(Dashboard.IsRefreshing || Dashboard.RunningCount == 0)">
-            Destroy all running
+                disabled="@(Dashboard.IsRefreshing || Dashboard.OwnedRunningCount == 0)">
+            Destroy all tracked
         </button>
     </div>
 </div>
@@ -135,11 +135,21 @@
                             <td class="num">$@instance.HourlyCost.ToString("0.000")</td>
                             <td class="num">$@instance.EstimatedCost.ToString("0.00")</td>
                             <td>
-                                <button type="button" class="button danger"
-                                        @onclick="() => DestroyAsync(instance)"
-                                        disabled="@_busy">
-                                    Destroy
-                                </button>
+                                @if (ComputeTeardown.IsOwned(instance))
+                                {
+                                    <button type="button" class="button danger"
+                                            @onclick="() => DestroyAsync(instance)"
+                                            disabled="@_busy">
+                                        Destroy
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="small faint"
+                                          title="This instance was not created by this Studio; destroy it in the Vultr console.">
+                                        not tracked
+                                    </span>
+                                }
                             </td>
                         </tr>
                     }
