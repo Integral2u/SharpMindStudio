@@ -60,7 +60,8 @@ public sealed class OpenRouterSettingsService
             ApiKeyFor(preset.Id) ?? "",
             BaseUrlFor(preset.Id),
             preset.AttributionHeaders ? OpenRouterSettingsDocument.AttributionReferer : null,
-            preset.AttributionHeaders ? OpenRouterSettingsDocument.AttributionTitle : null);
+            preset.AttributionHeaders ? OpenRouterSettingsDocument.AttributionTitle : null,
+            SessionHeader: preset.SessionHeader);
     }
 
     public void Save(string? apiKey, string? baseUrl, string? defaultModel) =>
@@ -195,9 +196,28 @@ public sealed class OpenRouterSettingsService
         return added;
     }
 
-    /// <summary>Validates the saved key against the provider without spending credit.</summary>
-    public Task<RemoteKeyInfo> TestKeyAsync(
+    /// <summary>
+    /// Validates the saved key against the provider without spending credit.
+    /// Providers without a <c>/key</c> endpoint fall back to the model catalog.
+    /// </summary>
+    public async Task<RemoteKeyInfo> TestKeyAsync(
         string? providerId,
-        CancellationToken cancellationToken = default) =>
-        _client.GetKeyInfoAsync(ConnectionFor(providerId), cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        RemoteProviderPreset preset = RemoteProviders.Find(providerId);
+        if (!preset.KeyTestUsesModels)
+            return await _client.GetKeyInfoAsync(ConnectionFor(preset.Id), cancellationToken)
+                .ConfigureAwait(false);
+
+        IReadOnlyList<OpenRouterModel> models = await _client
+            .ListModelsAsync(ConnectionFor(preset.Id), cancellationToken)
+            .ConfigureAwait(false);
+        return new RemoteKeyInfo(
+            $"{models.Count:N0} models",
+            null,
+            null,
+            null,
+            null,
+            preset.Currency);
+    }
 }

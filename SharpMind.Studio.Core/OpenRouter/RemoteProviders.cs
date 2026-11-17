@@ -14,7 +14,10 @@ public sealed record RemoteProviderPreset(
     bool Beta = false,
     bool AttributionHeaders = false,
     string? DefaultModelId = null,
-    string Currency = "USD")
+    string Currency = "USD",
+    string? SessionHeader = null,
+    bool KeyTestUsesModels = false,
+    bool AppendsApiV1 = true)
 {
     public bool HasSignup => !string.IsNullOrWhiteSpace(SignupUrl);
 }
@@ -24,8 +27,10 @@ public static class RemoteProviders
 {
     public const string OpenRouter = "openrouter";
     public const string EuroRouter = "eurouter";
+    public const string OpenCodeGo = "opencode-go";
     public const string OpenRouterDefaultBaseUrl = "https://openrouter.ai/api/v1";
     public const string EuroRouterDefaultBaseUrl = "https://api.eurouter.ai";
+    public const string OpenCodeGoDefaultBaseUrl = "https://opencode.ai/inference/go/openai/v1";
 
     public static readonly RemoteProviderPreset OpenRouterPreset = new(
         OpenRouter,
@@ -46,8 +51,20 @@ public static class RemoteProviders
         Beta: true,
         Currency: "EUR");
 
+    public static readonly RemoteProviderPreset OpenCodeGoPreset = new(
+        OpenCodeGo,
+        "OpenCode Go",
+        OpenCodeGoDefaultBaseUrl,
+        "Console API key",
+        SignupUrl: "https://opencode.ai/console",
+        DefaultModelId: "deepseek-v4.1-flash",
+        Currency: "USD",
+        SessionHeader: "x-opencode-session",
+        KeyTestUsesModels: true,
+        AppendsApiV1: false);
+
     public static IReadOnlyList<RemoteProviderPreset> All { get; } =
-        [OpenRouterPreset, EuroRouterPreset];
+        [OpenRouterPreset, EuroRouterPreset, OpenCodeGoPreset];
 
     public static RemoteProviderPreset Default => OpenRouterPreset;
 

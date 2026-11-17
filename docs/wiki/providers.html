@@ -144,8 +144,8 @@
                 Vast.ai, MaxCloudOn and Novita have manual remote-host presets under
                 Settings &gt; Providers &gt; Compute; paste the instance URL and token after
                 creating the GPU. MaxCloudOn code <span class="mono">SharpMindStudio</span>
-                takes 20% off. OpenRouter and EuroRouter (beta) are integrated in Studio;
-                each keeps its own key, base URL and model list.
+                takes 20% off. OpenRouter, EuroRouter (beta) and OpenCode Go are integrated in
+                Studio; each keeps its own key, base URL and model list.
             </p>
             <div class="table-wrap">
                 <table>
@@ -181,6 +181,12 @@
                             <td><a href="settings.html#providers">Integrated (beta)</a></td>
                             <td><a href="https://www.eurouter.ai?ref=ZLSG4A2M" target="_blank" rel="sponsored noopener">Sign up</a></td>
                         </tr>
+                        <tr>
+                            <td>OpenCode Go</td>
+                            <td>Router</td>
+                            <td><a href="openrouter.html#other">Integrated</a></td>
+                            <td><a href="https://opencode.ai/console" target="_blank" rel="noopener">Sign up</a></td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -191,6 +197,14 @@
                 <strong>Test key</strong> validates the key without spending credit and
                 reports the remaining balance. The beta badge stays until a live
                 completion has been verified.
+            </p>
+            <p>
+                OpenCode Go uses
+                <span class="mono">https://opencode.ai/inference/go/openai/v1</span> and a Console
+                API key. Studio sends <span class="mono">x-opencode-session</span> per chat for
+                routing and prompt cache, and <strong>Test key</strong> checks the model catalogue
+                because Go has no balance endpoint. See
+                <a href="openrouter.html#other">Other providers</a>.
             </p>
 
             <h2 id="contract">The shared contract</h2>

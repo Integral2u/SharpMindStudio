@@ -128,12 +128,11 @@ public sealed class OpenRouterClient
                     continue;
                 string? name = item.TryGetProperty("name", out JsonElement nameElement)
                     && nameElement.ValueKind == JsonValueKind.String ? nameElement.GetString() : null;
-                int? context = item.TryGetProperty("context_length", out JsonElement contextElement)
-                    && contextElement.ValueKind == JsonValueKind.Number
-                    && contextElement.TryGetInt32(out int parsed) ? parsed : null;
+                int? context = ReadContextLength(item);
                 string modelId = id.GetString()!;
                 bool isFree = modelId.EndsWith(":free", StringComparison.OrdinalIgnoreCase)
-                    || IsZeroPricing(item);
+                    || IsZeroPricing(item)
+                    || HasZeroCost(item);
                 bool supportsTools = SupportsTools(item);
                 models.Add(new OpenRouterModel(modelId, name, context, isFree, supportsTools));
             }
@@ -440,6 +439,12 @@ public sealed class OpenRouterClient
             request.Headers.TryAddWithoutValidation("HTTP-Referer", connection.Referer);
         if (!string.IsNullOrWhiteSpace(connection.Title))
             request.Headers.TryAddWithoutValidation("X-OpenRouter-Title", connection.Title);
+        if (!string.IsNullOrWhiteSpace(connection.SessionHeader)
+            && !string.IsNullOrWhiteSpace(connection.SessionId))
+        {
+            request.Headers.TryAddWithoutValidation(
+                connection.SessionHeader, connection.SessionId);
+        }
     }
 
     private static string Endpoint(OpenRouterConnection connection, string suffix)
@@ -478,6 +483,27 @@ public sealed class OpenRouterClient
             ? parsed
             : null;
 
+    private static int? ReadContextLength(JsonElement item)
+    {
+        if (item.TryGetProperty("context_length", out JsonElement direct)
+            && direct.ValueKind == JsonValueKind.Number
+            && direct.TryGetInt32(out int parsed))
+        {
+            return parsed;
+        }
+
+        if (item.TryGetProperty("limit", out JsonElement limit)
+            && limit.ValueKind == JsonValueKind.Object
+            && limit.TryGetProperty("context", out JsonElement context)
+            && context.ValueKind == JsonValueKind.Number
+            && context.TryGetInt32(out int nested))
+        {
+            return nested;
+        }
+
+        return null;
+    }
+
     private static bool IsZeroPricing(JsonElement item)
     {
         if (!item.TryGetProperty("pricing", out JsonElement pricing)
@@ -486,24 +512,64 @@ public sealed class OpenRouterClient
         return IsZero(pricing, "prompt") && IsZero(pricing, "completion");
     }
 
-    private static bool SupportsTools(JsonElement item)
+    /// <summary>
+    /// OpenCode Go (and similar gateways) report per-million prices under
+    /// <c>cost.text.{input,output}.price</c> instead of OpenRouter's token pricing.
+    /// </summary>
+    private static bool HasZeroCost(JsonElement item)
     {
-        if (!item.TryGetProperty("supported_parameters", out JsonElement parameters)
-            || parameters.ValueKind != JsonValueKind.Array)
-            return false;
-
-        foreach (JsonElement parameter in parameters.EnumerateArray())
+        if (!item.TryGetProperty("cost", out JsonElement cost)
+            || cost.ValueKind != JsonValueKind.Object
+            || !cost.TryGetProperty("text", out JsonElement text)
+            || text.ValueKind != JsonValueKind.Object)
         {
-            if (parameter.ValueKind == JsonValueKind.String
-                && string.Equals(parameter.GetString(), "tools", StringComparison.OrdinalIgnoreCase))
-                return true;
+            return false;
         }
-        return false;
+
+        return IsZeroValue(ReadPrice(text, "input"))
+            && IsZeroValue(ReadPrice(text, "output"));
     }
 
-    private static bool IsZero(JsonElement pricing, string name)
+    private static JsonElement ReadPrice(JsonElement text, string name)
     {
-        if (!pricing.TryGetProperty(name, out JsonElement value)) return false;
+        if (!text.TryGetProperty(name, out JsonElement entry)
+            || entry.ValueKind != JsonValueKind.Object)
+        {
+            return default;
+        }
+
+        return entry.TryGetProperty("price", out JsonElement price) ? price : default;
+    }
+
+    private static bool SupportsTools(JsonElement item)
+    {
+        if (item.TryGetProperty("supported_parameters", out JsonElement parameters)
+            && parameters.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement parameter in parameters.EnumerateArray())
+            {
+                if (parameter.ValueKind == JsonValueKind.String
+                    && string.Equals(
+                        parameter.GetString(), "tools", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return item.TryGetProperty("capabilities", out JsonElement capabilities)
+            && capabilities.ValueKind == JsonValueKind.Object
+            && capabilities.TryGetProperty("tools", out JsonElement tools)
+            && tools.ValueKind == JsonValueKind.Object
+            && tools.TryGetProperty("supported", out JsonElement supported)
+            && supported.ValueKind == JsonValueKind.True;
+    }
+
+    private static bool IsZero(JsonElement pricing, string name) =>
+        pricing.TryGetProperty(name, out JsonElement value) && IsZeroValue(value);
+
+    private static bool IsZeroValue(JsonElement value)
+    {
         if (value.ValueKind == JsonValueKind.Number)
             return value.TryGetDecimal(out decimal number) && number == 0;
         if (value.ValueKind == JsonValueKind.String)

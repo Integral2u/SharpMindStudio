@@ -124,7 +124,7 @@ public sealed class OpenRouterSettingsStore
             RemoteProviderPreset preset = RemoteProviders.Find(providerId);
             profile.BaseUrl = string.IsNullOrWhiteSpace(baseUrl)
                 ? preset.DefaultBaseUrl
-                : NormalizeBaseUrl(baseUrl);
+                : NormalizeBaseUrl(preset, baseUrl);
             SetDefaultModelLocked(profile, defaultModel);
             SaveLocked();
         }
@@ -262,7 +262,7 @@ public sealed class OpenRouterSettingsStore
         RemoteProviderPreset preset = RemoteProviders.Find(id);
         profile = new RemoteProviderProfile
         {
-            BaseUrl = NormalizeBaseUrl(preset.DefaultBaseUrl),
+            BaseUrl = NormalizeBaseUrl(preset, preset.DefaultBaseUrl),
             DefaultModel = preset.DefaultModelId,
             ActiveModels = preset.DefaultModelId is { } model ? [model] : [],
         };
@@ -284,9 +284,10 @@ public sealed class OpenRouterSettingsStore
         profile.DefaultModel = profile.ActiveModels.FirstOrDefault();
     }
 
-    private static string NormalizeBaseUrl(string url)
+    private static string NormalizeBaseUrl(RemoteProviderPreset preset, string url)
     {
         string value = url.Trim().TrimEnd('/');
+        if (!preset.AppendsApiV1) return value;
         if (value.EndsWith("/api", StringComparison.OrdinalIgnoreCase))
             return value + "/v1";
         if (value.Contains("/api/", StringComparison.OrdinalIgnoreCase)
@@ -357,7 +358,7 @@ public sealed class OpenRouterSettingsStore
         {
             BaseUrl = string.IsNullOrWhiteSpace(document.BaseUrl)
                 ? RemoteProviders.OpenRouterPreset.DefaultBaseUrl
-                : NormalizeBaseUrl(document.BaseUrl),
+                : NormalizeBaseUrl(RemoteProviders.OpenRouterPreset, document.BaseUrl),
             ApiKeyProtected = document.ApiKeyProtected,
             DefaultModel = document.DefaultModel,
             ActiveModels = document.ActiveModels ?? [],
@@ -380,7 +381,7 @@ public sealed class OpenRouterSettingsStore
         RemoteProviderPreset preset = RemoteProviders.Find(id);
         profile.BaseUrl = string.IsNullOrWhiteSpace(profile.BaseUrl)
             ? preset.DefaultBaseUrl
-            : NormalizeBaseUrl(profile.BaseUrl);
+            : NormalizeBaseUrl(preset, profile.BaseUrl);
         profile.ActiveModels ??= [];
         profile.RecentModels ??= [];
 
@@ -419,7 +420,9 @@ public sealed record OpenRouterConnection(
     string ApiKey,
     string BaseUrl,
     string? Referer = OpenRouterSettingsDocument.AttributionReferer,
-    string? Title = OpenRouterSettingsDocument.AttributionTitle)
+    string? Title = OpenRouterSettingsDocument.AttributionTitle,
+    string? SessionId = null,
+    string? SessionHeader = null)
 {
     public bool IsUsable =>
         !string.IsNullOrWhiteSpace(ApiKey) && !string.IsNullOrWhiteSpace(BaseUrl);

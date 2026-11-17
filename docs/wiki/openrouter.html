@@ -49,6 +49,7 @@
             <strong>On this page</strong>
             <a href="#what">What OpenRouter adds</a>
             <a href="#setup">Connect it</a>
+            <a href="#other">Other providers</a>
             <a href="#chat">Use it in Chat</a>
             <a href="#work">Use it in Work</a>
             <a href="#cost">Cost and privacy</a>
@@ -103,6 +104,44 @@
             <p>
                 The key is encrypted with the same local key box as the Compute and HuggingFace
                 secrets. It is never written into chats or exported model files.
+            </p>
+
+            <h2 id="other">Other providers</h2>
+            <p>
+                Settings → Providers → Remote providers keeps a separate profile for every
+                router: its own encrypted key, base URL, default model and active model list.
+                The picker on the welcome and chat screens lists models from all of them.
+            </p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Provider</th><th>Base URL</th><th>Key and test</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td>OpenRouter</td>
+                            <td><span class="mono">https://openrouter.ai/api/v1</span></td>
+                            <td><span class="mono">sk-or-...</span>; <strong>Test key</strong> reports the remaining balance.</td>
+                        </tr>
+                        <tr>
+                            <td>EuroRouter <span class="mono">(beta)</span></td>
+                            <td><span class="mono">https://api.eurouter.ai/api/v1</span></td>
+                            <td><span class="mono">eur_...</span>; <strong>Test key</strong> reports the remaining balance in EUR.</td>
+                        </tr>
+                        <tr>
+                            <td>OpenCode Go</td>
+                            <td><span class="mono">https://opencode.ai/inference/go/openai/v1</span></td>
+                            <td>Console API key; <strong>Test key</strong> confirms <span class="mono">/models</span> answers and counts the models.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>
+                OpenCode Go is the OpenAI-compatible endpoint behind an
+                <a href="https://opencode.ai/console" target="_blank" rel="noopener">OpenCode Go</a>
+                plan. Create the key in the Console, paste it here, then press
+                <strong>Fetch models</strong> and add the ones you want. Console translates every
+                text model to the chat-completions shape, so each listed id works here. Studio
+                sends a stable <span class="mono">x-opencode-session</span> header per chat so the
+                gateway can route requests and reuse prompt cache.
             </p>
 
             <h2 id="chat">Use it in Chat</h2>

@@ -40,6 +40,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   models works before a key is saved; **Test key** validates the saved key with
   `GET /api/v1/key` without spending credit and reports the remaining balance.
   Responses carry EUR cost, and a 402 shows a clear balance message.
+- **OpenCode Go** - the third integrated router, using the OpenAI-compatible
+  endpoint at `https://opencode.ai/inference/go/openai/v1` and a Console API
+  key. Fetch models reads the Go catalogue, including free models, and
+  **Test key** checks the catalogue because Go has no balance endpoint. Studio
+  sends `x-opencode-session` per chat for routing and prompt cache, and the
+  model list understands the gateway's `limit.context`, `capabilities.tools`
+  and per-million `cost` shape.
 - **Switch models in an open chat** - the chat header has a **Model** dropdown
   that switches to another local model, another model on the same remote
   provider, or another model on the same Compute host. The transcript stays;

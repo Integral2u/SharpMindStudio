@@ -156,6 +156,90 @@ public sealed class OpenRouterClientTests
     }
 
     [Fact]
+    public async Task Stream_SendsThePresetSessionHeaderWhenSet()
+    {
+        HttpRequestMessage? captured = null;
+        var handler = new StubHandler(request =>
+        {
+            captured = request;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+            };
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        var go = new OpenRouterConnection(
+            "go-secret",
+            "https://opencode.ai/inference/go/openai/v1",
+            Referer: null,
+            Title: null,
+            SessionId: "ses-42",
+            SessionHeader: "x-opencode-session");
+        await foreach (OpenRouterStreamEvent _ in client.StreamAsync(
+            new OpenRouterRequest
+            {
+                Model = "deepseek-v4.1-flash",
+                Messages = [OpenRouterMessageBuilder.User("hi")],
+            },
+            go))
+        {
+        }
+
+        Assert.NotNull(captured);
+        Assert.Equal("ses-42", captured!.Headers.GetValues("x-opencode-session").Single());
+        Assert.Equal(
+            "https://opencode.ai/inference/go/openai/v1/chat/completions",
+            captured.RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task ListModels_ParsesTheOpenCodeGoCatalogShape()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                {"object":"list","data":[
+                  {"id":"deepseek-v4.1-flash","name":"DeepSeek V4.1 Flash",
+                   "limit":{"context":1000000,"output":384000},
+                   "capabilities":{"tools":{"supported":true}},
+                   "cost":{"text":{"input":{"price":0.15},"output":{"price":0.6}}}},
+                  {"id":"beam-free","name":"Beam Free",
+                   "limit":{"context":1048576},
+                   "capabilities":{"tools":{"supported":true}},
+                   "cost":{"text":{"input":{"price":0},"output":{"price":0}}}}
+                ]}
+                """,
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        IReadOnlyList<OpenRouterModel> models = await client.ListModelsAsync(
+            new OpenRouterConnection(
+                "go-secret",
+                "https://opencode.ai/inference/go/openai/v1",
+                null,
+                null,
+                SessionHeader: "x-opencode-session"));
+
+        Assert.Equal(2, models.Count);
+        OpenRouterModel free = models[0];
+        Assert.Equal("beam-free", free.Id);
+        Assert.True(free.IsFree);
+        Assert.True(free.SupportsTools);
+        Assert.Equal(1048576, free.ContextLength);
+
+        OpenRouterModel paid = models[1];
+        Assert.False(paid.IsFree);
+        Assert.True(paid.SupportsTools);
+        Assert.Equal(1000000, paid.ContextLength);
+    }
+
+    [Fact]
     public async Task Stream_DoesNotSendAttributionForEuroRouter()
     {
         HttpRequestMessage? captured = null;

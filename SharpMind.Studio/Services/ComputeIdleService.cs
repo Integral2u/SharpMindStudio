@@ -206,7 +206,8 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (_jobProbes.TryGetValue(providerId, out JobProbe probe)
+        if (_jobProbes.TryGetValue(providerId, out JobProbe? probe)
+            && probe is not null
             && now - probe.At < TimeSpan.FromSeconds(30))
         {
             return probe.Active;

@@ -31,6 +31,33 @@ public sealed class RemoteProvidersTests
     }
 
     [Fact]
+    public void OpenCodeGo_UsesItsGatewayAndSessionHeader()
+    {
+        RemoteProviderPreset preset = RemoteProviders.Find(RemoteProviders.OpenCodeGo);
+
+        Assert.Equal("OpenCode Go", preset.Name);
+        Assert.Equal(
+            "https://opencode.ai/inference/go/openai/v1",
+            preset.DefaultBaseUrl);
+        Assert.Equal("https://opencode.ai/console", preset.SignupUrl);
+        Assert.False(preset.Beta);
+        Assert.False(preset.AttributionHeaders);
+        Assert.Equal("deepseek-v4.1-flash", preset.DefaultModelId);
+        Assert.Equal("x-opencode-session", preset.SessionHeader);
+        Assert.True(preset.KeyTestUsesModels);
+        Assert.Equal("USD", preset.Currency);
+    }
+
+    [Fact]
+    public void All_KeepsOpenRouterFirstForExistingDefaults()
+    {
+        Assert.Same(RemoteProviders.OpenRouterPreset, RemoteProviders.All[0]);
+        Assert.Contains(
+            RemoteProviders.All,
+            preset => preset.Id == RemoteProviders.OpenCodeGo);
+    }
+
+    [Fact]
     public void Find_FallsBackToOpenRouterForAnUnknownId()
     {
         Assert.Same(RemoteProviders.OpenRouterPreset, RemoteProviders.Find("nope"));

@@ -231,6 +231,12 @@
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             RemoteKeyInfo info = await OpenRouter.TestKeyAsync(_providerId, timeout.Token);
+            if (_preset.KeyTestUsesModels)
+            {
+                _status = $"{_preset.Name} key is valid; {info.Label} available.";
+                return;
+            }
+
             string label = info.Label ?? info.Name ?? "key";
             string limit = info.Remaining is { } remaining
                 ? $", {remaining:0.##}{CurrencySuffix(info)} remaining"

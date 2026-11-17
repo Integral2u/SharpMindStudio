@@ -39,7 +39,8 @@ public sealed class OpenRouterChatBackend(
         ChatSessionDocument document = context.Document;
         string providerId = RemoteProviders.NormalizeId(document.RemoteProvider);
         RemoteProviderPreset preset = RemoteProviders.Find(providerId);
-        OpenRouterConnection connection = settings.ConnectionFor(providerId);
+        OpenRouterConnection connection = settings.ConnectionFor(providerId)
+            with { SessionId = document.Id };
         string model = ResolveModel(document, providerId) ?? "";
 
         IAgentBuilder? agent = context.Agent;
