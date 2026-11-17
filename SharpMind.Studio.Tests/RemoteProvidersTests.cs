@@ -58,6 +58,19 @@ public sealed class RemoteProvidersTests
     }
 
     [Fact]
+    public void IsRemote_RecognizesEveryPresetButNotLocalValues()
+    {
+        Assert.True(RemoteProviders.IsRemote(RemoteProviders.OpenRouter));
+        Assert.True(RemoteProviders.IsRemote(RemoteProviders.EuroRouter));
+        Assert.True(RemoteProviders.IsRemote(RemoteProviders.OpenCodeGo));
+        Assert.True(RemoteProviders.IsRemote("OPENCODE-GO"));
+        Assert.False(RemoteProviders.IsRemote("local"));
+        Assert.False(RemoteProviders.IsRemote("compute:compute-1"));
+        Assert.False(RemoteProviders.IsRemote(null));
+        Assert.False(RemoteProviders.IsRemote(""));
+    }
+
+    [Fact]
     public void Find_FallsBackToOpenRouterForAnUnknownId()
     {
         Assert.Same(RemoteProviders.OpenRouterPreset, RemoteProviders.Find("nope"));

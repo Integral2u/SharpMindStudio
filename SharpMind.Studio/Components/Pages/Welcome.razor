@@ -577,8 +577,7 @@
         else
         {
             _computeProviderId = null;
-            _remoteChat = string.Equals(value, RemoteProviders.OpenRouter, StringComparison.OrdinalIgnoreCase) ||
-                          string.Equals(value, RemoteProviders.EuroRouter, StringComparison.OrdinalIgnoreCase);
+            _remoteChat = RemoteProviders.IsRemote(value);
             if (_remoteChat)
             {
                 _remoteProviderId = RemoteProviders.NormalizeId(value);

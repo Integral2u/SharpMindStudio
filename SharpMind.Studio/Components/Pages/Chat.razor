@@ -1147,8 +1147,7 @@ else
         else
         {
             _computeProviderId = null;
-            _remoteChat = string.Equals(value, RemoteProviders.OpenRouter, StringComparison.OrdinalIgnoreCase) ||
-                          string.Equals(value, RemoteProviders.EuroRouter, StringComparison.OrdinalIgnoreCase);
+            _remoteChat = RemoteProviders.IsRemote(value);
             if (_remoteChat)
             {
                 _remoteProviderId = RemoteProviders.NormalizeId(value);
@@ -1168,8 +1167,8 @@ else
     {
         if (!_remoteChat || !RemoteHasApiKey) return;
 
-        // Only OpenRouter has a free default seed. EuroRouter users pick models
-        // in Settings after fetching the public catalog.
+        // Only OpenRouter seeds free models. The other routers start with the
+        // default model from their preset and the user adds the rest in Settings.
         if (_remoteProviderId == RemoteProviders.OpenRouter &&
             (OpenRouter.ActiveModelsFor(_remoteProviderId).Count == 0 ||
              !OpenRouter.FreeModelsSeededFor(_remoteProviderId)))

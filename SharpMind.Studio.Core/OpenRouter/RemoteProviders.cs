@@ -68,6 +68,10 @@ public static class RemoteProviders
 
     public static RemoteProviderPreset Default => OpenRouterPreset;
 
+    public static bool IsRemote(string? id) =>
+        !string.IsNullOrWhiteSpace(id)
+        && All.Any(preset => preset.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+
     public static RemoteProviderPreset Find(string? id) =>
         All.FirstOrDefault(preset => preset.Id.Equals(id, StringComparison.OrdinalIgnoreCase))
         ?? Default;
