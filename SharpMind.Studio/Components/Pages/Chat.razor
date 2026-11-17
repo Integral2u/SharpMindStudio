@@ -60,28 +60,29 @@
                               onkeydown="studioChat.enterSend(event, 'chat-start')"
                               @bind="_input" @bind:event="oninput"
                               placeholder="@(_workMode ? "Describe the task, or leave this empty to start a blank Work chat." : "Ask something, or leave this empty to start a blank chat.")"></textarea>
-                    <button id="chat-start" type="button" class="button primary welcome-send"
-                            @onclick="StartNewChatAsync"
-                            disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
-                                        (_remoteChat ? !RemoteReady : string.IsNullOrWhiteSpace(_selectedModelPath)) ||
-                                        (_workMode && !_remoteChat && _toolState.Capability != ToolCapability.Passed && !_allowUnverifiedTools))">
-                        Send
-                    </button>
-                </div>
-
-                @if (!_remoteChat && !ChatService.IsStreaming && !ChatService.IsLoading)
-                {
-                    <div class="row">
-                        <label class="button chat-attach-button" title="Attach an image, audio file or document">
-                            Attach
-                            <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
-                        </label>
-                        @if (SelectedSupportsAudio)
+                    <div class="welcome-compose-actions">
+                        <span class="small faint welcome-compose-note">
+                            @if (!_remoteChat && SelectedSupportsAudio)
+                            {
+                                <text>Audio model: an attached WAV is transcribed before the first turn.</text>
+                            }
+                        </span>
+                        @if (!_remoteChat && !ChatService.IsStreaming && !ChatService.IsLoading)
                         {
-                            <span class="small faint">Audio model: an attached WAV is transcribed before the first turn.</span>
+                            <label class="button chat-attach-button" title="Attach an image, audio file or document">
+                                Attach
+                                <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
+                            </label>
                         }
+                        <button id="chat-start" type="button" class="button primary welcome-send"
+                                @onclick="StartNewChatAsync"
+                                disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
+                                            (_remoteChat ? !RemoteReady : string.IsNullOrWhiteSpace(_selectedModelPath)) ||
+                                            (_workMode && !_remoteChat && _toolState.Capability != ToolCapability.Passed && !_allowUnverifiedTools))">
+                            Send
+                        </button>
                     </div>
-                }
+                </div>
                 @if (_pendingArtifacts.Count > 0)
                 {
                     <div class="chat-attachment-list">
@@ -359,7 +360,10 @@ else
                                 @(_showOptions ? "Hide options" : "Options")
                             </button>
                         }
-                        <button type="button" class="button" @onclick="BeginNewChat">New chat</button>
+                        @if (!_workMode)
+                        {
+                            <button type="button" class="button" @onclick="BeginNewChatAsync">New chat</button>
+                        }
                     </div>
                 }
             </div>
@@ -381,7 +385,7 @@ else
                         bool streaming = ChatService.IsStreaming && i == _messages.Count - 1 && message.Role == ChatRole.Agent;
                         <div class="chat-message @message.Role.ToString().ToLowerInvariant()">
                             <div class="chat-message-meta">
-                                <span>@(message.Role == ChatRole.User ? "You" : "Model")</span>
+                                <span>@(message.Role == ChatRole.User ? "You" : message.Name ?? "Model")</span>
                                 <span>@message.Timestamp.ToLocalTime().ToString("HH:mm")</span>
                                 @if (message.Role == ChatRole.Agent && !streaming && i == _messages.Count - 1 && ChatService.LastTokensPerSecond is { } tps)
                                 {
@@ -569,7 +573,7 @@ else
                             <div class="eyebrow">Agent question</div>
                             <strong>@choice.Prompt</strong>
                         </div>
-                        <div class="row">
+                        <div class="work-choice-options">
                             @foreach (string option in choice.Options)
                             {
                                 <button type="button" class="button"
@@ -830,8 +834,7 @@ else
             _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
                 ? Theme.LastChatModel
                 : _models.FirstOrDefault()?.Path;
-            _remoteModel = OpenRouter.DefaultModelFor(_remoteProviderId) ??
-                           OpenRouter.ActiveModelsFor(_remoteProviderId).FirstOrDefault() ?? "";
+            ApplyLastRemoteProvider();
             UpdateLatestModelRun();
         }
 
@@ -1090,22 +1093,40 @@ else
             ? cost.ToString("0.000000")
             : $"{cost:0.000000} {currency}";
     }
-    private void BeginNewChat()
+    /// <summary>
+    /// Starts a blank session on a clean route. Closing the open document and
+    /// leaving the /chat/{id} or /work/{id} URL is what makes the session links
+    /// in the sidebar work again; keeping the old URL meant clicking the current
+    /// chat changed nothing.
+    /// </summary>
+    private async Task BeginNewChatAsync()
     {
+        if (ChatService.IsStreaming || ChatService.IsLoading) return;
+
         _startingNew = true;
         _focusPending = true;
         _showOptions = false;
         _input = "";
-        _remoteChat = ChatService.Document is { } current &&
-                      string.Equals(current.Provider, "openrouter", StringComparison.OrdinalIgnoreCase);
-        if (_remoteChat)
+        _pendingArtifacts.Clear();
+
+        if (ChatService.Document is { } current &&
+            string.Equals(current.Provider, "openrouter", StringComparison.OrdinalIgnoreCase))
         {
+            _remoteChat = true;
+            _computeProviderId = null;
             _remoteProviderId = ChatService.RemoteProviderId ?? RemoteProviders.OpenRouter;
-            _remoteModel = ChatService.Document?.RemoteModel ?? _remoteModel;
+            _remoteModel = current.RemoteModel ?? _remoteModel;
+            await Theme.SetLastRemoteProviderAsync(_remoteProviderId);
         }
         else if (ChatService.Document is { } local)
         {
+            _remoteChat = false;
+            _computeProviderId = null;
             _selectedModelPath = local.ModelPath;
+        }
+        else
+        {
+            ApplyLastRemoteProvider();
         }
 
         if (string.IsNullOrWhiteSpace(_selectedModelPath) || _selectedModelPath == "openrouter")
@@ -1114,7 +1135,29 @@ else
                 ? Theme.LastChatModel
                 : _models.FirstOrDefault()?.Path;
         }
+
+        ChatService.Stop();
+        await ChatService.CloseAsync();
+        Nav.NavigateTo(_workMode ? "/work" : "/chat");
         UpdateLatestModelRun();
+    }
+
+    /// <summary>
+    /// New chats open on the remote provider used most recently, with that
+    /// provider's last selected model. A provider whose key was deleted falls
+    /// back to a local model instead of an unusable remote form.
+    /// </summary>
+    private void ApplyLastRemoteProvider()
+    {
+        string? last = Theme.LastRemoteProvider;
+        _remoteChat = RemoteProviders.IsRemote(last) && OpenRouter.HasApiKeyFor(last);
+        _remoteProviderId = _remoteChat
+            ? RemoteProviders.NormalizeId(last)
+            : RemoteProviders.OpenRouter;
+        _remoteModel = _remoteChat
+            ? OpenRouter.DefaultModelFor(_remoteProviderId) ??
+              OpenRouter.ActiveModelsFor(_remoteProviderId).FirstOrDefault() ?? ""
+            : "";
     }
 
     private void OpenRouterSettings() => Nav.NavigateTo("/settings?tab=openrouter");
@@ -1158,6 +1201,8 @@ else
 
         UpdateLatestModelRun();
         RefreshTuneSelection();
+        await Theme.SetLastRemoteProviderAsync(
+            _remoteChat && _computeProviderId is null ? _remoteProviderId : null);
         await InvokeAsync(StateHasChanged);
         if (_remoteChat && _computeProviderId is null)
             await EnsureActiveModels();

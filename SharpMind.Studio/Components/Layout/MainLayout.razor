@@ -72,6 +72,7 @@
             @if (_chatsExpanded)
             {
                 <div class="nav-chats">
+                    <div class="nav-chat-group" title="@Workspace.Project.Root">@Workspace.Project.Document.Name</div>
                     <input type="search" class="nav-chat-search" value="@_chatQuery"
                            placeholder="Search chat history..." @oninput="OnChatSearch" />
                     @if (ChatOnly.Count == 0)
@@ -121,6 +122,7 @@
             @if (_workChatsExpanded)
             {
                 <div class="nav-chats">
+                    <div class="nav-chat-group" title="@Workspace.Project.Root">@Workspace.Project.Document.Name</div>
                     <input type="search" class="nav-chat-search" value="@_workQuery"
                            placeholder="Search work sessions..." @oninput="OnWorkSearch" />
                     @if (WorkOnly.Count == 0)

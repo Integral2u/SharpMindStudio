@@ -123,8 +123,18 @@
             </ul>
             <p>
                 Chat works with a local <span class="mono">.smm</span>, a local GGUF where
-                supported, OpenRouter, or a SharpMind Compute host. The provider picker is on the
-                welcome and chat screens.
+                supported, a remote router, or a SharpMind Compute host. The provider picker is on
+                the welcome and chat screens.
+            </p>
+            <p>
+                On the new-chat screen, <strong>Attach</strong> and <strong>Send</strong> sit in one
+                row under the prompt instead of a large send button with the attachment control
+                below it. Attachments stay local for now; a remote router receives text only. A new
+                chat starts on the router and model you used last, and the sidebar groups sessions
+                under the open project. The assistant name follows the CUI's Greek tier convention:
+                the sampling temperature picks <span class="mono">Alpha</span> to
+                <span class="mono">Epsilon</span>, with <span class="mono">Delta</span> when no
+                temperature is set.
             </p>
 
             <h2 id="compaction">Context compaction</h2>

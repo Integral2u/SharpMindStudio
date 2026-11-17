@@ -459,7 +459,8 @@ public sealed class StudioChatService : IAsyncDisposable
         ChatMessage userMessage = ChatMessage.User(text, "You");
         userMessage.Artifacts = artifacts?.ToArray();
         document.Messages.Add(userMessage);
-        ChatMessage assistant = ChatMessage.Agent("");
+        ChatMessage assistant = ChatMessage.Agent(
+            "", StudioAgentNaming.ForTemperature(_document?.Overrides.Temperature));
         document.Messages.Add(assistant);
         Notify();
         await Task.Yield();
@@ -555,6 +556,7 @@ public sealed class StudioChatService : IAsyncDisposable
             _error = null;
             _status = "Ready.";
             _cacheWarning = null;
+            await _theme.SetLastRemoteProviderAsync(null).ConfigureAwait(false);
             Notify();
         }
         finally
@@ -590,6 +592,7 @@ public sealed class StudioChatService : IAsyncDisposable
             _cacheWarning = null;
             _openRouter.RememberModelFor(preset.Id, modelId);
             _openRouter.SetDefaultModelFor(preset.Id, modelId.Trim());
+            await _theme.SetLastRemoteProviderAsync(preset.Id).ConfigureAwait(false);
             Notify();
         }
         finally
@@ -736,6 +739,7 @@ public sealed class StudioChatService : IAsyncDisposable
             _status = $"Ready ({provider.Name}).";
             _cacheWarning = null;
             _compute.RememberModel(provider.Id, model);
+            await _theme.SetLastRemoteProviderAsync(null).ConfigureAwait(false);
             Notify();
         }
         finally
@@ -912,7 +916,8 @@ public sealed class StudioChatService : IAsyncDisposable
             ChatMessage userMessage = ChatMessage.User(text.Trim(), "You");
             userMessage.Artifacts = artifacts?.ToArray();
             _document.Messages.Add(userMessage);
-            ChatMessage assistant = ChatMessage.Agent("");
+            ChatMessage assistant = ChatMessage.Agent(
+                "", StudioAgentNaming.ForTemperature(_document?.Overrides.Temperature));
             _document.Messages.Add(assistant);
             Notify();
             await Task.Yield();
@@ -1011,7 +1016,8 @@ public sealed class StudioChatService : IAsyncDisposable
         ChatMessage userMessage = ChatMessage.User(text, "You");
         userMessage.Artifacts = [image];
         _document.Messages.Add(userMessage);
-        ChatMessage assistant = ChatMessage.Agent("");
+        ChatMessage assistant = ChatMessage.Agent(
+            "", StudioAgentNaming.ForTemperature(_document?.Overrides.Temperature));
         _document.Messages.Add(assistant);
         Notify();
 
@@ -1100,8 +1106,11 @@ public sealed class StudioChatService : IAsyncDisposable
         string? computeProvider = ComputeProviderId;
         if (computeTurn) _activity.BeginChat(computeProvider);
 
+        IAgentBuilder? agent = _work.CreateAgent(
+            _document?.Mode ?? "chat",
+            _document?.Overrides.Temperature);
         _document.Messages.Add(ChatMessage.User(text, "You"));
-        ChatMessage assistant = ChatMessage.Agent("");
+        ChatMessage assistant = ChatMessage.Agent("", agent?.AgentName);
         _document.Messages.Add(assistant);
         Notify();
         await Task.Yield();
@@ -1111,7 +1120,7 @@ public sealed class StudioChatService : IAsyncDisposable
             Document = _document,
             Assistant = assistant,
             UserText = text,
-            Agent = _work.CreateAgent(_document?.Mode ?? "chat"),
+            Agent = agent,
             SetStatus = status => _status = status,
             Notify = Notify,
         };
@@ -1603,7 +1612,7 @@ public sealed class StudioChatService : IAsyncDisposable
                 option.Name.Equals("KVCacherBuilder", StringComparison.OrdinalIgnoreCase));
 
         Type cacheType = generator.CacheType ?? cache.Type;
-        var agent = _work.CreateAgent(_document?.Mode ?? "chat");
+        var agent = _work.CreateAgent(_document?.Mode ?? "chat", _document?.Overrides.Temperature);
         if (agent is AgentBuilder builder)
         {
             builder.PluginCompactors = _plugins.Compactors;

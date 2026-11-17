@@ -282,3 +282,16 @@
     accent-color: var(--accent);
 }
 
+
+.work-choice-options {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+}
+
+.work-choice-options .button {
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    white-space: normal;
+}

@@ -341,8 +341,7 @@
         _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
             ? Theme.LastChatModel
             : _models.FirstOrDefault()?.Path;
-        _remoteModel = OpenRouter.DefaultModelFor(_remoteProviderId) ??
-                       OpenRouter.ActiveModelsFor(_remoteProviderId).FirstOrDefault() ?? "";
+        ApplyLastRemoteProvider();
         UpdateLatestRun();
         RefreshTuneSelection();
     }
@@ -549,6 +548,23 @@
 
     private void OpenRouterSettings() => Nav.NavigateTo("/settings?tab=openrouter");
 
+    /// <summary>
+    /// A new session starts on the remote provider used most recently, with that
+    /// provider's last selected model. Missing keys fall back to a local model.
+    /// </summary>
+    private void ApplyLastRemoteProvider()
+    {
+        string? last = Theme.LastRemoteProvider;
+        _remoteChat = RemoteProviders.IsRemote(last) && OpenRouter.HasApiKeyFor(last);
+        _remoteProviderId = _remoteChat
+            ? RemoteProviders.NormalizeId(last)
+            : RemoteProviders.OpenRouter;
+        _remoteModel = _remoteChat
+            ? OpenRouter.DefaultModelFor(_remoteProviderId) ??
+              OpenRouter.ActiveModelsFor(_remoteProviderId).FirstOrDefault() ?? ""
+            : "";
+    }
+
     private async Task SetProvider(ChangeEventArgs args)
     {
         string value = args.Value?.ToString() ?? "local";
@@ -588,6 +604,8 @@
 
         UpdateLatestRun();
         RefreshTuneSelection();
+        await Theme.SetLastRemoteProviderAsync(
+            _remoteChat && _computeProviderId is null ? _remoteProviderId : null);
         await InvokeAsync(StateHasChanged);
         if (_remoteChat && _computeProviderId is null)
             await EnsureActiveModels();

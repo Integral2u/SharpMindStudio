@@ -137,14 +137,17 @@ public sealed class StudioWorkService : IDisposable
         _memory = _store.ReadMemory();
     }
 
-    public IAgentBuilder? CreateAgent(string mode)
+    public IAgentBuilder? CreateAgent(string mode, float? temperature = null)
     {
         bool work = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase);
         IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = _agents.EnabledAgents;
 
         // Even a chat with no defined agents gets the builder for spawn_agent, so
         // the model can create a temporary specialist when the task needs one.
-        var builder = new AgentBuilder(_workspace.Project.Document.Name);
+        // The name follows the CUI convention: the sampling temperature selects a
+        // Greek tier, and an unset temperature keeps the default, Delta.
+        var builder = new AgentBuilder(
+            SharpMind.Studio.Core.Agents.StudioAgentNaming.ForTemperature(temperature));
         builder.DisabledTools = [.. _tools.Tools
             .Where(tool => !IsToolEnabled(tool.Name))
             .Select(tool => tool.Name)];

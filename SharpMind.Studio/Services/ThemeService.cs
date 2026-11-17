@@ -12,6 +12,7 @@ public sealed class StudioSettings
     public string DefaultGenerator { get; set; } = ThemeService.DefaultGeneratorName;
     public string DefaultCache { get; set; } = ThemeService.DefaultCacheName;
     public string? LastChatModel { get; set; }
+    public string? LastRemoteProvider { get; set; }
     public string? PluginCompactor { get; set; }
     public string StudioHost { get; set; } = ThemeService.DefaultHost;
     public int StudioPort { get; set; } = ThemeService.DefaultPort;
@@ -44,7 +45,7 @@ public sealed class ThemeService
     public ThemeService()
     {
         StudioPaths.EnsureCreated();
-        (Theme, CustomColor, DefaultGenerator, DefaultCache, LastChatModel, PluginCompactor, StudioHost, StudioPort, CloseToTray) = LoadSettings();
+        (Theme, CustomColor, DefaultGenerator, DefaultCache, LastChatModel, LastRemoteProvider, PluginCompactor, StudioHost, StudioPort, CloseToTray) = LoadSettings();
     }
 
     public event Action? Changed;
@@ -53,6 +54,7 @@ public sealed class ThemeService
     public string DefaultGenerator { get; private set; }
     public string DefaultCache { get; private set; }
     public string? LastChatModel { get; private set; }
+    public string? LastRemoteProvider { get; private set; }
     public string? PluginCompactor { get; private set; }
     public string StudioHost { get; private set; }
     public int StudioPort { get; private set; }
@@ -87,6 +89,7 @@ public sealed class ThemeService
                 DefaultGenerator = DefaultGenerator,
                 DefaultCache = DefaultCache,
                 LastChatModel = LastChatModel,
+                LastRemoteProvider = LastRemoteProvider,
                 PluginCompactor = PluginCompactor,
                 StudioHost = StudioHost,
                 StudioPort = StudioPort,
@@ -121,6 +124,22 @@ public sealed class ThemeService
     public async Task SetLastChatModelAsync(string? modelPath, CancellationToken cancellationToken = default)
     {
         LastChatModel = string.IsNullOrWhiteSpace(modelPath) ? null : modelPath.Trim();
+        await SaveSettingsAsync(cancellationToken);
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// The remote provider used by the newest chat, or null when the last chat
+    /// was local or a Compute host. New chats start on the same provider and its
+    /// most recent model.
+    /// </summary>
+    public async Task SetLastRemoteProviderAsync(
+        string? providerId,
+        CancellationToken cancellationToken = default)
+    {
+        LastRemoteProvider = string.IsNullOrWhiteSpace(providerId)
+            ? null
+            : providerId.Trim();
         await SaveSettingsAsync(cancellationToken);
         Changed?.Invoke();
     }
@@ -162,6 +181,7 @@ public sealed class ThemeService
                 DefaultGenerator = DefaultGenerator,
                 DefaultCache = DefaultCache,
                 LastChatModel = LastChatModel,
+                LastRemoteProvider = LastRemoteProvider,
                 PluginCompactor = PluginCompactor,
                 StudioHost = StudioHost,
                 StudioPort = StudioPort,
@@ -191,12 +211,12 @@ public sealed class ThemeService
         return text.ToLowerInvariant();
     }
 
-    private static (string Theme, string CustomColor, string Generator, string Cache, string? LastChatModel, string? PluginCompactor, string StudioHost, int StudioPort, bool CloseToTray) LoadSettings()
+    private static (string Theme, string CustomColor, string Generator, string Cache, string? LastChatModel, string? LastRemoteProvider, string? PluginCompactor, string StudioHost, int StudioPort, bool CloseToTray) LoadSettings()
     {
         try
         {
             if (!File.Exists(StudioPaths.SettingsFile))
-                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, null, DefaultHost, DefaultPort, true);
+                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, null, null, DefaultHost, DefaultPort, true);
 
             var settings = JsonSerializer.Deserialize<StudioSettings>(
                 File.ReadAllText(StudioPaths.SettingsFile), StudioJson.File);
@@ -217,11 +237,12 @@ public sealed class ThemeService
                 : settings!.PluginCompactor;
             return (theme, color, generator, cache,
                 string.IsNullOrWhiteSpace(settings?.LastChatModel) ? null : settings!.LastChatModel,
+                string.IsNullOrWhiteSpace(settings?.LastRemoteProvider) ? null : settings!.LastRemoteProvider,
                 compactor, host, port, closeToTray);
         }
         catch
         {
-            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, null, DefaultHost, DefaultPort, true);
+            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, null, null, DefaultHost, DefaultPort, true);
         }
     }
 

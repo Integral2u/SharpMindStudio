@@ -188,7 +188,7 @@ public sealed class OpenRouterChatBackend(
                 });
             }
 
-            assistant = ChatMessage.Agent("");
+            assistant = ChatMessage.Agent("", agent?.AgentName);
             document.Messages.Add(assistant);
             context.Notify();
         }

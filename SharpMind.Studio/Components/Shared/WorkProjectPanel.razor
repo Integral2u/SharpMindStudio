@@ -29,6 +29,10 @@
                     }
                 </select>
                 <button type="button" class="button" @onclick="CreateProjectAsync">New project</button>
+                <button type="button" class="button" @onclick="NewChatAsync"
+                        disabled="@(ChatService.IsStreaming || ChatService.IsLoading)">
+                    New chat
+                </button>
                 <button type="button" class="button @(_showSettings ? "primary" : "")" @onclick="ToggleSettings">
                     @(_showSettings ? "Hide settings" : "Project settings")
                 </button>
@@ -398,6 +402,14 @@
             _status = ex.Message;
             LoadFields();
         }
+    }
+
+    private async Task NewChatAsync()
+    {
+        if (ChatService.IsStreaming || ChatService.IsLoading) return;
+        ChatService.Stop();
+        await ChatService.CloseAsync();
+        Nav.NavigateTo("/work");
     }
 
     private async Task CreateProjectAsync()

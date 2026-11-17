@@ -47,6 +47,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   sends `x-opencode-session` per chat for routing and prompt cache, and the
   model list understands the gateway's `limit.context`, `capabilities.tools`
   and per-million `cost` shape.
+- **Agent names follow the CUI** - the assistant is named from the sampling
+  temperature using the same Greek tiers as the old CUI: `Alpha` through
+  `Epsilon`, with `Delta` when no temperature is set. The name is shown above
+  each reply instead of the generic "Model", and temporary sub-agents keep the
+  `{Deity}-{Tier}` form such as `Athena-Alpha`.
+- **New chat starts clean** - **New chat** now closes the open document and
+  returns to `/chat` or `/work`, so the session links in the sidebar work
+  immediately. Work moves the button next to **New project**, and the sidebar
+  shows the open project above its chat and work lists. A new session keeps the
+  provider and model used last instead of falling back to OpenRouter's default.
+- **Composer layout** - **Attach** sits beside **Send** on the new-chat screen
+  instead of below a full-height send button. Agent-question choices are a
+  vertical list, so long options no longer wrap into an uneven row.
 - **Switch models in an open chat** - the chat header has a **Model** dropdown
   that switches to another local model, another model on the same remote
   provider, or another model on the same Compute host. The transcript stays;

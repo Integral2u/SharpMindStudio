@@ -49,6 +49,7 @@
             <strong>On this page</strong>
             <a href="#what">What Work is</a>
             <a href="#project">Create a project</a>
+            <a href="#sessions">Sessions and names</a>
             <a href="#context">Context and permissions</a>
             <a href="#skills">Skills</a>
             <a href="#loop">The work loop</a>
@@ -73,17 +74,35 @@
                 <li>Context locations with read, write and delete permissions.</li>
                 <li>A web permission that is off until you enable it.</li>
                 <li>A send gate: if the tool probe fails, the project cannot quietly run tools.</li>
-                <li>Works with a local model or OpenRouter. A Compute host is inference-only, so it cannot run Work tools yet.</li>
+                <li>Works with a local model or a remote router (OpenRouter, EuroRouter, OpenCode Go). A Compute host is inference-only, so it cannot run Work tools yet.</li>
             </ul>
 
             <h2 id="project">Create a project</h2>
             <ol class="steps">
-                <li><strong>Work → New project.</strong> Give it a name and a folder. The folder is the project's boundary.</li>
+                <li><strong>Work → New project.</strong> Give it a name and a folder. The folder is the project's boundary. <strong>New chat</strong> sits next to it and starts a blank session in the open project.</li>
                 <li><strong>Write the system prompt.</strong> Say what the project is for, what the model may change and what it must not touch.</li>
-                <li><strong>Pick a provider.</strong> A local model is best for private files and reliable tool calls; OpenRouter works when the local model is too small. A Compute host is inference-only for Chat and cannot run Work tools yet.</li>
+                <li><strong>Pick a provider.</strong> A local model is best for private files and reliable tool calls; a remote router works when the local model is too small. A Compute host is inference-only for Chat and cannot run Work tools yet.</li>
                 <li><strong>Add context.</strong> Point at the folders and files the project actually needs. Start read-only.</li>
                 <li><strong>Enable write/delete only after a read run.</strong> The permission is per location, not global.</li>
             </ol>
+
+            <h2 id="sessions">Sessions and names</h2>
+            <p>
+                Sessions belong to the open project. The sidebar lists the project's chats and
+                work sessions under its name, and the project panel's <strong>New chat</strong>
+                button starts a blank session there. A new session keeps the provider and model
+                of the last chat, so switching projects does not quietly drop you back to a local
+                model. If the saved remote key was deleted, Studio falls back to local.
+            </p>
+            <p>
+                The assistant's name follows the CUI convention. The sampling temperature selects
+                a Greek tier: <span class="mono">Alpha</span> (cool) through
+                <span class="mono">Gamma</span> to <span class="mono">Epsilon</span> (hot), and a
+                session with no explicit temperature is <span class="mono">Delta</span>. The name
+                is shown above each reply and given to the model in its system prompt. Temporary
+                sub-agents keep the <span class="mono">{Deity}-{Tier}</span> form, such as
+                <span class="mono">Athena-Alpha</span>.
+            </p>
 
             <h2 id="context">Context and permissions</h2>
             <div class="table-wrap">
@@ -122,6 +141,12 @@
                 <li>Keep the useful decisions in the project memory so the next session starts informed.</li>
                 <li>Use <strong>runs</strong> and the project's <span class="mono">models</span> folder for artifacts you want to keep.</li>
             </ol>
+            <div class="callout">
+                <strong>Files, not processes.</strong> Work can list, read, search, write, append
+                and delete files, and fetch a page when the project allows it. It cannot compile or
+                run a program yet. Ask it to write the command or script, then run it yourself in a
+                terminal; execution tools stay behind an explicit permission when they arrive.
+            </div>
 
             <h2 id="providers">Model providers</h2>
             <div class="table-wrap">
@@ -137,8 +162,10 @@
             </div>
             <p>
                 A SharpMind Compute host is currently inference-only for Chat. It does not expose
-                Work's tool calling, so Work should use a local model or OpenRouter. Chat can use
-                any of the three.
+                Work's tool calling, so Work should use a local model or a remote router. Chat can
+                use any of the three. OpenRouter, EuroRouter and OpenCode Go keep separate keys,
+                base URLs and model lists, so Work can switch between them without re-entering a
+                key. A new session starts on the router used last.
             </p>
             <div class="callout">
                 <strong>Tool-call recovery.</strong> Studio can be strict, lenient or loose about
