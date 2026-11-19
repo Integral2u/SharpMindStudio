@@ -27,7 +27,16 @@ public sealed class WorkSettingsStore
 
     public WorkSettings Load()
     {
-        if (!File.Exists(WorkFile)) return new WorkSettings();
+        // A brand-new project has no work.json yet. It still needs the default
+        // context, otherwise every file tool is refused because no folder is
+        // allowed until the settings are saved once.
+        if (!File.Exists(WorkFile))
+        {
+            return new WorkSettings
+            {
+                Contexts = [new WorkContext { Id = "project-root", Path = "." }],
+            };
+        }
 
         WorkSettings settings = JsonFile.Read<WorkSettings>(WorkFile);
         if (settings.Schema != WorkSettings.CurrentSchema)

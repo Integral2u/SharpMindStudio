@@ -47,7 +47,7 @@
 
     @if (_showSettings && !DeviceAccess.IsMobile)
     {
-        <div class="work-project-body">
+        <div class="work-project-body" @onchange="AutoSaveAsync">
             <div class="work-project-grid">
                 <div class="field">
                     <label class="field-label" for="work-system-prompt">Project instructions</label>
@@ -244,7 +244,7 @@
                     <strong>Off</strong> hides a tool from the model, <strong>Never</strong> keeps it visible but
                     refuses every call, <strong>Ask</strong> prompts, and <strong>Always</strong> permits.
                     A context folder set to <strong>Never</strong> still refuses whatever the tool says.
-                    Changes apply when you save.
+                    Changes save automatically.
                 </p>
                 @foreach (IGrouping<string, WorkToolInfo> group in ToolCatalog.Tools.GroupBy(tool => tool.Group))
                 {
@@ -294,10 +294,7 @@
                 }
             </div>
             <div class="row work-project-save">
-                <button type="button" class="button primary" @onclick="SaveAsync" disabled="@(_saving || ChatService.IsStreaming || ChatService.IsLoading)">
-                    @(_saving ? "Applying..." : "Save project settings")
-                </button>
-                <span class="status-line">@_status</span>
+                <span class="status-line">@(_saving ? "Saving..." : _status)</span>
             </div>
         </div>
     }
@@ -343,6 +340,7 @@
     {
         Workspace.ProjectChanged += OnProjectChanged;
         Work.Changed += OnWorkChanged;
+        ChatService.Changed += OnChatChanged;
         LoadFields();
     }
 
@@ -350,7 +348,20 @@
     {
         Workspace.ProjectChanged -= OnProjectChanged;
         Work.Changed -= OnWorkChanged;
+        ChatService.Changed -= OnChatChanged;
     }
+
+    /// <summary>
+    /// Sending a prompt should show the conversation, not the settings form.
+    /// </summary>
+    private void OnChatChanged() => _ = InvokeAsync(() =>
+    {
+        if (ChatService.IsStreaming && _showSettings)
+        {
+            _showSettings = false;
+            StateHasChanged();
+        }
+    });
 
     /// <summary>
     /// "Always allow" from a permission prompt raises the project's tool entry.
@@ -507,13 +518,17 @@
         return first;
     }
 
-    private void SetToolPermission(WorkToolInfo tool, WorkToolPermission value) =>
+    private void SetToolPermission(WorkToolInfo tool, WorkToolPermission value)
+    {
         _toolPermissions.Tools[tool.Name] = value;
+        _ = AutoSaveAsync();
+    }
 
     private void SetGroupPermission(IReadOnlyList<WorkToolInfo> tools, WorkToolPermission value)
     {
         foreach (WorkToolInfo tool in tools)
             _toolPermissions.Tools[tool.Name] = value;
+        _ = AutoSaveAsync();
     }
 
     private static string ToolPermissionLabel(WorkToolPermission value) => value switch
@@ -597,7 +612,11 @@
             }
         }
 
-        if (imported > 0) _status = $"Imported {imported} project skill(s). Save project settings to apply.";
+        if (imported > 0)
+        {
+            _status = $"Imported {imported} project skill(s).";
+            await AutoSaveAsync();
+        }
     }
 
     private async Task ImportRepositorySkillsAsync()
@@ -656,7 +675,10 @@
     }
 
     private void RemoveProjectSkill(ProjectSkillDraft skill)
-        => _projectSkills.Remove(skill);
+    {
+        _projectSkills.Remove(skill);
+        _ = AutoSaveAsync();
+    }
 
     private bool OverridesRepositorySkill(ProjectSkillDraft skill)
         => !string.IsNullOrWhiteSpace(skill.Name)
@@ -743,7 +765,26 @@
 
     private void RemoveContext(ContextDraft context)
     {
-        if (_contexts.Count > 1) _contexts.Remove(context);
+        if (_contexts.Count <= 1) return;
+        _contexts.Remove(context);
+        _ = AutoSaveAsync();
+    }
+
+    /// <summary>
+    /// Settings save themselves: every changed field, toggle and segmented
+    /// control commits immediately. Free-text fields fire on blur, so a save
+    /// never runs halfway through a word.
+    /// </summary>
+    private async Task AutoSaveAsync()
+    {
+        if (_saving) return;
+        if (ChatService.IsStreaming || ChatService.IsLoading)
+        {
+            _status = "Finish the current reply to apply settings.";
+            return;
+        }
+
+        await SaveAsync();
     }
 
     private async Task SaveAsync()
@@ -759,7 +800,9 @@
             {
                 if (string.IsNullOrWhiteSpace(skill.Name))
                 {
-                    _status = "Project skills need a name before you save.";
+                    // An untouched "Add project skill" row is not an error.
+                    if (string.IsNullOrWhiteSpace(skill.Content)) continue;
+                    _status = "Project skills need a name.";
                     return;
                 }
                 if (!projectSkillNames.Add(skill.Name.Trim()))
@@ -769,13 +812,15 @@
                 }
             }
 
-            WorkSkill[] projectSkills = [.. _projectSkills.Select(skill => new WorkSkill
-            {
-                Id = skill.Id,
-                Name = skill.Name.Trim(),
-                Content = skill.Content.Trim(),
-                DefaultEnabled = true,
-            })];
+            WorkSkill[] projectSkills = [.. _projectSkills
+                .Where(skill => !string.IsNullOrWhiteSpace(skill.Name))
+                .Select(skill => new WorkSkill
+                {
+                    Id = skill.Id,
+                    Name = skill.Name.Trim(),
+                    Content = skill.Content.Trim(),
+                    DefaultEnabled = true,
+                })];
             List<string> disabledProjectSkills = [.. _projectSkills
                 .Where(skill => !skill.Enabled)
                 .Select(skill => skill.Id)];
@@ -825,7 +870,6 @@
 
             await ChatService.ReloadWorkContextAsync();
             LoadFields();
-            _showSettings = false;
             _status = contextWarnings.Count == 0
                 ? "Project settings applied."
                 : "Project settings applied. " + string.Join(" ", contextWarnings);

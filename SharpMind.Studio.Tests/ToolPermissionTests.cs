@@ -233,6 +233,26 @@ public sealed class ToolPermissionTests
     }
 
     [Fact]
+    public void NewProject_GetsTheDefaultContextSoFileToolsCanRun()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "sm-new-" + Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            WorkSettings settings = new WorkSettingsStore(root).Load();
+
+            WorkContext context = Assert.Single(settings.Contexts);
+            Assert.Equal(".", context.Path);
+            Assert.Equal(WorkPermission.Ask, context.Permissions.Write);
+            Assert.Equal(WorkPermission.Never, context.Permissions.Delete);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LegacyProjectToolLists_MigrateToTheFourStateModel()
     {
         string root = Path.Combine(Path.GetTempPath(), "sm-work-" + Guid.NewGuid().ToString("n"));
