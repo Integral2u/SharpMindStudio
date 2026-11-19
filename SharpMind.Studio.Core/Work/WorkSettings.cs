@@ -16,6 +16,7 @@ public enum WorkToolCategory
     Write,
     Delete,
     Web,
+    Execute,
 }
 
 public sealed record WorkPermissions
@@ -25,12 +26,19 @@ public sealed record WorkPermissions
     public WorkPermission Delete { get; init; } = WorkPermission.Never;
     public WorkPermission Web { get; init; } = WorkPermission.Never;
 
+    /// <summary>
+    /// Running a program. Never by default: nothing executes in a project until
+    /// someone turns it on for that folder.
+    /// </summary>
+    public WorkPermission Execute { get; init; } = WorkPermission.Never;
+
     public WorkPermission For(WorkToolCategory category) => category switch
     {
         WorkToolCategory.Read => Read,
         WorkToolCategory.Write => Write,
         WorkToolCategory.Delete => Delete,
         WorkToolCategory.Web => Web,
+        WorkToolCategory.Execute => Execute,
         _ => WorkPermission.Never,
     };
 
@@ -40,6 +48,7 @@ public sealed record WorkPermissions
         WorkToolCategory.Write => this with { Write = permission },
         WorkToolCategory.Delete => this with { Delete = permission },
         WorkToolCategory.Web => this with { Web = permission },
+        WorkToolCategory.Execute => this with { Execute = permission },
         _ => this,
     };
 }

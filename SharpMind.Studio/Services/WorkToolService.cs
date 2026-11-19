@@ -41,6 +41,7 @@ public sealed class WorkToolService
         ("AppendToFile", "Files · write"),
         ("CreateFile", "Files · write"),
         ("DeleteFile", "Files · delete"),
+        ("RunProcess", "Execution"),
         ("FetchUrl", "Web"),
         ("UIShowOptionSelection", "Interface"),
         ("UIGetFreeMemory", "System"),

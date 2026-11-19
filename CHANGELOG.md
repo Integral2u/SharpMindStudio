@@ -68,6 +68,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   context folder set to **Never** refuses whatever the tool says. A tool set to
   **Always** is not downgraded by a folder that only asks. An agent that asks for
   more than the session allows raises a prompt that is never remembered.
+- **Run a program behind the Run permission** - Work has a **RunProcess** tool
+  that starts an executable in an allowed context folder, passes arguments
+  individually (no shell), captures stdout and stderr, and kills the process
+  tree on timeout. Each folder has **Run: Never / Ask / Always**, Never by
+  default. It runs real code with your account permissions: Studio gates the
+  command, not everything the program touches.
 - **Model-scoped embedded tool permissions** - tools that live inside an `.smm`
   are listed in the session options with an embedded badge and start **off**.
   Enabling one is remembered per model, keyed by the container's checksum when it

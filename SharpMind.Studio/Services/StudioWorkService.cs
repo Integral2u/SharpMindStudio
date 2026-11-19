@@ -198,6 +198,10 @@ public sealed class StudioWorkService : IDisposable
                 AllowedRoots(),
                 access => CheckAccessAsync(access, profile: effective)));
             builder.WithTools(new WorkWebTools(access => CheckAccessAsync(access, profile: effective)));
+            builder.WithTools(new WorkProcessTools(
+                _workspace.Project.Root,
+                AllowedRoots(),
+                access => CheckAccessAsync(access, profile: effective)));
             builder.WithTools(new WorkUiTools(RequestChoiceAsync));
             if (_tools.PluginTools.Count > 0)
                 builder.WithTools([.. _tools.PluginTools]);
@@ -446,6 +450,7 @@ public sealed class StudioWorkService : IDisposable
         [
             new WorkFileTools(_workspace.Project.Root, AllowedRoots(), Permission),
             new WorkWebTools(Permission),
+            new WorkProcessTools(_workspace.Project.Root, AllowedRoots(), Permission),
             .. _tools.PluginTools,
         ];
         var probe = new AgentBuilder(agent.Name);

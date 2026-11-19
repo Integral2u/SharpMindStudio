@@ -206,6 +206,11 @@
                                 <option value="Ask">Delete: Ask</option>
                                 <option value="Always">Delete: Always</option>
                             </select>
+                            <select class="input" @bind="context.Execute" title="Run permission">
+                                <option value="Never">Run: Never</option>
+                                <option value="Ask">Run: Ask</option>
+                                <option value="Always">Run: Always</option>
+                            </select>
                             <button type="button" class="button danger" @onclick="() => RemoveContext(context)"
                                     disabled="@(_contexts.Count <= 1)">Remove</button>
                         </div>
@@ -269,6 +274,7 @@
         public WorkPermission Read { get; set; } = WorkPermission.Ask;
         public WorkPermission Write { get; set; } = WorkPermission.Ask;
         public WorkPermission Delete { get; set; } = WorkPermission.Never;
+        public WorkPermission Execute { get; set; } = WorkPermission.Never;
     }
 
     private sealed class ProjectSkillDraft
@@ -378,6 +384,7 @@
             Read = context.Permissions.Read,
             Write = context.Permissions.Write,
             Delete = context.Permissions.Delete,
+            Execute = context.Permissions.Execute,
         })];
         if (_contexts.Count == 0)
             _contexts.Add(new ContextDraft { Id = Guid.NewGuid().ToString("n") });
@@ -752,6 +759,7 @@
                     Read = context.Read,
                     Write = context.Write,
                     Delete = context.Delete,
+                    Execute = context.Execute,
                     Web = WorkPermission.Never,
                 },
             })];

@@ -461,3 +461,40 @@ public sealed class WorkSettingsStoreTests
 
 
 
+
+public sealed class WorkProcessToolsTests
+{
+    [Fact]
+    public async Task Run_ReturnsOutput()
+    {
+        using var temp = new TempDirectory();
+        var tools = new WorkProcessTools(temp.Path, [temp.Path], _ => Task.FromResult(true));
+
+        string result = await tools.RunProcess("cmd", "/c echo hello");
+
+        Assert.Contains("hello", result);
+        Assert.Contains("Exit code 0", result);
+    }
+
+    [Fact]
+    public async Task Run_IsDeniedByTheGate()
+    {
+        using var temp = new TempDirectory();
+        var tools = new WorkProcessTools(temp.Path, [temp.Path], _ => Task.FromResult(false));
+
+        string result = await tools.RunProcess("cmd", "/c echo hello");
+
+        Assert.Contains("Permission denied", result);
+    }
+
+    [Fact]
+    public async Task WorkingDirectoryOutsideTheRoot_IsRefused()
+    {
+        using var temp = new TempDirectory();
+        var tools = new WorkProcessTools(temp.Path, [temp.Path], _ => Task.FromResult(true));
+
+        string result = await tools.RunProcess("cmd", "/c echo hi", "../");
+
+        Assert.Contains("outside the allowed project locations", result);
+    }
+}
