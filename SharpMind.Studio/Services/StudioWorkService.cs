@@ -81,6 +81,9 @@ public sealed class StudioWorkService : IDisposable
     /// </summary>
     private ToolPermissionProfile? _activeProfile;
 
+    /// <summary>The tool-call gate for the running turn, inherited by delegated agents.</summary>
+    private IToolCallFilter? _activeFilter;
+
     public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents, InferenceSettingsService inference)
     {
         _workspace = workspace;
@@ -162,7 +165,8 @@ public sealed class StudioWorkService : IDisposable
     public IAgentBuilder? CreateAgent(
         string mode,
         float? temperature = null,
-        ToolPermissionProfile? profile = null)
+        ToolPermissionProfile? profile = null,
+        IToolCallFilter? filter = null)
     {
         bool work = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase);
         IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = _agents.EnabledAgents;
@@ -171,6 +175,7 @@ public sealed class StudioWorkService : IDisposable
         // up the same session and model layers.
         ToolPermissionProfile effective = ResolveProfile(profile);
         _activeProfile = effective;
+        _activeFilter = filter;
 
         // Even a chat with no defined agents gets the builder for spawn_agent, so
         // the model can create a temporary specialist when the task needs one.
@@ -181,6 +186,7 @@ public sealed class StudioWorkService : IDisposable
         builder.DisabledTools = [.. _tools.Tools
             .Where(tool => !effective.For(tool.Name, tool.Group).IsVisible)
             .Select(tool => tool.Name)];
+        builder.ToolCallFilter = filter;
         if (work && !_device.IsMobile)
         {
             builder.WithTools(new WorkFileTools(
@@ -447,6 +453,7 @@ public sealed class StudioWorkService : IDisposable
             DisabledTools = [.. probe.RegisteredToolNames.Where(name =>
                 (allowed is not null && !allowed.Contains(name)) ||
                 !effective.For(name, _tools.GroupFor(name)).IsVisible)],
+            ToolCallFilter = _activeFilter,
         };
         builder.WithTools(toolObjects);
         string rules = string.IsNullOrWhiteSpace(agent.Rules)

@@ -1114,7 +1114,8 @@ public sealed class StudioChatService : IAsyncDisposable
         IAgentBuilder? agent = _work.CreateAgent(
             _document?.Mode ?? "chat",
             _document?.Overrides.Temperature,
-            ToolProfile());
+            ToolProfile(),
+            BuildToolCallFilter());
         _document.Messages.Add(ChatMessage.User(text, "You"));
         ChatMessage assistant = ChatMessage.Agent("", agent?.AgentName);
         _document.Messages.Add(assistant);
@@ -1596,6 +1597,29 @@ public sealed class StudioChatService : IAsyncDisposable
         _document?.ModelPath,
         _document?.ToolPermissions);
 
+    /// <summary>
+    /// The safety gate for this turn. Only the system prompt and the user's own
+    /// words authorise a host; tool results are excluded so a poisoned file
+    /// cannot name its own destination.
+    /// </summary>
+    private IToolCallFilter? BuildToolCallFilter()
+    {
+        if (_document is null) return null;
+
+        var text = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(_document.SystemPrompt))
+            text.AppendLine(_document.SystemPrompt);
+
+        foreach (ChatMessage message in _document.Messages
+                     .Where(message => message.Role == ChatRole.User)
+                     .TakeLast(4))
+        {
+            text.AppendLine(message.Content);
+        }
+
+        return new StudioToolCallFilter(_safety, text.ToString());
+    }
+
     private async Task<IChatSession> BuildSessionAsync(
         LoadedStudioModel loaded,
         ResolvedInference profile,
@@ -1656,7 +1680,8 @@ public sealed class StudioChatService : IAsyncDisposable
         var agent = _work.CreateAgent(
             _document?.Mode ?? "chat",
             _document?.Overrides.Temperature,
-            ToolProfile());
+            ToolProfile(),
+            BuildToolCallFilter());
         if (agent is AgentBuilder builder)
         {
             builder.PluginCompactors = _plugins.Compactors;
