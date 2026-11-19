@@ -37,6 +37,7 @@ public sealed class WorkToolService
         ("ReadFile", "Files · read"),
         ("SearchFiles", "Files · read"),
         ("WriteFile", "Files · write"),
+        ("EditFile", "Files · write"),
         ("AppendToFile", "Files · write"),
         ("CreateFile", "Files · write"),
         ("DeleteFile", "Files · delete"),

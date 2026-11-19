@@ -68,6 +68,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   context folder set to **Never** refuses whatever the tool says. A tool set to
   **Always** is not downgraded by a folder that only asks. An agent that asks for
   more than the session allows raises a prompt that is never remembered.
+- **Edit a section without rewriting the file** - Work has an **EditFile** tool that
+  replaces one exact piece of text, so inserting, changing or removing a section no
+  longer means writing the whole file back. It refuses text that appears more than
+  once instead of guessing, tolerates LF snippets in a CRLF file, and takes an empty
+  replacement to delete a section.
 - **Project settings save themselves** - the Work project panel saves on change
   and on blur instead of behind a Save button, and sending a prompt collapses
   the panel. A brand-new project starts with its default context, so file tools

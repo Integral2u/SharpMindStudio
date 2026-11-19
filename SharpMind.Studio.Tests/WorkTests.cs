@@ -337,6 +337,117 @@ public sealed class WorkSettingsStoreTests
         Assert.False(File.Exists(store.MemoryFile));
         Assert.False(File.Exists(store.SkillsFile));
     }
+
+    [Fact]
+    public async Task Edit_ReplacesAUniqueLine()
+    {
+        using var temp = new TempDirectory();
+        await File.WriteAllTextAsync(temp.Combine("notes.md"), "alpha\nbeta\ngamma\n");
+        var tools = new WorkFileTools(temp.Path, _ => Task.FromResult(true));
+
+        string result = await tools.EditFile("notes.md", "beta", "BETA");
+
+        Assert.Contains("Edited", result);
+        Assert.Equal("alpha\nBETA\ngamma\n",
+            await File.ReadAllTextAsync(temp.Combine("notes.md")));
+    }
+
+    [Fact]
+    public async Task Edit_InsertsByAnchoringOnContext()
+    {
+        using var temp = new TempDirectory();
+        await File.WriteAllTextAsync(temp.Combine("file.cs"), "class A\n{\n}\n");
+        var tools = new WorkFileTools(temp.Path, _ => Task.FromResult(true));
+
+        string result = await tools.EditFile(
+            "file.cs", "class A\n{", "class A\n{\n    void B() { }");
+
+        Assert.Contains("Edited", result);
+        Assert.Contains("void B()",
+            await File.ReadAllTextAsync(temp.Combine("file.cs")));
+    }
+
+    [Fact]
+    public async Task Edit_RemovesWhenTheReplacementIsEmpty()
+    {
+        using var temp = new TempDirectory();
+        await File.WriteAllTextAsync(temp.Combine("file.txt"), "keep\ndrop this line\nkeep too\n");
+        var tools = new WorkFileTools(temp.Path, _ => Task.FromResult(true));
+
+        string result = await tools.EditFile("file.txt", "drop this line\n", "");
+
+        Assert.Contains("Edited", result);
+        Assert.Equal("keep\nkeep too\n",
+            await File.ReadAllTextAsync(temp.Combine("file.txt")));
+    }
+
+    [Fact]
+    public async Task Edit_RefusesAmbiguousText()
+    {
+        using var temp = new TempDirectory();
+        await File.WriteAllTextAsync(temp.Combine("dup.txt"), "same\nsame\n");
+        var tools = new WorkFileTools(temp.Path, _ => Task.FromResult(true));
+
+        string result = await tools.EditFile("dup.txt", "same", "other");
+
+        Assert.Contains("appears 2 times", result);
+        Assert.Equal("same\nsame\n",
+            await File.ReadAllTextAsync(temp.Combine("dup.txt")));
+    }
+
+    [Fact]
+    public async Task Edit_ReplacesEveryOccurrenceWhenAsked()
+    {
+        using var temp = new TempDirectory();
+        await File.WriteAllTextAsync(temp.Combine("dup.txt"), "same\nsame\n");
+        var tools = new WorkFileTools(temp.Path, _ => Task.FromResult(true));
+
+        string result = await tools.EditFile("dup.txt", "same", "other", replaceAll: true);
+
+        Assert.Contains("2 replacements", result);
+        Assert.Equal("other\nother\n",
+            await File.ReadAllTextAsync(temp.Combine("dup.txt")));
+    }
+
+    [Fact]
+    public async Task Edit_MatchesLfSnippetsInACrlfFile()
+    {
+        using var temp = new TempDirectory();
+        await File.WriteAllTextAsync(temp.Combine("win.txt"), "alpha\r\nbeta\r\ngamma\r\n");
+        var tools = new WorkFileTools(temp.Path, _ => Task.FromResult(true));
+
+        string result = await tools.EditFile("win.txt", "beta\ngamma", "BETA\nGAMMA");
+
+        Assert.Contains("Edited", result);
+        Assert.Equal("alpha\r\nBETA\r\nGAMMA\r\n",
+            await File.ReadAllTextAsync(temp.Combine("win.txt")));
+    }
+
+    [Fact]
+    public async Task Edit_ExplainsAMiss()
+    {
+        using var temp = new TempDirectory();
+        await File.WriteAllTextAsync(temp.Combine("file.txt"), "alpha\n");
+        var tools = new WorkFileTools(temp.Path, _ => Task.FromResult(true));
+
+        string result = await tools.EditFile("file.txt", "missing", "x");
+
+        Assert.Contains("was not found", result);
+    }
+
+    [Fact]
+    public async Task Edit_RespectsThePermissionGate()
+    {
+        using var temp = new TempDirectory();
+        await File.WriteAllTextAsync(temp.Combine("file.txt"), "alpha\n");
+        var tools = new WorkFileTools(temp.Path,
+            access => Task.FromResult(access.Category != WorkToolCategory.Write));
+
+        string result = await tools.EditFile("file.txt", "alpha", "beta");
+
+        Assert.Contains("Permission denied", result);
+        Assert.Equal("alpha\n", await File.ReadAllTextAsync(temp.Combine("file.txt")));
+    }
 }
 
 

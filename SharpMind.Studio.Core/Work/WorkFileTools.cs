@@ -179,6 +179,85 @@ public sealed class WorkFileTools(
         }
     }
 
+    [ToolDesc("Replaces an exact piece of text in a file. Use it to insert, replace or remove a section without rewriting the whole file. The old text must match exactly and appear once unless replaceAll is true.")]
+    public async Task<string> EditFile(
+        [ToolDesc("Relative path to the file.")] string relativePath,
+        [ToolDesc("The exact text to replace. Include surrounding context so it appears once.")] string oldText,
+        [ToolDesc("The replacement text. Use an empty string to remove the section.")] string newText,
+        [ToolDesc("Replace every occurrence instead of failing when the text appears more than once.")] bool replaceAll = false)
+    {
+        try
+        {
+            string path = ResolvePath(relativePath);
+            if (!await AllowedAsync(nameof(EditFile), WorkToolCategory.Write, relativePath))
+                return Denied(nameof(EditFile), relativePath);
+            if (!File.Exists(path)) return $"File not found: {relativePath}";
+            if (string.IsNullOrEmpty(oldText)) return "The old text is required.";
+
+            if (new FileInfo(path).Length > 2 * 1024 * 1024)
+                return $"File is larger than 2 MB: {relativePath}";
+
+            string content = await File.ReadAllTextAsync(path);
+
+            // A Windows file usually has CRLF while a model emits LF. Matching the
+            // snippet as written would fail on every multi-line edit, so align the
+            // snippet and the replacement with the file once.
+            bool crlf = content.Contains("\r\n", StringComparison.Ordinal);
+            string match = crlf ? ToCrlf(oldText) : oldText;
+            string replacement = crlf ? ToCrlf(newText ?? "") : newText ?? "";
+
+            int count = CountOccurrences(content, match);
+            if (count == 0)
+            {
+                return $"The old text was not found in {relativePath}. Read the file and copy the exact "
+                       + "text, including indentation and line breaks.";
+            }
+            if (count > 1 && !replaceAll)
+            {
+                return $"The old text appears {count} times in {relativePath}. Include more surrounding "
+                       + "context, or set replaceAll to change every occurrence.";
+            }
+
+            string updated = replaceAll
+                ? content.Replace(match, replacement, StringComparison.Ordinal)
+                : ReplaceFirst(content, match, replacement);
+
+            await File.WriteAllTextAsync(path, updated);
+            return count == 1
+                ? $"Edited {relativePath}."
+                : $"Edited {relativePath} ({count} replacements).";
+        }
+        catch (Exception ex)
+        {
+            return $"Error editing file: {ex.Message}";
+        }
+    }
+
+    private static string ToCrlf(string text) =>
+        text.Replace("\r\n", "\n").Replace("\n", "\r\n");
+
+    private static int CountOccurrences(string text, string value)
+    {
+        int count = 0;
+        int index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+        return count;
+    }
+
+    private static string ReplaceFirst(string text, string oldValue, string newValue)
+    {
+        int index = text.IndexOf(oldValue, StringComparison.Ordinal);
+        if (index < 0) return text;
+        return string.Concat(
+            text.AsSpan(0, index),
+            newValue,
+            text.AsSpan(index + oldValue.Length));
+    }
+
     [ToolDesc("Creates an empty file inside the project, creating parent directories when needed.")]
     public async Task<string> CreateFile(
         [ToolDesc("Relative path to the file.")] string relativePath)
