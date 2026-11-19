@@ -1,5 +1,6 @@
 ﻿using SharpMind.Inference.Chat;
 using SharpMind.Studio.Core.Inference;
+using SharpMind.Studio.Core.Work;
 
 namespace SharpMind.Studio.Core.Chat;
 
@@ -27,6 +28,13 @@ public sealed record ChatSessionDocument
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
     public List<ChatMessage> Messages { get; set; } = [];
     public InferenceOverrides Overrides { get; set; } = new();
+
+    /// <summary>
+    /// Session-level tool permission overrides. An empty set inherits from the
+    /// model, family and system layers.
+    /// </summary>
+    public ToolPermissionSet ToolPermissions { get; set; } = new();
+
     public double? LastTokensPerSecond { get; set; }
     public decimal? LastCost { get; set; }
 

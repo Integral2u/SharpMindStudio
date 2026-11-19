@@ -42,6 +42,13 @@ public sealed record StudioAgentDefinition
     /// </summary>
     public WorkPermissions Permissions { get; init; } = AskPermissions;
 
+    /// <summary>
+    /// Per-tool overrides for this agent. An agent may ask for more than the
+    /// session allows, but the difference is raised as a prompt rather than
+    /// applied silently.
+    /// </summary>
+    public ToolPermissionSet ToolPermissions { get; init; } = new();
+
     /// <summary>Idle minutes before the loaded model may be evicted; 0 keeps the host default.</summary>
     public int TtlMinutes { get; init; } = 30;
 
@@ -87,6 +94,7 @@ public sealed class StudioAgentStore
                     {
                         AllowedTools = [.. (agent.AllowedTools ?? [])],
                         Permissions = agent.Permissions ?? StudioAgentDefinition.AskPermissions,
+                        ToolPermissions = agent.ToolPermissions ?? new(),
                     })],
             };
         }
