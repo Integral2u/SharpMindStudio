@@ -1764,9 +1764,33 @@ public sealed class StudioChatService : IAsyncDisposable
             preProcessor: _plugins.PreProcessor,
             postProcessor: _plugins.PostProcessor,
             formatter: ChatFormatterFactory.Create(profile.Formatter, loaded.Meta),
+            permissions: CheckToolPermissionAsync,
             seed: profile.Seed);
         session.ProcessToolRequest = HandleAgentToolAsync;
+        PluginRuntime.Set(session.FileSystem, session.NetworkHandler);
         return session;
+    }
+
+    /// <summary>
+    /// The engine calls this only for file and network access made through the
+    /// session's interceptors, which a tool gets from
+    /// <see cref="PluginRuntime"/>. The project's folder rules still apply.
+    /// </summary>
+    private async Task<ToolPermission> CheckToolPermissionAsync(ToolPermissionContext permission)
+    {
+        if (!string.Equals(_document?.Mode, "work", StringComparison.OrdinalIgnoreCase))
+            return ToolPermission.Never;
+
+        WorkToolCategory category = permission.Category == ToolCategory.Network
+            ? WorkToolCategory.Web
+            : WorkToolCategory.Write;
+
+        bool allowed = await _work.CheckAccessAsync(new WorkToolAccess(
+            permission.ToolName,
+            category,
+            permission.Resource)).ConfigureAwait(false);
+
+        return allowed ? ToolPermission.Always : ToolPermission.Never;
     }
 
     /// <summary>
@@ -1972,6 +1996,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
     private void EndSession()
     {
+        PluginRuntime.Clear();
         _work.CancelPermission();
         _work.CancelChoice();
         _streamCts?.Cancel();
