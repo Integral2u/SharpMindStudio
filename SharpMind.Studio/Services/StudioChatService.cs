@@ -38,6 +38,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly StudioPluginService _plugins;
     private readonly ThemeService _theme;
     private readonly StudioSafetyService _safety;
+    private readonly EmbeddedPluginHost _embedded;
     private ChatSessionStore _store;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChatSession? _session;
@@ -83,7 +84,8 @@ public sealed class StudioChatService : IAsyncDisposable
         StudioDeviceAccess device,
         StudioPluginService plugins,
         ThemeService theme,
-        StudioSafetyService safety)
+        StudioSafetyService safety,
+        EmbeddedPluginHost embedded)
     {
         _workspace = workspace;
         _catalog = catalog;
@@ -101,6 +103,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _plugins = plugins;
         _theme = theme;
         _safety = safety;
+        _embedded = embedded;
         _store = new ChatSessionStore(workspace.Project.ChatsDirectory);
         _work.AgentToolExecutor = ExecuteAgentToolAsync;
     }
@@ -1115,7 +1118,8 @@ public sealed class StudioChatService : IAsyncDisposable
             _document?.Mode ?? "chat",
             _document?.Overrides.Temperature,
             ToolProfile(),
-            BuildToolCallFilter());
+            BuildToolCallFilter(),
+            BuildEmbeddedTools());
         _document.Messages.Add(ChatMessage.User(text, "You"));
         ChatMessage assistant = ChatMessage.Agent("", agent?.AgentName);
         _document.Messages.Add(assistant);
@@ -1189,11 +1193,46 @@ public sealed class StudioChatService : IAsyncDisposable
     }
 
     /// <summary>
+    /// Records which embedded plugin assemblies this session may load. Nothing
+    /// loads until the next turn rebuilds the agent.
+    /// </summary>
+    public async Task SetEmbeddedPluginsAsync(IReadOnlyList<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+        if (_document is null) return;
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _document.EnabledEmbeddedPlugins =
+                [.. names.Where(name => !string.IsNullOrWhiteSpace(name))
+                         .Distinct(StringComparer.OrdinalIgnoreCase)];
+            _store.Save(_document);
+            _status = "Embedded plugins applied.";
+            Notify();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Tool objects from plugin assemblies the session has enabled. An empty
+    /// list is the default and the safe case.
+    /// </summary>
+    private IReadOnlyList<object> BuildEmbeddedTools()
+    {
+        if (_document is null) return [];
+        return _embedded.Resolve(
+            _document.ModelPath, _document.EnabledEmbeddedPlugins, out _);
+    }
+
+    /// <summary>
     /// Saves the session's tool permissions. The next turn picks them up because
     /// the profile is rebuilt from the document each time.
     /// </summary>
-    public async Task ApplyToolPermissionsAsync(ToolPermissionSet permissions)
-    {
+    public async Task ApplyToolPermissionsAsync(ToolPermissionSet permissions)    {
         ArgumentNullException.ThrowIfNull(permissions);
         if (_device.IsMobile || _document is null || _streaming) return;
 
@@ -1681,7 +1720,8 @@ public sealed class StudioChatService : IAsyncDisposable
             _document?.Mode ?? "chat",
             _document?.Overrides.Temperature,
             ToolProfile(),
-            BuildToolCallFilter());
+            BuildToolCallFilter(),
+            BuildEmbeddedTools());
         if (agent is AgentBuilder builder)
         {
             builder.PluginCompactors = _plugins.Compactors;

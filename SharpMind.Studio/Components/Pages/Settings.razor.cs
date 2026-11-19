@@ -7,6 +7,7 @@ using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.OpenRouter;
 using SharpMind.Studio.Core.Safety;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Training;
 using SharpMind.Studio.Core.Work;
 using SharpMind.Studio.Services;
 
@@ -88,6 +89,7 @@ public partial class Settings
     private string? _selectedModelPath;
     private InferenceOverrides _familyDraft = new();
     private InferenceOverrides _modelDraft = new();
+    private SmmContents _modelContents = SmmContents.None;
     private IReadOnlyDictionary<string, string>? _familySources;
     private IReadOnlyDictionary<string, string>? _modelSources;
     private ResolvedInference? _familyResolved;
@@ -176,6 +178,7 @@ public partial class Settings
         _modelDraft = Inference.ModelOverrides(_selectedModelPath) ?? new InferenceOverrides();
         _modelResolved = Inference.Resolve(model?.Family.Id, _selectedModelPath, null);
         _modelSources = _modelResolved.Sources;
+        _modelContents = SmmContentsReader.Read(_selectedModelPath);
     }
 
     private async Task SaveDefaultModel()

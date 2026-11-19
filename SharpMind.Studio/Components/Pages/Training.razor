@@ -209,8 +209,23 @@ else if (_tab == "improve")
                 <div class="field training-form-wide">
                     <label class="field-label" for="tune-base">Base file</label>
                     <input id="tune-base" class="input" @bind="_tuneBase"
+                           @bind:after="RefreshBaseContents"
                            placeholder="C:\path\to\base.smm" />
                 </div>
+                @if (!_baseContents.IsEmpty)
+                {
+                    <div class="field training-form-wide">
+                        <div class="panel" style="padding:.6rem .7rem;">
+                            <div class="eyebrow">Base model container</div>
+                            <span class="small faint">
+                                This <span class="mono">.smm</span> carries @_baseContents.Summary.
+                                A fine-tune inherits the skills and the system prompt, and any plugin
+                                assemblies travel with the export. Studio never loads an embedded
+                                plugin itself.
+                            </span>
+                        </div>
+                    </div>
+                }
                 <div class="field training-form-wide">
                     <label class="field-label" for="tune-corpus">@(_tuneSft ? "Chat JSONL corpus" : "New corpus")</label>
                     <div class="row">

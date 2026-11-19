@@ -7,6 +7,7 @@
 @using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Core.OpenRouter
 @using SharpMind.Studio.Core.Runs
+@using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Core.Work
 @using SharpMind.Studio.Services
 @inject StudioChatService ChatService
@@ -450,6 +451,32 @@ else
                                               ValueChanged="v => _sessionToolsDraft = v"
                                               AllowInherit="true"
                                               Effective="SessionToolsEffective" />
+
+                        @if (_embeddedNames.Count > 0)
+                        {
+                            <div class="panel-head" style="margin-top:.75rem">
+                                <div>
+                                    <div class="eyebrow">Embedded</div>
+                                    <h2>Plugins in this model</h2>
+                                </div>
+                                <span class="faint small mono">off by default</span>
+                            </div>
+                            <p class="small faint">
+                                This model carries plugin assemblies. Ticking one loads its code into
+                                Studio for this session. Studio never loads one on its own, and a loaded
+                                assembly cannot be unloaded until Studio restarts.
+                            </p>
+                            @foreach (string name in _embeddedNames)
+                            {
+                                <label class="work-tool">
+                                    <input type="checkbox"
+                                           checked="@_enabledEmbedded.Contains(name, StringComparer.OrdinalIgnoreCase)"
+                                           @onchange="e => ToggleEmbeddedPlugin(name, e.Value)" />
+                                    <span>@name</span>
+                                    <span class="tool-badge is-embedded">embedded</span>
+                                </label>
+                            }
+                        }
 
                         <div class="panel-head" style="margin-top:.75rem">
                             <div>
@@ -898,6 +925,8 @@ else
     private bool _focusPending = true;
     private InferenceOverrides _sessionDraft = new();
     private ToolPermissionSet _sessionToolsDraft = new();
+    private IReadOnlyList<string> _embeddedNames = [];
+    private List<string> _enabledEmbedded = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -1051,6 +1080,10 @@ else
                 _selectedModelPath = ChatService.Document.ModelPath;
             _sessionDraft = ChatService.Document.Overrides;
         _sessionToolsDraft = ChatService.Document.ToolPermissions ?? new ToolPermissionSet();
+        _embeddedNames = [.. SmmContentsReader
+            .ReadPlugins(ChatService.Document.ModelPath)
+            .Select(entry => entry.Name)];
+        _enabledEmbedded = [.. ChatService.Document.EnabledEmbeddedPlugins];
             _selectedTunePreset = Enum.TryParse(ChatService.Document.TunePreset, out TunePreset preset)
                 ? preset
                 : null;
@@ -1627,6 +1660,7 @@ else
     {
         await ChatService.ApplyOptionsAsync(_sessionDraft);
         await ChatService.ApplyToolPermissionsAsync(_sessionToolsDraft);
+        await ChatService.SetEmbeddedPluginsAsync(_enabledEmbedded);
         SyncFromChat();
     }
 
@@ -1634,6 +1668,21 @@ else
     {
         _sessionDraft = new InferenceOverrides();
         _sessionToolsDraft = new ToolPermissionSet();
+        _enabledEmbedded = [];
+    }
+
+    private void ToggleEmbeddedPlugin(string name, object? enabled)
+    {
+        if (enabled is true)
+        {
+            if (!_enabledEmbedded.Contains(name, StringComparer.OrdinalIgnoreCase))
+                _enabledEmbedded.Add(name);
+        }
+        else
+        {
+            _enabledEmbedded.RemoveAll(value =>
+                string.Equals(value, name, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     /// <summary>

@@ -79,6 +79,7 @@ builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
     ConnectTimeout = TimeSpan.FromSeconds(10),
 }));
 builder.Services.AddSingleton<WorkToolService>();
+builder.Services.AddSingleton<EmbeddedPluginHost>();
 builder.Services.AddSingleton<TuneRunnerService>();
 builder.Services.AddScoped<ModelTuneService>();
 builder.Services.AddSingleton<StudioTrainingService>();

@@ -32,6 +32,8 @@ public partial class Training
     private string? _convertError;
 
     private string _tuneBase = "";
+    private SmmContents _baseContents = SmmContents.None;
+    private string? _baseContentsPath;
     private string _tuneCorpusPath = "";
     private bool _tuneSft;
     private string _tuneSftFormatter = "auto";
@@ -352,8 +354,17 @@ public partial class Training
     {
         _tuneBase = args.Value as string ?? "";
         _tuneError = null;
+        RefreshBaseContents();
         if (string.IsNullOrWhiteSpace(_tuneName) && File.Exists(_tuneBase))
             _tuneName = Path.GetFileNameWithoutExtension(_tuneBase) + "-lora";
+    }
+
+    /// <summary>Reads the container once per selected file, never on every render.</summary>
+    private void RefreshBaseContents()
+    {
+        if (string.Equals(_baseContentsPath, _tuneBase, StringComparison.OrdinalIgnoreCase)) return;
+        _baseContentsPath = _tuneBase;
+        _baseContents = SmmContentsReader.Read(_tuneBase);
     }
 
     private async Task BrowseTuneCorpus()

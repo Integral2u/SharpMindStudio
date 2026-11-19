@@ -166,7 +166,8 @@ public sealed class StudioWorkService : IDisposable
         string mode,
         float? temperature = null,
         ToolPermissionProfile? profile = null,
-        IToolCallFilter? filter = null)
+        IToolCallFilter? filter = null,
+        IReadOnlyList<object>? embeddedTools = null)
     {
         bool work = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase);
         IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = _agents.EnabledAgents;
@@ -197,6 +198,8 @@ public sealed class StudioWorkService : IDisposable
             builder.WithTools(new WorkUiTools(RequestChoiceAsync));
             if (_tools.PluginTools.Count > 0)
                 builder.WithTools([.. _tools.PluginTools]);
+            if (embeddedTools is { Count: > 0 })
+                builder.WithTools([.. embeddedTools]);
         }
         if (work)
         {

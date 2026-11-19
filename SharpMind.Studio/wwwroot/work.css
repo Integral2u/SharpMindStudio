@@ -375,6 +375,11 @@
     color: #ff9b9b;
 }
 
+.tool-badge.is-embedded {
+    border-color: rgba(140, 170, 255, .45);
+    color: #9db8ff;
+}
+
 .work-tool {
     display: flex;
     align-items: center;

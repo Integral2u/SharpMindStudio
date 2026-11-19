@@ -1027,6 +1027,12 @@ else if (_tab == "models")
             @if (_selectedModelPath is not null)
             {
                 <div class="small faint mono">@_selectedModelPath</div>
+                @if (!_modelContents.IsEmpty)
+                {
+                    <div class="small faint">
+                        Container: @_modelContents.Summary. Studio does not load an embedded plugin.
+                    </div>
+                }
                 <div class="row" style="margin-bottom: .4rem;">
                     <button type="button" class="button primary" @onclick="TuneSelectedModelAsync"
                             disabled="@_modelTuning" title="Tune Chat and Work for this model">

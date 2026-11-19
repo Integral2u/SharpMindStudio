@@ -35,6 +35,12 @@ public sealed record ChatSessionDocument
     /// </summary>
     public ToolPermissionSet ToolPermissions { get; set; } = new();
 
+    /// <summary>
+    /// Names of plugin assemblies embedded in the .smm that this session may
+    /// load. Empty by default; the code only runs after the user enables it.
+    /// </summary>
+    public List<string> EnabledEmbeddedPlugins { get; set; } = [];
+
     public double? LastTokensPerSecond { get; set; }
     public decimal? LastCost { get; set; }
 
