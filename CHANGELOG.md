@@ -60,6 +60,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Composer layout** - **Attach** sits beside **Send** on the new-chat screen
   instead of below a full-height send button. Agent-question choices are a
   vertical list, so long options no longer wrap into an uneven row.
+- **Tool permissions** - every Work tool has four states: **Off** hides it from
+  the model, **Never** keeps it visible but refuses every call, **Ask** prompts,
+  and **Always** permits. The project panel shows a segmented control per tool
+  and one per group that applies to every tool in it. Overrides chain from the
+  agent through session, model, family and project to the Studio defaults, and a
+  context folder set to **Never** refuses whatever the tool says. A tool set to
+  **Always** is not downgraded by a folder that only asks. An agent that asks for
+  more than the session allows raises a prompt that is never remembered.
+- **Project settings save themselves** - the Work project panel saves on change
+  and on blur instead of behind a Save button, and sending a prompt collapses
+  the panel. A brand-new project starts with its default context, so file tools
+  work before the settings have ever been opened.
+- **Sessions grouped by project** - Chat and Work each list every project that
+  has sessions of that kind, as a collapsible group with a count. Opening a
+  session from another project switches to it first. The landing page asks which
+  project a Work session belongs to, including **New project**, instead of using
+  whichever project was open last.
 - **Switch models in an open chat** - the chat header has a **Model** dropdown
   that switches to another local model, another model on the same remote
   provider, or another model on the same Compute host. The transcript stays;

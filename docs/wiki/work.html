@@ -51,6 +51,7 @@
             <a href="#project">Create a project</a>
             <a href="#sessions">Sessions and names</a>
             <a href="#context">Context and permissions</a>
+            <a href="#tools">Tool permissions</a>
             <a href="#skills">Skills</a>
             <a href="#loop">The work loop</a>
             <a href="#providers">Model providers</a>
@@ -88,11 +89,14 @@
 
             <h2 id="sessions">Sessions and names</h2>
             <p>
-                Sessions belong to the open project. The sidebar lists the project's chats and
-                work sessions under its name, and the project panel's <strong>New chat</strong>
-                button starts a blank session there. A new session keeps the provider and model
-                of the last chat, so switching projects does not quietly drop you back to a local
-                model. If the saved remote key was deleted, Studio falls back to local.
+                Sessions belong to the project that stores them. The sidebar lists every project
+                that has chats or work sessions of the kind you opened, each as a collapsible
+                group with a count. The project you are in starts expanded. Opening a session
+                from another group switches to that project first. Rename, delete and clear stay
+                on the current project because they edit the live session store. A new session
+                keeps the provider and model of the last chat, so switching projects does not
+                quietly drop you back to a local model. If the saved remote key was deleted,
+                Studio falls back to local.
             </p>
             <p>
                 The assistant's name follows the CUI convention. The sampling temperature selects
@@ -119,6 +123,30 @@
             <p>
                 Paths outside the declared context are not reachable through the project tools.
                 The project folder itself is not a substitute for an explicit context location.
+            </p>
+
+            <h3 id="tools">Tool permissions</h3>
+            <p>
+                Every tool has four states. <strong>Off</strong> removes it from the prompt, so
+                the model never sees it. <strong>Never</strong> keeps it visible but refuses
+                every call without asking. <strong>Ask</strong> prompts, and
+                <strong>Always</strong> permits. Each group header carries the same control and
+                applies one value to every tool in that group, which is the quickest way to stop
+                all writes at once.
+            </p>
+            <p>
+                A tool inherits from the model, family, project and Studio defaults, and each
+                layer can override the one above it. A folder set to
+                <span class="mono">Never</span> is a hard boundary and refuses the call whatever
+                the tool says; otherwise the tool's own state decides, so
+                <strong>Always</strong> is not silently downgraded by a folder that only asks.
+                A delegated agent may be configured more permissively than the session, but that
+                difference always raises a prompt and is never remembered.
+            </p>
+            <p>
+                Project settings save as you change them, and sending a prompt hides the panel so
+                the conversation is what you see. A new project starts with a default context at
+                its root, so the file tools work before the settings have ever been opened.
             </p>
 
             <h2 id="skills">Skills</h2>
