@@ -13,6 +13,7 @@
 @inject StudioChatService ChatService
 @inject StudioWorkspaceService Workspace
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>SharpMind Studio</PageTitle>
 
@@ -57,6 +58,20 @@
     </div>
 
     <div class="welcome-controls">
+        @if (_mode == "work")
+        {
+            <div class="field welcome-project">
+                <label class="field-label" for="welcome-project">Project</label>
+                <select id="welcome-project" class="input" value="@_projectPath" @onchange="SetProjectAsync"
+                        title="Work sessions are saved in this project">
+                    @foreach (StudioProjectInfo project in _projects)
+                    {
+                        <option value="@project.Path">@project.Name@(project.IsDefault ? " (default)" : "")</option>
+                    }
+                    <option value="__new__">New project…</option>
+                </select>
+            </div>
+        }
         <div class="field">
             <label class="field-label" for="welcome-provider">Provider</label>
             <select id="welcome-provider" class="input" @onchange="SetProvider">
@@ -310,6 +325,8 @@
     private bool _allowUnverifiedTools;
     private bool _busy;
     private string? _error;
+    private IReadOnlyList<StudioProjectInfo> _projects = [];
+    private string _projectPath = "";
 
     private RemoteProviderPreset RemotePreset => RemoteProviders.Find(_remoteProviderId);
     private IReadOnlyList<string> RemoteActiveModels => OpenRouter.ActiveModelsFor(_remoteProviderId);
@@ -338,6 +355,8 @@
         _models = await Catalog.RefreshAsync();
         _runs = await Workspace.RecentRunsAsync();
         _sessions = ChatService.Sessions;
+        _projects = Workspace.Projects;
+        _projectPath = Workspace.Project.Root;
         _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
             ? Theme.LastChatModel
             : _models.FirstOrDefault()?.Path;
@@ -359,8 +378,72 @@
         _mode = mode;
         _error = null;
         _allowUnverifiedTools = false;
+        _projects = Workspace.Projects;
+        _projectPath = Workspace.Project.Root;
         RefreshTuneSelection();
         UpdateLatestRun();
+    }
+
+    /// <summary>
+    /// Work sessions belong to a project, so the landing page makes that choice
+    /// explicit before the first prompt instead of silently using whatever
+    /// project was open last.
+    /// </summary>
+    private async Task SetProjectAsync(ChangeEventArgs args)
+    {
+        string value = args.Value?.ToString() ?? "";
+        if (value == "__new__")
+        {
+            await CreateProjectAsync();
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(value) ||
+            string.Equals(value, Workspace.Project.Root, StringComparison.OrdinalIgnoreCase))
+        {
+            _projectPath = Workspace.Project.Root;
+            return;
+        }
+
+        try
+        {
+            Workspace.SwitchProject(value);
+            await ChatService.UseProjectAsync();
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+
+        _projects = Workspace.Projects;
+        _projectPath = Workspace.Project.Root;
+    }
+
+    private async Task CreateProjectAsync()
+    {
+        string? name = await JS.InvokeAsync<string?>("prompt", "New Work project name", "New project");
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            _projectPath = Workspace.Project.Root;
+            return;
+        }
+
+        try
+        {
+            await ChatService.CloseAsync();
+            SharpMind.Studio.Core.Projects.StudioProject project = Workspace.CreateProject(name);
+            Workspace.SwitchProject(project.Root);
+            await ChatService.UseProjectAsync();
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+
+        _projects = Workspace.Projects;
+        _projectPath = Workspace.Project.Root;
     }
 
     private void OpenSessionAsync()

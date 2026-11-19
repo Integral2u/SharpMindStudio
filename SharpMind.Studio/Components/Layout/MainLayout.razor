@@ -72,34 +72,53 @@
             @if (_chatsExpanded)
             {
                 <div class="nav-chats">
-                    <div class="nav-chat-group" title="@Workspace.Project.Root">@Workspace.Project.Document.Name</div>
                     <input type="search" class="nav-chat-search" value="@_chatQuery"
                            placeholder="Search chat history..." @oninput="OnChatSearch" />
-                    @if (ChatOnly.Count == 0)
+                    @if (_chatGroups.Count == 0)
                     {
                         <div class="nav-chat-empty">@(string.IsNullOrWhiteSpace(_chatQuery) ? "No chats yet" : "No matching chats")</div>
                     }
                     else
                     {
-                        @foreach (var chat in ChatOnly)
+                        @foreach (NavSessionGroup group in _chatGroups)
                         {
-                            <div class="nav-chat-item">
-                                <div class="nav-chat-main">
-                                    <a href="@ChatHref(chat)" class="nav-chat-link" title="@chat.Name">@chat.Name@(chat.Mode == "work" ? " / work" : "")@(chat.Provider == "openrouter" ? " / remote" : "")</a>
-                                    @if (!string.IsNullOrWhiteSpace(_chatQuery) && !string.IsNullOrWhiteSpace(chat.Preview))
+                            <div class="nav-chat-group-item">
+                                <button type="button" class="nav-chat-group-toggle" title="@group.Root"
+                                        @onclick="() => ToggleGroup(group)">
+                                    <span class="nav-chat-caret">@(IsGroupOpen(group) ? "−" : "+")</span>
+                                    <span class="nav-chat-group-name">@group.Name</span>
+                                    <span class="nav-chat-count">@group.Sessions.Count</span>
+                                </button>
+                                @if (IsGroupOpen(group))
+                                {
+                                    @foreach (ChatSessionSummary chat in group.Sessions)
                                     {
-                                        <div class="nav-chat-preview">@chat.Preview</div>
+                                        <div class="nav-chat-item">
+                                            <div class="nav-chat-main">
+                                                <button type="button" class="nav-chat-link" title="@chat.Name"
+                                                        @onclick="() => OpenSessionAsync(group, chat)">
+                                                    @chat.Name@(chat.Provider == "openrouter" ? " / remote" : "")
+                                                </button>
+                                                @if (!string.IsNullOrWhiteSpace(_chatQuery) && !string.IsNullOrWhiteSpace(chat.Preview))
+                                                {
+                                                    <div class="nav-chat-preview">@chat.Preview</div>
+                                                }
+                                            </div>
+                                            @if (group.IsCurrent)
+                                            {
+                                                <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
+                                                        title="Rename chat" aria-label="Rename chat">&#9998;</button>
+                                                <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"
+                                                        title="Delete chat" aria-label="Delete chat">&times;</button>
+                                            }
+                                        </div>
                                     }
-                                </div>
-                                <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
-                                        title="Rename chat" aria-label="Rename chat">&#9998;</button>
-                                <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"
-                                        title="Delete chat" aria-label="Delete chat">&times;</button>
+                                }
                             </div>
                         }
                     }
                     <button type="button" class="nav-chat-clear" @onclick="ClearChatsAsync">
-                        Clear all chats
+                        Clear this project's chats
                     </button>
                 </div>
             }
@@ -122,34 +141,53 @@
             @if (_workChatsExpanded)
             {
                 <div class="nav-chats">
-                    <div class="nav-chat-group" title="@Workspace.Project.Root">@Workspace.Project.Document.Name</div>
                     <input type="search" class="nav-chat-search" value="@_workQuery"
                            placeholder="Search work sessions..." @oninput="OnWorkSearch" />
-                    @if (WorkOnly.Count == 0)
+                    @if (_workGroups.Count == 0)
                     {
                         <div class="nav-chat-empty">@(string.IsNullOrWhiteSpace(_workQuery) ? "No work sessions yet" : "No matching work sessions")</div>
                     }
                     else
                     {
-                        @foreach (var chat in WorkOnly)
+                        @foreach (NavSessionGroup group in _workGroups)
                         {
-                            <div class="nav-chat-item">
-                                <div class="nav-chat-main">
-                                    <a href="@ChatHref(chat)" class="nav-chat-link" title="@chat.Name">@chat.Name@(chat.Provider == "openrouter" ? " / remote" : "")</a>
-                                    @if (!string.IsNullOrWhiteSpace(_workQuery) && !string.IsNullOrWhiteSpace(chat.Preview))
+                            <div class="nav-chat-group-item">
+                                <button type="button" class="nav-chat-group-toggle" title="@group.Root"
+                                        @onclick="() => ToggleGroup(group)">
+                                    <span class="nav-chat-caret">@(IsGroupOpen(group) ? "−" : "+")</span>
+                                    <span class="nav-chat-group-name">@group.Name</span>
+                                    <span class="nav-chat-count">@group.Sessions.Count</span>
+                                </button>
+                                @if (IsGroupOpen(group))
+                                {
+                                    @foreach (ChatSessionSummary chat in group.Sessions)
                                     {
-                                        <div class="nav-chat-preview">@chat.Preview</div>
+                                        <div class="nav-chat-item">
+                                            <div class="nav-chat-main">
+                                                <button type="button" class="nav-chat-link" title="@chat.Name"
+                                                        @onclick="() => OpenSessionAsync(group, chat)">
+                                                    @chat.Name@(chat.Provider == "openrouter" ? " / remote" : "")
+                                                </button>
+                                                @if (!string.IsNullOrWhiteSpace(_workQuery) && !string.IsNullOrWhiteSpace(chat.Preview))
+                                                {
+                                                    <div class="nav-chat-preview">@chat.Preview</div>
+                                                }
+                                            </div>
+                                            @if (group.IsCurrent)
+                                            {
+                                                <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
+                                                        title="Rename work session" aria-label="Rename work session">&#9998;</button>
+                                                <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"
+                                                        title="Delete work session" aria-label="Delete work session">&times;</button>
+                                            }
+                                        </div>
                                     }
-                                </div>
-                                <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
-                                        title="Rename work session" aria-label="Rename work session">&#9998;</button>
-                                <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"
-                                        title="Delete work session" aria-label="Delete work session">&times;</button>
+                                }
                             </div>
                         }
                     }
                     <button type="button" class="nav-chat-clear" @onclick="ClearChatsAsync">
-                        Clear all chats
+                        Clear this project's chats
                     </button>
                 </div>
             }
@@ -455,41 +493,27 @@
     private CancellationTokenSource? _computeRefreshCts;
     private string _chatQuery = "";
     private string _workQuery = "";
-    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> _chats = [];
-    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> _chatResults = [];
-    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> _workResults = [];
+    private List<NavSessionGroup> _chatGroups = [];
+    private List<NavSessionGroup> _workGroups = [];
+    private readonly Dictionary<string, bool> _groupOpen = new(StringComparer.OrdinalIgnoreCase);
 
-    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> ChatOnly =>
-        Filter(_chatQuery, _chatResults, work: false);
-
-    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> WorkOnly =>
-        Filter(_workQuery, _workResults, work: true);
-
-    private IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> Filter(
-        string query,
-        IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> results,
-        bool work)
-    {
-        IReadOnlyList<SharpMind.Studio.Core.Chat.ChatSessionSummary> source =
-            string.IsNullOrWhiteSpace(query) ? _chats : results;
-        return [.. source.Where(chat =>
-            string.Equals(chat.Mode, "work", StringComparison.OrdinalIgnoreCase) == work)];
-    }
+    /// <summary>One project's sessions in the sidebar, expandable as a group.</summary>
+    private sealed record NavSessionGroup(
+        string Name,
+        string Root,
+        IReadOnlyList<ChatSessionSummary> Sessions,
+        bool IsCurrent);
 
     private void OnChatSearch(ChangeEventArgs args)
     {
         _chatQuery = args.Value?.ToString() ?? "";
-        _chatResults = string.IsNullOrWhiteSpace(_chatQuery)
-            ? []
-            : ChatService.SearchSessions(_chatQuery);
+        _chatGroups = BuildGroups(work: false, _chatQuery);
     }
 
     private void OnWorkSearch(ChangeEventArgs args)
     {
         _workQuery = args.Value?.ToString() ?? "";
-        _workResults = string.IsNullOrWhiteSpace(_workQuery)
-            ? []
-            : ChatService.SearchSessions(_workQuery);
+        _workGroups = BuildGroups(work: true, _workQuery);
     }
 
     private void ToggleChats()
@@ -556,11 +580,81 @@
 
     private void LoadChats()
     {
-        _chats = ChatService.Sessions;
-        if (!string.IsNullOrWhiteSpace(_chatQuery))
-            _chatResults = ChatService.SearchSessions(_chatQuery);
-        if (!string.IsNullOrWhiteSpace(_workQuery))
-            _workResults = ChatService.SearchSessions(_workQuery);
+        _chatGroups = BuildGroups(work: false, _chatQuery);
+        _workGroups = BuildGroups(work: true, _workQuery);
+    }
+
+    /// <summary>
+    /// Every project that has sessions of this kind, newest project first for
+    /// the one that is open. A project with no chats folder is skipped instead
+    /// of having one created just to look inside it.
+    /// </summary>
+    private List<NavSessionGroup> BuildGroups(bool work, string query)
+    {
+        var groups = new List<NavSessionGroup>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (SharpMind.Studio.Services.StudioProjectInfo project in Workspace.Projects)
+        {
+            if (!seen.Add(project.Path)) continue;
+            string chats = Path.Combine(project.Path, "chats");
+            if (!Directory.Exists(chats)) continue;
+
+            IReadOnlyList<ChatSessionSummary> sessions;
+            try
+            {
+                var store = new ChatSessionStore(chats);
+                sessions = string.IsNullOrWhiteSpace(query) ? store.List() : store.Search(query);
+            }
+            catch
+            {
+                continue;
+            }
+
+            List<ChatSessionSummary> filtered = [.. sessions.Where(session =>
+                string.Equals(session.Mode, "work", StringComparison.OrdinalIgnoreCase) == work)];
+            if (filtered.Count == 0) continue;
+
+            groups.Add(new NavSessionGroup(
+                project.Name,
+                project.Path,
+                filtered,
+                string.Equals(project.Path, Workspace.Project.Root, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        return [.. groups
+            .OrderByDescending(group => group.IsCurrent)
+            .ThenBy(group => group.Name, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private bool IsGroupOpen(NavSessionGroup group) =>
+        _groupOpen.TryGetValue(group.Root, out bool open) ? open : group.IsCurrent;
+
+    private void ToggleGroup(NavSessionGroup group) =>
+        _groupOpen[group.Root] = !IsGroupOpen(group);
+
+    /// <summary>
+    /// A session belongs to the project that stores it, so opening one from
+    /// another group switches projects first. Rename and delete stay on the
+    /// current project because they edit the live store.
+    /// </summary>
+    private async Task OpenSessionAsync(NavSessionGroup group, ChatSessionSummary chat)
+    {
+        if (!string.Equals(group.Root, Workspace.Project.Root, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                Workspace.SwitchProject(group.Root);
+                await ChatService.UseProjectAsync();
+            }
+            catch (Exception ex)
+            {
+                await JS.InvokeVoidAsync("alert", ex.Message);
+                return;
+            }
+        }
+
+        Nav.NavigateTo(ChatHref(chat));
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs args) =>
@@ -583,7 +677,7 @@
     private async Task ClearChatsAsync()
     {
         bool confirmed = await JS.InvokeAsync<bool>(
-            "confirm", "Delete all saved chats? This cannot be undone.");
+            "confirm", "Delete all saved chats in this project? This cannot be undone.");
         if (!confirmed) return;
 
         await ChatService.ClearAllAsync();
