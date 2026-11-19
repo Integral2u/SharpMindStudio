@@ -452,29 +452,55 @@ else
                                               AllowInherit="true"
                                               Effective="SessionToolsEffective" />
 
-                        @if (_embeddedNames.Count > 0)
+                        @if (_embeddedTools.Count > 0)
                         {
                             <div class="panel-head" style="margin-top:.75rem">
                                 <div>
                                     <div class="eyebrow">Embedded</div>
-                                    <h2>Plugins in this model</h2>
+                                    <h2>Tools in this model</h2>
                                 </div>
-                                <span class="faint small mono">off by default</span>
+                                <span class="faint small mono">off by default, remembered per model</span>
                             </div>
                             <p class="small faint">
-                                This model carries plugin assemblies. Ticking one loads its code into
-                                Studio for this session. Studio never loads one on its own, and a loaded
-                                assembly cannot be unloaded until Studio restarts.
+                                These tools live inside the .smm. A different model has its own
+                                entries, so enabling one here never turns on a tool in another file.
+                                Loading an assembly runs its code in Studio and cannot be undone
+                                until Studio restarts; the safety inspector still checks every call.
                             </p>
-                            @foreach (string name in _embeddedNames)
+                            @foreach (IGrouping<string, EmbeddedToolInfo> group in _embeddedTools.GroupBy(tool => tool.Assembly))
                             {
-                                <label class="work-tool">
-                                    <input type="checkbox"
-                                           checked="@_enabledEmbedded.Contains(name, StringComparer.OrdinalIgnoreCase)"
-                                           @onchange="e => ToggleEmbeddedPlugin(name, e.Value)" />
-                                    <span>@name</span>
-                                    <span class="tool-badge is-embedded">embedded</span>
-                                </label>
+                                <div class="work-tool-group">
+                                    <div class="spread work-tool-group-head">
+                                        <div class="eyebrow">@group.Key</div>
+                                        <span class="tool-badge is-embedded">embedded</span>
+                                    </div>
+                                    <div class="work-tools">
+                                        @foreach (EmbeddedToolInfo tool in group)
+                                        {
+                                            <div class="work-tool-row">
+                                                <span class="work-tool-name">
+                                                    @tool.Tool
+                                                    @if (tool.StartsProcesses)
+                                                    {
+                                                        <span class="tool-badge is-process">process</span>
+                                                    }
+                                                </span>
+                                                <div class="segmented" role="group" aria-label="@tool.Tool">
+                                                    <button type="button"
+                                                            class="segmented-option is-off @(IsEmbeddedToolOn(tool.Tool) ? "" : "active")"
+                                                            @onclick="() => SetEmbeddedTool(tool.Tool, false)">
+                                                        Off
+                                                    </button>
+                                                    <button type="button"
+                                                            class="segmented-option is-always @(IsEmbeddedToolOn(tool.Tool) ? "active" : "")"
+                                                            @onclick="() => SetEmbeddedTool(tool.Tool, true)">
+                                                        On
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
                             }
                         }
 
@@ -925,8 +951,8 @@ else
     private bool _focusPending = true;
     private InferenceOverrides _sessionDraft = new();
     private ToolPermissionSet _sessionToolsDraft = new();
-    private IReadOnlyList<string> _embeddedNames = [];
-    private List<string> _enabledEmbedded = [];
+    private IReadOnlyList<EmbeddedToolInfo> _embeddedTools = [];
+    private ToolPermissionSet _embeddedPermissions = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -1080,10 +1106,8 @@ else
                 _selectedModelPath = ChatService.Document.ModelPath;
             _sessionDraft = ChatService.Document.Overrides;
         _sessionToolsDraft = ChatService.Document.ToolPermissions ?? new ToolPermissionSet();
-        _embeddedNames = [.. SmmContentsReader
-            .ReadPlugins(ChatService.Document.ModelPath)
-            .Select(entry => entry.Name)];
-        _enabledEmbedded = [.. ChatService.Document.EnabledEmbeddedPlugins];
+        _embeddedTools = EmbeddedToolCatalog.Read(ChatService.Document.ModelPath);
+        _embeddedPermissions = ChatService.ModelToolPermissions;
             _selectedTunePreset = Enum.TryParse(ChatService.Document.TunePreset, out TunePreset preset)
                 ? preset
                 : null;
@@ -1660,7 +1684,7 @@ else
     {
         await ChatService.ApplyOptionsAsync(_sessionDraft);
         await ChatService.ApplyToolPermissionsAsync(_sessionToolsDraft);
-        await ChatService.SetEmbeddedPluginsAsync(_enabledEmbedded);
+        ChatService.SaveModelToolPermissions(_embeddedPermissions);
         SyncFromChat();
     }
 
@@ -1668,21 +1692,30 @@ else
     {
         _sessionDraft = new InferenceOverrides();
         _sessionToolsDraft = new ToolPermissionSet();
-        _enabledEmbedded = [];
+        _embeddedPermissions = new ToolPermissionSet();
     }
 
-    private void ToggleEmbeddedPlugin(string name, object? enabled)
+    /// <summary>
+    /// An embedded tool is either not loaded or loaded. A tool that runs its own
+    /// code cannot be asked per call, so offering Ask here would be a promise
+    /// Studio cannot keep; the safety inspector still reviews every call.
+    /// </summary>
+    private bool IsEmbeddedToolOn(string tool) =>
+        _embeddedPermissions.TryTool(tool, out WorkToolPermission value) &&
+        value != WorkToolPermission.Off;
+
+    private void SetEmbeddedTool(string tool, bool enabled)
     {
-        if (enabled is true)
+        var tools = new Dictionary<string, WorkToolPermission>(
+            _embeddedPermissions.Tools, StringComparer.OrdinalIgnoreCase);
+        if (enabled) tools[tool] = WorkToolPermission.Always;
+        else tools.Remove(tool);
+
+        _embeddedPermissions = new ToolPermissionSet
         {
-            if (!_enabledEmbedded.Contains(name, StringComparer.OrdinalIgnoreCase))
-                _enabledEmbedded.Add(name);
-        }
-        else
-        {
-            _enabledEmbedded.RemoveAll(value =>
-                string.Equals(value, name, StringComparison.OrdinalIgnoreCase));
-        }
+            Tools = tools,
+            Groups = _embeddedPermissions.Groups,
+        };
     }
 
     /// <summary>

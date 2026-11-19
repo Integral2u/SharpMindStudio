@@ -15,6 +15,7 @@ using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.OpenRouter;
 using SharpMind.Studio.Core.Runs;
+using SharpMind.Studio.Core.Training;
 using SharpMind.Studio.Core.Work;
 using SharpMind.Studio.Services.Chat;
 
@@ -39,6 +40,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly ThemeService _theme;
     private readonly StudioSafetyService _safety;
     private readonly EmbeddedPluginHost _embedded;
+    private readonly ModelToolPermissionStore _modelTools;
     private ChatSessionStore _store;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChatSession? _session;
@@ -85,7 +87,8 @@ public sealed class StudioChatService : IAsyncDisposable
         StudioPluginService plugins,
         ThemeService theme,
         StudioSafetyService safety,
-        EmbeddedPluginHost embedded)
+        EmbeddedPluginHost embedded,
+        ModelToolPermissionStore modelTools)
     {
         _workspace = workspace;
         _catalog = catalog;
@@ -104,6 +107,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _theme = theme;
         _safety = safety;
         _embedded = embedded;
+        _modelTools = modelTools;
         _store = new ChatSessionStore(workspace.Project.ChatsDirectory);
         _work.AgentToolExecutor = ExecuteAgentToolAsync;
     }
@@ -1114,12 +1118,14 @@ public sealed class StudioChatService : IAsyncDisposable
         string? computeProvider = ComputeProviderId;
         if (computeTurn) _activity.BeginChat(computeProvider);
 
+        var embedded = BuildEmbeddedSelection();
         IAgentBuilder? agent = _work.CreateAgent(
             _document?.Mode ?? "chat",
             _document?.Overrides.Temperature,
             ToolProfile(),
             BuildToolCallFilter(),
-            BuildEmbeddedTools());
+            embedded.Tools,
+            embedded.Disabled);
         _document.Messages.Add(ChatMessage.User(text, "You"));
         ChatMessage assistant = ChatMessage.Agent("", agent?.AgentName);
         _document.Messages.Add(assistant);
@@ -1192,40 +1198,55 @@ public sealed class StudioChatService : IAsyncDisposable
             Stop();
     }
 
-    /// <summary>
-    /// Records which embedded plugin assemblies this session may load. Nothing
-    /// loads until the next turn rebuilds the agent.
-    /// </summary>
-    public async Task SetEmbeddedPluginsAsync(IReadOnlyList<string> names)
-    {
-        ArgumentNullException.ThrowIfNull(names);
-        if (_document is null) return;
+    /// <summary>Permissions saved for the current model's embedded tools.</summary>
+    public ToolPermissionSet ModelToolPermissions =>
+        _modelTools.For(ModelIdentity.For(_document?.ModelPath).Id);
 
-        await _gate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            _document.EnabledEmbeddedPlugins =
-                [.. names.Where(name => !string.IsNullOrWhiteSpace(name))
-                         .Distinct(StringComparer.OrdinalIgnoreCase)];
-            _store.Save(_document);
-            _status = "Embedded plugins applied.";
-            Notify();
-        }
-        finally
-        {
-            _gate.Release();
-        }
+    public void SaveModelToolPermissions(ToolPermissionSet permissions)
+    {
+        ModelIdentity identity = ModelIdentity.For(_document?.ModelPath);
+        if (!identity.IsKnown) return;
+        _modelTools.Save(identity.Id, permissions);
+        Notify();
     }
 
     /// <summary>
-    /// Tool objects from plugin assemblies the session has enabled. An empty
-    /// list is the default and the safe case.
+    /// Tool objects from embedded assemblies the user has enabled, plus the
+    /// names to hide. A model with no saved entry enables nothing, so a new
+    /// model's embedded tools start off.
     /// </summary>
-    private IReadOnlyList<object> BuildEmbeddedTools()
+    private (IReadOnlyList<object> Tools, IReadOnlyList<string> Disabled) BuildEmbeddedSelection()
     {
-        if (_document is null) return [];
-        return _embedded.Resolve(
-            _document.ModelPath, _document.EnabledEmbeddedPlugins, out _);
+        if (_document is null) return ([], []);
+
+        ModelIdentity identity = ModelIdentity.For(_document.ModelPath);
+        if (!identity.IsKnown) return ([], []);
+
+        IReadOnlyList<EmbeddedToolInfo> catalog = EmbeddedToolCatalog.Read(_document.ModelPath);
+        if (catalog.Count == 0) return ([], []);
+
+        ToolPermissionSet saved = _modelTools.For(identity.Id);
+        var assemblies = new List<string>();
+        var disabled = new List<string>();
+
+        foreach (EmbeddedToolInfo tool in catalog)
+        {
+            WorkToolPermission permission = saved.TryTool(tool.Tool, out WorkToolPermission value)
+                ? value
+                : WorkToolPermission.Off;
+
+            if (permission == WorkToolPermission.Off)
+            {
+                disabled.Add(tool.Tool);
+                continue;
+            }
+
+            if (!assemblies.Contains(tool.Assembly, StringComparer.OrdinalIgnoreCase))
+                assemblies.Add(tool.Assembly);
+        }
+
+        if (assemblies.Count == 0) return ([], disabled);
+        return (_embedded.Resolve(_document.ModelPath, assemblies, out _), disabled);
     }
 
     /// <summary>
@@ -1716,12 +1737,14 @@ public sealed class StudioChatService : IAsyncDisposable
                 option.Name.Equals("KVCacherBuilder", StringComparison.OrdinalIgnoreCase));
 
         Type cacheType = generator.CacheType ?? cache.Type;
+        var embedded = BuildEmbeddedSelection();
         var agent = _work.CreateAgent(
             _document?.Mode ?? "chat",
             _document?.Overrides.Temperature,
             ToolProfile(),
             BuildToolCallFilter(),
-            BuildEmbeddedTools());
+            embedded.Tools,
+            embedded.Disabled);
         if (agent is AgentBuilder builder)
         {
             builder.PluginCompactors = _plugins.Compactors;

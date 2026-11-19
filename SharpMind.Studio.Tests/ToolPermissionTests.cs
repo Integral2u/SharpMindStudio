@@ -1,4 +1,5 @@
 using SharpMind.Studio.Core.Inference;
+using SharpMind.Studio.Core.Training;
 using SharpMind.Studio.Core.Work;
 using Xunit;
 
@@ -245,6 +246,57 @@ public sealed class ToolPermissionTests
             Assert.Equal(".", context.Path);
             Assert.Equal(WorkPermission.Ask, context.Permissions.Write);
             Assert.Equal(WorkPermission.Never, context.Permissions.Delete);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ModelToolStore_IsKeyedPerModel()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "sm-model-tools-" + Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var store = new ModelToolPermissionStore(root);
+            store.Save("model-a", new ToolPermissionSet
+            {
+                Tools = { ["Weather"] = WorkToolPermission.Always },
+            });
+
+            var reopened = new ModelToolPermissionStore(root);
+            Assert.Equal(WorkToolPermission.Always, reopened.For("model-a").Tools["Weather"]);
+
+            // A different model inherits nothing, so its tools start off.
+            Assert.Empty(reopened.For("model-b").Tools);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ModelIdentity_IsStableForTheSameFile()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "sm-model-id-" + Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string first = Path.Combine(root, "tiny.smm");
+            string second = Path.Combine(root, "other.smm");
+            File.WriteAllBytes(first, [1, 2, 3]);
+            File.WriteAllBytes(second, [1, 2, 3, 4]);
+
+            ModelIdentity a = ModelIdentity.For(first);
+            ModelIdentity b = ModelIdentity.For(first);
+            ModelIdentity other = ModelIdentity.For(second);
+
+            Assert.True(a.IsKnown);
+            Assert.Equal(a.Id, b.Id);
+            Assert.NotEqual(a.Id, other.Id);
         }
         finally
         {

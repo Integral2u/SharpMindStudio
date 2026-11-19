@@ -167,7 +167,8 @@ public sealed class StudioWorkService : IDisposable
         float? temperature = null,
         ToolPermissionProfile? profile = null,
         IToolCallFilter? filter = null,
-        IReadOnlyList<object>? embeddedTools = null)
+        IReadOnlyList<object>? embeddedTools = null,
+        IReadOnlyList<string>? embeddedDisabled = null)
     {
         bool work = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase);
         IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = _agents.EnabledAgents;
@@ -188,6 +189,8 @@ public sealed class StudioWorkService : IDisposable
             .Where(tool => !effective.For(tool.Name, tool.Group).IsVisible)
             .Select(tool => tool.Name)];
         builder.ToolCallFilter = filter;
+        if (embeddedDisabled is { Count: > 0 })
+            builder.DisabledTools.UnionWith(embeddedDisabled);
         if (work && !_device.IsMobile)
         {
             builder.WithTools(new WorkFileTools(

@@ -68,6 +68,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   context folder set to **Never** refuses whatever the tool says. A tool set to
   **Always** is not downgraded by a folder that only asks. An agent that asks for
   more than the session allows raises a prompt that is never remembered.
+- **Model-scoped embedded tool permissions** - tools that live inside an `.smm`
+  are listed in the session options with an embedded badge and start **off**.
+  Enabling one is remembered per model, keyed by the container's checksum when it
+  has one and by name, size and creation time otherwise, so a different model
+  never inherits another model's choices. A new model's tools appear with their
+  own entries, and an unknown assembly loads nothing.
 - **Model container report** - the Models tab says what an `.smm` carries besides
   weights: embedded plugin assemblies, skills and a system prompt. Training warns
   that a fine-tune inherits the skills and the prompt. Studio never loads an
