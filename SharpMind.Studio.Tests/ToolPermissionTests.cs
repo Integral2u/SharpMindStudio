@@ -146,17 +146,18 @@ public sealed class ToolPermissionTests
 
     [Theory]
     [InlineData(WorkToolPermission.Always, WorkPermission.Never, WorkToolPermission.Never)]
-    [InlineData(WorkToolPermission.Always, WorkPermission.Ask, WorkToolPermission.Ask)]
+    [InlineData(WorkToolPermission.Always, WorkPermission.Ask, WorkToolPermission.Always)]
     [InlineData(WorkToolPermission.Always, WorkPermission.Always, WorkToolPermission.Always)]
     [InlineData(WorkToolPermission.Ask, WorkPermission.Always, WorkToolPermission.Ask)]
+    [InlineData(WorkToolPermission.Ask, WorkPermission.Ask, WorkToolPermission.Ask)]
     [InlineData(WorkToolPermission.Never, WorkPermission.Always, WorkToolPermission.Never)]
     [InlineData(WorkToolPermission.Off, WorkPermission.Always, WorkToolPermission.Off)]
-    public void Folder_IsACapNotAnOverride(
+    public void Folder_NeverIsAHardDenyAndOtherwiseTheToolDecides(
         WorkToolPermission tool,
         WorkPermission folder,
         WorkToolPermission expected)
     {
-        Assert.Equal(expected, ToolPermissionResolver.Cap(tool, folder));
+        Assert.Equal(expected, ToolPermissionResolver.ApplyFolder(tool, folder));
     }
 
     [Fact]

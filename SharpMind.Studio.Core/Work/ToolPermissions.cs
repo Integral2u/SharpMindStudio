@@ -191,13 +191,12 @@ public static class ToolPermissionResolver
     }
 
     /// <summary>
-    /// Applies a folder permission as a cap: the more restrictive of the two
-    /// wins. A tool set to <see cref="WorkToolPermission.Always"/> still refuses in
-    /// a folder whose permission is <see cref="WorkPermission.Never"/>, so the
-    /// folder stays a hard boundary.
+    /// Applies a folder permission. A folder set to <see cref="WorkPermission.Never"/>
+    /// is a hard deny; otherwise the tool permission decides, so an explicit
+    /// Always is not silently downgraded by a folder that is merely Ask.
     /// </summary>
-    public static WorkToolPermission Cap(WorkToolPermission tool, WorkPermission folder) =>
-        MostRestrictive(tool, FromWorkPermission(folder));
+    public static WorkToolPermission ApplyFolder(WorkToolPermission tool, WorkPermission folder) =>
+        folder == WorkPermission.Never ? WorkToolPermission.Never : tool;
 
     /// <summary>The more restrictive of two permissions, using the enum order.</summary>
     public static WorkToolPermission MostRestrictive(WorkToolPermission left, WorkToolPermission right) =>

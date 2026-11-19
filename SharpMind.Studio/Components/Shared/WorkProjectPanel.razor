@@ -17,6 +17,10 @@
             <div class="eyebrow">Work project</div>
             <strong>@Workspace.Project.Document.Name</strong>
             <span class="mono">@Workspace.Project.Root</span>
+            @if (!string.IsNullOrWhiteSpace(_status))
+            {
+                <span class="small faint work-project-status">@_status</span>
+            }
         </div>
         @if (!DeviceAccess.IsMobile)
         {
@@ -239,6 +243,7 @@
                     Tools are registered in Work only; Chat sessions never receive them.
                     <strong>Off</strong> hides a tool from the model, <strong>Never</strong> keeps it visible but
                     refuses every call, <strong>Ask</strong> prompts, and <strong>Always</strong> permits.
+                    A context folder set to <strong>Never</strong> still refuses whatever the tool says.
                     Changes apply when you save.
                 </p>
                 @foreach (IGrouping<string, WorkToolInfo> group in ToolCatalog.Tools.GroupBy(tool => tool.Group))
@@ -337,10 +342,31 @@
     protected override void OnInitialized()
     {
         Workspace.ProjectChanged += OnProjectChanged;
+        Work.Changed += OnWorkChanged;
         LoadFields();
     }
 
-    public void Dispose() => Workspace.ProjectChanged -= OnProjectChanged;
+    public void Dispose()
+    {
+        Workspace.ProjectChanged -= OnProjectChanged;
+        Work.Changed -= OnWorkChanged;
+    }
+
+    /// <summary>
+    /// "Always allow" from a permission prompt raises the project's tool entry.
+    /// Reflect that in the panel without discarding an unsaved prompt edit.
+    /// </summary>
+    private void OnWorkChanged() => _ = InvokeAsync(() =>
+    {
+        _toolPermissions = new ToolPermissionSet
+        {
+            Tools = new Dictionary<string, WorkToolPermission>(
+                Work.Settings.ToolPermissions.Tools, StringComparer.OrdinalIgnoreCase),
+            Groups = new Dictionary<string, WorkToolPermission>(
+                Work.Settings.ToolPermissions.Groups, StringComparer.OrdinalIgnoreCase),
+        };
+        StateHasChanged();
+    });
 
     private void OnProjectChanged() => _ = InvokeAsync(() =>
     {
@@ -799,6 +825,7 @@
 
             await ChatService.ReloadWorkContextAsync();
             LoadFields();
+            _showSettings = false;
             _status = contextWarnings.Count == 0
                 ? "Project settings applied."
                 : "Project settings applied. " + string.Join(" ", contextWarnings);

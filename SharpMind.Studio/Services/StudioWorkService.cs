@@ -330,7 +330,9 @@ public sealed class StudioWorkService : IDisposable
         profile ??= new ToolPermissionProfile();
         return profile with
         {
-            Project = profile.Project ?? ProjectToolLayer(),
+            // Always read the live project layer: "Always allow" during a turn
+            // changes it, and the next tool call in the same turn must see it.
+            Project = ProjectToolLayer(),
             System = profile.System ?? _inference.SystemTools,
         };
     }
@@ -361,6 +363,15 @@ public sealed class StudioWorkService : IDisposable
             if (_settings.EnabledTools.Contains(tool.Name, StringComparer.OrdinalIgnoreCase))
                 layer.Tools[tool.Name] = WorkToolPermission.Ask;
         }
+
+        // The old Web toggle is the network gate. Seed FetchUrl from it so the
+        // tool control is authoritative without turning network access on.
+        if (!layer.Tools.ContainsKey("FetchUrl"))
+        {
+            layer.Tools["FetchUrl"] =
+                ToolPermissionResolver.FromWorkPermission(_settings.Permissions.Web);
+        }
+
         return layer;
     }
 
@@ -472,7 +483,9 @@ public sealed class StudioWorkService : IDisposable
         }
         else if (access.Category == WorkToolCategory.Web)
         {
-            configured = _settings.Permissions.Web;
+            // FetchUrl carries the network policy in the tool layer, seeded from
+            // the old Web toggle, so the folder cannot double-gate it.
+            configured = WorkPermission.Always;
         }
         else
         {
@@ -481,9 +494,9 @@ public sealed class StudioWorkService : IDisposable
             configured = context.Permissions.For(access.Category);
         }
 
-        // The folder stays a hard boundary: a tool set to Always still refuses in
-        // a folder whose category permission is Never.
-        WorkToolPermission effective = ToolPermissionResolver.Cap(tool.Permission, configured);
+        // A folder set to Never is a hard boundary. Otherwise the tool decides,
+        // so setting a tool to Always is not undone by a folder that only asks.
+        WorkToolPermission effective = ToolPermissionResolver.ApplyFolder(tool.Permission, configured);
 
         // An agent that asks for more than the session allows must ask, even when
         // its own policy is Always.
@@ -521,7 +534,7 @@ public sealed class StudioWorkService : IDisposable
         {
             // An agent's policy must not silently become the project policy.
             if (permissions is null)
-                RememberPermission(access.Category, context);
+                RememberToolPermission(access.Tool);
             return true;
         }
 
@@ -640,27 +653,27 @@ public sealed class StudioWorkService : IDisposable
             .FirstOrDefault();
     }
 
-    private void RememberPermission(WorkToolCategory category, WorkContext? context)
+    /// <summary>
+    /// "Always allow" raises the project's tool entry, so the Tools panel shows
+    /// the new value and the next call does not ask again. Folder permissions
+    /// are edited in their own grid and are never widened behind the user's
+    /// back.
+    /// </summary>
+    private void RememberToolPermission(string tool)
     {
-        if (category == WorkToolCategory.Web)
+        var tools = new Dictionary<string, WorkToolPermission>(
+            _settings.ToolPermissions.Tools, StringComparer.OrdinalIgnoreCase);
+        tools[tool] = WorkToolPermission.Always;
+        _settings = _settings with
         {
-            _settings = _settings with
+            ToolPermissions = new ToolPermissionSet
             {
-                Permissions = _settings.Permissions.With(WorkToolCategory.Web, WorkPermission.Always),
-            };
-        }
-        else if (context is not null)
-        {
-            _settings = _settings with
-            {
-                Contexts = [.. _settings.Contexts.Select(value =>
-                    value.Id == context.Id
-                        ? value with { Permissions = value.Permissions.With(category, WorkPermission.Always) }
-                        : value)],
-            };
-        }
-
+                Tools = tools,
+                Groups = _settings.ToolPermissions.Groups,
+            },
+        };
         try { _store.Save(_settings); } catch { }
+        Notify();
     }
 
     private void MigrateLegacySkills()
