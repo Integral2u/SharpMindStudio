@@ -329,6 +329,47 @@
     color: var(--muted);
 }
 
+.segmented-reset {
+    width: 1.4rem;
+    height: 1.4rem;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: .35rem;
+    background: transparent;
+    color: var(--faint);
+    cursor: pointer;
+}
+
+.segmented-reset:hover {
+    color: var(--text);
+}
+
+.tool-row-actions {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+}
+
+.tool-badge {
+    padding: .05rem .3rem;
+    border: 1px solid var(--line);
+    border-radius: .3rem;
+    color: var(--faint);
+    font-size: .55rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.tool-badge.is-internal {
+    border-color: rgba(var(--accent-rgb), .35);
+    color: var(--accent);
+}
+
+.tool-badge.is-plugin {
+    border-color: rgba(255, 196, 107, .4);
+    color: #ffc46b;
+}
+
 .work-tool {
     display: flex;
     align-items: center;

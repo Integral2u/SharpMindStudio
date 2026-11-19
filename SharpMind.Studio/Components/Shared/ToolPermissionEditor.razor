@@ -1,0 +1,145 @@
+@using SharpMind.Studio.Core.Work
+@using SharpMind.Studio.Services
+@inject WorkToolService Catalog
+
+<div class="tool-permission-editor">
+    @foreach (IGrouping<string, WorkToolInfo> group in Catalog.Tools.GroupBy(tool => tool.Group))
+    {
+        WorkToolInfo[] tools = [.. group];
+        <div class="work-tool-group">
+            <div class="spread work-tool-group-head">
+                <div class="eyebrow">@group.Key</div>
+                <div class="segmented" role="group" aria-label="@group.Key permissions">
+                    @foreach (WorkToolPermission option in Options)
+                    {
+                        <button type="button"
+                                class="segmented-option @(GroupValue(tools) == option ? "active" : "")"
+                                title="Apply @Label(option) to every tool in this group"
+                                @onclick="() => SetGroupAsync(tools, option)">
+                            @Label(option)
+                        </button>
+                    }
+                </div>
+            </div>
+            <div class="work-tools">
+                @foreach (WorkToolInfo tool in tools)
+                {
+                    bool overridden = Value.TryTool(tool.Name, out WorkToolPermission current);
+                    WorkToolPermission shown = overridden
+                        ? current
+                        : Effective?.Invoke(tool.Name, tool.Group).Permission ?? WorkToolPermission.Ask;
+                    <div class="work-tool-row" title="@tool.Source">
+                        <span class="work-tool-name">
+                            @tool.Name
+                            <span class="tool-badge @(tool.IsPlugin ? "is-plugin" : "is-internal")"
+                                  title="@(tool.IsPlugin
+                                      ? "Plugin code: Studio can hide it and can block the calls it routes through the permission gate, but cannot sandbox a process it starts."
+                                      : "Built into Studio and gated by the project permissions.")">
+                                @(tool.IsPlugin ? "plugin" : "internal")
+                            </span>
+                            @if (AllowInherit && !overridden)
+                            {
+                                <span class="small faint">inherits @SourceLabel(tool)</span>
+                            }
+                        </span>
+                        <div class="tool-row-actions">
+                            @if (AllowInherit && overridden)
+                            {
+                                <button type="button" class="segmented-reset" title="Inherit again"
+                                        @onclick="() => ClearAsync(tool.Name)">&#8630;</button>
+                            }
+                            <div class="segmented" role="group" aria-label="@tool.Name permission">
+                                @foreach (WorkToolPermission option in Options)
+                                {
+                                    <button type="button"
+                                            class="segmented-option @(shown == option ? "active" : "") @Class(option)"
+                                            title="@Label(option)"
+                                            @onclick="() => SetToolAsync(tool.Name, option)">
+                                        @Label(option)
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly WorkToolPermission[] Options =
+    [
+        WorkToolPermission.Off,
+        WorkToolPermission.Never,
+        WorkToolPermission.Ask,
+        WorkToolPermission.Always,
+    ];
+
+    /// <summary>The layer being edited. A missing entry means inherit.</summary>
+    [Parameter] public ToolPermissionSet Value { get; set; } = new();
+
+    [Parameter] public EventCallback<ToolPermissionSet> ValueChanged { get; set; }
+
+    /// <summary>System defaults have nothing above them, so they do not offer inherit.</summary>
+    [Parameter] public bool AllowInherit { get; set; }
+
+    /// <summary>The resolved chain without this layer, used for the inherit label.</summary>
+    [Parameter] public Func<string, string?, ToolPermissionValue>? Effective { get; set; }
+
+    private WorkToolPermission? GroupValue(IReadOnlyList<WorkToolInfo> tools)
+    {
+        if (tools.Count == 0) return null;
+        WorkToolPermission first = ValueOf(tools[0]);
+        for (int index = 1; index < tools.Count; index++)
+        {
+            if (ValueOf(tools[index]) != first) return null;
+        }
+        return first;
+    }
+
+    private WorkToolPermission ValueOf(WorkToolInfo tool) =>
+        Value.TryTool(tool.Name, out WorkToolPermission value)
+            ? value
+            : Effective?.Invoke(tool.Name, tool.Group).Permission ?? WorkToolPermission.Ask;
+
+    private string SourceLabel(WorkToolInfo tool) =>
+        Effective?.Invoke(tool.Name, tool.Group).Source ?? ToolPermissionResolver.DefaultSource;
+
+    private Task SetToolAsync(string name, WorkToolPermission value) =>
+        UpdateAsync(tools => tools[name] = value);
+
+    private Task ClearAsync(string name) =>
+        UpdateAsync(tools => tools.Remove(name));
+
+    private Task SetGroupAsync(IReadOnlyList<WorkToolInfo> group, WorkToolPermission value) =>
+        UpdateAsync(tools =>
+        {
+            foreach (WorkToolInfo tool in group)
+                tools[tool.Name] = value;
+        });
+
+    private async Task UpdateAsync(Action<Dictionary<string, WorkToolPermission>> change)
+    {
+        var tools = new Dictionary<string, WorkToolPermission>(
+            Value.Tools, StringComparer.OrdinalIgnoreCase);
+        change(tools);
+        await ValueChanged.InvokeAsync(new ToolPermissionSet
+        {
+            Tools = tools,
+            Groups = new Dictionary<string, WorkToolPermission>(
+                Value.Groups, StringComparer.OrdinalIgnoreCase),
+        });
+    }
+
+    private static string Label(WorkToolPermission value) => value switch
+    {
+        WorkToolPermission.Off => "Off",
+        WorkToolPermission.Never => "Never",
+        WorkToolPermission.Ask => "Ask",
+        _ => "Always",
+    };
+
+    private static string Class(WorkToolPermission value) =>
+        "is-" + Label(value).ToLowerInvariant();
+}

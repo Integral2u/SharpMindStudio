@@ -342,7 +342,7 @@ public sealed class StudioWorkService : IDisposable
     /// Tools the project never mentions keep inheriting, so a system default of
     /// Off is not turned back on by an implicit enable.
     /// </summary>
-    private ToolPermissionSet ProjectToolLayer()
+    public ToolPermissionSet ProjectToolLayer()
     {
         var layer = new ToolPermissionSet();
         foreach (WorkToolInfo tool in _tools.Tools)

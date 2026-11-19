@@ -4,7 +4,9 @@
 @using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Core.OpenRouter
+@using SharpMind.Studio.Core.Safety
 @using SharpMind.Studio.Core.Storage
+@using SharpMind.Studio.Core.Work
 @using SharpMind.Studio.Services
 @inject ThemeService Theme
 @inject StudioWorkspaceService Workspace
@@ -19,6 +21,7 @@
 @inject ModelCatalogService Catalog
 @inject ModelTuneService ModelTune
 @inject StudioChatService ChatService
+@inject StudioSafetyService Safety
 @inject NavigationManager Nav
 @inject GatewayService Gateway
 @inject PathPickerService Picker
@@ -118,6 +121,59 @@
             <InferenceProfileEditor Value="_system" ValueChanged="SaveSystemFromEditor"
                                     Generators="Workspace.Builders.Generators"
                                     Caches="Workspace.Builders.Caches" />
+
+            <details class="settings-subgroup" open>
+                <summary class="settings-subgroup-head">
+                    <div>
+                        <div class="eyebrow">Tools</div>
+                        <h3>Tool permissions</h3>
+                    </div>
+                    <span class="faint small mono">defaults for every model</span>
+                </summary>
+                <ToolPermissionEditor Value="Inference.SystemTools" ValueChanged="SaveSystemTools" />
+            </details>
+
+            <details class="settings-subgroup">
+                <summary class="settings-subgroup-head">
+                    <div>
+                        <div class="eyebrow">Safety</div>
+                        <h3>Tool-call inspector</h3>
+                    </div>
+                    <span class="faint small mono">system level</span>
+                </summary>
+                <div class="panel-body stack">
+                    <label class="work-tool">
+                        <input type="checkbox" checked="@Safety.Enabled" @onchange="ToggleSafety" />
+                        <span>Check each model tool call before Studio runs it</span>
+                    </label>
+                    <div class="field">
+                        <label class="field-label" for="safety-threshold">Ask when severity is at least</label>
+                        <select id="safety-threshold" class="input" value="@Safety.Threshold"
+                                @onchange="SetSafetyThreshold">
+                            @foreach (SafetySeverity severity in Enum.GetValues<SafetySeverity>())
+                            {
+                                <option value="@severity">@severity</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="safety-hosts">Extra allowed hosts</label>
+                        <input id="safety-hosts" class="input" value="@string.Join(", ", Safety.AllowedHosts)"
+                               placeholder="example.com, 10.0.0.5"
+                               @onchange="SetSafetyHosts" />
+                    </div>
+                    <p class="small faint">
+                        A blocked call asks you to deny, deny always, allow or allow always.
+                        Remembered answers last for this session. Hosts named in your message or
+                        the system prompt are allowed automatically, and tool results never count
+                        as permission.
+                    </p>
+                    <button type="button" class="button" @onclick="Safety.ClearRemembered">
+                        Forget remembered answers
+                    </button>
+                </div>
+            </details>
+
             <div class="status-line">@_status</div>
         </div>
     </details>
@@ -934,6 +990,11 @@ else if (_tab == "families")
                                         Generators="Workspace.Builders.Generators"
                                         Caches="Workspace.Builders.Caches" />
                 <span class="small faint">Unset fields inherit from System. Changes apply immediately.</span>
+
+                <div class="eyebrow">Tool permissions</div>
+                <ToolPermissionEditor Value="FamilyToolsValue" ValueChanged="SaveFamilyTools"
+                                      AllowInherit="true" Effective="FamilyToolsEffective" />
+                <span class="small faint">Unset tools inherit from System. Changes apply immediately.</span>
             }
         </div>
     </details>
@@ -998,6 +1059,11 @@ else if (_tab == "models")
                                         Generators="Workspace.Builders.Generators"
                                         Caches="Workspace.Builders.Caches" />
                 <span class="small faint">Unset fields inherit from the model family, then System. Changes apply immediately.</span>
+
+                <div class="eyebrow">Tool permissions</div>
+                <ToolPermissionEditor Value="ModelToolsValue" ValueChanged="SaveModelTools"
+                                      AllowInherit="true" Effective="ModelToolsEffective" />
+                <span class="small faint">Unset tools inherit from the family, then System. Changes apply immediately.</span>
             }
         </div>
     </details>

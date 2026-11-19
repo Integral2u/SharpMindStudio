@@ -5,7 +5,9 @@ using Microsoft.JSInterop;
 using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.OpenRouter;
+using SharpMind.Studio.Core.Safety;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Work;
 using SharpMind.Studio.Services;
 
 namespace SharpMind.Studio.Components.Pages;
@@ -1381,6 +1383,56 @@ public partial class Settings
         Inference.SetSystem(value);
         _status = "System defaults saved.";
     }
+
+    private void SaveSystemTools(ToolPermissionSet permissions)
+    {
+        Inference.SetSystemTools(permissions);
+        _status = "System tool permissions saved.";
+    }
+
+    private void ToggleSafety(ChangeEventArgs args) =>
+        Safety.SetEnabled(args.Value is true);
+
+    private void SetSafetyThreshold(ChangeEventArgs args)
+    {
+        if (Enum.TryParse(args.Value?.ToString(), ignoreCase: true, out SafetySeverity severity))
+            Safety.SetThreshold(severity);
+    }
+
+    private void SetSafetyHosts(ChangeEventArgs args) =>
+        Safety.SetAllowedHosts((args.Value?.ToString() ?? "").Split(
+            ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    private ToolPermissionSet FamilyToolsValue => Inference.FamilyTools(_selectedFamilyId) ?? new();
+
+    private void SaveFamilyTools(ToolPermissionSet permissions)
+    {
+        if (_selectedFamilyId is null) return;
+        Inference.SetFamilyTools(_selectedFamilyId, permissions);
+        _status = "Family tool permissions saved.";
+    }
+
+    /// <summary>What a family override would inherit from if it were not set.</summary>
+    private ToolPermissionValue FamilyToolsEffective(string tool, string? group) =>
+        ToolPermissionResolver.Resolve(tool, group, system: Inference.SystemTools);
+
+    private ToolPermissionSet ModelToolsValue => Inference.ModelTools(_selectedModelPath) ?? new();
+
+    private void SaveModelTools(ToolPermissionSet permissions)
+    {
+        if (_selectedModelPath is null) return;
+        Inference.SetModelTools(_selectedModelPath, permissions);
+        _status = "Model tool permissions saved.";
+    }
+
+    /// <summary>What a model override would inherit from: its family, then System.</summary>
+    private ToolPermissionValue ModelToolsEffective(string tool, string? group) =>
+        ToolPermissionResolver.Resolve(
+            tool,
+            group,
+            system: Inference.SystemTools,
+            family: Inference.FamilyTools(
+                _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.Family.Id));
 
     private void SaveFamilyFromEditor(InferenceOverrides value)
     {

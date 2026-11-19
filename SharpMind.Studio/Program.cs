@@ -29,6 +29,7 @@ builder.Services.AddSingleton<StudioCanaryService>();
 builder.Services.AddSingleton<ModelCatalogService>();
 builder.Services.AddSingleton<InferenceSettingsService>();
 builder.Services.AddSingleton<OpenRouterSettingsService>();
+builder.Services.AddSingleton<SharpMind.Studio.Services.StudioSafetyService>();
 builder.Services.AddSingleton<OpenRouterChatBackend>();
 builder.Services.AddSingleton<ComputeProviderService>();
 builder.Services.AddSingleton<ComputeChatBackend>();

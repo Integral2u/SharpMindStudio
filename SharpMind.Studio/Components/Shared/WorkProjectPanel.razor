@@ -246,52 +246,13 @@
                     A context folder set to <strong>Never</strong> still refuses whatever the tool says.
                     Changes save automatically.
                 </p>
-                @foreach (IGrouping<string, WorkToolInfo> group in ToolCatalog.Tools.GroupBy(tool => tool.Group))
-                {
-                    WorkToolInfo[] tools = [.. group];
-                    <div class="work-tool-group">
-                        <div class="spread work-tool-group-head">
-                            <div class="eyebrow">@group.Key</div>
-                            <div class="segmented" role="group" aria-label="@group.Key permissions">
-                                @foreach (WorkToolPermission option in ToolPermissionOptions)
-                                {
-                                    <button type="button"
-                                            class="segmented-option @(GroupPermission(tools) == option ? "active" : "")"
-                                            title="Apply @ToolPermissionLabel(option) to every tool in this group"
-                                            @onclick="() => SetGroupPermission(tools, option)">
-                                        @ToolPermissionLabel(option)
-                                    </button>
-                                }
-                            </div>
-                        </div>
-                        <div class="work-tools">
-                            @foreach (WorkToolInfo tool in tools)
-                            {
-                                WorkToolPermission current = ToolPermissionFor(tool);
-                                <div class="work-tool-row" title="@tool.Source">
-                                    <span class="work-tool-name">
-                                        @tool.Name
-                                        @if (tool.IsPlugin)
-                                        {
-                                            <span class="small faint">plugin</span>
-                                        }
-                                    </span>
-                                    <div class="segmented" role="group" aria-label="@tool.Name permission">
-                                        @foreach (WorkToolPermission option in ToolPermissionOptions)
-                                        {
-                                            <button type="button"
-                                                    class="segmented-option @(current == option ? "active" : "") @ToolPermissionClass(option)"
-                                                    title="@ToolPermissionLabel(option)"
-                                                    @onclick="() => SetToolPermission(tool, option)">
-                                                @ToolPermissionLabel(option)
-                                            </button>
-                                        }
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
+                <ToolPermissionEditor Value="_toolPermissions" ValueChanged="OnToolPermissionsChanged" />
+                <p class="small faint">
+                    <strong>Internal</strong> tools ship with Studio and honour the project gate.
+                    <strong>Plugin</strong> tools run their own code: Studio can hide them and can
+                    block the file and web calls they route through the gate, but it cannot sandbox
+                    a process a plugin starts itself.
+                </p>
             </div>
             <div class="row work-project-save">
                 <span class="status-line">@(_saving ? "Saving..." : _status)</span>
@@ -493,54 +454,11 @@
         }
     }
 
-    private static readonly WorkToolPermission[] ToolPermissionOptions =
-    [
-        WorkToolPermission.Off,
-        WorkToolPermission.Never,
-        WorkToolPermission.Ask,
-        WorkToolPermission.Always,
-    ];
-
-    private WorkToolPermission ToolPermissionFor(WorkToolInfo tool) =>
-        _toolPermissions.TryTool(tool.Name, out WorkToolPermission value)
-            ? value
-            : Work.ProjectToolPermission(tool.Name);
-
-    /// <summary>The value shared by every tool in the group, or null when mixed.</summary>
-    private WorkToolPermission? GroupPermission(IReadOnlyList<WorkToolInfo> tools)
+    private void OnToolPermissionsChanged(ToolPermissionSet permissions)
     {
-        if (tools.Count == 0) return null;
-        WorkToolPermission first = ToolPermissionFor(tools[0]);
-        for (int index = 1; index < tools.Count; index++)
-        {
-            if (ToolPermissionFor(tools[index]) != first) return null;
-        }
-        return first;
-    }
-
-    private void SetToolPermission(WorkToolInfo tool, WorkToolPermission value)
-    {
-        _toolPermissions.Tools[tool.Name] = value;
+        _toolPermissions = permissions;
         _ = AutoSaveAsync();
     }
-
-    private void SetGroupPermission(IReadOnlyList<WorkToolInfo> tools, WorkToolPermission value)
-    {
-        foreach (WorkToolInfo tool in tools)
-            _toolPermissions.Tools[tool.Name] = value;
-        _ = AutoSaveAsync();
-    }
-
-    private static string ToolPermissionLabel(WorkToolPermission value) => value switch
-    {
-        WorkToolPermission.Off => "Off",
-        WorkToolPermission.Never => "Never",
-        WorkToolPermission.Ask => "Ask",
-        _ => "Always",
-    };
-
-    private static string ToolPermissionClass(WorkToolPermission value) =>
-        "is-" + ToolPermissionLabel(value).ToLowerInvariant();
 
     private IReadOnlyList<WorkSkill> FilteredSkills
     {

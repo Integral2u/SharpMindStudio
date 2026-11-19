@@ -7,6 +7,7 @@
 @using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Core.OpenRouter
 @using SharpMind.Studio.Core.Runs
+@using SharpMind.Studio.Core.Work
 @using SharpMind.Studio.Services
 @inject StudioChatService ChatService
 @inject InferenceSettingsService Inference
@@ -16,6 +17,7 @@
 @inject MarkdownService Markdown
 @inject StudioWorkspaceService Workspace
 @inject StudioWorkService Work
+@inject StudioSafetyService Safety
 @inject StudioDeviceAccess DeviceAccess
 @inject ThemeService Theme
 @inject NavigationManager Nav
@@ -439,6 +441,18 @@ else
 
                         <div class="panel-head" style="margin-top:.75rem">
                             <div>
+                                <div class="eyebrow">Tools</div>
+                                <h2>Tool permissions</h2>
+                            </div>
+                            <span class="faint small mono">empty rows inherit</span>
+                        </div>
+                        <ToolPermissionEditor Value="_sessionToolsDraft"
+                                              ValueChanged="v => _sessionToolsDraft = v"
+                                              AllowInherit="true"
+                                              Effective="SessionToolsEffective" />
+
+                        <div class="panel-head" style="margin-top:.75rem">
+                            <div>
                                 <div class="eyebrow">Speech</div>
                                 <h2>LFM3-Audio TTS</h2>
                             </div>
@@ -571,6 +585,43 @@ else
                                     Always allow
                                 </button>
                             }
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (Safety.Pending is { } safetyReview)
+            {
+                <div class="panel work-permission-prompt">
+                    <div class="panel-body">
+                        <div>
+                            <div class="eyebrow">Safety check</div>
+                            <strong>@safetyReview.Finding.Message</strong>
+                            @if (!string.IsNullOrWhiteSpace(safetyReview.Finding.Detail))
+                            {
+                                <span class="work-permission-path">@safetyReview.Finding.Detail</span>
+                            }
+                            <span class="small faint">
+                                @safetyReview.Tool · @safetyReview.Finding.Rule · @safetyReview.Finding.Severity
+                            </span>
+                        </div>
+                        <div class="row">
+                            <button type="button" class="button danger"
+                                    @onclick="() => ResolveSafetyAsync(SafetyDecision.Deny)">
+                                Deny
+                            </button>
+                            <button type="button" class="button"
+                                    @onclick="() => ResolveSafetyAsync(SafetyDecision.DenyAlways)">
+                                Deny always
+                            </button>
+                            <button type="button" class="button"
+                                    @onclick="() => ResolveSafetyAsync(SafetyDecision.AllowOnce)">
+                                Allow
+                            </button>
+                            <button type="button" class="button primary"
+                                    @onclick="() => ResolveSafetyAsync(SafetyDecision.AllowAlways)">
+                                Allow always
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -818,12 +869,14 @@ else
     private string _choiceFreeText = "";
     private bool _focusPending = true;
     private InferenceOverrides _sessionDraft = new();
+    private ToolPermissionSet _sessionToolsDraft = new();
 
     protected override async Task OnInitializedAsync()
     {
         UpdateRouteMode();
         ChatService.Changed += OnChatChanged;
         Work.Changed += OnWorkChanged;
+        Safety.Changed += OnSafetyChanged;
         _runs = await Workspace.RecentRunsAsync();
 
         if (string.IsNullOrWhiteSpace(ChatId) && ChatService.Document is { } current &&
@@ -918,11 +971,16 @@ else
         }
         ChatService.Changed -= OnChatChanged;
         Work.Changed -= OnWorkChanged;
+        Safety.Changed -= OnSafetyChanged;
     }
 
     private void UpdateRouteMode() => _workMode = WorkMode;
 
     private void OnWorkChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnSafetyChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private Task ResolveSafetyAsync(SafetyDecision decision) => Safety.ResolveAsync(decision);
 
     private void OnChatChanged() => _ = InvokeAsync(async () =>
     {
@@ -957,6 +1015,7 @@ else
             else
                 _selectedModelPath = ChatService.Document.ModelPath;
             _sessionDraft = ChatService.Document.Overrides;
+        _sessionToolsDraft = ChatService.Document.ToolPermissions ?? new ToolPermissionSet();
             _selectedTunePreset = Enum.TryParse(ChatService.Document.TunePreset, out TunePreset preset)
                 ? preset
                 : null;
@@ -1532,13 +1591,28 @@ else
     private async Task ApplyOptionsAsync()
     {
         await ChatService.ApplyOptionsAsync(_sessionDraft);
+        await ChatService.ApplyToolPermissionsAsync(_sessionToolsDraft);
         SyncFromChat();
     }
 
     private void ResetOptions()
     {
         _sessionDraft = new InferenceOverrides();
+        _sessionToolsDraft = new ToolPermissionSet();
     }
+
+    /// <summary>
+    /// What a session override would inherit from: the project, family, model
+    /// and System layers.
+    /// </summary>
+    private ToolPermissionValue SessionToolsEffective(string tool, string? group) =>
+        ToolPermissionResolver.Resolve(
+            tool,
+            group,
+            system: Inference.SystemTools,
+            family: Inference.FamilyTools(ChatService.Document?.FamilyId),
+            project: Work.ProjectToolLayer(),
+            model: Inference.ModelTools(ChatService.Document?.ModelPath));
 
 
     private async Task RenameCurrentChatAsync()

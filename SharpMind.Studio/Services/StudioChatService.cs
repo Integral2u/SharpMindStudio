@@ -1180,6 +1180,29 @@ public sealed class StudioChatService : IAsyncDisposable
             Stop();
     }
 
+    /// <summary>
+    /// Saves the session's tool permissions. The next turn picks them up because
+    /// the profile is rebuilt from the document each time.
+    /// </summary>
+    public async Task ApplyToolPermissionsAsync(ToolPermissionSet permissions)
+    {
+        ArgumentNullException.ThrowIfNull(permissions);
+        if (_device.IsMobile || _document is null || _streaming) return;
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _document.ToolPermissions = permissions;
+            _store.Save(_document);
+            _status = "Tool permissions applied.";
+            Notify();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task ApplyOptionsAsync(InferenceOverrides overrides)
     {
         if (_device.IsMobile || _document is null || _streaming) return;

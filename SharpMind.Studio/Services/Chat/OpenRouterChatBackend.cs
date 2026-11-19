@@ -4,6 +4,7 @@ using SharpMind.Inference.Agent;
 using SharpMind.Inference.Chat;
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.OpenRouter;
+using SharpMind.Studio.Core.Safety;
 
 namespace SharpMind.Studio.Services.Chat;
 
@@ -14,7 +15,8 @@ namespace SharpMind.Studio.Services.Chat;
 /// </summary>
 public sealed class OpenRouterChatBackend(
     OpenRouterSettingsService settings,
-    OpenRouterClient client) : IChatBackend
+    OpenRouterClient client,
+    StudioSafetyService safety) : IChatBackend
 {
     private const int MaxToolCalls = 10;
 
@@ -158,13 +160,28 @@ public sealed class OpenRouterChatBackend(
                     arguments = new JsonObject();
                 }
 
-                JsonObject result = agent is null
-                    ? new JsonObject
+                JsonObject result;
+                SafetyFinding? blocked = await ReviewToolCallAsync(
+                    context, call, cancellationToken).ConfigureAwait(false);
+                if (blocked is not null)
+                {
+                    result = new JsonObject
+                    {
+                        ["status"] = "blocked",
+                        ["message"] = $"Studio blocked this call: {blocked.Message}",
+                    };
+                }
+                else if (agent is null)
+                {
+                    result = new JsonObject
                     {
                         ["status"] = "error",
                         ["message"] = "Tools are only available in Work mode.",
-                    }
-                    : await Task.Run(
+                    };
+                }
+                else
+                {
+                    result = await Task.Run(
                         () => agent.CallToolAsync(
                             new JsonObject
                             {
@@ -173,6 +190,7 @@ public sealed class OpenRouterChatBackend(
                             },
                             cancellationToken),
                         cancellationToken).ConfigureAwait(false);
+                }
 
                 string resultText = OpenRouterMessageBuilder.FormatToolResult(
                     call.Name, arguments, result);
@@ -214,6 +232,64 @@ public sealed class OpenRouterChatBackend(
             : promptTokens is int promptUsed && completionTokens is int completionUsed
                 ? $"Ready. {promptUsed:N0} prompt / {completionUsed:N0} completion tokens."
                 : "Ready.");
+    }
+
+    /// <summary>
+    /// Runs the deterministic checks and asks the user when one is at or above
+    /// the configured severity. A remembered answer skips the question; the
+    /// call still runs only when the person allows it.
+    /// </summary>
+    private async Task<SafetyFinding?> ReviewToolCallAsync(
+        ChatBackendContext context,
+        OpenRouterCompletedToolCall call,
+        CancellationToken cancellationToken)
+    {
+        if (!safety.Enabled) return null;
+
+        IReadOnlyCollection<string> declared = context.Agent is AgentBuilder builder
+            ? [.. builder.RegisteredToolNames]
+            : [];
+
+        IReadOnlyList<SafetyFinding> findings = ToolCallInspector.Inspect(SafetyRequest.For(
+            call.Name,
+            call.Arguments,
+            BuildConversation(context),
+            declared,
+            safety.AllowedHosts));
+
+        SafetyFinding? blocking = findings.FirstOrDefault(
+            finding => ToolCallInspector.Blocks(finding, safety.Threshold));
+        if (blocking is null) return null;
+
+        context.SetStatus($"Safety check: {blocking.Message}");
+        context.Notify();
+
+        SafetyDecision decision = await safety
+            .ReviewAsync(call.Name, blocking, cancellationToken)
+            .ConfigureAwait(false);
+        return decision is SafetyDecision.Deny or SafetyDecision.DenyAlways ? blocking : null;
+    }
+
+    /// <summary>
+    /// Only the system prompt and the user's own words count as authorising a
+    /// host. Tool results are excluded on purpose: otherwise a poisoned file
+    /// could name its own destination and pass the check.
+    /// </summary>
+    private static string BuildConversation(ChatBackendContext context)
+    {
+        var text = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(context.Document.SystemPrompt))
+            text.AppendLine(context.Document.SystemPrompt);
+
+        foreach (ChatMessage message in context.Document.Messages
+                     .Where(message => message.Role == ChatRole.User)
+                     .TakeLast(4))
+        {
+            text.AppendLine(message.Content);
+        }
+
+        text.AppendLine(context.UserText);
+        return text.ToString();
     }
 
     private string? ResolveModel(ChatSessionDocument document, string providerId) =>
