@@ -41,6 +41,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly StudioSafetyService _safety;
     private readonly EmbeddedPluginHost _embedded;
     private readonly ModelToolPermissionStore _modelTools;
+    private readonly ToolIoGate _ioGate;
     private ChatSessionStore _store;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChatSession? _session;
@@ -88,7 +89,8 @@ public sealed class StudioChatService : IAsyncDisposable
         ThemeService theme,
         StudioSafetyService safety,
         EmbeddedPluginHost embedded,
-        ModelToolPermissionStore modelTools)
+        ModelToolPermissionStore modelTools,
+        ToolIoGate gate)
     {
         _workspace = workspace;
         _catalog = catalog;
@@ -108,6 +110,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _safety = safety;
         _embedded = embedded;
         _modelTools = modelTools;
+        _ioGate = gate;
         _store = new ChatSessionStore(workspace.Project.ChatsDirectory);
         _work.AgentToolExecutor = ExecuteAgentToolAsync;
     }
@@ -1764,33 +1767,12 @@ public sealed class StudioChatService : IAsyncDisposable
             preProcessor: _plugins.PreProcessor,
             postProcessor: _plugins.PostProcessor,
             formatter: ChatFormatterFactory.Create(profile.Formatter, loaded.Meta),
-            permissions: CheckToolPermissionAsync,
+            permissions: _work.CheckToolPermissionAsync,
+            fileSystem: _ioGate.Files,
+            networkHandler: _ioGate.Network,
             seed: profile.Seed);
         session.ProcessToolRequest = HandleAgentToolAsync;
-        PluginRuntime.Set(session.FileSystem, session.NetworkHandler);
         return session;
-    }
-
-    /// <summary>
-    /// The engine calls this only for file and network access made through the
-    /// session's interceptors, which a tool gets from
-    /// <see cref="PluginRuntime"/>. The project's folder rules still apply.
-    /// </summary>
-    private async Task<ToolPermission> CheckToolPermissionAsync(ToolPermissionContext permission)
-    {
-        if (!string.Equals(_document?.Mode, "work", StringComparison.OrdinalIgnoreCase))
-            return ToolPermission.Never;
-
-        WorkToolCategory category = permission.Category == ToolCategory.Network
-            ? WorkToolCategory.Web
-            : WorkToolCategory.Write;
-
-        bool allowed = await _work.CheckAccessAsync(new WorkToolAccess(
-            permission.ToolName,
-            category,
-            permission.Resource)).ConfigureAwait(false);
-
-        return allowed ? ToolPermission.Always : ToolPermission.Never;
     }
 
     /// <summary>
@@ -1996,7 +1978,6 @@ public sealed class StudioChatService : IAsyncDisposable
 
     private void EndSession()
     {
-        PluginRuntime.Clear();
         _work.CancelPermission();
         _work.CancelChoice();
         _streamCts?.Cancel();

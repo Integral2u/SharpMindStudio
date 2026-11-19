@@ -80,6 +80,7 @@ builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
 }));
 builder.Services.AddSingleton<WorkToolService>();
 builder.Services.AddSingleton<EmbeddedPluginHost>();
+builder.Services.AddSingleton<ToolIoGate>();
 builder.Services.AddSingleton(_ =>
     new SharpMind.Studio.Core.Training.ModelToolPermissionStore(
         SharpMind.Studio.Core.Storage.StudioPaths.Projects));

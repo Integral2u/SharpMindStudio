@@ -17,7 +17,8 @@ public sealed class OpenRouterChatBackend(
     OpenRouterSettingsService settings,
     OpenRouterClient client,
     StudioSafetyService safety,
-    WorkToolService toolCatalog) : IChatBackend
+    WorkToolService toolCatalog,
+    ToolIoGate gate) : IChatBackend
 {
     private const int MaxToolCalls = 10;
 
@@ -180,13 +181,16 @@ public sealed class OpenRouterChatBackend(
                     try
                     {
                         result = await Task.Run(
-                            () => agent.CallToolAsync(
-                                new JsonObject
-                                {
-                                    ["tool"] = call.Name,
-                                    ["arguments"] = arguments,
-                                },
-                                cancellationToken),
+                            () => gate.RunAsync(
+                                call.Name,
+                                arguments,
+                                () => agent.CallToolAsync(
+                                    new JsonObject
+                                    {
+                                        ["tool"] = call.Name,
+                                        ["arguments"] = arguments,
+                                    },
+                                    cancellationToken)),
                             cancellationToken).ConfigureAwait(false);
                     }
                     finally

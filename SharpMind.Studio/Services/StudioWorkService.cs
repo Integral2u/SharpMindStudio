@@ -469,6 +469,27 @@ public sealed class StudioWorkService : IDisposable
         return builder;
     }
 
+    /// <summary>
+    /// The engine's IO gate callback. File access is treated as a write (the
+    /// context does not distinguish reads) and network as web; both then go
+    /// through the folder rules.
+    /// </summary>
+    public async Task<ToolPermission> CheckToolPermissionAsync(ToolPermissionContext permission)
+    {
+        ArgumentNullException.ThrowIfNull(permission);
+
+        WorkToolCategory category = permission.Category == ToolCategory.Network
+            ? WorkToolCategory.Web
+            : WorkToolCategory.Write;
+
+        bool allowed = await CheckAccessAsync(new WorkToolAccess(
+            permission.ToolName,
+            category,
+            permission.Resource)).ConfigureAwait(false);
+
+        return allowed ? ToolPermission.Always : ToolPermission.Never;
+    }
+
     public async Task<bool> CheckAccessAsync(
         WorkToolAccess access,
         WorkPermissions? permissions = null,
