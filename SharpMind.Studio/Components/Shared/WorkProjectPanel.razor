@@ -236,34 +236,53 @@
                     <button type="button" class="button" @onclick="RefreshTools">Refresh plugins</button>
                 </div>
                 <p class="small faint">
-                    Tools are registered in Work only; Chat sessions never receive them. Disable any tool this project should not expose. Changes apply when you save.
+                    Tools are registered in Work only; Chat sessions never receive them.
+                    <strong>Off</strong> hides a tool from the model, <strong>Never</strong> keeps it visible but
+                    refuses every call, <strong>Ask</strong> prompts, and <strong>Always</strong> permits.
+                    Changes apply when you save.
                 </p>
                 @foreach (IGrouping<string, WorkToolInfo> group in ToolCatalog.Tools.GroupBy(tool => tool.Group))
                 {
+                    WorkToolInfo[] tools = [.. group];
                     <div class="work-tool-group">
                         <div class="spread work-tool-group-head">
                             <div class="eyebrow">@group.Key</div>
-                            <div class="row">
-                                <button type="button" class="button"
-                                        @onclick="() => SetToolGroup(group, true)">All</button>
-                                <button type="button" class="button"
-                                        @onclick="() => SetToolGroup(group, false)">None</button>
+                            <div class="segmented" role="group" aria-label="@group.Key permissions">
+                                @foreach (WorkToolPermission option in ToolPermissionOptions)
+                                {
+                                    <button type="button"
+                                            class="segmented-option @(GroupPermission(tools) == option ? "active" : "")"
+                                            title="Apply @ToolPermissionLabel(option) to every tool in this group"
+                                            @onclick="() => SetGroupPermission(tools, option)">
+                                        @ToolPermissionLabel(option)
+                                    </button>
+                                }
                             </div>
                         </div>
                         <div class="work-tools">
-                            @foreach (WorkToolInfo tool in group)
+                            @foreach (WorkToolInfo tool in tools)
                             {
-                                bool enabled = !_disabledTools.Contains(tool.Name) &&
-                                               (ToolCatalog.IsDefaultEnabled(tool.Name) || _enabledTools.Contains(tool.Name));
-                                <label class="work-tool" title="@tool.Source">
-                                    <input type="checkbox" checked="@enabled"
-                                           @onchange="e => ToggleTool(tool, e.Value)" />
-                                    <span>@tool.Name</span>
-                                    @if (tool.IsPlugin)
-                                    {
-                                        <span class="small faint">plugin</span>
-                                    }
-                                </label>
+                                WorkToolPermission current = ToolPermissionFor(tool);
+                                <div class="work-tool-row" title="@tool.Source">
+                                    <span class="work-tool-name">
+                                        @tool.Name
+                                        @if (tool.IsPlugin)
+                                        {
+                                            <span class="small faint">plugin</span>
+                                        }
+                                    </span>
+                                    <div class="segmented" role="group" aria-label="@tool.Name permission">
+                                        @foreach (WorkToolPermission option in ToolPermissionOptions)
+                                        {
+                                            <button type="button"
+                                                    class="segmented-option @(current == option ? "active" : "") @ToolPermissionClass(option)"
+                                                    title="@ToolPermissionLabel(option)"
+                                                    @onclick="() => SetToolPermission(tool, option)">
+                                                @ToolPermissionLabel(option)
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
                             }
                         </div>
                     </div>
@@ -312,8 +331,7 @@
     private string _skillFilter = "";
     private HashSet<string> _disabledSystemSkills = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _enabledSystemSkills = new(StringComparer.OrdinalIgnoreCase);
-    private HashSet<string> _disabledTools = new(StringComparer.OrdinalIgnoreCase);
-    private HashSet<string> _enabledTools = new(StringComparer.OrdinalIgnoreCase);
+    private ToolPermissionSet _toolPermissions = new();
     private WorkPermission _web = WorkPermission.Never;
 
     protected override void OnInitialized()
@@ -341,10 +359,13 @@
             Work.Settings.DisabledSystemSkills, StringComparer.OrdinalIgnoreCase);
         _enabledSystemSkills = new HashSet<string>(
             Work.Settings.EnabledSystemSkills, StringComparer.OrdinalIgnoreCase);
-        _disabledTools = new HashSet<string>(
-            Work.Settings.DisabledTools, StringComparer.OrdinalIgnoreCase);
-        _enabledTools = new HashSet<string>(
-            Work.Settings.EnabledTools, StringComparer.OrdinalIgnoreCase);
+        _toolPermissions = new ToolPermissionSet
+        {
+            Tools = new Dictionary<string, WorkToolPermission>(
+                Work.Settings.ToolPermissions.Tools, StringComparer.OrdinalIgnoreCase),
+            Groups = new Dictionary<string, WorkToolPermission>(
+                Work.Settings.ToolPermissions.Groups, StringComparer.OrdinalIgnoreCase),
+        };
         _projectSkills = [.. Work.Settings.Skills.Select(skill => new ProjectSkillDraft
         {
             Id = string.IsNullOrWhiteSpace(skill.Id) ? Guid.NewGuid().ToString("n") : skill.Id,
@@ -435,25 +456,50 @@
         }
     }
 
-    private void ToggleTool(WorkToolInfo tool, object? enabled)
+    private static readonly WorkToolPermission[] ToolPermissionOptions =
+    [
+        WorkToolPermission.Off,
+        WorkToolPermission.Never,
+        WorkToolPermission.Ask,
+        WorkToolPermission.Always,
+    ];
+
+    private WorkToolPermission ToolPermissionFor(WorkToolInfo tool) =>
+        _toolPermissions.TryTool(tool.Name, out WorkToolPermission value)
+            ? value
+            : Work.ProjectToolPermission(tool.Name);
+
+    /// <summary>The value shared by every tool in the group, or null when mixed.</summary>
+    private WorkToolPermission? GroupPermission(IReadOnlyList<WorkToolInfo> tools)
     {
-        if (enabled is true)
+        if (tools.Count == 0) return null;
+        WorkToolPermission first = ToolPermissionFor(tools[0]);
+        for (int index = 1; index < tools.Count; index++)
         {
-            _disabledTools.Remove(tool.Name);
-            if (!ToolCatalog.IsDefaultEnabled(tool.Name)) _enabledTools.Add(tool.Name);
+            if (ToolPermissionFor(tools[index]) != first) return null;
         }
-        else
-        {
-            _disabledTools.Add(tool.Name);
-            _enabledTools.Remove(tool.Name);
-        }
+        return first;
     }
 
-    private void SetToolGroup(IEnumerable<WorkToolInfo> group, bool enabled)
+    private void SetToolPermission(WorkToolInfo tool, WorkToolPermission value) =>
+        _toolPermissions.Tools[tool.Name] = value;
+
+    private void SetGroupPermission(IReadOnlyList<WorkToolInfo> tools, WorkToolPermission value)
     {
-        foreach (WorkToolInfo tool in group)
-            ToggleTool(tool, enabled);
+        foreach (WorkToolInfo tool in tools)
+            _toolPermissions.Tools[tool.Name] = value;
     }
+
+    private static string ToolPermissionLabel(WorkToolPermission value) => value switch
+    {
+        WorkToolPermission.Off => "Off",
+        WorkToolPermission.Never => "Never",
+        WorkToolPermission.Ask => "Ask",
+        _ => "Always",
+    };
+
+    private static string ToolPermissionClass(WorkToolPermission value) =>
+        "is-" + ToolPermissionLabel(value).ToLowerInvariant();
 
     private IReadOnlyList<WorkSkill> FilteredSkills
     {
@@ -741,8 +787,13 @@
                     Skills = [.. projectSkills],
                     DisabledProjectSkills = disabledProjectSkills,
                     Contexts = [.. contexts],
-                    DisabledTools = [.. _disabledTools],
-                    EnabledTools = [.. _enabledTools],
+                    ToolPermissions = _toolPermissions,
+                    DisabledTools = [.. _toolPermissions.Tools
+                        .Where(pair => pair.Value == WorkToolPermission.Off)
+                        .Select(pair => pair.Key)],
+                    EnabledTools = [.. _toolPermissions.Tools
+                        .Where(pair => pair.Value != WorkToolPermission.Off)
+                        .Select(pair => pair.Key)],
                 },
                 _memory);
 

@@ -540,8 +540,19 @@ else
                 <div class="panel work-permission-prompt">
                     <div class="panel-body">
                         <div>
-                            <div class="eyebrow">Permission requested</div>
-                            <strong>@permission.Access.Tool wants @permission.Access.Category access</strong>
+                            <div class="eyebrow">@(permission.Escalation ? "Agent permission request" : "Permission requested")</div>
+                            @if (permission.Escalation)
+                            {
+                                <strong>@permission.Access.Tool is asking to work beyond the session policy</strong>
+                                <span class="small faint">
+                                    The agent asks for @permission.Wanted; the session allows @permission.Inherited.
+                                    This call needs your approval and is never remembered.
+                                </span>
+                            }
+                            else
+                            {
+                                <strong>@permission.Access.Tool wants @permission.Access.Category access</strong>
+                            }
                             <span class="work-permission-path">@permission.Access.Path</span>
                         </div>
                         <div class="row">

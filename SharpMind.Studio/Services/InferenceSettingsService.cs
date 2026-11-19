@@ -1,5 +1,6 @@
 ﻿using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Work;
 
 namespace SharpMind.Studio.Services;
 
@@ -75,6 +76,58 @@ public sealed class InferenceSettingsService
 
     public InferenceOverrides? ModelOverrides(string? modelPath) =>
         string.IsNullOrWhiteSpace(modelPath) ? null : _store.ModelOverrides(modelPath);
+
+    public ToolPermissionSet SystemTools => _store.SystemToolPermissions;
+
+    public ToolPermissionSet? FamilyTools(string? familyId) =>
+        string.IsNullOrWhiteSpace(familyId) ? null : _store.FamilyToolPermissions(familyId);
+
+    public ToolPermissionSet? ModelTools(string? modelPath) =>
+        string.IsNullOrWhiteSpace(modelPath) ? null : _store.ModelToolPermissions(modelPath);
+
+    /// <summary>
+    /// The model, family and session tool layers. The project and system layers
+    /// are added by <c>StudioWorkService</c>, which owns the project's tool list.
+    /// </summary>
+    public ToolPermissionProfile ToolProfile(
+        string? familyId,
+        string? modelPath,
+        ToolPermissionSet? session) => new()
+    {
+        Family = FamilyTools(familyId),
+        Model = ModelTools(modelPath),
+        Session = session,
+    };
+
+    public void SetSystemTools(ToolPermissionSet permissions)
+    {
+        _store.SetSystemTools(permissions);
+        Changed?.Invoke();
+    }
+
+    public void SetFamilyTools(string familyId, ToolPermissionSet permissions)
+    {
+        _store.SetFamilyTools(familyId, permissions);
+        Changed?.Invoke();
+    }
+
+    public void SetModelTools(string modelPath, ToolPermissionSet permissions)
+    {
+        _store.SetModelTools(modelPath, permissions);
+        Changed?.Invoke();
+    }
+
+    public void DeleteFamilyTools(string familyId)
+    {
+        _store.DeleteFamilyTools(familyId);
+        Changed?.Invoke();
+    }
+
+    public void DeleteModelTools(string modelPath)
+    {
+        _store.DeleteModelTools(modelPath);
+        Changed?.Invoke();
+    }
 
     public ResolvedInference Resolve(string? familyId, string? modelPath, InferenceOverrides? session, bool workMode = false) =>
         InferenceResolver.Resolve(

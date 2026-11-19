@@ -9,8 +9,8 @@ namespace SharpMind.Studio.Core.Work;
 /// without prompting. <see cref="Ask"/> prompts, and <see cref="Always"/>
 /// permits without asking.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<ToolPermission>))]
-public enum ToolPermission
+[JsonConverter(typeof(JsonStringEnumConverter<WorkToolPermission>))]
+public enum WorkToolPermission
 {
     Off,
     Never,
@@ -25,8 +25,8 @@ public enum ToolPermission
 /// </summary>
 public sealed record ToolPermissionSet
 {
-    public Dictionary<string, ToolPermission> Tools { get; init; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, ToolPermission> Groups { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, WorkToolPermission> Tools { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, WorkToolPermission> Groups { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 
     public bool IsEmpty => Tools.Count == 0 && Groups.Count == 0;
 
@@ -34,10 +34,10 @@ public sealed record ToolPermissionSet
     /// Looks a tool up by name. Falls back to a case-insensitive scan because
     /// a round-tripped JSON dictionary loses the comparer used to build it.
     /// </summary>
-    public bool TryTool(string name, out ToolPermission value)
+    public bool TryTool(string name, out WorkToolPermission value)
     {
         if (Tools.TryGetValue(name, out value)) return true;
-        foreach (KeyValuePair<string, ToolPermission> pair in Tools)
+        foreach (KeyValuePair<string, WorkToolPermission> pair in Tools)
         {
             if (!string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)) continue;
             value = pair.Value;
@@ -49,10 +49,10 @@ public sealed record ToolPermissionSet
     }
 
     /// <summary>Same case-insensitive fallback as <see cref="TryTool"/>.</summary>
-    public bool TryGroup(string group, out ToolPermission value)
+    public bool TryGroup(string group, out WorkToolPermission value)
     {
         if (Groups.TryGetValue(group, out value)) return true;
-        foreach (KeyValuePair<string, ToolPermission> pair in Groups)
+        foreach (KeyValuePair<string, WorkToolPermission> pair in Groups)
         {
             if (!string.Equals(pair.Key, group, StringComparison.OrdinalIgnoreCase)) continue;
             value = pair.Value;
@@ -66,12 +66,38 @@ public sealed record ToolPermissionSet
 
 /// <summary>A resolved tool permission and the layer that supplied it.</summary>
 public readonly record struct ToolPermissionValue(
-    ToolPermission Permission,
+    WorkToolPermission Permission,
     string Source,
     bool Escalates = false)
 {
     /// <summary>True when the tool is advertised to the model.</summary>
-    public bool IsVisible => Permission != ToolPermission.Off;
+    public bool IsVisible => Permission != WorkToolPermission.Off;
+}
+
+/// <summary>
+/// The tool permission layers for one run, in precedence order. Each layer is
+/// optional; an absent layer inherits from the one beneath it.
+/// </summary>
+public sealed record ToolPermissionProfile
+{
+    public ToolPermissionSet? Agent { get; init; }
+    public ToolPermissionSet? Session { get; init; }
+    public ToolPermissionSet? Model { get; init; }
+    public ToolPermissionSet? Family { get; init; }
+    public ToolPermissionSet? Project { get; init; }
+    public ToolPermissionSet? System { get; init; }
+
+    /// <summary>Used when no layer mentions a tool; new plugin tools should pass <see cref="WorkToolPermission.Off"/>.</summary>
+    public WorkToolPermission Fallback { get; init; } = WorkToolPermission.Ask;
+
+    public ToolPermissionValue For(string tool, string? group = null) =>
+        ToolPermissionResolver.Resolve(
+            tool, group, System, Family, Project, Model, Session, Agent, Fallback);
+
+    /// <summary>The chain without the agent layer, for showing what an agent is escalating over.</summary>
+    public WorkToolPermission InheritedFor(string tool, string? group = null) =>
+        ToolPermissionResolver.ResolveWithoutAgent(
+            tool, group, System, Family, Project, Model, Session, Fallback);
 }
 
 /// <summary>
@@ -79,10 +105,14 @@ public readonly record struct ToolPermissionValue(
 /// folder permission as a cap.
 /// </summary>
 /// <remarks>
-/// Layer precedence is agent, session, model, family, system. The first layer
-/// with an entry wins outright, so a session group override beats a model
-/// per-tool override. Within one layer a per-tool entry beats the group entry.
-/// A sparse layer inherits from the layer beneath it.
+/// Layer precedence is agent, session, model, family, project, system. The
+/// first layer with an entry wins outright, so a session group override beats
+/// a model per-tool override. Within one layer a per-tool entry beats the group
+/// entry. A sparse layer inherits from the layer beneath it.
+///
+/// The project layer carries the existing per-project tool toggles and the
+/// system layer carries the Studio defaults, so neither had to be re-expressed
+/// when the four-state permissions arrived.
 ///
 /// The agent layer is special: an agent may ask for more than the session
 /// allows, but that never takes effect silently — the resolved value carries
@@ -98,30 +128,33 @@ public static class ToolPermissionResolver
         string? group = null,
         ToolPermissionSet? system = null,
         ToolPermissionSet? family = null,
+        ToolPermissionSet? project = null,
         ToolPermissionSet? model = null,
         ToolPermissionSet? session = null,
         ToolPermissionSet? agent = null,
-        ToolPermission fallback = ToolPermission.Ask)
+        WorkToolPermission fallback = WorkToolPermission.Ask)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tool);
 
-        if (TryLayer(agent, tool, group, out ToolPermission agentValue))
+        if (TryLayer(agent, tool, group, out WorkToolPermission agentValue))
         {
-            ToolPermission baseline = ResolveWithoutAgent(
-                tool, group, system, family, model, session, fallback);
+            WorkToolPermission baseline = ResolveWithoutAgent(
+                tool, group, system, family, project, model, session, fallback);
             return new ToolPermissionValue(
                 agentValue,
                 "Agent",
                 Escalates: Rank(agentValue) > Rank(baseline));
         }
 
-        if (TryLayer(session, tool, group, out ToolPermission sessionValue))
+        if (TryLayer(session, tool, group, out WorkToolPermission sessionValue))
             return new ToolPermissionValue(sessionValue, "Session");
-        if (TryLayer(model, tool, group, out ToolPermission modelValue))
+        if (TryLayer(model, tool, group, out WorkToolPermission modelValue))
             return new ToolPermissionValue(modelValue, "Model");
-        if (TryLayer(family, tool, group, out ToolPermission familyValue))
+        if (TryLayer(family, tool, group, out WorkToolPermission familyValue))
             return new ToolPermissionValue(familyValue, "Family");
-        if (TryLayer(system, tool, group, out ToolPermission systemValue))
+        if (TryLayer(project, tool, group, out WorkToolPermission projectValue))
+            return new ToolPermissionValue(projectValue, "Project");
+        if (TryLayer(system, tool, group, out WorkToolPermission systemValue))
             return new ToolPermissionValue(systemValue, "System");
 
         return new ToolPermissionValue(fallback, DefaultSource);
@@ -132,63 +165,66 @@ public static class ToolPermissionResolver
     /// measured against, and what the settings panel shows as the inherited
     /// value at the point where an agent takes over.
     /// </summary>
-    public static ToolPermission ResolveWithoutAgent(
+    public static WorkToolPermission ResolveWithoutAgent(
         string tool,
         string? group = null,
         ToolPermissionSet? system = null,
         ToolPermissionSet? family = null,
+        ToolPermissionSet? project = null,
         ToolPermissionSet? model = null,
         ToolPermissionSet? session = null,
-        ToolPermission fallback = ToolPermission.Ask)
+        WorkToolPermission fallback = WorkToolPermission.Ask)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tool);
 
-        if (TryLayer(session, tool, group, out ToolPermission sessionValue))
+        if (TryLayer(session, tool, group, out WorkToolPermission sessionValue))
             return sessionValue;
-        if (TryLayer(model, tool, group, out ToolPermission modelValue))
+        if (TryLayer(model, tool, group, out WorkToolPermission modelValue))
             return modelValue;
-        if (TryLayer(family, tool, group, out ToolPermission familyValue))
+        if (TryLayer(family, tool, group, out WorkToolPermission familyValue))
             return familyValue;
-        if (TryLayer(system, tool, group, out ToolPermission systemValue))
+        if (TryLayer(project, tool, group, out WorkToolPermission projectValue))
+            return projectValue;
+        if (TryLayer(system, tool, group, out WorkToolPermission systemValue))
             return systemValue;
         return fallback;
     }
 
     /// <summary>
     /// Applies a folder permission as a cap: the more restrictive of the two
-    /// wins. A tool set to <see cref="ToolPermission.Always"/> still refuses in
+    /// wins. A tool set to <see cref="WorkToolPermission.Always"/> still refuses in
     /// a folder whose permission is <see cref="WorkPermission.Never"/>, so the
     /// folder stays a hard boundary.
     /// </summary>
-    public static ToolPermission Cap(ToolPermission tool, WorkPermission folder) =>
+    public static WorkToolPermission Cap(WorkToolPermission tool, WorkPermission folder) =>
         MostRestrictive(tool, FromWorkPermission(folder));
 
     /// <summary>The more restrictive of two permissions, using the enum order.</summary>
-    public static ToolPermission MostRestrictive(ToolPermission left, ToolPermission right) =>
+    public static WorkToolPermission MostRestrictive(WorkToolPermission left, WorkToolPermission right) =>
         Rank(left) <= Rank(right) ? left : right;
 
-    public static WorkPermission ToWorkPermission(ToolPermission permission) => permission switch
+    public static WorkPermission ToWorkPermission(WorkToolPermission permission) => permission switch
     {
-        ToolPermission.Never => WorkPermission.Never,
-        ToolPermission.Always => WorkPermission.Always,
+        WorkToolPermission.Never => WorkPermission.Never,
+        WorkToolPermission.Always => WorkPermission.Always,
         _ => WorkPermission.Ask,
     };
 
-    public static ToolPermission FromWorkPermission(WorkPermission permission) => permission switch
+    public static WorkToolPermission FromWorkPermission(WorkPermission permission) => permission switch
     {
-        WorkPermission.Never => ToolPermission.Never,
-        WorkPermission.Ask => ToolPermission.Ask,
-        _ => ToolPermission.Always,
+        WorkPermission.Never => WorkToolPermission.Never,
+        WorkPermission.Ask => WorkToolPermission.Ask,
+        _ => WorkToolPermission.Always,
     };
 
     /// <summary>Off (0) &lt; Never (1) &lt; Ask (2) &lt; Always (3).</summary>
-    public static int Rank(ToolPermission permission) => (int)permission;
+    public static int Rank(WorkToolPermission permission) => (int)permission;
 
     private static bool TryLayer(
         ToolPermissionSet? layer,
         string tool,
         string? group,
-        out ToolPermission value)
+        out WorkToolPermission value)
     {
         value = default;
         if (layer is null) return false;

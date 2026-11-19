@@ -48,7 +48,8 @@ public sealed class StudioAgentToolTests : IDisposable
             new SystemWorkSkillsService(),
             new WorkToolService(workspace),
             new StudioDeviceAccess(),
-            _agents);
+            _agents,
+            new InferenceSettingsService());
     }
 
     [Fact]

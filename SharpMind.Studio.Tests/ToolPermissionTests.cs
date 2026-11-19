@@ -6,7 +6,7 @@ namespace SharpMind.Studio.Tests;
 
 public sealed class ToolPermissionTests
 {
-    private static ToolPermissionSet Set(string? tool = null, ToolPermission value = ToolPermission.Ask,
+    private static ToolPermissionSet Set(string? tool = null, WorkToolPermission value = WorkToolPermission.Ask,
         string? group = null)
     {
         var set = new ToolPermissionSet();
@@ -21,12 +21,12 @@ public sealed class ToolPermissionTests
         ToolPermissionValue value = ToolPermissionResolver.Resolve(
             "WriteFile",
             group: "Files · write",
-            system: Set("WriteFile", ToolPermission.Never),
-            family: Set("WriteFile", ToolPermission.Ask),
-            model: Set("WriteFile", ToolPermission.Always),
-            session: Set("WriteFile", ToolPermission.Never));
+            system: Set("WriteFile", WorkToolPermission.Never),
+            family: Set("WriteFile", WorkToolPermission.Ask),
+            model: Set("WriteFile", WorkToolPermission.Always),
+            session: Set("WriteFile", WorkToolPermission.Never));
 
-        Assert.Equal(ToolPermission.Never, value.Permission);
+        Assert.Equal(WorkToolPermission.Never, value.Permission);
         Assert.Equal("Session", value.Source);
         Assert.False(value.Escalates);
     }
@@ -36,12 +36,12 @@ public sealed class ToolPermissionTests
     {
         ToolPermissionValue value = ToolPermissionResolver.Resolve(
             "ReadFile",
-            system: new ToolPermissionSet { Tools = { ["ReadFile"] = ToolPermission.Always } },
+            system: new ToolPermissionSet { Tools = { ["ReadFile"] = WorkToolPermission.Always } },
             family: new ToolPermissionSet(),
             model: new ToolPermissionSet(),
             session: new ToolPermissionSet());
 
-        Assert.Equal(ToolPermission.Always, value.Permission);
+        Assert.Equal(WorkToolPermission.Always, value.Permission);
         Assert.Equal("System", value.Source);
     }
 
@@ -51,9 +51,9 @@ public sealed class ToolPermissionTests
         ToolPermissionValue value = ToolPermissionResolver.Resolve(
             "DeleteFile",
             group: "Files · delete",
-            session: new ToolPermissionSet { Groups = { ["Files · delete"] = ToolPermission.Never } });
+            session: new ToolPermissionSet { Groups = { ["Files · delete"] = WorkToolPermission.Never } });
 
-        Assert.Equal(ToolPermission.Never, value.Permission);
+        Assert.Equal(WorkToolPermission.Never, value.Permission);
         Assert.Equal("Session", value.Source);
     }
 
@@ -62,14 +62,14 @@ public sealed class ToolPermissionTests
     {
         var session = new ToolPermissionSet
         {
-            Groups = { ["Files · write"] = ToolPermission.Always },
-            Tools = { ["WriteFile"] = ToolPermission.Ask },
+            Groups = { ["Files · write"] = WorkToolPermission.Always },
+            Tools = { ["WriteFile"] = WorkToolPermission.Ask },
         };
 
         ToolPermissionValue value = ToolPermissionResolver.Resolve(
             "WriteFile", group: "Files · write", session: session);
 
-        Assert.Equal(ToolPermission.Ask, value.Permission);
+        Assert.Equal(WorkToolPermission.Ask, value.Permission);
     }
 
     [Fact]
@@ -78,10 +78,10 @@ public sealed class ToolPermissionTests
         ToolPermissionValue value = ToolPermissionResolver.Resolve(
             "WriteFile",
             group: "Files · write",
-            model: new ToolPermissionSet { Tools = { ["WriteFile"] = ToolPermission.Always } },
-            session: new ToolPermissionSet { Groups = { ["Files · write"] = ToolPermission.Never } });
+            model: new ToolPermissionSet { Tools = { ["WriteFile"] = WorkToolPermission.Always } },
+            session: new ToolPermissionSet { Groups = { ["Files · write"] = WorkToolPermission.Never } });
 
-        Assert.Equal(ToolPermission.Never, value.Permission);
+        Assert.Equal(WorkToolPermission.Never, value.Permission);
         Assert.Equal("Session", value.Source);
     }
 
@@ -90,10 +90,10 @@ public sealed class ToolPermissionTests
     {
         ToolPermissionValue value = ToolPermissionResolver.Resolve(
             "UnknownPluginTool",
-            system: Set("ReadFile", ToolPermission.Always),
-            fallback: ToolPermission.Off);
+            system: Set("ReadFile", WorkToolPermission.Always),
+            fallback: WorkToolPermission.Off);
 
-        Assert.Equal(ToolPermission.Off, value.Permission);
+        Assert.Equal(WorkToolPermission.Off, value.Permission);
         Assert.Equal(ToolPermissionResolver.DefaultSource, value.Source);
         Assert.False(value.IsVisible);
     }
@@ -103,10 +103,10 @@ public sealed class ToolPermissionTests
     {
         ToolPermissionValue value = ToolPermissionResolver.Resolve(
             "WriteFile",
-            session: Set("WriteFile", ToolPermission.Never),
-            agent: Set("WriteFile", ToolPermission.Always));
+            session: Set("WriteFile", WorkToolPermission.Never),
+            agent: Set("WriteFile", WorkToolPermission.Always));
 
-        Assert.Equal(ToolPermission.Always, value.Permission);
+        Assert.Equal(WorkToolPermission.Always, value.Permission);
         Assert.Equal("Agent", value.Source);
         Assert.True(value.Escalates);
     }
@@ -116,10 +116,10 @@ public sealed class ToolPermissionTests
     {
         ToolPermissionValue value = ToolPermissionResolver.Resolve(
             "WriteFile",
-            session: Set("WriteFile", ToolPermission.Always),
-            agent: Set("WriteFile", ToolPermission.Never));
+            session: Set("WriteFile", WorkToolPermission.Always),
+            agent: Set("WriteFile", WorkToolPermission.Never));
 
-        Assert.Equal(ToolPermission.Never, value.Permission);
+        Assert.Equal(WorkToolPermission.Never, value.Permission);
         Assert.False(value.Escalates);
     }
 
@@ -128,8 +128,8 @@ public sealed class ToolPermissionTests
     {
         ToolPermissionValue value = ToolPermissionResolver.Resolve(
             "WriteFile",
-            session: Set("WriteFile", ToolPermission.Ask),
-            agent: Set("WriteFile", ToolPermission.Ask));
+            session: Set("WriteFile", WorkToolPermission.Ask),
+            agent: Set("WriteFile", WorkToolPermission.Ask));
 
         Assert.False(value.Escalates);
     }
@@ -137,24 +137,24 @@ public sealed class ToolPermissionTests
     [Fact]
     public void ResolveWithoutAgent_IgnoresTheAgentLayer()
     {
-        ToolPermission value = ToolPermissionResolver.ResolveWithoutAgent(
+        WorkToolPermission value = ToolPermissionResolver.ResolveWithoutAgent(
             "WriteFile",
-            session: Set("WriteFile", ToolPermission.Ask));
+            session: Set("WriteFile", WorkToolPermission.Ask));
 
-        Assert.Equal(ToolPermission.Ask, value);
+        Assert.Equal(WorkToolPermission.Ask, value);
     }
 
     [Theory]
-    [InlineData(ToolPermission.Always, WorkPermission.Never, ToolPermission.Never)]
-    [InlineData(ToolPermission.Always, WorkPermission.Ask, ToolPermission.Ask)]
-    [InlineData(ToolPermission.Always, WorkPermission.Always, ToolPermission.Always)]
-    [InlineData(ToolPermission.Ask, WorkPermission.Always, ToolPermission.Ask)]
-    [InlineData(ToolPermission.Never, WorkPermission.Always, ToolPermission.Never)]
-    [InlineData(ToolPermission.Off, WorkPermission.Always, ToolPermission.Off)]
+    [InlineData(WorkToolPermission.Always, WorkPermission.Never, WorkToolPermission.Never)]
+    [InlineData(WorkToolPermission.Always, WorkPermission.Ask, WorkToolPermission.Ask)]
+    [InlineData(WorkToolPermission.Always, WorkPermission.Always, WorkToolPermission.Always)]
+    [InlineData(WorkToolPermission.Ask, WorkPermission.Always, WorkToolPermission.Ask)]
+    [InlineData(WorkToolPermission.Never, WorkPermission.Always, WorkToolPermission.Never)]
+    [InlineData(WorkToolPermission.Off, WorkPermission.Always, WorkToolPermission.Off)]
     public void Folder_IsACapNotAnOverride(
-        ToolPermission tool,
+        WorkToolPermission tool,
         WorkPermission folder,
-        ToolPermission expected)
+        WorkToolPermission expected)
     {
         Assert.Equal(expected, ToolPermissionResolver.Cap(tool, folder));
     }
@@ -162,12 +162,12 @@ public sealed class ToolPermissionTests
     [Fact]
     public void MostRestrictive_UsesTheEnumOrder()
     {
-        Assert.Equal(ToolPermission.Off, ToolPermissionResolver.MostRestrictive(
-            ToolPermission.Off, ToolPermission.Always));
-        Assert.Equal(ToolPermission.Ask, ToolPermissionResolver.MostRestrictive(
-            ToolPermission.Always, ToolPermission.Ask));
-        Assert.Equal(ToolPermission.Never, ToolPermissionResolver.MostRestrictive(
-            ToolPermission.Never, ToolPermission.Ask));
+        Assert.Equal(WorkToolPermission.Off, ToolPermissionResolver.MostRestrictive(
+            WorkToolPermission.Off, WorkToolPermission.Always));
+        Assert.Equal(WorkToolPermission.Ask, ToolPermissionResolver.MostRestrictive(
+            WorkToolPermission.Always, WorkToolPermission.Ask));
+        Assert.Equal(WorkToolPermission.Never, ToolPermissionResolver.MostRestrictive(
+            WorkToolPermission.Never, WorkToolPermission.Ask));
     }
 
     [Fact]
@@ -177,21 +177,21 @@ public sealed class ToolPermissionTests
         // why the lookup falls back to a scan.
         var set = new ToolPermissionSet
         {
-            Tools = new Dictionary<string, ToolPermission> { ["WriteFile"] = ToolPermission.Never },
-            Groups = new Dictionary<string, ToolPermission> { ["Files · write"] = ToolPermission.Ask },
+            Tools = new Dictionary<string, WorkToolPermission> { ["WriteFile"] = WorkToolPermission.Never },
+            Groups = new Dictionary<string, WorkToolPermission> { ["Files · write"] = WorkToolPermission.Ask },
         };
 
-        Assert.True(set.TryTool("writefile", out ToolPermission tool));
-        Assert.Equal(ToolPermission.Never, tool);
-        Assert.True(set.TryGroup("FILES · WRITE", out ToolPermission group));
-        Assert.Equal(ToolPermission.Ask, group);
+        Assert.True(set.TryTool("writefile", out WorkToolPermission tool));
+        Assert.Equal(WorkToolPermission.Never, tool);
+        Assert.True(set.TryGroup("FILES · WRITE", out WorkToolPermission group));
+        Assert.Equal(WorkToolPermission.Ask, group);
     }
 
     [Fact]
     public void EmptyLayer_IsTreatableAsInherit()
     {
         Assert.True(new ToolPermissionSet().IsEmpty);
-        Assert.False(Set("ReadFile", ToolPermission.Always).IsEmpty);
+        Assert.False(Set("ReadFile", WorkToolPermission.Always).IsEmpty);
     }
 
     [Fact]
@@ -204,26 +204,51 @@ public sealed class ToolPermissionTests
         try
         {
             var store = new InferenceSettingsStore(path);
-            store.SetSystemTools(new ToolPermissionSet { Tools = { ["ReadFile"] = ToolPermission.Always } });
+            store.SetSystemTools(new ToolPermissionSet { Tools = { ["ReadFile"] = WorkToolPermission.Always } });
             store.SetFamilyTools("qwen2", new ToolPermissionSet
             {
-                Groups = { ["Files · write"] = ToolPermission.Never },
+                Groups = { ["Files · write"] = WorkToolPermission.Never },
             });
             store.SetModelTools(model, new ToolPermissionSet
             {
-                Tools = { ["WriteFile"] = ToolPermission.Ask },
+                Tools = { ["WriteFile"] = WorkToolPermission.Ask },
             });
 
             var reopened = new InferenceSettingsStore(path);
-            Assert.Equal(ToolPermission.Always, reopened.SystemToolPermissions.Tools["ReadFile"]);
-            Assert.Equal(ToolPermission.Never,
+            Assert.Equal(WorkToolPermission.Always, reopened.SystemToolPermissions.Tools["ReadFile"]);
+            Assert.Equal(WorkToolPermission.Never,
                 reopened.FamilyToolPermissions("QWEN2")!.Groups["Files · write"]);
-            Assert.Equal(ToolPermission.Ask,
+            Assert.Equal(WorkToolPermission.Ask,
                 reopened.ModelToolPermissions(model)!.Tools["WriteFile"]);
 
             // An empty set is stored as absence so the layer keeps inheriting.
             reopened.SetFamilyTools("qwen2", new ToolPermissionSet());
             Assert.Null(new InferenceSettingsStore(path).FamilyToolPermissions("qwen2"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LegacyProjectToolLists_MigrateToTheFourStateModel()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "sm-work-" + Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var store = new WorkSettingsStore(root);
+            store.Save(new WorkSettings
+            {
+                DisabledTools = ["WriteFile"],
+                EnabledTools = ["FetchUrl"],
+            });
+
+            WorkSettings loaded = store.Load();
+
+            Assert.Equal(WorkToolPermission.Off, loaded.ToolPermissions.Tools["WriteFile"]);
+            Assert.Equal(WorkToolPermission.Ask, loaded.ToolPermissions.Tools["FetchUrl"]);
         }
         finally
         {

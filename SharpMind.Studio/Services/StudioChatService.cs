@@ -1108,7 +1108,8 @@ public sealed class StudioChatService : IAsyncDisposable
 
         IAgentBuilder? agent = _work.CreateAgent(
             _document?.Mode ?? "chat",
-            _document?.Overrides.Temperature);
+            _document?.Overrides.Temperature,
+            ToolProfile());
         _document.Messages.Add(ChatMessage.User(text, "You"));
         ChatMessage assistant = ChatMessage.Agent("", agent?.AgentName);
         _document.Messages.Add(assistant);
@@ -1555,6 +1556,16 @@ public sealed class StudioChatService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// The session, model and family tool layers. The project and system layers
+    /// are added by <see cref="StudioWorkService"/>, which owns the project's
+    /// tool list.
+    /// </summary>
+    private ToolPermissionProfile ToolProfile() => _inference.ToolProfile(
+        _document?.FamilyId,
+        _document?.ModelPath,
+        _document?.ToolPermissions);
+
     private async Task<IChatSession> BuildSessionAsync(
         LoadedStudioModel loaded,
         ResolvedInference profile,
@@ -1612,7 +1623,10 @@ public sealed class StudioChatService : IAsyncDisposable
                 option.Name.Equals("KVCacherBuilder", StringComparison.OrdinalIgnoreCase));
 
         Type cacheType = generator.CacheType ?? cache.Type;
-        var agent = _work.CreateAgent(_document?.Mode ?? "chat", _document?.Overrides.Temperature);
+        var agent = _work.CreateAgent(
+            _document?.Mode ?? "chat",
+            _document?.Overrides.Temperature,
+            ToolProfile());
         if (agent is AgentBuilder builder)
         {
             builder.PluginCompactors = _plugins.Compactors;

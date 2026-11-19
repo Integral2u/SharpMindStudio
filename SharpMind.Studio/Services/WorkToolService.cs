@@ -145,6 +145,20 @@ public sealed class WorkToolService
         lock (_gate) return !_disabledByDefault.Contains(name);
     }
 
+    /// <summary>The group a tool belongs to, or null when it is not registered.</summary>
+    public string? GroupFor(string name)
+    {
+        lock (_gate)
+        {
+            foreach (WorkToolInfo tool in _tools)
+            {
+                if (string.Equals(tool.Name, name, StringComparison.OrdinalIgnoreCase))
+                    return tool.Group;
+            }
+            return null;
+        }
+    }
+
     public void SetDefault(string name, bool enabled) => SetDefaults([name], enabled);
 
     public void SetDefaults(IEnumerable<string> names, bool enabled)

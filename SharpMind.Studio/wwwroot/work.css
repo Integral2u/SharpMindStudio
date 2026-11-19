@@ -264,9 +264,69 @@
 }
 
 .work-tools {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
-    gap: .25rem .8rem;
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+}
+
+.work-tool-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .6rem;
+    padding: .12rem 0;
+}
+
+.work-tool-name {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: .7rem;
+}
+
+.segmented {
+    display: inline-flex;
+    flex: 0 0 auto;
+    border: 1px solid var(--line);
+    border-radius: .5rem;
+    overflow: hidden;
+    background: rgba(4, 8, 12, .35);
+}
+
+.segmented-option {
+    border: 0;
+    background: transparent;
+    color: var(--faint);
+    padding: .18rem .45rem;
+    font-family: var(--mono);
+    font-size: .6rem;
+    letter-spacing: .02em;
+    cursor: pointer;
+}
+
+.segmented-option + .segmented-option {
+    border-left: 1px solid var(--line);
+}
+
+.segmented-option:hover {
+    color: var(--text);
+}
+
+.segmented-option.active {
+    background: rgba(var(--accent-rgb), .18);
+    color: var(--accent);
+}
+
+.segmented-option.is-never.active {
+    background: rgba(214, 78, 78, .2);
+    color: #ff9b9b;
+}
+
+.segmented-option.is-off.active {
+    background: rgba(120, 130, 140, .22);
+    color: var(--muted);
 }
 
 .work-tool {

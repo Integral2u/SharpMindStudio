@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Nodes;
+using System.Text.Json.Nodes;
 using SharpMind.Inference.Agent;
 using SharpMind.Studio.Core.Agents;
 using SharpMind.Studio.Core.Work;
@@ -37,6 +37,19 @@ public sealed class WorkPermissionRequest
     /// is not persisted, so its prompt only offers Deny and Allow once.
     /// </summary>
     public bool CanRemember { get; init; } = true;
+
+    /// <summary>
+    /// True when an agent is asking for more than the session chain allows. The
+    /// call is never widened silently: it always asks, and never remembers.
+    /// </summary>
+    public bool Escalation { get; init; }
+
+    /// <summary>What the agent asked for; only meaningful when <see cref="Escalation"/> is true.</summary>
+    public WorkToolPermission Wanted { get; init; }
+
+    /// <summary>What the session chain allows; only meaningful when <see cref="Escalation"/> is true.</summary>
+    public WorkToolPermission Inherited { get; init; }
+
     public Task<WorkPermissionDecision> Result => _completion.Task;
 
     public void Resolve(WorkPermissionDecision decision) => _completion.TrySetResult(decision);
@@ -53,6 +66,7 @@ public sealed class StudioWorkService : IDisposable
     private readonly WorkToolService _tools;
     private readonly StudioDeviceAccess _device;
     private readonly StudioAgentService _agents;
+    private readonly InferenceSettingsService _inference;
     private readonly Lock _gate = new();
     private WorkSettingsStore _store;
     private WorkSettings _settings;
@@ -60,13 +74,21 @@ public sealed class StudioWorkService : IDisposable
     private WorkPermissionRequest? _pending;
     private WorkChoiceRequest? _pendingChoice;
 
-    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents)
+    /// <summary>
+    /// The profile of the turn that is running. Delegated agents are created by
+    /// the runner without a profile, so they inherit this one instead of
+    /// silently falling back to the project defaults.
+    /// </summary>
+    private ToolPermissionProfile? _activeProfile;
+
+    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents, InferenceSettingsService inference)
     {
         _workspace = workspace;
         _systemSkills = systemSkills;
         _tools = tools;
         _device = device;
         _agents = agents;
+        _inference = inference;
         _store = new WorkSettingsStore(workspace.Project.Root);
         _settings = _store.Load();
         _memory = _store.ReadMemory();
@@ -137,10 +159,18 @@ public sealed class StudioWorkService : IDisposable
         _memory = _store.ReadMemory();
     }
 
-    public IAgentBuilder? CreateAgent(string mode, float? temperature = null)
+    public IAgentBuilder? CreateAgent(
+        string mode,
+        float? temperature = null,
+        ToolPermissionProfile? profile = null)
     {
         bool work = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase);
         IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = _agents.EnabledAgents;
+
+        // Remember the profile so a delegated agent created by the runner picks
+        // up the same session and model layers.
+        ToolPermissionProfile effective = ResolveProfile(profile);
+        _activeProfile = effective;
 
         // Even a chat with no defined agents gets the builder for spawn_agent, so
         // the model can create a temporary specialist when the task needs one.
@@ -149,15 +179,15 @@ public sealed class StudioWorkService : IDisposable
         var builder = new AgentBuilder(
             SharpMind.Studio.Core.Agents.StudioAgentNaming.ForTemperature(temperature));
         builder.DisabledTools = [.. _tools.Tools
-            .Where(tool => !IsToolEnabled(tool.Name))
+            .Where(tool => !effective.For(tool.Name, tool.Group).IsVisible)
             .Select(tool => tool.Name)];
         if (work && !_device.IsMobile)
         {
             builder.WithTools(new WorkFileTools(
                 _workspace.Project.Root,
                 AllowedRoots(),
-                access => CheckAccessAsync(access)));
-            builder.WithTools(new WorkWebTools(access => CheckAccessAsync(access)));
+                access => CheckAccessAsync(access, profile: effective)));
+            builder.WithTools(new WorkWebTools(access => CheckAccessAsync(access, profile: effective)));
             builder.WithTools(new WorkUiTools(RequestChoiceAsync));
             if (_tools.PluginTools.Count > 0)
                 builder.WithTools([.. _tools.PluginTools]);
@@ -283,10 +313,63 @@ public sealed class StudioWorkService : IDisposable
 
     public bool IsToolEnabled(string name)
     {
+        if (_settings.ToolPermissions.TryTool(name, out WorkToolPermission value))
+            return value != WorkToolPermission.Off;
         if (_settings.DisabledTools.Contains(name, StringComparer.OrdinalIgnoreCase)) return false;
         return _tools.IsDefaultEnabled(name) ||
                _settings.EnabledTools.Contains(name, StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Fills the project and system layers when the caller only supplied the
+    /// session, model and family. The project layer sits above the Studio
+    /// defaults, because a project toggle is a deliberate choice.
+    /// </summary>
+    private ToolPermissionProfile ResolveProfile(ToolPermissionProfile? profile)
+    {
+        profile ??= new ToolPermissionProfile();
+        return profile with
+        {
+            Project = profile.Project ?? ProjectToolLayer(),
+            System = profile.System ?? _inference.SystemTools,
+        };
+    }
+
+    /// <summary>
+    /// The project's per-tool permissions expressed as the four-state model.
+    /// Tools the project never mentions keep inheriting, so a system default of
+    /// Off is not turned back on by an implicit enable.
+    /// </summary>
+    private ToolPermissionSet ProjectToolLayer()
+    {
+        var layer = new ToolPermissionSet();
+        foreach (WorkToolInfo tool in _tools.Tools)
+        {
+            if (_settings.ToolPermissions.TryTool(tool.Name, out WorkToolPermission value))
+            {
+                layer.Tools[tool.Name] = value;
+                continue;
+            }
+
+            // A tool added after the file migrated still has its legacy switch.
+            if (_settings.DisabledTools.Contains(tool.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                layer.Tools[tool.Name] = WorkToolPermission.Off;
+                continue;
+            }
+
+            if (_settings.EnabledTools.Contains(tool.Name, StringComparer.OrdinalIgnoreCase))
+                layer.Tools[tool.Name] = WorkToolPermission.Ask;
+        }
+        return layer;
+    }
+
+    /// <summary>
+    /// The project-and-system value for a tool, for the settings panel. Session,
+    /// model, family and agent overrides are deliberately not included.
+    /// </summary>
+    public WorkToolPermission ProjectToolPermission(string name) =>
+        ResolveProfile(null).For(name, _tools.GroupFor(name)).Permission;
     public void SetToolEnabled(string name, bool enabled)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -319,13 +402,20 @@ public sealed class StudioWorkService : IDisposable
     /// delegated agent cannot recurse through the delegate tool.
     /// </summary>
     public IAgentBuilder? CreateAgentTools(
-        SharpMind.Studio.Core.Agents.StudioAgentDefinition agent)
+        SharpMind.Studio.Core.Agents.StudioAgentDefinition agent,
+        ToolPermissionProfile? profile = null)
     {
         if (_device.IsMobile) return null;
         if (!agent.InheritTools && agent.AllowedTools.Count == 0) return null;
 
+        // The agent's own tool set is the most specific layer. Anything it does
+        // not mention inherits from the turn's profile.
+        ToolPermissionProfile effective = ResolveProfile(
+            (profile ?? _activeProfile ?? new ToolPermissionProfile())
+            with { Agent = agent.ToolPermissions });
+
         Task<bool> Permission(WorkToolAccess access) =>
-            CheckAccessAsync(access, agent.Permissions);
+            CheckAccessAsync(access, agent.Permissions, effective);
 
         // AgentBuilder filters DisabledTools while it reflects the tool objects, so
         // discover the names first and set the filter before the real registration.
@@ -345,7 +435,7 @@ public sealed class StudioWorkService : IDisposable
         {
             DisabledTools = [.. probe.RegisteredToolNames.Where(name =>
                 (allowed is not null && !allowed.Contains(name)) ||
-                !IsToolEnabled(name))],
+                !effective.For(name, _tools.GroupFor(name)).IsVisible)],
         };
         builder.WithTools(toolObjects);
         string rules = string.IsNullOrWhiteSpace(agent.Rules)
@@ -355,8 +445,20 @@ public sealed class StudioWorkService : IDisposable
         return builder;
     }
 
-    public async Task<bool> CheckAccessAsync(WorkToolAccess access, WorkPermissions? permissions = null)
+    public async Task<bool> CheckAccessAsync(
+        WorkToolAccess access,
+        WorkPermissions? permissions = null,
+        ToolPermissionProfile? profile = null,
+        ToolPermissionSet? agentTools = null)
     {
+        if (agentTools is not null)
+            profile = (profile ?? new ToolPermissionProfile()) with { Agent = agentTools };
+
+        ToolPermissionProfile effectiveProfile = ResolveProfile(profile);
+        string? group = _tools.GroupFor(access.Tool);
+        ToolPermissionValue tool = effectiveProfile.For(access.Tool, group);
+        if (tool.Permission == WorkToolPermission.Off) return false;
+
         WorkContext? context = null;
         WorkPermission configured;
         if (permissions is not null)
@@ -379,13 +481,26 @@ public sealed class StudioWorkService : IDisposable
             configured = context.Permissions.For(access.Category);
         }
 
-        if (configured == WorkPermission.Never) return false;
-        if (configured == WorkPermission.Always) return true;
+        // The folder stays a hard boundary: a tool set to Always still refuses in
+        // a folder whose category permission is Never.
+        WorkToolPermission effective = ToolPermissionResolver.Cap(tool.Permission, configured);
+
+        // An agent that asks for more than the session allows must ask, even when
+        // its own policy is Always.
+        if (tool.Escalates) effective = WorkToolPermission.Ask;
+
+        if (effective == WorkToolPermission.Never) return false;
+        if (effective == WorkToolPermission.Always) return true;
 
         var request = new WorkPermissionRequest
         {
             Access = access,
-            CanRemember = permissions is null,
+            CanRemember = permissions is null && !tool.Escalates,
+            Escalation = tool.Escalates,
+            Wanted = tool.Permission,
+            Inherited = tool.Escalates
+                ? effectiveProfile.InheritedFor(access.Tool, group)
+                : effective,
         };
         lock (_gate)
         {

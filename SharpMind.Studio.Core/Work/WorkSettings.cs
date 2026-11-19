@@ -65,6 +65,13 @@ public sealed record WorkSettings
     public List<WorkContext> Contexts { get; init; } = [];
     public List<string> DisabledTools { get; init; } = [];
     public List<string> EnabledTools { get; init; } = [];
+
+    /// <summary>
+    /// Per-tool permissions for this project. An empty set inherits the Studio
+    /// defaults. The on/off lists above are the 1.1 shape and are folded into
+    /// this set when an older file is loaded.
+    /// </summary>
+    public ToolPermissionSet ToolPermissions { get; init; } = new();
 }
 
 public sealed record WorkToolAccess(string Tool, WorkToolCategory Category, string Path);

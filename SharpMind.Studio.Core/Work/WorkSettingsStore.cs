@@ -44,7 +44,21 @@ public sealed class WorkSettingsStore
             Contexts = settings.Contexts ?? [],
             DisabledTools = settings.DisabledTools ?? [],
             EnabledTools = settings.EnabledTools ?? [],
+            ToolPermissions = settings.ToolPermissions ?? new(),
         };
+
+        // A file written before the four-state permissions only has the two
+        // lists. Fold them in once so the panel and the resolver agree.
+        if (settings.ToolPermissions.IsEmpty)
+        {
+            var migrated = new ToolPermissionSet();
+            foreach (string name in settings.DisabledTools)
+                migrated.Tools[name] = WorkToolPermission.Off;
+            foreach (string name in settings.EnabledTools)
+                migrated.Tools[name] = WorkToolPermission.Ask;
+            if (!migrated.IsEmpty)
+                settings = settings with { ToolPermissions = migrated };
+        }
 
         if (settings.Contexts.Count == 0)
         {
