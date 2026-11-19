@@ -16,7 +16,8 @@ namespace SharpMind.Studio.Services.Chat;
 public sealed class OpenRouterChatBackend(
     OpenRouterSettingsService settings,
     OpenRouterClient client,
-    StudioSafetyService safety) : IChatBackend
+    StudioSafetyService safety,
+    WorkToolService toolCatalog) : IChatBackend
 {
     private const int MaxToolCalls = 10;
 
@@ -181,15 +182,27 @@ public sealed class OpenRouterChatBackend(
                 }
                 else
                 {
-                    result = await Task.Run(
-                        () => agent.CallToolAsync(
-                            new JsonObject
-                            {
-                                ["tool"] = call.Name,
-                                ["arguments"] = arguments,
-                            },
-                            cancellationToken),
-                        cancellationToken).ConfigureAwait(false);
+                    // A process that starts while a plugin tool runs is attributed
+                    // to that plugin, so the warning can name it.
+                    bool plugin = toolCatalog.Tools.Any(tool => tool.IsPlugin &&
+                        string.Equals(tool.Name, call.Name, StringComparison.OrdinalIgnoreCase));
+                    safety.SetActivePlugin(plugin ? call.Name : null);
+                    try
+                    {
+                        result = await Task.Run(
+                            () => agent.CallToolAsync(
+                                new JsonObject
+                                {
+                                    ["tool"] = call.Name,
+                                    ["arguments"] = arguments,
+                                },
+                                cancellationToken),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        safety.SetActivePlugin(null);
+                    }
                 }
 
                 string resultText = OpenRouterMessageBuilder.FormatToolResult(

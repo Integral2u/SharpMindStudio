@@ -370,6 +370,11 @@
     color: #ffc46b;
 }
 
+.tool-badge.is-process {
+    border-color: rgba(220, 90, 90, .45);
+    color: #ff9b9b;
+}
+
 .work-tool {
     display: flex;
     align-items: center;

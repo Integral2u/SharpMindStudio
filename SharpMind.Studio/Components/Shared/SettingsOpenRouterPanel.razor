@@ -53,6 +53,13 @@
             <div class="field training-form-wide">
                 <label class="field-label" for="remote-base">Base URL</label>
                 <input id="remote-base" class="input" @bind="_baseUrl" />
+                <span class="small faint">
+                    To run tool calls through a local safety proxy, point this at the proxy and
+                    start the proxy pointed at @_preset.DefaultBaseUrl. For example, Hugging Face
+                    <span class="mono">safeagents start @_preset.DefaultBaseUrl 8787</span>, then
+                    use <span class="mono">http://127.0.0.1:8787</span> here. Studio's own
+                    inspector runs before any proxy and needs no extra process.
+                </span>
             </div>
         </div>
         <div class="row">

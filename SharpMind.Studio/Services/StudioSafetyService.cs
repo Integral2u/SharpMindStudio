@@ -43,21 +43,72 @@ public sealed record SafetySettingsDocument
 /// what is suspicious; the person decides what happens, and a decision can be
 /// remembered for the session so the same question is not asked twice.
 /// </summary>
-public sealed class StudioSafetyService
+public sealed class StudioSafetyService : IDisposable
 {
     private readonly Lock _gate = new();
     private readonly HashSet<string> _denied = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _allowed = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ProcessStartProbe _probe = new();
     private SafetyReviewRequest? _pending;
+    private ProcessStartAlert? _pendingProcess;
     private SafetySettingsDocument _settings;
 
     public StudioSafetyService()
     {
         StudioPaths.EnsureCreated();
         _settings = Load();
+        _probe.Started += OnProcessStarted;
     }
 
     public event Action? Changed;
+
+    public ProcessStartAlert? PendingProcess
+    {
+        get { lock (_gate) return _pendingProcess; }
+    }
+
+    /// <summary>Watches for processes started under Studio while tools run.</summary>
+    public void BeginToolWatch() => _probe.Start();
+
+    public void EndToolWatch()
+    {
+        _probe.Stop();
+        _probe.SetPlugin(null);
+    }
+
+    public void SetActivePlugin(string? plugin) => _probe.SetPlugin(plugin);
+
+    public bool KillPendingProcess(out string? error)
+    {
+        ProcessStartAlert? alert;
+        lock (_gate)
+        {
+            alert = _pendingProcess;
+            _pendingProcess = null;
+        }
+        Changed?.Invoke();
+
+        if (alert is null)
+        {
+            error = null;
+            return false;
+        }
+        return ProcessStartProbe.TryKill(alert.ProcessId, out error);
+    }
+
+    public void DismissPendingProcess()
+    {
+        lock (_gate) _pendingProcess = null;
+        Changed?.Invoke();
+    }
+
+    private void OnProcessStarted(ProcessStartAlert alert)
+    {
+        lock (_gate) _pendingProcess = alert;
+        Changed?.Invoke();
+    }
+
+    public void Dispose() => _probe.Dispose();
 
     public bool Enabled => _settings.Enabled;
 

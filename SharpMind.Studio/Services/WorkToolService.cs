@@ -1,11 +1,20 @@
 ﻿using System.Reflection;
 using SharpMind.Core;
+using SharpMind.Studio.Core.Safety;
 using SharpMind.Studio.Core.Serialization;
 using SharpMind.Studio.Core.Storage;
 
 namespace SharpMind.Studio.Services;
 
-public sealed record WorkToolInfo(string Name, string Source, bool IsPlugin, string Group);
+public sealed record WorkToolInfo(string Name, string Source, bool IsPlugin, string Group)
+{
+    /// <summary>Static warning from the assembly scan, before any plugin code runs.</summary>
+    public bool StartsProcesses { get; init; }
+
+    public bool UsesNetwork { get; init; }
+
+    public IReadOnlyList<string> Evidence { get; init; } = [];
+}
 
 public sealed record WorkToolDefaultsDocument
 {
@@ -121,8 +130,16 @@ public sealed class WorkToolService
                         if (instance is null) continue;
                         pluginTools.Add(instance);
                         string source = assembly.GetName().Name ?? Path.GetFileName(dll);
+                        PluginCapabilities capabilities = PluginTrustScanner.Scan(assembly);
                         foreach (string name in toolNames.Order(StringComparer.OrdinalIgnoreCase))
-                            tools.Add(new WorkToolInfo(name, source, true, $"Plugins · {source}"));
+                        {
+                            tools.Add(new WorkToolInfo(name, source, true, $"Plugins · {source}")
+                            {
+                                StartsProcesses = capabilities.StartsProcesses,
+                                UsesNetwork = capabilities.UsesNetwork,
+                                Evidence = capabilities.Evidence,
+                            });
+                        }
                     }
                     catch (Exception ex)
                     {

@@ -37,6 +37,13 @@
                                       : "Built into Studio and gated by the project permissions.")">
                                 @(tool.IsPlugin ? "plugin" : "internal")
                             </span>
+                            @if (tool.StartsProcesses)
+                            {
+                                <span class="tool-badge is-process"
+                                      title="The assembly can start processes. Evidence: @string.Join("; ", tool.Evidence)">
+                                    process
+                                </span>
+                            }
                             @if (AllowInherit && !overridden)
                             {
                                 <span class="small faint">inherits @SourceLabel(tool)</span>

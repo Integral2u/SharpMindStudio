@@ -37,6 +37,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly StudioDeviceAccess _device;
     private readonly StudioPluginService _plugins;
     private readonly ThemeService _theme;
+    private readonly StudioSafetyService _safety;
     private ChatSessionStore _store;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChatSession? _session;
@@ -81,7 +82,8 @@ public sealed class StudioChatService : IAsyncDisposable
         StudioAgentRunner agentRunner,
         StudioDeviceAccess device,
         StudioPluginService plugins,
-        ThemeService theme)
+        ThemeService theme,
+        StudioSafetyService safety)
     {
         _workspace = workspace;
         _catalog = catalog;
@@ -98,6 +100,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _device = device;
         _plugins = plugins;
         _theme = theme;
+        _safety = safety;
         _store = new ChatSessionStore(workspace.Project.ChatsDirectory);
         _work.AgentToolExecutor = ExecuteAgentToolAsync;
     }
@@ -927,6 +930,7 @@ public sealed class StudioChatService : IAsyncDisposable
             double? lastTps = null;
             try
             {
+                _safety.BeginToolWatch();
                 await foreach (ChatStreamEntry entry in _session
                     .GetResponseStreamAsync(
                         text.Trim(), artifacts?.ToArray(), ct: _streamCts.Token)
@@ -985,6 +989,7 @@ public sealed class StudioChatService : IAsyncDisposable
             }
             finally
             {
+                _safety.EndToolWatch();
                 _streamCts?.Dispose();
                 _streamCts = null;
                 _streaming = false;
@@ -1128,6 +1133,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
         try
         {
+            _safety.BeginToolWatch();
             await backend.RunTurnAsync(context, _streamCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -1143,6 +1149,7 @@ public sealed class StudioChatService : IAsyncDisposable
         }
         finally
         {
+            _safety.EndToolWatch();
             _streamCts?.Dispose();
             _streamCts = null;
             _streaming = false;

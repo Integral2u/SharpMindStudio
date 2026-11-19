@@ -627,6 +627,34 @@ else
                 </div>
             }
 
+            @if (Safety.PendingProcess is { } process)
+            {
+                <div class="panel work-permission-prompt">
+                    <div class="panel-body">
+                        <div>
+                            <div class="eyebrow">Process started</div>
+                            <strong>
+                                @process.Name (PID @process.ProcessId)@(process.Plugin is null
+                                    ? ""
+                                    : $" by the plugin tool {process.Plugin}")
+                            </strong>
+                            <span class="small faint">
+                                It started underneath Studio while a tool was running. Killing it stops
+                                what is still running; anything it already sent cannot be undone.
+                            </span>
+                        </div>
+                        <div class="row">
+                            <button type="button" class="button danger" @onclick="KillProcessAsync">
+                                Kill process
+                            </button>
+                            <button type="button" class="button" @onclick="Safety.DismissPendingProcess">
+                                Dismiss
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+
             @if (_workMode && Work.PendingChoice is { } choice)
             {
                 <div class="panel work-permission-prompt">
@@ -981,6 +1009,13 @@ else
     private void OnSafetyChanged() => _ = InvokeAsync(StateHasChanged);
 
     private Task ResolveSafetyAsync(SafetyDecision decision) => Safety.ResolveAsync(decision);
+
+    private async Task KillProcessAsync()
+    {
+        Safety.KillPendingProcess(out string? error);
+        if (!string.IsNullOrWhiteSpace(error))
+            await JS.InvokeVoidAsync("alert", $"Could not kill the process: {error}");
+    }
 
     private void OnChatChanged() => _ = InvokeAsync(async () =>
     {
