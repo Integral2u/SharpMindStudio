@@ -10,7 +10,7 @@
         <span class="faint small mono">@ThemeService.LabelAppearance(Theme.Appearance)</span>
     </div>
     <div class="panel-body stack">
-        <div class="segmented" role="group" aria-label="Appearance">
+        <div class="segmented appearance-toggle" role="group" aria-label="Appearance">
             @foreach (string appearance in ThemeService.AvailableAppearances)
             {
                 <button type="button"

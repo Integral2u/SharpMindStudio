@@ -29,30 +29,34 @@
 
 .studio-root[data-appearance="light"] {
     color-scheme: light;
-    --bg: #f5f7fa;
+    --bg: #edf0f4;
     --bg-raised: #ffffff;
     --panel: #ffffff;
-    --panel-soft: #eef1f5;
-    --line: #dbe1e9;
-    --line-strong: #c3ccd8;
-    --text: #18222e;
-    --muted: #526174;
-    --faint: #78879a;
+    --panel-soft: #e8ecf2;
+    --line: #d2d9e3;
+    --line-strong: #b7c2d1;
+    --text: #16202b;
+    --muted: #4c5b6d;
+    --faint: #6c7a8c;
     --warn: #b45309;
     --bad: #b91c1c;
     --good: #15803d;
-    --glass: rgba(255, 255, 255, .95);
-    --inset: rgba(20, 30, 45, .05);
-    --overlay: rgba(15, 25, 40, .04);
+    --glass: rgba(255, 255, 255, .96);
+    --inset: rgba(20, 30, 45, .06);
+    --overlay: rgba(15, 25, 40, .05);
     --shadow: rgba(20, 30, 45, .18);
     --code-bg: #f0f3f7;
     --on-accent: #ffffff;
-    --bg-fade: rgba(245, 247, 250, .4);
+    --bg-fade: rgba(237, 240, 244, .5);
     --info: #2563eb;
 }
 
+.appearance-toggle {
+    align-self: flex-start;
+}
+
 body:has(.studio-root[data-appearance="light"]) {
-    background: #f5f7fa;
+    background: #edf0f4;
     color-scheme: light;
 }
 
