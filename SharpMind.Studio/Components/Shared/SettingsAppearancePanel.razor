@@ -5,6 +5,33 @@
     <div class="panel-head">
         <div>
             <div class="eyebrow">Appearance</div>
+            <h2>Light or dark</h2>
+        </div>
+        <span class="faint small mono">@ThemeService.LabelAppearance(Theme.Appearance)</span>
+    </div>
+    <div class="panel-body stack">
+        <div class="segmented" role="group" aria-label="Appearance">
+            @foreach (string appearance in ThemeService.AvailableAppearances)
+            {
+                <button type="button"
+                        class="segmented-option @(Theme.Appearance == appearance ? "active" : "")"
+                        @onclick="() => SetAppearanceAsync(appearance)">
+                    @ThemeService.LabelAppearance(appearance)
+                </button>
+            }
+        </div>
+        <span class="small faint">
+            A custom accent is kept inside the range that stays readable for the appearance:
+            near-white is not allowed on a light surface and near-black is not allowed on a dark one.
+            An existing choice outside the range is moved to the nearest allowed colour.
+        </span>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Appearance</div>
             <h2>Accent colour</h2>
         </div>
         <span class="faint small mono">@ThemeService.Label(Theme.Theme)</span>
@@ -42,10 +69,13 @@
 </section>
 
 @code {
+    private Task SetAppearanceAsync(string appearance) =>
+        Theme.SetThemeAsync(Theme.Theme, Theme.CustomColor, appearance);
+
     private async Task ApplyCustomColorAsync(ChangeEventArgs args)
     {
         string? color = ThemeService.NormalizeColor(args.Value?.ToString());
         if (color is null) return;
-        await Theme.SetThemeAsync("custom", color);
+        await Theme.SetThemeAsync("custom", color, Theme.Appearance);
     }
 }

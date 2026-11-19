@@ -1,4 +1,4 @@
-﻿:root {
+:root {
     color-scheme: dark;
     --bg: #0b1016;
     --bg-raised: #101720;
@@ -15,8 +15,45 @@
     --warn: #fbbf24;
     --bad: #f87171;
     --good: #86efac;
+    --glass: rgba(18, 26, 36, .95);
+    --inset: rgba(4, 8, 12, .5);
+    --overlay: rgba(255, 255, 255, .035);
+    --shadow: rgba(0, 0, 0, .45);
+    --code-bg: #0d141c;
+    --on-accent: #06201c;
+    --bg-fade: rgba(11, 16, 22, .35);
+    --info: #9db8ff;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.studio-root[data-appearance="light"] {
+    color-scheme: light;
+    --bg: #f5f7fa;
+    --bg-raised: #ffffff;
+    --panel: #ffffff;
+    --panel-soft: #eef1f5;
+    --line: #dbe1e9;
+    --line-strong: #c3ccd8;
+    --text: #18222e;
+    --muted: #526174;
+    --faint: #78879a;
+    --warn: #b45309;
+    --bad: #b91c1c;
+    --good: #15803d;
+    --glass: rgba(255, 255, 255, .95);
+    --inset: rgba(20, 30, 45, .05);
+    --overlay: rgba(15, 25, 40, .04);
+    --shadow: rgba(20, 30, 45, .18);
+    --code-bg: #f0f3f7;
+    --on-accent: #ffffff;
+    --bg-fade: rgba(245, 247, 250, .4);
+    --info: #2563eb;
+}
+
+body:has(.studio-root[data-appearance="light"]) {
+    background: #f5f7fa;
+    color-scheme: light;
 }
 
 [data-theme="blue"] {
@@ -128,9 +165,9 @@ code, .mono {
 .panel {
     border: 1px solid var(--line);
     border-radius: .9rem;
-    background: linear-gradient(180deg, rgba(255, 255, 255, .018), transparent), rgba(18, 26, 36, .82);
+    background: linear-gradient(180deg, var(--overlay), transparent), var(--glass);
     backdrop-filter: blur(3px);
-    box-shadow: 0 20px 70px rgba(0, 0, 0, .16);
+    box-shadow: 0 20px 70px var(--shadow);
 }
 
 .panel-head {
@@ -175,7 +212,7 @@ details.panel.settings-collapsible:not([open]) > summary.panel-head {
 }
 
 details.panel.settings-collapsible > summary.panel-head:hover {
-    background: rgba(255, 255, 255, .02);
+    background: var(--overlay);
 }
 
 .settings-refresh-button {
@@ -188,7 +225,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .8rem 1rem;
     border: 1px solid var(--line);
     border-radius: 8px;
-    background: rgba(255, 255, 255, .02);
+    background: var(--overlay);
 }
 
 .agent-tool-notes > div {
@@ -254,7 +291,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
 }
 
 .settings-subgroup > summary.settings-subgroup-head:hover {
-    background: rgba(255, 255, 255, .02);
+    background: var(--overlay);
 }
 
 .settings-subgroup-body {
@@ -375,7 +412,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     width: 100%;
     border: 1px solid var(--line-strong);
     border-radius: .55rem;
-    background: #0a0f15;
+    background: var(--bg);
     color: var(--text);
     font: inherit;
     font-family: var(--mono);
@@ -432,7 +469,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     .button.primary {
         border-color: rgba(var(--accent-rgb), .5);
         background: var(--accent);
-        color: #06201c;
+        color: var(--on-accent);
         font-weight: 700;
     }
 
@@ -442,7 +479,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
 
 .button.danger {
     border-color: rgba(251, 113, 133, .45);
-    color: #fda4af;
+    color: var(--bad);
 }
 
 .table .button {
@@ -497,7 +534,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     }
 
     .table tbody tr:hover {
-        background: rgba(255, 255, 255, .018);
+        background: var(--overlay);
     }
 
 .num {
@@ -557,11 +594,11 @@ details.panel.settings-collapsible > summary.panel-head:hover {
 }
 
     .run-star.gold {
-        color: #fbbf24;
+        color: var(--warn);
     }
 
     .run-star.silver {
-        color: #cbd5e1;
+        color: var(--muted);
     }
 
 .runs-filters {
@@ -616,7 +653,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .9rem 1rem;
     border: 1px solid var(--line);
     border-radius: .65rem;
-    background: rgba(10, 15, 21, .84);
+    background: var(--inset);
     color: var(--muted);
     font-family: var(--mono);
     font-size: .8rem;
@@ -692,7 +729,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     height: 1rem;
     flex: 0 0 1rem;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, .2);
+    border: 1px solid var(--overlay);
 }
 
     .theme-swatch.green {
@@ -811,7 +848,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .35rem;
     border: 1px solid var(--line);
     border-radius: .55rem;
-    background: rgba(10, 15, 21, .35);
+    background: var(--inset);
 }
 
 .canary-model {
@@ -925,7 +962,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .55rem .65rem;
     border: 1px solid var(--line);
     border-radius: .5rem;
-    background: rgba(10, 15, 21, .35);
+    background: var(--inset);
     font-family: var(--mono);
     font-size: .72rem;
 }
@@ -956,7 +993,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .7rem;
     border: 1px solid var(--line);
     border-radius: .7rem;
-    background: rgba(10, 15, 21, .3);
+    background: var(--inset);
 }
 
 .tune-picker-head {
@@ -1022,7 +1059,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     border: 1px solid var(--line-strong);
     border-radius: 1rem;
     background: var(--bg-raised);
-    box-shadow: 0 30px 80px #000a;
+    box-shadow: 0 30px 80px var(--shadow);
 }
 
 .tune-modal-head {
@@ -1079,7 +1116,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .3rem;
     border: 1px solid var(--line);
     border-radius: .5rem;
-    background: rgba(4, 8, 12, .45);
+    background: var(--inset);
 }
 
 .path-entry {
@@ -1137,7 +1174,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .85rem;
     border: 1px solid var(--line);
     border-radius: .7rem;
-    background: rgba(10, 15, 21, .3);
+    background: var(--inset);
 }
 
 .gateway-admin-head {
@@ -1238,7 +1275,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     margin-top: .3rem;
     padding: .4rem .6rem;
     border-radius: 8px;
-    background: var(--panel-2, rgba(255, 255, 255, .04));
+    background: var(--panel-2, var(--overlay));
     color: var(--text);
     overflow-x: auto;
     white-space: nowrap;

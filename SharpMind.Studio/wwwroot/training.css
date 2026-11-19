@@ -141,7 +141,7 @@
     padding: .6rem .7rem;
     border: 1px solid var(--line);
     border-radius: .5rem;
-    background: rgba(4, 8, 12, .35);
+    background: var(--inset);
 }
 
 .training-inline-select {
@@ -164,7 +164,7 @@
     color: var(--text);
     border: 1px solid var(--line);
     border-radius: .45rem;
-    background: rgba(4, 8, 12, .45);
+    background: var(--inset);
 }
 
 .data-preview {
@@ -180,7 +180,7 @@
     color: var(--text);
     border: 1px solid var(--line);
     border-radius: .45rem;
-    background: rgba(4, 8, 12, .45);
+    background: var(--inset);
 }
 
 .training-plans {
@@ -258,7 +258,7 @@
     overflow: auto;
     border: 1px solid var(--line);
     border-radius: .5rem;
-    background: rgba(4, 8, 12, .6);
+    background: var(--inset);
     color: var(--muted);
     font-family: var(--mono);
     font-size: .68rem;

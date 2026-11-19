@@ -30,7 +30,7 @@ builder.Services.AddSingleton<ModelCatalogService>();
 builder.Services.AddSingleton<InferenceSettingsService>();
 builder.Services.AddSingleton<OpenRouterSettingsService>();
 builder.Services.AddSingleton<SharpMind.Studio.Services.StudioSafetyService>();
-builder.Services.AddSingleton<OpenRouterChatBackend>();
+builder.Services.AddScoped<OpenRouterChatBackend>();
 builder.Services.AddSingleton<ComputeProviderService>();
 builder.Services.AddSingleton<ComputeChatBackend>();
 builder.Services.AddSingleton<DockerHostService>();
@@ -80,7 +80,7 @@ builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
 }));
 builder.Services.AddSingleton<WorkToolService>();
 builder.Services.AddSingleton<EmbeddedPluginHost>();
-builder.Services.AddSingleton<ToolIoGate>();
+builder.Services.AddScoped<ToolIoGate>();
 builder.Services.AddSingleton(_ =>
     new SharpMind.Studio.Core.Training.ModelToolPermissionStore(
         SharpMind.Studio.Core.Storage.StudioPaths.Projects));

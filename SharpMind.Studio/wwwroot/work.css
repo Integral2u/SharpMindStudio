@@ -1,4 +1,4 @@
-﻿.work-project {
+.work-project {
     margin-bottom: .85rem;
 }
 
@@ -129,7 +129,7 @@
     padding: .7rem;
     border: 1px solid var(--line);
     border-radius: .6rem;
-    background: rgba(10, 15, 21, .35);
+    background: var(--inset);
 }
 
 .work-system-skills {
@@ -140,7 +140,7 @@
     padding: .45rem;
     border: 1px solid var(--line);
     border-radius: .55rem;
-    background: rgba(10, 15, 21, .28);
+    background: var(--inset);
 }
 
 .work-system-skill {
@@ -255,7 +255,7 @@
     overflow: auto;
     border: 1px solid var(--line);
     border-radius: .4rem;
-    background: rgba(4, 8, 12, .5);
+    background: var(--inset);
     color: var(--muted);
     font-family: var(--mono);
     font-size: .64rem;
@@ -292,7 +292,7 @@
     border: 1px solid var(--line);
     border-radius: .5rem;
     overflow: hidden;
-    background: rgba(4, 8, 12, .35);
+    background: var(--inset);
 }
 
 .segmented-option {
@@ -321,7 +321,7 @@
 
 .segmented-option.is-never.active {
     background: rgba(214, 78, 78, .2);
-    color: #ff9b9b;
+    color: var(--bad);
 }
 
 .segmented-option.is-off.active {
@@ -367,17 +367,17 @@
 
 .tool-badge.is-plugin {
     border-color: rgba(255, 196, 107, .4);
-    color: #ffc46b;
+    color: var(--warn);
 }
 
 .tool-badge.is-process {
     border-color: rgba(220, 90, 90, .45);
-    color: #ff9b9b;
+    color: var(--bad);
 }
 
 .tool-badge.is-embedded {
     border-color: rgba(140, 170, 255, .45);
-    color: #9db8ff;
+    color: var(--info);
 }
 
 .work-tool {

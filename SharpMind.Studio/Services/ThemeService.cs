@@ -8,6 +8,7 @@ namespace SharpMind.Studio.Services;
 public sealed class StudioSettings
 {
     public string Theme { get; set; } = ThemeService.DefaultTheme;
+    public string Appearance { get; set; } = ThemeService.DefaultAppearance;
     public string CustomColor { get; set; } = ThemeService.DefaultCustomColor;
     public string DefaultGenerator { get; set; } = ThemeService.DefaultGeneratorName;
     public string DefaultCache { get; set; } = ThemeService.DefaultCacheName;
@@ -27,29 +28,56 @@ public sealed class StudioSettings
 public sealed class ThemeService
 {
     public const string DefaultTheme = "green";
+    public const string DefaultAppearance = "dark";
     public const string DefaultCustomColor = "#5eead4";
     public const string DefaultGeneratorName = "StandardGeneratorBuilder";
     public const string DefaultCacheName = "KVCacherBuilder";
     public const string DefaultHost = "127.0.0.1";
     public const int DefaultPort = 5117;
     public static readonly string[] AvailableThemes = ["green", "blue", "purple", "red", "custom"];
+    public static readonly string[] AvailableAppearances = ["dark", "light"];
 
-    private static readonly Dictionary<string, string> PresetRgb = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["green"] = "94, 234, 212",
-        ["blue"] = "96, 165, 250",
-        ["purple"] = "192, 132, 252",
-        ["red"] = "251, 113, 133",
-    };
+    // Dark accents are the light Tailwind tints; light accents are the 600
+    // shades, which keep enough contrast on a white surface.
+    private static readonly Dictionary<string, (string Dark, string Light)> PresetRgb =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["green"] = ("94, 234, 212", "13, 148, 136"),
+            ["blue"] = ("96, 165, 250", "37, 99, 235"),
+            ["purple"] = ("192, 132, 252", "124, 58, 237"),
+            ["red"] = ("251, 113, 133", "225, 29, 72"),
+        };
 
     public ThemeService()
     {
         StudioPaths.EnsureCreated();
-        (Theme, CustomColor, DefaultGenerator, DefaultCache, LastChatModel, LastRemoteProvider, PluginCompactor, StudioHost, StudioPort, CloseToTray) = LoadSettings();
+        StudioSettings settings = LoadSettings();
+        Theme = settings.Theme;
+        Appearance = settings.Appearance;
+        CustomColor = settings.CustomColor;
+        DefaultGenerator = settings.DefaultGenerator;
+        DefaultCache = settings.DefaultCache;
+        LastChatModel = settings.LastChatModel;
+        LastRemoteProvider = settings.LastRemoteProvider;
+        PluginCompactor = settings.PluginCompactor;
+        StudioHost = settings.StudioHost;
+        StudioPort = settings.StudioPort;
+        CloseToTray = settings.CloseToTray;
+
+        // A custom colour saved for one appearance may be unusable in the other
+        // (near-white on a white surface, near-black on a dark one). Move it to
+        // the nearest allowed value once and keep the file in step.
+        string fitted = ClampColor(CustomColor, Appearance);
+        if (!string.Equals(fitted, CustomColor, StringComparison.OrdinalIgnoreCase))
+        {
+            CustomColor = fitted;
+            TryWriteSettings();
+        }
     }
 
     public event Action? Changed;
     public string Theme { get; private set; }
+    public string Appearance { get; private set; }
     public string CustomColor { get; private set; }
     public string DefaultGenerator { get; private set; }
     public string DefaultCache { get; private set; }
@@ -59,55 +87,47 @@ public sealed class ThemeService
     public string StudioHost { get; private set; }
     public int StudioPort { get; private set; }
     public bool CloseToTray { get; private set; }
+
     // --accent is declared on :root in app.css, so overriding only
-    // --accent-rgb on .app-shell would leave the inherited, already-computed
+    // --accent-rgb on the themed element would leave the inherited, already-computed
     // --accent at the default green. Set both on the themed element.
     public string CssVariables =>
         $"--accent-rgb: {AccentRgb}; --accent: rgb({AccentRgb}); --accent-dim: rgba({AccentRgb}, .12);";
-    public string AccentRgb => Theme.Equals("custom", StringComparison.OrdinalIgnoreCase)
-        ? HexToRgb(CustomColor)
-        : PresetRgb.GetValueOrDefault(Theme, PresetRgb[DefaultTheme]);
+
+    public string AccentRgb
+    {
+        get
+        {
+            if (Theme.Equals("custom", StringComparison.OrdinalIgnoreCase))
+                return HexToRgb(ClampColor(CustomColor, Appearance));
+
+            (string dark, string light) = PresetRgb.GetValueOrDefault(Theme, PresetRgb[DefaultTheme]);
+            return IsLight ? light : dark;
+        }
+    }
+
+    public bool IsLight => Appearance.Equals("light", StringComparison.OrdinalIgnoreCase);
 
     public async Task SetThemeAsync(
         string? theme,
         string? customColor = null,
+        string? appearance = null,
         CancellationToken cancellationToken = default)
     {
         string? normalized = AvailableThemes.FirstOrDefault(
             value => value.Equals(theme, StringComparison.OrdinalIgnoreCase));
         if (normalized is null) return;
 
-        string color = NormalizeColor(customColor) ?? CustomColor;
+        string targetAppearance = AvailableAppearances.FirstOrDefault(
+            value => value.Equals(appearance, StringComparison.OrdinalIgnoreCase)) ?? Appearance;
+
         Theme = normalized;
-        CustomColor = color;
+        Appearance = targetAppearance;
+        CustomColor = ClampColor(NormalizeColor(customColor) ?? CustomColor, targetAppearance);
 
-        try
-        {
-            var settings = new StudioSettings {
-                Theme = normalized,
-                CustomColor = color,
-                DefaultGenerator = DefaultGenerator,
-                DefaultCache = DefaultCache,
-                LastChatModel = LastChatModel,
-                LastRemoteProvider = LastRemoteProvider,
-                PluginCompactor = PluginCompactor,
-                StudioHost = StudioHost,
-                StudioPort = StudioPort,
-                CloseToTray = CloseToTray,
-            };
-            await File.WriteAllTextAsync(
-                StudioPaths.SettingsFile,
-                JsonSerializer.Serialize(settings, StudioJson.File),
-                cancellationToken);
-        }
-        catch
-        {
-            // A read-only profile should not break the UI; the in-memory theme still applies.
-        }
-
+        await SaveSettingsAsync(cancellationToken);
         Changed?.Invoke();
     }
-
 
     public async Task SetInferenceDefaultsAsync(
         string? generator,
@@ -170,36 +190,56 @@ public sealed class ThemeService
         Changed?.Invoke();
     }
 
+    private StudioSettings Snapshot() => new()
+    {
+        Theme = Theme,
+        Appearance = Appearance,
+        CustomColor = CustomColor,
+        DefaultGenerator = DefaultGenerator,
+        DefaultCache = DefaultCache,
+        LastChatModel = LastChatModel,
+        LastRemoteProvider = LastRemoteProvider,
+        PluginCompactor = PluginCompactor,
+        StudioHost = StudioHost,
+        StudioPort = StudioPort,
+        CloseToTray = CloseToTray,
+    };
+
     private async Task SaveSettingsAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var settings = new StudioSettings
-            {
-                Theme = Theme,
-                CustomColor = CustomColor,
-                DefaultGenerator = DefaultGenerator,
-                DefaultCache = DefaultCache,
-                LastChatModel = LastChatModel,
-                LastRemoteProvider = LastRemoteProvider,
-                PluginCompactor = PluginCompactor,
-                StudioHost = StudioHost,
-                StudioPort = StudioPort,
-                CloseToTray = CloseToTray,
-            };
             await File.WriteAllTextAsync(
                 StudioPaths.SettingsFile,
-                JsonSerializer.Serialize(settings, StudioJson.File),
+                JsonSerializer.Serialize(Snapshot(), StudioJson.File),
                 cancellationToken);
         }
         catch
         {
             // A read-only profile should not break the UI; in-memory settings still apply.
         }
-    }    public static string Label(string theme) =>
+    }
+
+    private void TryWriteSettings()
+    {
+        try
+        {
+            File.WriteAllText(
+                StudioPaths.SettingsFile,
+                JsonSerializer.Serialize(Snapshot(), StudioJson.File));
+        }
+        catch
+        {
+        }
+    }
+
+    public static string Label(string theme) =>
         theme.Equals("custom", StringComparison.OrdinalIgnoreCase)
             ? "Custom"
             : char.ToUpperInvariant(theme[0]) + theme[1..];
+
+    public static string LabelAppearance(string appearance) =>
+        appearance.Equals("light", StringComparison.OrdinalIgnoreCase) ? "Light" : "Dark";
 
     public static string? NormalizeColor(string? value)
     {
@@ -211,66 +251,131 @@ public sealed class ThemeService
         return text.ToLowerInvariant();
     }
 
-    private static (string Theme, string CustomColor, string Generator, string Cache, string? LastChatModel, string? LastRemoteProvider, string? PluginCompactor, string StudioHost, int StudioPort, bool CloseToTray) LoadSettings()
+    /// <summary>
+    /// Keeps an accent readable for the appearance. On light surfaces a
+    /// near-white accent disappears, and on dark surfaces a near-black one does;
+    /// the hue and saturation are preserved and only the lightness moves to the
+    /// nearest allowed value.
+    /// </summary>
+    public static string ClampColor(string color, string appearance)
+    {
+        string? normalized = NormalizeColor(color);
+        if (normalized is null) return DefaultCustomColor;
+
+        (double h, double s, double l) = ToHsl(normalized);
+        (double min, double max) = appearance.Equals("light", StringComparison.OrdinalIgnoreCase)
+            ? (0.28, 0.60)
+            : (0.35, 0.85);
+
+        double clamped = Math.Clamp(l, min, max);
+        return Math.Abs(clamped - l) < 0.001 ? normalized : FromHsl(h, s, clamped);
+    }
+
+    private static StudioSettings LoadSettings()
     {
         try
         {
-            if (!File.Exists(StudioPaths.SettingsFile))
-                return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, null, null, DefaultHost, DefaultPort, true);
+            if (!File.Exists(StudioPaths.SettingsFile)) return new StudioSettings();
 
-            var settings = JsonSerializer.Deserialize<StudioSettings>(
+            StudioSettings? settings = JsonSerializer.Deserialize<StudioSettings>(
                 File.ReadAllText(StudioPaths.SettingsFile), StudioJson.File);
-            string theme = AvailableThemes.FirstOrDefault(
-                value => value.Equals(settings?.Theme, StringComparison.OrdinalIgnoreCase)) ?? DefaultTheme;
-            string color = NormalizeColor(settings?.CustomColor) ?? DefaultCustomColor;
-            string generator = string.IsNullOrWhiteSpace(settings?.DefaultGenerator)
-                ? DefaultGeneratorName
-                : settings!.DefaultGenerator!;
-            string cache = string.IsNullOrWhiteSpace(settings?.DefaultCache)
-                ? DefaultCacheName
-                : settings!.DefaultCache!;
-            string host = string.IsNullOrWhiteSpace(settings?.StudioHost) ? DefaultHost : settings!.StudioHost!;
-            int port = settings is { StudioPort: > 0 and <= 65535 } ? settings.StudioPort : DefaultPort;
-            bool closeToTray = settings?.CloseToTray ?? true;
-            string? compactor = string.IsNullOrWhiteSpace(settings?.PluginCompactor)
-                ? null
-                : settings!.PluginCompactor;
-            return (theme, color, generator, cache,
-                string.IsNullOrWhiteSpace(settings?.LastChatModel) ? null : settings!.LastChatModel,
-                string.IsNullOrWhiteSpace(settings?.LastRemoteProvider) ? null : settings!.LastRemoteProvider,
-                compactor, host, port, closeToTray);
+            if (settings is null) return new StudioSettings();
+
+            settings.Theme = AvailableThemes.FirstOrDefault(
+                value => value.Equals(settings.Theme, StringComparison.OrdinalIgnoreCase)) ?? DefaultTheme;
+            settings.Appearance = AvailableAppearances.FirstOrDefault(
+                value => value.Equals(settings.Appearance, StringComparison.OrdinalIgnoreCase)) ?? DefaultAppearance;
+            settings.CustomColor = NormalizeColor(settings.CustomColor) ?? DefaultCustomColor;
+
+            if (string.IsNullOrWhiteSpace(settings.DefaultGenerator)) settings.DefaultGenerator = DefaultGeneratorName;
+            if (string.IsNullOrWhiteSpace(settings.DefaultCache)) settings.DefaultCache = DefaultCacheName;
+            if (string.IsNullOrWhiteSpace(settings.StudioHost)) settings.StudioHost = DefaultHost;
+            if (settings.StudioPort is <= 0 or > 65535) settings.StudioPort = DefaultPort;
+            if (string.IsNullOrWhiteSpace(settings.LastChatModel)) settings.LastChatModel = null;
+            if (string.IsNullOrWhiteSpace(settings.LastRemoteProvider)) settings.LastRemoteProvider = null;
+            if (string.IsNullOrWhiteSpace(settings.PluginCompactor)) settings.PluginCompactor = null;
+            return settings;
         }
         catch
         {
-            return (DefaultTheme, DefaultCustomColor, DefaultGeneratorName, DefaultCacheName, null, null, null, DefaultHost, DefaultPort, true);
+            return new StudioSettings();
         }
     }
 
     private static string HexToRgb(string color)
     {
-        string hex = color.TrimStart('#');
+        if (!TryParseRgb(color, out int r, out int g, out int b))
+            return PresetRgb[DefaultTheme].Dark;
+        return $"{r}, {g}, {b}";
+    }
+
+    private static bool TryParseRgb(string color, out int r, out int g, out int b)
+    {
+        r = g = b = 0;
+        string? normalized = NormalizeColor(color);
+        if (normalized is null) return false;
+
+        string hex = normalized.TrimStart('#');
         if (hex.Length == 3)
             hex = string.Concat(hex.Select(c => $"{c}{c}"));
 
-        if (hex.Length != 6 ||
-            !int.TryParse(hex[..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int r) ||
-            !int.TryParse(hex[2..4], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int g) ||
-            !int.TryParse(hex[4..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int b))
-            return PresetRgb[DefaultTheme];
-
-        return $"{r}, {g}, {b}";
+        return int.TryParse(hex[..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out r)
+            && int.TryParse(hex[2..4], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out g)
+            && int.TryParse(hex[4..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out b);
     }
+
+    private static (double H, double S, double L) ToHsl(string color)
+    {
+        if (!TryParseRgb(color, out int r, out int g, out int b)) return (0, 0, 0.5);
+
+        double rn = r / 255.0, gn = g / 255.0, bn = b / 255.0;
+        double max = Math.Max(rn, Math.Max(gn, bn));
+        double min = Math.Min(rn, Math.Min(gn, bn));
+        double l = (max + min) / 2;
+        double delta = max - min;
+        double h = 0, s = 0;
+
+        if (delta > 0)
+        {
+            s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+            if (max == rn) h = (gn - bn) / delta + (gn < bn ? 6 : 0);
+            else if (max == gn) h = (bn - rn) / delta + 2;
+            else h = (rn - gn) / delta + 4;
+            h /= 6;
+        }
+
+        return (h, s, l);
+    }
+
+    private static string FromHsl(double h, double s, double l)
+    {
+        double r, g, b;
+        if (s <= 0)
+        {
+            r = g = b = l;
+        }
+        else
+        {
+            double q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            double p = 2 * l - q;
+            r = HueToRgb(p, q, h + 1.0 / 3);
+            g = HueToRgb(p, q, h);
+            b = HueToRgb(p, q, h - 1.0 / 3);
+        }
+
+        return $"#{ToByte(r):x2}{ToByte(g):x2}{ToByte(b):x2}";
+    }
+
+    private static double HueToRgb(double p, double q, double t)
+    {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1.0 / 6) return p + (q - p) * 6 * t;
+        if (t < 1.0 / 2) return q;
+        if (t < 2.0 / 3) return p + (q - p) * (2.0 / 3 - t) * 6;
+        return p;
+    }
+
+    private static int ToByte(double value) =>
+        Math.Clamp((int)Math.Round(value * 255), 0, 255);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

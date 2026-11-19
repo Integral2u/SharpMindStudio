@@ -68,6 +68,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   context folder set to **Never** refuses whatever the tool says. A tool set to
   **Always** is not downgraded by a folder that only asks. An agent that asks for
   more than the session allows raises a prompt that is never remembered.
+- **Light appearance** - Settings > Appearance has **Dark** and **Light**. The palette
+  is tokenised, so panels, chat, tables and badges follow the appearance instead of
+  assuming a dark background. Accent presets have a light variant, and a custom
+  accent stays inside the range that remains readable: near-white is refused on a
+  light surface and near-black on a dark one, and an existing colour outside the
+  range is moved once to the nearest allowed value.
 - **Run a program behind the Run permission** - Work has a **RunProcess** tool
   that starts an executable in an allowed context folder, passes arguments
   individually (no shell), captures stdout and stderr, and kills the process

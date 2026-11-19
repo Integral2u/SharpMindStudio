@@ -1,4 +1,4 @@
-﻿.chat-layout {
+.chat-layout {
     display: grid;
     grid-template-columns: 270px minmax(0, 1fr);
     gap: 1rem;
@@ -77,7 +77,7 @@
     position: sticky;
     top: 0;
     z-index: 2;
-    background: rgba(18, 26, 36, .94);
+    background: var(--glass);
     backdrop-filter: blur(10px);
 }
 
@@ -122,7 +122,7 @@
     padding: .8rem .95rem;
     border: 1px solid var(--line);
     border-radius: .8rem;
-    background: rgba(10, 15, 21, .58);
+    background: var(--inset);
     color: var(--text);
     line-height: 1.58;
     white-space: pre-wrap;
@@ -167,7 +167,7 @@
     padding: .8rem;
     border: 1px solid var(--line);
     border-radius: .55rem;
-    background: #080d12;
+    background: var(--code-bg);
     overflow-x: auto;
 }
 
@@ -179,7 +179,7 @@
 .chat-text.markdown :not(pre) > code {
     padding: .1rem .28rem;
     border-radius: .25rem;
-    background: rgba(255, 255, 255, .06);
+    background: var(--overlay);
 }
 
 .chat-text.markdown a {
@@ -219,7 +219,7 @@
     gap: .5rem;
     padding: .8rem 1.2rem .85rem;
     border-top: 1px solid var(--line);
-    background: rgba(18, 26, 36, .95);
+    background: var(--glass);
     backdrop-filter: blur(10px);
 }
 
@@ -245,7 +245,7 @@
     max-height: 45%;
     overflow-y: auto;
     border-top: 1px solid var(--line);
-    background: rgba(10, 15, 21, .35);
+    background: var(--inset);
 }
 
 .chat-options .panel-body {
@@ -350,7 +350,7 @@
     padding: 1rem;
     border: 1px solid var(--line-strong);
     border-radius: .8rem;
-    background: rgba(18, 26, 36, .88);
+    background: var(--glass);
     color: var(--text);
     font: inherit;
     line-height: 1.5;
@@ -474,7 +474,7 @@
     padding: .7rem .8rem;
     border: 1px solid var(--line);
     border-radius: .6rem;
-    background: rgba(10, 15, 21, .45);
+    background: var(--inset);
 }
 
 .load-panel-row {
@@ -492,7 +492,7 @@
 .progress-track {
     height: .35rem;
     border-radius: 999px;
-    background: rgba(255, 255, 255, .07);
+    background: var(--overlay);
     overflow: hidden;
 }
 
@@ -521,7 +521,7 @@
     border: 1px solid var(--line-strong);
     border-radius: .8rem;
     background: rgba(16, 24, 33, .98);
-    box-shadow: 0 24px 80px rgba(0, 0, 0, .45);
+    box-shadow: 0 24px 80px var(--shadow);
 }
 
 .studio-dialog-title {
@@ -582,7 +582,7 @@
 .studio-dialog-button.primary {
     border-color: var(--accent);
     background: var(--accent);
-    color: #06201c;
+    color: var(--on-accent);
     font-weight: 700;
 }
 
@@ -697,7 +697,7 @@
 }
 
 .chat-mic-button.recording {
-    border-color: #e5484d;
-    color: #ff8a8f;
+    border-color: var(--bad);
+    color: var(--bad);
     background: rgba(229, 72, 77, .14);
 }
