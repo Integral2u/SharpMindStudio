@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy — SharpMind Studio Wiki</title>
+    <meta name="description" content="How SharpMind Studio handles your data: what stays on your machine, what leaves it and when, how keys are stored, and what the Microsoft Store version adds." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<div class="top-links">
+    <a href="https://github.com/Integral2u/SharpMind" target="_blank" rel="noopener">Powered by SharpMind</a>
+    <a class="sponsor" href="https://github.com/sponsors/Integral2u" target="_blank" rel="noopener">&#9829; Sponsor</a>
+</div>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="inference.html">Models &amp; chat</a>
+        <a href="huggingface.html">HuggingFace</a>
+        <a href="openrouter.html">OpenRouter</a>
+        <a href="work.html">Work</a>
+        <a href="labs.html">Labs</a>
+        <a href="settings.html">Settings</a>
+        <a href="pairing.html">Phone pairing</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+        <a href="privacy.html">Privacy</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1.2</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#summary">The short version</a>
+            <a href="#local">What stays on your machine</a>
+            <a href="#leaves">What leaves your machine</a>
+            <a href="#keys">Keys and secrets</a>
+            <a href="#pairing">Pairing and your network</a>
+            <a href="#tools">Tools, plugins and MCP</a>
+            <a href="#store">Microsoft Store version</a>
+            <a href="#choices">Your choices</a>
+            <a href="#contact">Contact</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Privacy</span></div>
+            <span class="eyebrow">Legal · Privacy</span>
+            <h1>Privacy policy</h1>
+            <p class="lead">
+                SharpMind Studio is a desktop application. It runs on your machine, keeps your
+                models and work on your machine, and contacts a service only when you use a
+                feature that needs one. There is no SharpMind account, no telemetry and no
+                analytics.
+            </p>
+            <div class="badge-row">
+                <span class="badge">no telemetry</span>
+                <span class="badge blue">no account</span>
+                <span class="badge">local by default</span>
+                <span class="badge gpu">you choose the remote calls</span>
+            </div>
+
+            <h2 id="summary">The short version</h2>
+            <ul class="checklist">
+                <li>Chats, projects, models, datasets, training output and settings are stored locally, under your Windows profile.</li>
+                <li>Prompts and attachments leave the machine only when you send them to a remote model provider that you configured.</li>
+                <li>API keys are stored encrypted and are sent only to the provider they belong to.</li>
+                <li>Studio does not phone home, report crashes, or measure usage.</li>
+                <li>Uninstalling does not delete your data; removing the data folder is your decision.</li>
+            </ul>
+
+            <h2 id="local">What stays on your machine</h2>
+            <p>
+                Everything Studio creates lives under <span class="mono">%USERPROFILE%\SharpMind</span>
+                (the same tree the SharpMind command-line tools use). In the Docker image it is the
+                data volume you mount.
+            </p>
+            <table>
+                <thead><tr><th>Folder</th><th>What it holds</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="mono">Models</span></td><td>GGUF and <span class="mono">.smm</span> model files you downloaded or built.</td></tr>
+                    <tr><td><span class="mono">Corpus</span></td><td>Datasets used by Data Factory.</td></tr>
+                    <tr><td><span class="mono">Training</span></td><td>LoRA runs, checkpoints, exports and Data Factory output.</td></tr>
+                    <tr><td><span class="mono">Chat Sessions</span></td><td>Chat transcripts, including attachments you added.</td></tr>
+                    <tr><td><span class="mono">Studio</span></td><td>Settings, inference profiles, provider configuration, project registry and gateway state.</td></tr>
+                    <tr><td><span class="mono">Workspaces</span></td><td>Work sessions tied to a project folder.</td></tr>
+                    <tr><td><span class="mono">Compute</span></td><td>Saved compute hosts, SSH known-hosts pins and deployed-instance bookkeeping.</td></tr>
+                </tbody>
+            </table>
+            <p>
+                Work runs tools against folders you open, so project files stay wherever you keep
+                them. Nothing in this tree is uploaded by Studio itself.
+            </p>
+
+            <h2 id="leaves">What leaves your machine</h2>
+            <p>
+                Each of these happens only as a direct result of something you chose, and each
+                destination has its own privacy policy and retention.
+            </p>
+            <table>
+                <thead><tr><th>Destination</th><th>When</th><th>What is sent</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>OpenRouter, EuroRouter, OpenCode Go</td>
+                        <td>You select a remote model and send a message</td>
+                        <td>The prompt, system and agent messages, and any attachments you added, plus your API key for that provider. Guardrails and retention are theirs.</td>
+                    </tr>
+                    <tr>
+                        <td>HuggingFace</td>
+                        <td>You download a model or tokenizer</td>
+                        <td>A file request, and your HuggingFace token if you saved one for gated repositories.</td>
+                    </tr>
+                    <tr>
+                        <td>Vultr, Runpod</td>
+                        <td>You deploy, list or destroy an instance</td>
+                        <td>Your API token and the instance settings in your compute profile.</td>
+                    </tr>
+                    <tr>
+                        <td>Your own compute hosts</td>
+                        <td>You deploy or run a job</td>
+                        <td>SSH traffic, the container image pull, and the setup scripts run on that instance.</td>
+                    </tr>
+                    <tr>
+                        <td>api.ipify.org</td>
+                        <td>The gateway needs this machine's public address</td>
+                        <td>The request itself. It returns your public IP; nothing else is sent.</td>
+                    </tr>
+                    <tr>
+                        <td>GitHub</td>
+                        <td>You open a release or download link</td>
+                        <td>A normal web request, handled by your browser.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="callout">
+                <strong>Studio does not check for updates on its own.</strong> It has no background
+                sync, no usage reporting and no advertising identifier.
+            </div>
+            <p>
+                Provider referral links in Settings (<span class="mono">runpod.io</span>,
+                <span class="mono">eurouter.ai</span>, <span class="mono">vast.ai</span>,
+                <span class="mono">novita.ai</span>) are ordinary links. They open in your browser
+                and carry the provider's referral parameters, not your data.
+            </p>
+
+            <h2 id="keys">Keys and secrets</h2>
+            <ul>
+                <li>Provider, HuggingFace and compute credentials are encrypted with AES-GCM.</li>
+                <li>On Windows the encryption key is wrapped with DPAPI for the current user, so copying the profile to another account or machine does not expose the secrets.</li>
+                <li>On Linux and in Docker the key file is kept with owner-only permissions instead.</li>
+                <li>A saved key is sent only to the provider it belongs to. Removing the key in Settings deletes it locally.</li>
+                <li>Pairing tokens are stored hashed, and PINs are salted and deliberately slow to guess.</li>
+            </ul>
+
+            <h2 id="pairing">Pairing and your network</h2>
+            <ul class="checklist">
+                <li>Studio listens on <span class="mono">127.0.0.1:5117</span>; loopback peers are treated as you.</li>
+                <li>The LAN listener on <span class="mono">5118</span> refuses non-loopback browsers until you enable pairing and approve a device.</li>
+                <li>Paired devices get a narrower mobile scope, and can be revoked at any time.</li>
+                <li>In 1.1.2 pairing is LAN only. There is no relay and no SharpMind-operated server in the path.</li>
+            </ul>
+
+            <h2 id="tools">Tools, plugins and MCP</h2>
+            <p>
+                Work tools, embedded plugins and MCP servers run on your machine with your
+                permissions. Studio decides whether a tool may be called and shows you the exact
+                command before it runs, but a plugin or MCP server is its own program: if it talks
+                to the network, that traffic is its own and follows whatever it does, not this
+                policy. Only add tools and servers you trust, and keep their permissions at
+                <strong>Off</strong> unless you need them.
+            </p>
+
+            <h2 id="store">Microsoft Store version</h2>
+            <p>
+                The Store build is the same application, packaged as MSIX. Microsoft may collect
+                installation and reliability data for Store apps under the
+                <a href="https://privacy.microsoft.com/privacystatement" target="_blank" rel="noopener">Microsoft Privacy Statement</a>.
+                SharpMind adds nothing to that: the app itself still sends no telemetry.
+            </p>
+
+            <h2 id="choices">Your choices</h2>
+            <ul>
+                <li><strong>Delete everything:</strong> close Studio and remove <span class="mono">%USERPROFILE%\SharpMind</span>. Models, chats, training runs and keys go with it.</li>
+                <li><strong>Remove one provider:</strong> delete its key in Settings → Providers. Its configuration entry can go too.</li>
+                <li><strong>Stop remote traffic:</strong> use a local model. Nothing leaves the machine.</li>
+                <li><strong>Revoke access:</strong> remove paired devices, or turn LAN pairing off.</li>
+                <li><strong>Uninstall:</strong> removes the program, not your data.</li>
+            </ul>
+
+            <h2 id="contact">Contact</h2>
+            <p>
+                Questions about this policy, or a data-handling concern, go to
+                <a href="https://github.com/Integral2u/SharpMindStudio/issues" target="_blank" rel="noopener">github.com/Integral2u/SharpMindStudio/issues</a>.
+                This page describes SharpMind Studio 1.1.2; if a later version changes what leaves
+                the machine, this page changes with it.
+            </p>
+
+            <div class="hero-actions">
+                <a class="button primary" href="index.html">Back to the wiki →</a>
+                <a class="button" href="settings.html">Settings</a>
+                <a class="button" href="providers.html">Providers</a>
+            </div>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <span>SharpMind Studio · 1.1.2</span>
+            <span><a href="index.html">Wiki</a> · <a href="providers.html">Providers</a> · <a href="privacy.html">Privacy</a> · <a href="../index.html">Home</a></span>
+        </div>
+    </footer>
+</main>
+</body>
+</html>
