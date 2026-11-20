@@ -810,79 +810,97 @@ else
                 </div>
             }
             <div class="chat-composer">
-                <textarea id="chat-input" class="textarea" data-enter-send="chat-send" onkeydown="studioChat.enterSend(event, 'chat-send')" @bind="_input" @bind:event="oninput"
-                          placeholder="Message the model. Enter sends; Shift+Enter adds a line."
-                          disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"></textarea>
-                @if (ChatService.SupportsTts)
-                {
-                    <div class="small faint">
-                        Audio model: a text prompt generates speech automatically; an attached
-                        audio file is transcribed.
-                    </div>
-                }
-                else if (ChatService.SupportsAudio)
-                {
-                    <div class="small faint">Audio model: an attached audio file is transcribed.</div>
-                }
-                <div class="chat-composer-actions">
-                    <span class="status-line">@ChatService.Status</span>
+                <div class="composer-shell">
                     @if (_pendingArtifacts.Count > 0)
                     {
-                        <div class="chat-attachment-list">
-                            @foreach (ChatArtifact artifact in _pendingArtifacts)
+                        <div class="composer-chip-row">
+                            @foreach (ChatArtifact artifact in _pendingArtifacts.Take(3))
                             {
-                                <span class="chat-attachment-chip">
-                                    @(artifact.FileName ?? artifact.Type)
+                                <span class="composer-chip" title="@(artifact.FileName ?? artifact.Type)">
+                                    <span class="name">@(artifact.FileName ?? artifact.Type)</span>
                                     <button type="button" title="Remove attachment"
-                                            @onclick="() => _pendingArtifacts.Remove(artifact)">&times;</button>
+                                            @onclick="() => RemoveArtifact(artifact)">&times;</button>
                                 </span>
                             }
+                            @if (_pendingArtifacts.Count > 3)
+                            {
+                                <button type="button" class="composer-overflow"
+                                        @onclick="() => _showOverflow = !_showOverflow"
+                                        title="More attachments">
+                                    @(_showOverflow ? "−" : "…")
+                                </button>
+                            }
                         </div>
+                        @if (_showOverflow && _pendingArtifacts.Count > 3)
+                        {
+                            <div class="composer-chip-row composer-overflow-list">
+                                @foreach (ChatArtifact artifact in _pendingArtifacts.Skip(3))
+                                {
+                                    <span class="composer-chip" title="@(artifact.FileName ?? artifact.Type)">
+                                        <span class="name">@(artifact.FileName ?? artifact.Type)</span>
+                                        <button type="button" title="Remove attachment"
+                                                @onclick="() => RemoveArtifact(artifact)">&times;</button>
+                                    </span>
+                                }
+                            </div>
+                        }
+                    }
+                    <textarea id="chat-input" class="textarea" data-enter-send="chat-send" onkeydown="studioChat.enterSend(event, 'chat-send')" @bind="_input" @bind:event="oninput"
+                              placeholder="Message the model. Enter sends; Shift+Enter adds a line."
+                              disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"></textarea>
+                    <div class="composer-actions">
+                        @if (!ChatService.IsStreaming && !ChatService.IsLoading && !ChatService.IsRemote)
+                        {
+                            <label class="button chat-attach-button" title="Attach an image, audio file or document">
+                                Attach
+                                <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
+                            </label>
+                        }
+                        @if (ChatService.SupportsAudio)
+                        {
+                            <button type="button"
+                                    class="button chat-mic-button @(_recording ? "recording" : "")"
+                                    @onclick="ToggleMicAsync"
+                                    disabled="@(_transcribing || ChatService.IsStreaming || ChatService.IsLoading)"
+                                    title="@(_recording ? "Stop and transcribe" : "Record audio")">
+                                @(_recording ? "Stop" : "Mic")
+                            </button>
+                        }
+                        @if (ChatService.IsLoading)
+                        {
+                            <button type="button" class="button danger" @onclick="ChatService.Interrupt">Interrupt</button>
+                        }
+                        else if (ChatService.IsStreaming)
+                        {
+                            <span class="spinner-ring"></span>
+                            <button type="button" class="button danger" @onclick="Stop">Interrupt</button>
+                        }
+                        <button id="chat-send" type="button" class="button primary composer-send" @onclick="SendAsync"
+                                disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
+                                            (string.IsNullOrWhiteSpace(_input) && !HasVisionImage && !HasAudioInput) ||
+                                            (_workMode && !_remoteChat && _toolState.Capability == ToolCapability.Failed && !_allowFailedTools))">
+                            Send
+                        </button>
+                    </div>
+                </div>
+                <div class="composer-foot small faint">
+                    <span class="status-line">@ChatService.Status</span>
+                    @if (_transcribing)
+                    {
+                        <span>Transcribing...</span>
                     }
                     @if (ChatService.SupportsVision)
                     {
-                        <span class="small faint">
-                            @(HasVisionImage
-                                ? "The attached image is included in the next turn."
-                                : "Attach an image to include it in the next turn.")
-                        </span>
+                        <span>@(HasVisionImage ? "The attached image is included in the next turn." : "Attach an image to include it in the next turn.")</span>
                     }
-                    @if (!ChatService.IsStreaming && !ChatService.IsLoading && !ChatService.IsRemote)
+                    @if (ChatService.SupportsTts)
                     {
-                        <label class="button chat-attach-button" title="Attach an image, audio file or document">
-                            Attach
-                            <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
-                        </label>
+                        <span>Audio model: a text prompt generates speech automatically; an attached audio file is transcribed.</span>
                     }
-                    @if (ChatService.SupportsAudio)
+                    else if (ChatService.SupportsAudio)
                     {
-                        <button type="button"
-                                class="button chat-mic-button @(_recording ? "recording" : "")"
-                                @onclick="ToggleMicAsync"
-                                disabled="@(_transcribing || ChatService.IsStreaming || ChatService.IsLoading)"
-                                title="@(_recording ? "Stop and transcribe" : "Record audio")">
-                            @(_recording ? "Stop" : "Mic")
-                        </button>
+                        <span>Audio model: an attached audio file is transcribed.</span>
                     }
-                    @if (_transcribing)
-                    {
-                        <span class="status-line">Transcribing...</span>
-                    }
-                    @if (ChatService.IsLoading)
-                    {
-                        <button type="button" class="button danger" @onclick="ChatService.Interrupt">Interrupt</button>
-                    }
-                    else if (ChatService.IsStreaming)
-                    {
-                        <span class="spinner-ring"></span>
-                        <button type="button" class="button danger" @onclick="Stop">Interrupt</button>
-                    }
-                    <button id="chat-send" type="button" class="button primary" @onclick="SendAsync"
-                            disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
-                                        (string.IsNullOrWhiteSpace(_input) && !HasVisionImage && !HasAudioInput) ||
-                                        (_workMode && !_remoteChat && _toolState.Capability == ToolCapability.Failed && !_allowFailedTools))">
-                        Send
-                    </button>
                 </div>
                 @if (ChatService.CacheWarning is not null)
                 {
