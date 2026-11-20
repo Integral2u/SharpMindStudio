@@ -845,3 +845,20 @@
 .reply-chip .size { color: var(--faint); }
 .reply-chip a { color: var(--accent); text-decoration: none; padding: 0 .1rem; }
 .reply-overflow-list { flex-wrap: wrap; overflow: visible; }
+
+.reply-thumb {
+    align-self: flex-start;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.reply-chip .reply-open {
+    padding: 0 .1rem;
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+}

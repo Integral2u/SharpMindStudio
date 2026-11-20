@@ -1,4 +1,5 @@
 @using SharpMind.Inference.Chat
+@inject IJSRuntime JS
 
 @if (Artifacts is { Length: > 0 })
 {
@@ -9,10 +10,10 @@
     <div class="reply-artifacts">
         @if (image is not null)
         {
-            <a class="reply-thumb" href="@DataUrl(image)" target="_blank" rel="noopener"
-               title="Open @Name(image)">
+            <button type="button" class="reply-thumb" title="Open @Name(image)"
+                    @onclick="() => OpenAsync(image)">
                 <img src="@DataUrl(image)" alt="@Name(image)" />
-            </a>
+            </button>
         }
 
         <div class="reply-chip-row">
@@ -24,7 +25,7 @@
                     <span class="size">@Size(artifact)</span>
                     @if (CanOpen(artifact))
                     {
-                        <a href="@DataUrl(artifact)" target="_blank" rel="noopener" title="Open">&#8599;</a>
+                        <button type="button" class="reply-open" title="Open" @onclick="() => OpenAsync(artifact)">&#8599;</button>
                     }
                     <a href="@DataUrl(artifact)" download="@Name(artifact)" title="Download">&#8595;</a>
                 </span>
@@ -49,7 +50,7 @@
                         <span class="size">@Size(artifact)</span>
                         @if (CanOpen(artifact))
                         {
-                            <a href="@DataUrl(artifact)" target="_blank" rel="noopener" title="Open">&#8599;</a>
+                            <button type="button" class="reply-open" title="Open" @onclick="() => OpenAsync(artifact)">&#8599;</button>
                         }
                         <a href="@DataUrl(artifact)" download="@Name(artifact)" title="Download">&#8595;</a>
                     </span>
@@ -68,6 +69,25 @@
     [Parameter] public ChatArtifact[]? Artifacts { get; set; }
 
     private bool _expanded;
+
+    /// <summary>
+    /// A data: URL cannot be opened as a page in current browsers, so the bytes
+    /// go through a blob URL instead. Download still uses the data URL directly.
+    /// </summary>
+    private async Task OpenAsync(ChatArtifact artifact)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync(
+                "studioArtifacts.open",
+                Convert.ToBase64String(artifact.Content),
+                Mime(artifact));
+        }
+        catch
+        {
+            // A blocked popup or a missing script must not break the transcript.
+        }
+    }
 
     private static bool IsImage(ChatArtifact artifact) =>
         artifact.Type.Contains("image", StringComparison.OrdinalIgnoreCase);
