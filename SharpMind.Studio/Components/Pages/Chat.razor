@@ -664,6 +664,10 @@ else
                                 <strong>@permission.Access.Tool wants @permission.Access.Category access</strong>
                             }
                             <span class="work-permission-path">@permission.Access.Path</span>
+                            @if (!string.IsNullOrWhiteSpace(permission.Access.Detail))
+                            {
+                                <span class="work-permission-command mono">@permission.Access.Detail</span>
+                            }
                         </div>
                         <div class="row">
                             <button type="button" class="button danger"

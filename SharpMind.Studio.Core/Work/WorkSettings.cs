@@ -83,6 +83,13 @@ public sealed record WorkSettings
     public ToolPermissionSet ToolPermissions { get; init; } = new();
 }
 
-public sealed record WorkToolAccess(string Tool, WorkToolCategory Category, string Path);
+public sealed record WorkToolAccess(string Tool, WorkToolCategory Category, string Path)
+{
+    /// <summary>
+    /// What exactly is being asked for when the path alone is not enough, such as
+    /// the command line of a program about to run.
+    /// </summary>
+    public string? Detail { get; init; }
+}
 
 

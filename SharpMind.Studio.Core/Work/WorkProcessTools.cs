@@ -35,7 +35,10 @@ public sealed class WorkProcessTools(
                 return "A program name is required.";
 
             string cwd = ResolveDirectory(workingDirectory);
-            if (!await AllowedAsync(nameof(RunProcess), WorkToolCategory.Execute, cwd))
+            string commandLine = string.IsNullOrWhiteSpace(arguments)
+                ? fileName
+                : $"{fileName} {arguments}";
+            if (!await AllowedAsync(nameof(RunProcess), WorkToolCategory.Execute, cwd, commandLine))
                 return $"Permission denied: RunProcess may not run a program in '{workingDirectory}' with the current project permission.";
 
             var startInfo = new ProcessStartInfo(fileName)
@@ -135,10 +138,14 @@ public sealed class WorkProcessTools(
         if (current.Length > 0) yield return current.ToString();
     }
 
-    private async Task<bool> AllowedAsync(string tool, WorkToolCategory category, string path)
+    private async Task<bool> AllowedAsync(
+        string tool,
+        WorkToolCategory category,
+        string path,
+        string? detail = null)
     {
         if (permission is null) return false;
-        return await permission(new WorkToolAccess(tool, category, path));
+        return await permission(new WorkToolAccess(tool, category, path) { Detail = detail });
     }
 
     private string ResolveDirectory(string relativePath)

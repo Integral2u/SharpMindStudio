@@ -862,3 +862,11 @@
     font: inherit;
     cursor: pointer;
 }
+
+.work-permission-command {
+    display: block;
+    margin-top: .2rem;
+    color: var(--text);
+    font-size: .72rem;
+    word-break: break-all;
+}
