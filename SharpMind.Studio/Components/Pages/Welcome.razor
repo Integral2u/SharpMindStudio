@@ -498,6 +498,9 @@
     {
         if (_busy) return;
 
+        // Chat sessions live in the default project; work sessions in the open one.
+        ChatService.EnsureStoreFor(_mode);
+
         if (_remoteChat)
         {
             if (_computeProviderId is not null && _mode == "work")

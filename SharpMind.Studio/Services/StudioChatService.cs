@@ -43,6 +43,8 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly ModelToolPermissionStore _modelTools;
     private readonly ToolIoGate _ioGate;
     private ChatSessionStore _store;
+    private ChatSessionStore _projectStore;
+    private readonly ChatSessionStore _chatStore;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IChatSession? _session;
     private LoadedStudioModel? _loaded;
@@ -112,6 +114,12 @@ public sealed class StudioChatService : IAsyncDisposable
         _modelTools = modelTools;
         _ioGate = gate;
         _store = new ChatSessionStore(workspace.Project.ChatsDirectory);
+        _projectStore = _store;
+        // Chat is global: it always lives in the default project, never in the
+        // work project that happens to be open.
+        string defaultRoot = workspace.Projects
+            .FirstOrDefault(project => project.IsDefault)?.Path ?? workspace.Project.Root;
+        _chatStore = new ChatSessionStore(Path.Combine(defaultRoot, "chats"));
         _work.AgentToolExecutor = ExecuteAgentToolAsync;
     }
 
@@ -1458,6 +1466,16 @@ public sealed class StudioChatService : IAsyncDisposable
             Notify();
         }
     }
+    /// <summary>
+    /// Points the store at the right place for the mode about to run: Work uses
+    /// the open project, Chat always uses the default project, because Chat is
+    /// not part of a work project.
+    /// </summary>
+    public void EnsureStoreFor(string? mode) =>
+        _store = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase)
+            ? _projectStore
+            : _chatStore;
+
     public async Task UseProjectAsync()
     {
         await _gate.WaitAsync().ConfigureAwait(false);
@@ -1470,6 +1488,7 @@ public sealed class StudioChatService : IAsyncDisposable
             _error = null;
             _status = "Choose a model to start chatting.";
             _store = new ChatSessionStore(_workspace.Project.ChatsDirectory);
+            _projectStore = _store;
         }
         finally
         {

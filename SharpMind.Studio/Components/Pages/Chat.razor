@@ -957,6 +957,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         UpdateRouteMode();
+        ChatService.EnsureStoreFor(_workMode ? "work" : "chat");
         ChatService.Changed += OnChatChanged;
         Work.Changed += OnWorkChanged;
         Safety.Changed += OnSafetyChanged;
@@ -1013,6 +1014,7 @@ else
     protected override async Task OnParametersSetAsync()
     {
         UpdateRouteMode();
+        ChatService.EnsureStoreFor(_workMode ? "work" : "chat");
         RefreshTuneSelection();
         if (!_initialized) return;
 
