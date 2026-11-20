@@ -151,118 +151,16 @@ try {
 
     # --- tile assets -----------------------------------------------------
 
+    . (Join-Path $PSScriptRoot 'StudioMark.ps1')
     $assets = Join-Path $stage 'Assets'
     New-Item -ItemType Directory -Path $assets -Force | Out-Null
 
-    function New-RoundedPath([System.Drawing.RectangleF]$rect, [single]$radius) {
-        $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-        $diameter = $radius * 2
-        $path.AddArc($rect.X, $rect.Y, $diameter, $diameter, 180, 90)
-        $path.AddArc($rect.Right - $diameter, $rect.Y, $diameter, $diameter, 270, 90)
-        $path.AddArc($rect.Right - $diameter, $rect.Bottom - $diameter, $diameter, $diameter, 0, 90)
-        $path.AddArc($rect.X, $rect.Bottom - $diameter, $diameter, $diameter, 90, 90)
-        $path.CloseFigure()
-        return $path
-    }
-
-    # The mark from wwwroot\sharpmind-icon.svg, drawn at any size: a rounded
-    # panel, three spokes from the core to a node, and the gradient core.
-    function New-MarkBitmap([int]$size) {
-        $bitmap = New-Object System.Drawing.Bitmap($size, $size)
-        $bitmap.SetResolution(96, 96)
-        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-        try {
-            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-            $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-            $graphics.Clear([System.Drawing.Color]::Transparent)
-
-            $s = [single]($size / 256.0)
-            $panel = New-Object System.Drawing.RectangleF((10 * $s), (10 * $s), (236 * $s), (236 * $s))
-            $panelPath = New-RoundedPath $panel (54 * $s)
-
-            $background = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-                $panel,
-                [System.Drawing.Color]::FromArgb(255, 12, 20, 29),
-                [System.Drawing.Color]::FromArgb(255, 18, 31, 42),
-                [single]45)
-            $graphics.FillPath($background, $panelPath)
-
-            $edge = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(140, 48, 68, 86), [single](4 * $s))
-            $graphics.DrawPath($edge, $panelPath)
-
-            $spoke = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(122, 94, 234, 212), [single](9 * $s))
-            $spoke.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-            $spoke.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-
-            $centre = 128 * $s
-            foreach ($node in @(@(128, 52), @(205, 183), @(51, 191))) {
-                $graphics.DrawLine($spoke, $centre, $centre, [single]($node[0] * $s), [single]($node[1] * $s))
-            }
-
-            $tip = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 94, 234, 212))
-            foreach ($node in @(@(128, 52), @(205, 183), @(51, 191))) {
-                $x = [single](($node[0] - 14) * $s)
-                $y = [single](($node[1] - 14) * $s)
-                $graphics.FillEllipse($tip, $x, $y, [single](28 * $s), [single](28 * $s))
-            }
-
-            $core = New-Object System.Drawing.RectangleF((100 * $s), (100 * $s), (56 * $s), (56 * $s))
-            $coreBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-                $core,
-                [System.Drawing.Color]::FromArgb(255, 165, 243, 252),
-                [System.Drawing.Color]::FromArgb(255, 94, 234, 212),
-                [single]90)
-            $graphics.FillEllipse($coreBrush, $core)
-
-            $coreEdge = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(191, 230, 255, 252), [single](5 * $s))
-            $graphics.DrawEllipse($coreEdge, $core)
-
-            $background.Dispose()
-            $edge.Dispose()
-            $spoke.Dispose()
-            $tip.Dispose()
-            $coreBrush.Dispose()
-            $coreEdge.Dispose()
-            $panelPath.Dispose()
-        }
-        finally {
-            $graphics.Dispose()
-        }
-
-        return $bitmap
-    }
-
-    function Save-Mark([int]$size, [string]$name) {
-        $bitmap = New-MarkBitmap $size
-        try { $bitmap.Save((Join-Path $assets $name), [System.Drawing.Imaging.ImageFormat]::Png) }
-        finally { $bitmap.Dispose() }
-    }
-
-    function Save-Canvas([int]$width, [int]$height, [int]$markSize, [string]$name) {
-        $canvas = New-Object System.Drawing.Bitmap($width, $height)
-        $canvas.SetResolution(96, 96)
-        $graphics = [System.Drawing.Graphics]::FromImage($canvas)
-        $mark = New-MarkBitmap $markSize
-        try {
-            $graphics.Clear([System.Drawing.Color]::FromArgb(255, 12, 20, 29))
-            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-            $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $graphics.DrawImage($mark, [int](($width - $markSize) / 2), [int](($height - $markSize) / 2), $markSize, $markSize)
-            $canvas.Save((Join-Path $assets $name), [System.Drawing.Imaging.ImageFormat]::Png)
-        }
-        finally {
-            $mark.Dispose()
-            $graphics.Dispose()
-            $canvas.Dispose()
-        }
-    }
-
-    Save-Mark 44 'Square44x44Logo.png'
-    Save-Mark 150 'Square150x150Logo.png'
-    Save-Mark 310 'Square310x310Logo.png'
-    Save-Mark 50 'StoreLogo.png'
-    Save-Canvas 310 150 118 'Wide310x150Logo.png'
-    Save-Canvas 620 300 200 'SplashScreen.png'
+    Save-StudioMark -Path (Join-Path $assets 'Square44x44Logo.png') -Size 44
+    Save-StudioMark -Path (Join-Path $assets 'Square150x150Logo.png') -Size 150
+    Save-StudioMark -Path (Join-Path $assets 'Square310x310Logo.png') -Size 310
+    Save-StudioMark -Path (Join-Path $assets 'StoreLogo.png') -Size 50
+    Save-StudioCanvas -Path (Join-Path $assets 'Wide310x150Logo.png') -Width 310 -Height 150 -MarkSize 118
+    Save-StudioCanvas -Path (Join-Path $assets 'SplashScreen.png') -Width 620 -Height 300 -MarkSize 200
 
     # --- manifest --------------------------------------------------------
 
