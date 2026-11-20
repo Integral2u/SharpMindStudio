@@ -796,16 +796,16 @@ button.nav-chat-link {
 /* Light appearance: the sidebar art was tuned for a dark panel. On white it
    washed the labels out, so soften the glow and stop the wave from screening. */
 body[data-appearance="light"] .sidebar-art {
-    opacity: .5;
+    opacity: .75;
 }
 
 body[data-appearance="light"] .sidebar-art::before {
-    opacity: .5;
-    filter: blur(26px);
+    opacity: .75;
+    filter: blur(22px);
 }
 
 body[data-appearance="light"] .wave {
-    opacity: .22;
+    opacity: .35;
     mix-blend-mode: multiply;
 }
 

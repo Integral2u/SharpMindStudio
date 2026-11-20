@@ -46,32 +46,47 @@ public partial class MainWindow : Window
 
     private void ApplyTheme()
     {
-        string color = "#5EEAD4";
+        bool light = false;
+        string theme = "green";
+        string custom = "#5EEAD4";
+
         try
         {
             if (File.Exists(StudioPaths.SettingsFile))
             {
                 using JsonDocument document = JsonDocument.Parse(File.ReadAllText(StudioPaths.SettingsFile));
                 JsonElement root = document.RootElement;
-                string theme = root.TryGetProperty("theme", out JsonElement themeElement)
+                theme = root.TryGetProperty("theme", out JsonElement themeElement)
                     ? themeElement.GetString() ?? "green"
                     : "green";
-                string custom = root.TryGetProperty("customColor", out JsonElement colorElement)
+                custom = root.TryGetProperty("customColor", out JsonElement colorElement)
                     ? colorElement.GetString() ?? "#5EEAD4"
                     : "#5EEAD4";
-                color = theme.ToLowerInvariant() switch
-                {
-                    "blue" => "#60A5FA",
-                    "purple" => "#C084FC",
-                    "red" => "#FB7185",
-                    "custom" => custom,
-                    _ => "#5EEAD4",
-                };
+                light = root.TryGetProperty("appearance", out JsonElement appearanceElement)
+                    && string.Equals(appearanceElement.GetString(), "light", StringComparison.OrdinalIgnoreCase);
             }
         }
         catch
         {
         }
+
+        // The splash is a WPF window, so it has to read the appearance itself;
+        // otherwise a light user sees a dark window until the web view paints.
+        SetBrush("ChromeBg", light ? "#EDF0F4" : "#0B1016");
+        SetBrush("ChromeLine", light ? "#D2D9E3" : "#1F2A38");
+        SetBrush("ChromeText", light ? "#4C5B6D" : "#8FA3B8");
+        SetBrush("ChromeHoverBg", light ? "#E8ECF2" : "#18222D");
+        SetBrush("ChromeHoverText", light ? "#16202B" : "#E6EDF3");
+        SetBrush("BrandText", light ? "#16202B" : "#E6EDF3");
+
+        string color = theme.ToLowerInvariant() switch
+        {
+            "blue" => light ? "#2563EB" : "#60A5FA",
+            "purple" => light ? "#7C3AED" : "#C084FC",
+            "red" => light ? "#E11D48" : "#FB7185",
+            "custom" => custom,
+            _ => light ? "#0D9488" : "#5EEAD4",
+        };
 
         try
         {
@@ -80,6 +95,18 @@ public partial class MainWindow : Window
         catch
         {
             StudioText.Foreground = new Media.SolidColorBrush(Media.Color.FromRgb(0x5E, 0xEA, 0xD4));
+        }
+    }
+
+    private void SetBrush(string key, string hex)
+    {
+        try
+        {
+            Resources[key] = new Media.SolidColorBrush(
+                (Media.Color)Media.ColorConverter.ConvertFromString(hex));
+        }
+        catch
+        {
         }
     }
     private async void OnLoaded(object sender, RoutedEventArgs e) =>

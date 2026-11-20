@@ -11,7 +11,7 @@
         WindowStyle="None"
         ResizeMode="CanResize"
         WindowStartupLocation="Manual"
-        Background="#0B1016"
+        Background="{DynamicResource ChromeBg}"
         Closing="OnClosing"
         StateChanged="OnStateChanged" WindowState="Maximized">
     <shell:WindowChrome.WindowChrome>
@@ -22,19 +22,25 @@
                             UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
+        <SolidColorBrush x:Key="ChromeBg" Color="#0B1016" />
+        <SolidColorBrush x:Key="ChromeLine" Color="#1F2A38" />
+        <SolidColorBrush x:Key="ChromeText" Color="#8FA3B8" />
+        <SolidColorBrush x:Key="ChromeHoverBg" Color="#18222D" />
+        <SolidColorBrush x:Key="ChromeHoverText" Color="#E6EDF3" />
+        <SolidColorBrush x:Key="BrandText" Color="#E6EDF3" />
         <Style x:Key="CaptionButton" TargetType="Button">
             <Setter Property="Width" Value="44" />
             <Setter Property="Height" Value="35" />
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Foreground" Value="#8FA3B8" />
+            <Setter Property="Foreground" Value="{DynamicResource ChromeText}" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="FontFamily" Value="Consolas" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="Cursor" Value="Hand" />
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#18222D" />
-                    <Setter Property="Foreground" Value="#E6EDF3" />
+                    <Setter Property="Background" Value="{DynamicResource ChromeHoverBg}" />
+                    <Setter Property="Foreground" Value="{DynamicResource ChromeHoverText}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -48,13 +54,13 @@
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
-                Background="#0B1016"
-                BorderBrush="#1F2A38"
+                Background="{DynamicResource ChromeBg}"
+                BorderBrush="{DynamicResource ChromeLine}"
                 BorderThickness="0,0,0,1"
                 MouseLeftButtonDown="OnTitleBarMouseDown">
             <Grid>
                 <TextBlock Text="SharpMind Studio"
-                           Foreground="#8FA3B8"
+                           Foreground="{DynamicResource ChromeText}"
                            FontFamily="Consolas"
                            FontSize="11"
                            VerticalAlignment="Center"
@@ -70,10 +76,10 @@
         <Grid Grid.Row="1">
             <wv2:WebView2 x:Name="Browser" />
 
-            <Border x:Name="StartupOverlay" Background="#0B1016">
+            <Border x:Name="StartupOverlay" Background="{DynamicResource ChromeBg}">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                     <TextBlock Text="SharpMind"
-                               Foreground="#E6EDF3"
+                               Foreground="{DynamicResource BrandText}"
                                FontSize="42"
                                FontWeight="SemiBold"
                                HorizontalAlignment="Center" />
@@ -86,7 +92,7 @@
                                Margin="0,4,0,28" />
                     <TextBlock x:Name="StatusText"
                                Text="Starting the local engine…"
-                               Foreground="#8FA3B8"
+                               Foreground="{DynamicResource ChromeText}"
                                FontFamily="Consolas"
                                FontSize="12"
                                HorizontalAlignment="Center" />

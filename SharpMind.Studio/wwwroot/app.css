@@ -262,7 +262,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
 .settings-subgroup {
     border: 1px solid var(--line);
     border-radius: .7rem;
-    background: rgba(10, 16, 24, .35);
+    background: var(--inset);
 }
 
 .settings-subgroup > summary.settings-subgroup-head {
@@ -366,7 +366,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .85rem .9rem;
     border: 1px solid var(--line);
     border-radius: .65rem;
-    background: rgba(15, 22, 32, .8);
+    background: var(--panel-soft);
 }
 
 .metric-value {
@@ -442,7 +442,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .55rem 1rem;
     border: 1px solid var(--line-strong);
     border-radius: .55rem;
-    background: rgba(15, 22, 32, .8);
+    background: var(--panel-soft);
     color: var(--text);
     font-family: var(--mono);
     font-size: .72rem;
@@ -705,7 +705,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .7rem .8rem;
     border: 1px solid var(--line);
     border-radius: .55rem;
-    background: rgba(15, 22, 32, .8);
+    background: var(--panel-soft);
     color: var(--muted);
     cursor: pointer;
     font: inherit;

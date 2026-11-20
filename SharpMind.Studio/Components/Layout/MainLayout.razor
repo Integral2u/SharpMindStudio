@@ -694,7 +694,19 @@
         LoadChats();
         await InvokeAsync(StateHasChanged);
     }
-    private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnThemeChanged() => _ = InvokeAsync(async () =>
+    {
+        // The body carries the appearance for the very first paint, so keep it in
+        // step when the theme changes without a restart.
+        try
+        {
+            await JS.InvokeVoidAsync("studioTheme.apply", Theme.Theme, Theme.Appearance);
+        }
+        catch
+        {
+        }
+        StateHasChanged();
+    });
 
     private void OnActivityChanged() => _ = InvokeAsync(StateHasChanged);
 
