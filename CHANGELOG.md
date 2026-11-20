@@ -100,11 +100,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and on blur instead of behind a Save button, and sending a prompt collapses
   the panel. A brand-new project starts with its default context, so file tools
   work before the settings have ever been opened.
-- **Sessions grouped by project** - Chat and Work each list every project that
-  has sessions of that kind, as a collapsible group with a count. Opening a
-  session from another project switches to it first. The landing page asks which
-  project a Work session belongs to, including **New project**, instead of using
-  whichever project was open last.
+- **Sessions grouped by project** - Chat lists the default project's chats, and Work
+  lists every project that has work sessions, each as a collapsible group with a
+  count. Opening a session from another group switches to that project first. The
+  landing page asks which project a Work session belongs to, including
+  **New project**, instead of using whichever project was open last.
 - **Switch models in an open chat** - the chat header has a **Model** dropdown
   that switches to another local model, another model on the same remote
   provider, or another model on the same Compute host. The transcript stays;

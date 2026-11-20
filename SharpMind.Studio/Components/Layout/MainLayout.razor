@@ -596,6 +596,10 @@
 
         foreach (SharpMind.Studio.Services.StudioProjectInfo project in Workspace.Projects)
         {
+            // Chat is the default project's conversation list. Sessions saved
+            // while a work project was open belong to Work, not here.
+            if (!work && !project.IsDefault) continue;
+
             if (!seen.Add(project.Path)) continue;
             string chats = Path.Combine(project.Path, "chats");
             if (!Directory.Exists(chats)) continue;
