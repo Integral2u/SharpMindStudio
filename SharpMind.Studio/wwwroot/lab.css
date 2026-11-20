@@ -92,9 +92,9 @@
 }
 
 .lab-axis {
-    stroke: currentColor;
+    stroke: var(--line-strong);
     stroke-width: 1;
-    opacity: .18;
+    opacity: .9;
 }
 
 .lab-point {

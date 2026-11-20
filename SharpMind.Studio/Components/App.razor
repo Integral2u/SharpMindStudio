@@ -1,4 +1,5 @@
-﻿<!DOCTYPE html>
+﻿@inject SharpMind.Studio.Services.ThemeService Theme
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -18,7 +19,7 @@
     <HeadOutlet @rendermode="InteractiveServer" />
 </head>
 
-<body>
+<body data-theme="@Theme.Theme" data-appearance="@Theme.Appearance">
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>

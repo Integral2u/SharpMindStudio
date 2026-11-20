@@ -299,8 +299,8 @@
     border-radius: 1rem;
 }
 
-.training-chart-swatch.train { background: var(--accent); }
-.training-chart-swatch.val { background: var(--warn); }
+.training-chart-swatch.train { background: var(--series-1); }
+.training-chart-swatch.val { background: var(--series-2); }
 
 .training-chart-empty {
     padding: 1.4rem .8rem;
@@ -341,10 +341,10 @@
     stroke-linecap: round;
 }
 
-.training-chart-line.train { stroke: var(--accent); }
-.training-chart-line.val { stroke: var(--warn); stroke-width: 1.3; }
+.training-chart-line.train { stroke: var(--series-1); }
+.training-chart-line.val { stroke: var(--series-2); stroke-width: 1.3; }
 
-.training-chart-dot.val { fill: var(--warn); }
+.training-chart-dot.val { fill: var(--series-2); }
 .training-chart-dot.best { fill: none; stroke: var(--accent); stroke-width: 2; }
 
 .training-chart-best {

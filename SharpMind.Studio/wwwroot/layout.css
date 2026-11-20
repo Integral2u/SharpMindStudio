@@ -795,20 +795,20 @@ button.nav-chat-link {
 
 /* Light appearance: the sidebar art was tuned for a dark panel. On white it
    washed the labels out, so soften the glow and stop the wave from screening. */
-.studio-root[data-appearance="light"] .sidebar-art {
+body[data-appearance="light"] .sidebar-art {
     opacity: .5;
 }
 
-.studio-root[data-appearance="light"] .sidebar-art::before {
+body[data-appearance="light"] .sidebar-art::before {
     opacity: .5;
     filter: blur(26px);
 }
 
-.studio-root[data-appearance="light"] .wave {
+body[data-appearance="light"] .wave {
     opacity: .22;
     mix-blend-mode: multiply;
 }
 
-.studio-root[data-appearance="light"] .sidebar::after {
+body[data-appearance="light"] .sidebar::after {
     opacity: .55;
 }

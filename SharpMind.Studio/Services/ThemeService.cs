@@ -91,8 +91,22 @@ public sealed class ThemeService
     // --accent is declared on :root in app.css, so overriding only
     // --accent-rgb on the themed element would leave the inherited, already-computed
     // --accent at the default green. Set both on the themed element.
-    public string CssVariables =>
-        $"--accent-rgb: {AccentRgb}; --accent: rgb({AccentRgb}); --accent-dim: rgba({AccentRgb}, .12);";
+    // The series colours are derived from the accent hue so a chart line never
+    // lands on the same colour as a custom accent: they sit 180 and 90 degrees
+    // away with a lightness that suits the appearance.
+    public string CssVariables
+    {
+        get
+        {
+            (double h, double s, _) = RgbCsvToHsl(AccentRgb);
+            string second = FromHsl((h + 0.5) % 1, Math.Max(s, 0.45), IsLight ? 0.40 : 0.66);
+            string third = FromHsl((h + 0.25) % 1, Math.Max(s, 0.40), IsLight ? 0.46 : 0.58);
+
+            return $"--accent-rgb: {AccentRgb}; --accent: rgb({AccentRgb}); " +
+                   $"--accent-dim: rgba({AccentRgb}, .12); " +
+                   $"--series-1: rgb({AccentRgb}); --series-2: {second}; --series-3: {third};";
+        }
+    }
 
     public string AccentRgb
     {
@@ -327,7 +341,25 @@ public sealed class ThemeService
     private static (double H, double S, double L) ToHsl(string color)
     {
         if (!TryParseRgb(color, out int r, out int g, out int b)) return (0, 0, 0.5);
+        return ToHsl(r, g, b);
+    }
 
+    private static (double H, double S, double L) RgbCsvToHsl(string rgb)
+    {
+        string[] parts = rgb.Split(',');
+        if (parts.Length != 3 ||
+            !int.TryParse(parts[0].Trim(), out int r) ||
+            !int.TryParse(parts[1].Trim(), out int g) ||
+            !int.TryParse(parts[2].Trim(), out int b))
+        {
+            return (0, 0, 0.5);
+        }
+
+        return ToHsl(r, g, b);
+    }
+
+    private static (double H, double S, double L) ToHsl(int r, int g, int b)
+    {
         double rn = r / 255.0, gn = g / 255.0, bn = b / 255.0;
         double max = Math.Max(rn, Math.Max(gn, bn));
         double min = Math.Min(rn, Math.Min(gn, bn));
