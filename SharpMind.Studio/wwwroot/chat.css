@@ -701,3 +701,93 @@
     color: var(--bad);
     background: rgba(229, 72, 77, .14);
 }
+
+/* Composer shell: attachments live inside the bubble, top for send and bottom
+   for replies. One row, never wrapped; extra items collapse behind an ellipsis. */
+.composer-shell {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+    padding: .55rem .65rem .5rem;
+    border: 1px solid var(--line-strong);
+    border-radius: .8rem;
+    background: var(--bg-raised);
+}
+
+.composer-shell .textarea,
+.composer-shell .welcome-prompt {
+    border: 0;
+    background: transparent;
+    padding: .25rem .15rem;
+    min-height: 3rem;
+    max-height: 12rem;
+    resize: vertical;
+}
+
+.composer-shell .textarea:focus,
+.composer-shell .welcome-prompt:focus {
+    box-shadow: none;
+}
+
+.composer-chip-row {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    overflow: hidden;
+    flex-wrap: nowrap;
+}
+
+.composer-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    max-width: 13rem;
+    padding: .18rem .45rem;
+    border: 1px solid var(--line);
+    border-radius: .45rem;
+    background: var(--panel-soft);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: .62rem;
+    white-space: nowrap;
+}
+
+.composer-chip .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.composer-chip button {
+    border: 0;
+    background: transparent;
+    color: var(--faint);
+    cursor: pointer;
+    padding: 0 .1rem;
+}
+
+.composer-overflow {
+    margin-left: auto;
+    border: 1px solid var(--line);
+    border-radius: .45rem;
+    background: transparent;
+    color: var(--muted);
+    padding: .12rem .45rem;
+    font-family: var(--mono);
+    font-size: .62rem;
+    cursor: pointer;
+}
+
+.composer-overflow-list {
+    flex-wrap: wrap;
+    overflow: visible;
+}
+
+.composer-actions {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+}
+
+.composer-actions .composer-send {
+    flex: 1;
+}

@@ -58,18 +58,46 @@
                 </div>
             </div>
             <div class="panel-body stack">
-                <div class="welcome-compose">
+                <div class="composer-shell">
+                    @if (_pendingArtifacts.Count > 0)
+                    {
+                        <div class="composer-chip-row">
+                            @foreach (ChatArtifact artifact in _pendingArtifacts.Take(3))
+                            {
+                                <span class="composer-chip" title="@(artifact.FileName ?? artifact.Type)">
+                                    <span class="name">@(artifact.FileName ?? artifact.Type)</span>
+                                    <button type="button" title="Remove attachment"
+                                            @onclick="() => RemoveArtifact(artifact)">&times;</button>
+                                </span>
+                            }
+                            @if (_pendingArtifacts.Count > 3)
+                            {
+                                <button type="button" class="composer-overflow"
+                                        @onclick="() => _showOverflow = !_showOverflow"
+                                        title="More attachments">
+                                    @(_showOverflow ? "−" : "…")
+                                </button>
+                            }
+                        </div>
+                        @if (_showOverflow && _pendingArtifacts.Count > 3)
+                        {
+                            <div class="composer-chip-row composer-overflow-list">
+                                @foreach (ChatArtifact artifact in _pendingArtifacts.Skip(3))
+                                {
+                                    <span class="composer-chip" title="@(artifact.FileName ?? artifact.Type)">
+                                        <span class="name">@(artifact.FileName ?? artifact.Type)</span>
+                                        <button type="button" title="Remove attachment"
+                                                @onclick="() => RemoveArtifact(artifact)">&times;</button>
+                                    </span>
+                                }
+                            </div>
+                        }
+                    }
                     <textarea id="chat-new-input" class="welcome-prompt chat-new-prompt" data-enter-send="chat-start"
                               onkeydown="studioChat.enterSend(event, 'chat-start')"
                               @bind="_input" @bind:event="oninput"
                               placeholder="@(_workMode ? "Describe the task, or leave this empty to start a blank Work chat." : "Ask something, or leave this empty to start a blank chat.")"></textarea>
-                    <div class="welcome-compose-actions">
-                        <span class="small faint welcome-compose-note">
-                            @if (!_remoteChat && SelectedSupportsAudio)
-                            {
-                                <text>Audio model: an attached WAV is transcribed before the first turn.</text>
-                            }
-                        </span>
+                    <div class="composer-actions">
                         @if (!_remoteChat && !ChatService.IsStreaming && !ChatService.IsLoading)
                         {
                             <label class="button chat-attach-button" title="Attach an image, audio file or document">
@@ -77,7 +105,7 @@
                                 <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
                             </label>
                         }
-                        <button id="chat-start" type="button" class="button primary welcome-send"
+                        <button id="chat-start" type="button" class="button primary composer-send"
                                 @onclick="StartNewChatAsync"
                                 disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
                                             (_remoteChat ? !RemoteReady : string.IsNullOrWhiteSpace(_selectedModelPath)) ||
@@ -86,19 +114,6 @@
                         </button>
                     </div>
                 </div>
-                @if (_pendingArtifacts.Count > 0)
-                {
-                    <div class="chat-attachment-list">
-                        @foreach (ChatArtifact artifact in _pendingArtifacts)
-                        {
-                            <span class="chat-attachment-chip">
-                                @(artifact.FileName ?? artifact.Type)
-                                <button type="button" title="Remove attachment"
-                                        @onclick="() => _pendingArtifacts.Remove(artifact)">&times;</button>
-                            </span>
-                        }
-                    </div>
-                }
 
                 <div class="welcome-controls chat-welcome-controls">
                     <div class="field">
@@ -919,6 +934,7 @@ else
     private string? _selectedModelPath;
     private string _input = "";
     private readonly List<ChatArtifact> _pendingArtifacts = [];
+    private bool _showOverflow;
 
     private RemoteProviderPreset RemotePreset => RemoteProviders.Find(_remoteProviderId);
     private IReadOnlyList<string> RemoteActiveModels => OpenRouter.ActiveModelsFor(_remoteProviderId);
@@ -1584,6 +1600,7 @@ else
                 _pendingArtifacts.Add(new ChatArtifact
                 {
                     Type = ArtifactType(file.ContentType, file.Name),
+                    MimeType = ArtifactMime(file.ContentType, file.Name),
                     Content = buffer.ToArray(),
                     FileName = file.Name,
                 });
@@ -1613,6 +1630,45 @@ else
             ".json" => "json",
             ".txt" or ".md" or ".csv" or ".log" => "text",
             _ => "file",
+        };
+    }
+
+    private void RemoveArtifact(ChatArtifact artifact)
+    {
+        _pendingArtifacts.Remove(artifact);
+        if (_pendingArtifacts.Count <= 3) _showOverflow = false;
+    }
+
+    private static string ArtifactMime(string? contentType, string fileName)
+    {
+        if (!string.IsNullOrWhiteSpace(contentType) &&
+            contentType.Contains('/', StringComparison.Ordinal))
+        {
+            return contentType.ToLowerInvariant();
+        }
+
+        return Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            ".bmp" => "image/bmp",
+            ".wav" => "audio/wav",
+            ".mp3" => "audio/mpeg",
+            ".ogg" => "audio/ogg",
+            ".m4a" => "audio/mp4",
+            ".flac" => "audio/flac",
+            ".pdf" => "application/pdf",
+            ".json" => "application/json",
+            ".csv" => "text/csv",
+            ".md" => "text/markdown",
+            ".txt" or ".log" => "text/plain",
+            ".zip" => "application/zip",
+            ".7z" => "application/x-7z-compressed",
+            ".tar" => "application/x-tar",
+            ".gz" => "application/gzip",
+            _ => "application/octet-stream",
         };
     }
 
