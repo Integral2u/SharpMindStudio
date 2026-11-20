@@ -1,4 +1,4 @@
-﻿@page "/chat"
+@page "/chat"
 @page "/chat/{ChatId}"
 @implements IDisposable
 @using SharpMind.Inference.Chat
@@ -98,7 +98,7 @@
                               @bind="_input" @bind:event="oninput"
                               placeholder="@(_workMode ? "Describe the task, or leave this empty to start a blank Work chat." : "Ask something, or leave this empty to start a blank chat.")"></textarea>
                     <div class="composer-actions">
-                        @if (!_remoteChat && !ChatService.IsStreaming && !ChatService.IsLoading)
+                        @if (_computeProviderId is null && !ChatService.IsStreaming && !ChatService.IsLoading)
                         {
                             <label class="button chat-attach-button" title="Attach an image, audio file or document">
                                 Attach
@@ -849,7 +849,7 @@ else
                               placeholder="Message the model. Enter sends; Shift+Enter adds a line."
                               disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"></textarea>
                     <div class="composer-actions">
-                        @if (!ChatService.IsStreaming && !ChatService.IsLoading && !ChatService.IsRemote)
+                        @if (!ChatService.IsStreaming && !ChatService.IsLoading && !ChatService.IsCompute)
                         {
                             <label class="button chat-attach-button" title="Attach an image, audio file or document">
                                 Attach

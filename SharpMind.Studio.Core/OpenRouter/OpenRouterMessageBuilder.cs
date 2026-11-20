@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Nodes;
 using SharpMind.Inference.Agent;
 using SharpMind.Inference.Chat;
@@ -50,7 +51,7 @@ public static class OpenRouterMessageBuilder
                     break;
 
                 case ChatRole.User:
-                    messages.Add(Text("user", message.Content));
+                    messages.Add(User(message));
                     break;
 
                 case ChatRole.Agent:
@@ -80,6 +81,96 @@ public static class OpenRouterMessageBuilder
         }
 
         return messages;
+    }
+
+    /// <summary>
+    /// A user turn with attachments becomes content parts. Images go as a data
+    /// URL the provider can read directly; text and code are inlined; everything
+    /// else goes as a file part carrying the bytes. A local path is never sent.
+    /// </summary>
+    private static JsonObject User(ChatMessage message)
+    {
+        if (message.Artifacts is not { Length: > 0 })
+            return Text("user", message.Content);
+
+        var parts = new JsonArray();
+        if (!string.IsNullOrWhiteSpace(message.Content))
+            parts.Add(new JsonObject { ["type"] = "text", ["text"] = message.Content });
+
+        foreach (ChatArtifact artifact in message.Artifacts)
+            AddUserPart(parts, artifact);
+
+        return parts.Count == 0
+            ? Text("user", message.Content)
+            : new JsonObject { ["role"] = "user", ["content"] = parts };
+    }
+
+    private static void AddUserPart(JsonArray parts, ChatArtifact artifact)
+    {
+        string mime = Mime(artifact);
+
+        if (mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            parts.Add(new JsonObject
+            {
+                ["type"] = "image_url",
+                ["image_url"] = new JsonObject { ["url"] = DataUrl(mime, artifact.Content) },
+            });
+            return;
+        }
+
+        if (mime.StartsWith("text/", StringComparison.OrdinalIgnoreCase) ||
+            mime.Contains("json", StringComparison.OrdinalIgnoreCase))
+        {
+            parts.Add(new JsonObject
+            {
+                ["type"] = "text",
+                ["text"] = Encoding.UTF8.GetString(artifact.Content),
+            });
+            return;
+        }
+
+        // Anything else is sent as bytes and left for the model to interpret.
+        parts.Add(new JsonObject
+        {
+            ["type"] = "file",
+            ["file"] = new JsonObject
+            {
+                ["filename"] = artifact.FileName ?? "attachment",
+                ["file_data"] = DataUrl(mime, artifact.Content),
+            },
+        });
+    }
+
+    private static string DataUrl(string mime, byte[] content) =>
+        $"data:{mime};base64,{Convert.ToBase64String(content)}";
+
+    private static string Mime(ChatArtifact artifact)
+    {
+        if (!string.IsNullOrWhiteSpace(artifact.MimeType)) return artifact.MimeType!;
+        if (artifact.Type.Contains('/')) return artifact.Type;
+
+        string extension = Path.GetExtension(artifact.FileName ?? "").ToLowerInvariant();
+        return artifact.Type.ToLowerInvariant() switch
+        {
+            "image" => extension switch
+            {
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".gif" => "image/gif",
+                ".webp" => "image/webp",
+                _ => "image/png",
+            },
+            "audio" => extension switch
+            {
+                ".mp3" => "audio/mpeg",
+                ".ogg" => "audio/ogg",
+                ".m4a" => "audio/mp4",
+                _ => "audio/wav",
+            },
+            "json" => "application/json",
+            "code" or "text" => "text/plain;charset=utf-8",
+            _ => "application/octet-stream",
+        };
     }
 
     public static IReadOnlyList<JsonObject> BuildTools(IAgentBuilder agent)

@@ -64,7 +64,7 @@
         <textarea class="welcome-prompt" data-enter-send="welcome-send" onkeydown="studioChat.enterSend(event, 'welcome-send')" @bind="_prompt" @bind:event="oninput"
                   placeholder="@(_mode == "work" ? "Describe the task, or leave this empty and press Send to start a new Work session." : "Ask something, or leave this empty and press Send to start a new chat.")"></textarea>
         <div class="composer-actions">
-            @if (!_remoteChat && !_busy)
+            @if (_computeProviderId is null && !_busy)
             {
                 <label class="button chat-attach-button" title="Attach an image, audio file or document">
                     Attach

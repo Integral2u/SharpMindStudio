@@ -68,6 +68,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   context folder set to **Never** refuses whatever the tool says. A tool set to
   **Always** is not downgraded by a folder that only asks. An agent that asks for
   more than the session allows raises a prompt that is never remembered.
+- **Attachments on remote providers** - images, documents and generic files are
+  sent as OpenAI content parts built from the artifact's bytes and media type:
+  `image_url` for images, `file` for PDFs and anything else, inlined text for text
+  and code. No local path is ever sent. Audio still needs a local audio model to
+  transcribe first.
 - **MTP drafting** - a model with a multi-token prediction head uses it by default.
   The profile editor has **MTP draft** (On, Off or inherit) and the draft chain
   length (1-8, blank means the engine default of 4). Tuned presets set 6, 4 and 2

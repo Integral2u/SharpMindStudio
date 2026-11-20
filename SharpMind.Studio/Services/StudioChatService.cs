@@ -837,10 +837,11 @@ public sealed class StudioChatService : IAsyncDisposable
         {
             string typedText = text;
             string? audioTranscript = null;
-            if (IsRemote && artifacts is { Count: > 0 })
+            if (IsRemote && artifacts is { Count: > 0 } &&
+                artifacts.Any(item => item.Type.Contains("audio", StringComparison.OrdinalIgnoreCase)))
             {
-                _error = "Attachments are only supported for local models right now.";
-                _status = "Attachments are not available on remote chats yet.";
+                _error = "A remote provider cannot take an audio file. Attach text, or load a local audio model to transcribe it first.";
+                _status = "Audio attachments need a local audio model.";
                 Notify();
                 return;
             }
@@ -899,13 +900,15 @@ public sealed class StudioChatService : IAsyncDisposable
 
             if (IsOpenRouter)
             {
-                await SendRemoteTurnAsync(text.Trim(), _openRouterBackend).ConfigureAwait(false);
+                await SendRemoteTurnAsync(text.Trim(), _openRouterBackend, artifacts)
+                    .ConfigureAwait(false);
                 return;
             }
 
             if (IsCompute)
             {
-                await SendRemoteTurnAsync(text.Trim(), _computeBackend).ConfigureAwait(false);
+                await SendRemoteTurnAsync(text.Trim(), _computeBackend, artifacts)
+                    .ConfigureAwait(false);
                 return;
             }
 
@@ -1108,7 +1111,10 @@ public sealed class StudioChatService : IAsyncDisposable
     /// Shared turn setup for the remote backends: validate, append the user row
     /// and the empty assistant row, stream through the provider, then persist.
     /// </summary>
-    private async Task SendRemoteTurnAsync(string text, IChatBackend backend)
+    private async Task SendRemoteTurnAsync(
+        string text,
+        IChatBackend backend,
+        IReadOnlyList<ChatArtifact>? artifacts = null)
     {
         if (_document is null) return;
 
@@ -1137,7 +1143,9 @@ public sealed class StudioChatService : IAsyncDisposable
             BuildToolCallFilter(),
             embedded.Tools,
             embedded.Disabled);
-        _document.Messages.Add(ChatMessage.User(text, "You"));
+        ChatMessage userMessage = ChatMessage.User(text, "You");
+        userMessage.Artifacts = artifacts?.ToArray();
+        _document.Messages.Add(userMessage);
         ChatMessage assistant = ChatMessage.Agent("", agent?.AgentName);
         _document.Messages.Add(assistant);
         Notify();
