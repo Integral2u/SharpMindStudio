@@ -58,3 +58,36 @@ The web `wwwroot` files are listed explicitly in the setup project because the
 web publish output group does not include them. If a new file is added under
 `SharpMind.Studio\wwwroot`, add it to the **File System** view under `wwwroot`
 and rebuild.
+
+## MSIX (Microsoft Store)
+
+`scripts\build-msix.ps1` produces the Store package. It does not need Visual
+Studio or this installer project: it publishes both projects, generates the tile
+assets from `wwwroot\sharpmind-icon.svg`, writes `AppxManifest.xml` from
+`msix\AppxManifest.template.xml`, packs with MakeAppx and signs.
+
+```powershell
+# development identity, for installing locally
+.\scripts\build-msix.ps1
+
+# the identity Partner Center shows under Product identity
+.\scripts\build-msix.ps1 -IdentityName '12345Integral2u.SharpMindStudio' `
+    -Publisher 'CN=1A2B3C4D-5E6F-7890-ABCD-EF1234567890'
+```
+
+Output: `Release\SharpMind.Studio.msix` and, unless `-SkipSign` is used, the
+matching `SharpMind.Studio.cer`.
+
+- The package is **self-contained**: it carries the .NET 10 and ASP.NET Core
+  runtimes, so a Store download starts on a clean machine. `-FrameworkDependent`
+  builds the smaller package that needs the runtimes installed, matching the MSI.
+- `Identity Name` and `Publisher` must equal the Partner Center values. A
+  mismatch is rejected at submission; a matching Name is also what makes a
+  rebuild an update rather than a second app.
+- Signing a submission with a self-signed certificate is fine: the Store
+  re-signs the package. The certificate only matters for local installs, where
+  `SharpMind.Studio.cer` must be trusted in `LocalMachine\TrustedPeople` first.
+- The MSIX is Store-only. GitHub releases keep the MSI and zip until the Store
+  listing is live.
+- The manifest declares `runFullTrust` because the wrapper starts the web host as
+  a sibling process and binds loopback listeners.
