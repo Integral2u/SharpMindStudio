@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using SharpMind.Core;
+using SharpMind.Studio.Core.Mcp;
 using SharpMind.Studio.Core.Safety;
 using SharpMind.Studio.Core.Serialization;
 using SharpMind.Studio.Core.Storage;
@@ -14,6 +15,9 @@ public sealed record WorkToolInfo(string Name, string Source, bool IsPlugin, str
     public bool UsesNetwork { get; init; }
 
     public IReadOnlyList<string> Evidence { get; init; } = [];
+
+    /// <summary>A tool discovered on an MCP server, not a local plugin.</summary>
+    public bool IsMcp { get; init; }
 }
 
 public sealed record WorkToolDefaultsDocument
@@ -55,6 +59,7 @@ public sealed class WorkToolService
     private readonly StudioWorkspaceService _workspace;
     private readonly Lock _gate = new();
     private List<WorkToolInfo> _tools = [];
+    private List<WorkToolInfo> _mcpTools = [];
     private List<object> _pluginTools = [];
     private HashSet<string> _disabledByDefault = new(StringComparer.OrdinalIgnoreCase);
     private List<string> _warnings = [];
@@ -69,7 +74,10 @@ public sealed class WorkToolService
     public event Action? Changed;
 
     public string Folder => _workspace.PluginsFolder;
-    public IReadOnlyList<WorkToolInfo> Tools => _tools;
+    public IReadOnlyList<WorkToolInfo> Tools
+    {
+        get { lock (_gate) return [.. _tools, .. _mcpTools]; }
+    }
     public IReadOnlyList<object> PluginTools => _pluginTools;
     public IReadOnlyList<string> Warnings => _warnings;
 
@@ -162,6 +170,45 @@ public sealed class WorkToolService
     public bool IsDefaultEnabled(string name)
     {
         lock (_gate) return !_disabledByDefault.Contains(name);
+    }
+
+    /// <summary>
+    /// Adds the tools a connected MCP server advertised. Names are namespaced so
+    /// two servers can expose the same tool without colliding.
+    /// </summary>
+    public void RegisterMcpTools(string serverId, string serverName, IReadOnlyList<McpToolInfo> tools)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serverId);
+        lock (_gate)
+        {
+            _mcpTools.RemoveAll(tool =>
+                tool.Source.Equals($"mcp:{serverId}", StringComparison.OrdinalIgnoreCase));
+
+            foreach (McpToolInfo tool in tools)
+            {
+                _mcpTools.Add(new WorkToolInfo(
+                    $"mcp__{serverId}__{tool.Name}",
+                    $"MCP · {serverName}",
+                    true,
+                    $"MCP · {serverName}")
+                {
+                    IsMcp = true,
+                    UsesNetwork = true,
+                });
+            }
+        }
+
+        Changed?.Invoke();
+    }
+
+    public void ClearMcpTools(string serverId)
+    {
+        lock (_gate)
+        {
+            _mcpTools.RemoveAll(tool =>
+                tool.Source.Equals($"mcp:{serverId}", StringComparison.OrdinalIgnoreCase));
+        }
+        Changed?.Invoke();
     }
 
     /// <summary>The group a tool belongs to, or null when it is not registered.</summary>

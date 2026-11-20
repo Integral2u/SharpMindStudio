@@ -1,0 +1,188 @@
+@using SharpMind.Studio.Core.Mcp
+@using SharpMind.Studio.Core.Work
+@using SharpMind.Studio.Services
+@inject McpSettingsStore Store
+@inject McpServerHost Host
+@inject WorkToolService ToolCatalog
+@inject StudioWorkService Work
+
+<details class="settings-subgroup">
+    <summary class="settings-subgroup-head">
+        <div>
+            <div class="eyebrow">MCP</div>
+            <h3>Servers</h3>
+        </div>
+        <span class="faint small mono">@Store.Servers.Count configured</span>
+    </summary>
+    <div class="panel-body stack">
+        <p class="small faint">
+            Starting a server needs this project's <strong>Run</strong> permission, because the
+            server is a real process. Its tools appear in the tool list and stay
+            <strong>off</strong> until you enable them. Studio gates the call, not what the server
+            does with it.
+        </p>
+
+        @foreach (McpServerSettings server in Store.Servers)
+        {
+            bool running = Host.IsRunning(server.Id);
+            int toolCount = running
+                ? Host.Connected.FirstOrDefault(entry =>
+                    entry.ServerId.Equals(server.Id, StringComparison.OrdinalIgnoreCase))?.Tools.Count ?? 0
+                : 0;
+
+            <div class="spread" style="align-items:flex-start;gap:1rem;">
+                <div>
+                    <strong>@server.Name</strong>
+                    <div class="small faint mono">@server.Command @string.Join(" ", server.Args)</div>
+                    <div class="small faint">
+                        @(running ? $"connected · {toolCount} tool(s)" : "stopped")
+                        @if (!server.Enabled) { <text> · disabled</text> }
+                    </div>
+                </div>
+                <div class="row">
+                    <button type="button" class="button" @onclick="() => ConnectAsync(server)"
+                            disabled="@running">
+                        Connect
+                    </button>
+                    <button type="button" class="button" @onclick="() => DisconnectAsync(server)"
+                            disabled="@(!running)">
+                        Disconnect
+                    </button>
+                    <button type="button" class="button danger" @onclick="() => RemoveAsync(server)">
+                        Remove
+                    </button>
+                </div>
+            </div>
+        }
+
+        <div class="settings-subgroup" style="padding:.7rem;">
+            <div class="eyebrow">Add a server</div>
+            <div class="field">
+                <label class="field-label" for="mcp-id">Id</label>
+                <input id="mcp-id" class="input" @bind="_id" placeholder="files" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="mcp-name">Name</label>
+                <input id="mcp-name" class="input" @bind="_name" placeholder="Files" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="mcp-command">Command</label>
+                <input id="mcp-command" class="input" @bind="_command" placeholder="npx" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="mcp-args">Arguments, one per line</label>
+                <textarea id="mcp-args" class="textarea work-textarea" @bind="_args"
+                          placeholder="-y&#10;@@modelcontextprotocol/server-filesystem&#10;C:\work"></textarea>
+            </div>
+            <div class="field">
+                <label class="field-label" for="mcp-env">Environment, KEY=value per line</label>
+                <textarea id="mcp-env" class="textarea work-textarea" @bind="_environment"></textarea>
+            </div>
+            <div class="row" style="margin-top:.5rem;">
+                <button type="button" class="button primary" @onclick="AddAsync"
+                        disabled="@(string.IsNullOrWhiteSpace(_command))">
+                    Add server
+                </button>
+                <span class="status-line">@_status</span>
+            </div>
+        </div>
+    </div>
+</details>
+
+@code {
+    private string _id = "";
+    private string _name = "";
+    private string _command = "";
+    private string _args = "";
+    private string _environment = "";
+    private string? _status;
+
+    private async Task AddAsync()
+    {
+        try
+        {
+            string id = string.IsNullOrWhiteSpace(_id) ? Slug(_name.Length > 0 ? _name : _command) : _id.Trim();
+            var server = new McpServerSettings
+            {
+                Id = id,
+                Name = string.IsNullOrWhiteSpace(_name) ? id : _name.Trim(),
+                Command = _command.Trim(),
+                Args = [.. Lines(_args)],
+                Environment = Lines(_environment)
+                    .Select(line => line.Split('=', 2))
+                    .Where(pair => pair.Length == 2)
+                    .ToDictionary(pair => pair[0].Trim(), pair => pair[1], StringComparer.OrdinalIgnoreCase),
+            };
+
+            Store.Save(server);
+            _id = _name = _command = _args = _environment = "";
+            _status = $"Added {server.Name}.";
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private async Task ConnectAsync(McpServerSettings server)
+    {
+        try
+        {
+            bool allowed = await Work.CheckAccessAsync(new WorkToolAccess(
+                $"mcp:{server.Id}",
+                WorkToolCategory.Execute,
+                Work.ProjectRoot));
+
+            if (!allowed)
+            {
+                _status = "Run permission denied for this project.";
+                return;
+            }
+
+            IReadOnlyList<McpToolInfo> tools = await Host.EnsureStartedAsync(
+                server, () => Task.FromResult(true));
+
+            ToolCatalog.RegisterMcpTools(server.Id, server.Name, tools);
+            _status = $"{server.Name}: {tools.Count} tool(s). Enable them in the tool list.";
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private async Task DisconnectAsync(McpServerSettings server)
+    {
+        try
+        {
+            await Host.StopAsync(server.Id);
+            ToolCatalog.ClearMcpTools(server.Id);
+            _status = $"{server.Name} stopped.";
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private async Task RemoveAsync(McpServerSettings server)
+    {
+        await DisconnectAsync(server);
+        Store.Remove(server.Id);
+        _status = $"{server.Name} removed.";
+    }
+
+    private static IEnumerable<string> Lines(string text) =>
+        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string Slug(string value)
+    {
+        var slug = new System.Text.StringBuilder();
+        foreach (char character in value.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(character)) slug.Append(character);
+            else if (slug.Length > 0 && slug[^1] != '-') slug.Append('-');
+        }
+        return slug.ToString().Trim('-');
+    }
+}

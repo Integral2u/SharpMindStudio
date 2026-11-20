@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using SharpMind.Inference.Agent;
 using SharpMind.Studio.Core.Agents;
+using SharpMind.Studio.Core.Mcp;
 using SharpMind.Studio.Core.Work;
 
 namespace SharpMind.Studio.Services;
@@ -67,6 +68,7 @@ public sealed class StudioWorkService : IDisposable
     private readonly StudioDeviceAccess _device;
     private readonly StudioAgentService _agents;
     private readonly InferenceSettingsService _inference;
+    private readonly SharpMind.Studio.Core.Mcp.McpServerHost _mcp;
     private readonly Lock _gate = new();
     private WorkSettingsStore _store;
     private WorkSettings _settings;
@@ -84,7 +86,7 @@ public sealed class StudioWorkService : IDisposable
     /// <summary>The tool-call gate for the running turn, inherited by delegated agents.</summary>
     private IToolCallFilter? _activeFilter;
 
-    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents, InferenceSettingsService inference)
+    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents, InferenceSettingsService inference, SharpMind.Studio.Core.Mcp.McpServerHost mcp)
     {
         _workspace = workspace;
         _systemSkills = systemSkills;
@@ -92,6 +94,7 @@ public sealed class StudioWorkService : IDisposable
         _device = device;
         _agents = agents;
         _inference = inference;
+        _mcp = mcp;
         _store = new WorkSettingsStore(workspace.Project.Root);
         _settings = _store.Load();
         _memory = _store.ReadMemory();
@@ -207,6 +210,38 @@ public sealed class StudioWorkService : IDisposable
                 builder.WithTools([.. _tools.PluginTools]);
             if (embeddedTools is { Count: > 0 })
                 builder.WithTools([.. embeddedTools]);
+
+            // MCP tools are off unless the user has chosen a value for them: there
+            // is no way to gate a server's own code, so consent is explicit.
+            foreach (WorkToolInfo tool in _tools.Tools.Where(tool => tool.IsMcp))
+            {
+                ToolPermissionValue permission = effective.For(tool.Name, tool.Group);
+                if (permission.Permission == WorkToolPermission.Off ||
+                    permission.Source == ToolPermissionResolver.DefaultSource)
+                {
+                    continue;
+                }
+
+                if (!TrySplitMcpName(tool.Name, out string serverId, out string mcpTool)) continue;
+
+                McpToolInfo? info = _mcp.Connected
+                    .FirstOrDefault(server =>
+                        server.ServerId.Equals(serverId, StringComparison.OrdinalIgnoreCase))
+                    ?.Tools.FirstOrDefault(candidate => candidate.Name == mcpTool);
+                if (info is null) continue;
+
+                var schema = info.InputSchema as JsonObject ?? new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject(),
+                };
+
+                builder.WithTool(
+                    tool.Name,
+                    info.Description,
+                    schema,
+                    arguments => CallMcpToolAsync(serverId, mcpTool, arguments));
+            }
         }
         if (work)
         {
@@ -319,8 +354,27 @@ public sealed class StudioWorkService : IDisposable
         return builder;
     }
 
-    private Task<string> InvokeAgentToolAsync(string toolName, JsonObject arguments)
+    private static bool TrySplitMcpName(string name, out string serverId, out string tool)
     {
+        serverId = tool = "";
+        string[] parts = name.Split("__", 3);
+        if (parts.Length != 3 || !parts[0].Equals("mcp", StringComparison.Ordinal)) return false;
+
+        serverId = parts[1];
+        tool = parts[2];
+        return serverId.Length > 0 && tool.Length > 0;
+    }
+
+    private async Task<string> CallMcpToolAsync(string serverId, string tool, JsonObject arguments)
+    {
+        McpToolResult result = await _mcp
+            .CallAsync(serverId, tool, arguments)
+            .ConfigureAwait(false);
+
+        return result.IsError ? $"MCP error: {result.Text}" : result.Text;
+    }
+
+    private Task<string> InvokeAgentToolAsync(string toolName, JsonObject arguments)    {
         Func<string, JsonObject, CancellationToken, Task<string>>? executor = AgentToolExecutor;
         return executor is null
             ? Task.FromResult("[agent runner is not available]")

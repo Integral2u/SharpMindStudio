@@ -49,7 +49,8 @@ public sealed class StudioAgentToolTests : IDisposable
             new WorkToolService(workspace),
             new StudioDeviceAccess(),
             _agents,
-            new InferenceSettingsService());
+            new InferenceSettingsService(),
+            new SharpMind.Studio.Core.Mcp.McpServerHost());
     }
 
     [Fact]

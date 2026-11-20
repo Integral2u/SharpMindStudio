@@ -68,6 +68,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   context folder set to **Never** refuses whatever the tool says. A tool set to
   **Always** is not downgraded by a folder that only asks. An agent that asks for
   more than the session allows raises a prompt that is never remembered.
+- **MCP servers** - Settings > System > MCP adds stdio servers with a command,
+  arguments and environment. **Connect** starts the process and needs the project's
+  **Run** permission; the tools it advertises join the normal tool list under an
+  `MCP` group and stay **off** until you enable them. Names are namespaced per
+  server, and Studio gates the call, not what the server does with it.
 - **Attachments on remote providers** - images, documents and generic files are
   sent as OpenAI content parts built from the artifact's bytes and media type:
   `image_url` for images, `file` for PDFs and anything else, inlined text for text
