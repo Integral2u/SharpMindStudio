@@ -1048,7 +1048,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     display: grid;
     place-items: center;
     padding: 1rem;
-    background: rgba(2, 6, 10, .78);
+    background: var(--shadow);
     backdrop-filter: blur(5px);
     overflow-y: auto;
 }
@@ -1073,7 +1073,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     gap: 1rem;
     padding: .75rem 1rem;
     border-bottom: 1px solid var(--line);
-    background: rgba(16, 23, 32, .96);
+    background: var(--panel);
     font-family: var(--mono);
     color: var(--muted);
 }
@@ -1292,7 +1292,7 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .55rem .65rem;
     border: 1px solid var(--line);
     border-radius: .55rem;
-    background: rgba(15, 22, 32, .55);
+    background: var(--panel-soft);
 }
 
 .gateway-device-qr {

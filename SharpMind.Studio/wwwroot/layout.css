@@ -391,7 +391,7 @@ button.nav-chat-link {
     padding: .3rem .45rem;
     border: 1px solid var(--line);
     border-radius: .35rem;
-    background: rgba(8, 13, 20, .65);
+    background: var(--panel-soft);
     color: var(--text);
     font-family: var(--mono);
     font-size: .68rem;
@@ -557,7 +557,7 @@ button.nav-chat-link {
     gap: 1rem;
     padding: .55rem 2rem;
     border-bottom: 1px solid var(--line);
-    background: rgba(11, 16, 22, .72);
+    background: var(--panel);
     backdrop-filter: blur(12px);
 }
 
@@ -811,4 +811,25 @@ body[data-appearance="light"] .wave {
 
 body[data-appearance="light"] .sidebar::after {
     opacity: .55;
+}
+
+body[data-appearance="light"] .sidebar {
+    background:
+        linear-gradient(180deg,
+            rgba(var(--accent-rgb), .16) 0%,
+            rgba(var(--accent-rgb), .06) 45%,
+            var(--bg) 100%);
+}
+
+/* Light appearance: the faint chrome links sat just under a comfortable
+   contrast on white at their small sizes. */
+body[data-appearance="light"] .topbar-links a,
+body[data-appearance="light"] .sidebar-foot .github-link,
+body[data-appearance="light"] .studio-version,
+body[data-appearance="light"] .studio-version a {
+    color: var(--muted);
+}
+
+body[data-appearance="light"] .topbar {
+    background: var(--panel);
 }

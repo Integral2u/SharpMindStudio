@@ -380,7 +380,7 @@
     padding: .75rem .8rem;
     border: 1px solid var(--line);
     border-radius: .6rem;
-    background: rgba(15, 22, 32, .55);
+    background: var(--panel-soft);
     color: var(--text);
     text-align: left;
     cursor: pointer;
@@ -431,7 +431,7 @@
     padding: .55rem .7rem;
     border: 1px solid var(--line);
     border-radius: .55rem;
-    background: rgba(15, 22, 32, .5);
+    background: var(--inset);
 }
 
 .status.unknown::before {
@@ -511,7 +511,7 @@
     align-items: center;
     justify-content: center;
     padding: 1rem;
-    background: rgba(3, 7, 11, .72);
+    background: var(--shadow);
     backdrop-filter: blur(6px);
 }
 
@@ -520,7 +520,7 @@
     padding: 1.15rem;
     border: 1px solid var(--line-strong);
     border-radius: .8rem;
-    background: rgba(16, 24, 33, .98);
+    background: var(--panel);
     box-shadow: 0 24px 80px var(--shadow);
 }
 
@@ -548,7 +548,7 @@
     padding: .55rem .65rem;
     border: 1px solid var(--line-strong);
     border-radius: .45rem;
-    background: rgba(8, 13, 18, .9);
+    background: var(--panel-soft);
     color: var(--text);
     outline: none;
 }

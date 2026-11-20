@@ -65,7 +65,7 @@
     padding: .55rem .7rem;
     border: 1px solid var(--line);
     border-radius: .5rem;
-    background: rgba(10, 17, 24, .45);
+    background: var(--panel-soft);
 }
 
 .training-metrics strong {
@@ -112,7 +112,7 @@
     padding: .55rem .7rem;
     border: 1px solid var(--line);
     border-radius: .5rem;
-    background: rgba(10, 17, 24, .45);
+    background: var(--panel-soft);
 }
 
 .training-review strong {
@@ -127,7 +127,7 @@
     padding: .8rem;
     border: 1px solid var(--line);
     border-radius: .6rem;
-    background: rgba(10, 17, 24, .35);
+    background: var(--inset);
 }
 
 .training-source-head {
@@ -193,7 +193,7 @@
     padding: .8rem;
     border: 1px solid var(--line);
     border-radius: .6rem;
-    background: rgba(10, 17, 24, .35);
+    background: var(--inset);
 }
 
 .training-plan-head {
@@ -419,7 +419,7 @@
     padding: .65rem .8rem;
     border: 1px solid var(--line);
     border-radius: .55rem;
-    background: rgba(10, 17, 24, .35);
+    background: var(--inset);
 }
 
 .training-job > div {
@@ -445,7 +445,7 @@
     padding: 1rem;
     border: 1px solid var(--line);
     border-radius: .7rem;
-    background: rgba(10, 17, 24, .45);
+    background: var(--panel-soft);
 }
 
 .training-card h3 {
