@@ -105,19 +105,47 @@
                         <label class="field-label" for="chat-provider">Provider</label>
                         <select id="chat-provider" class="input" @onchange="SetProvider">
                             <option value="local" selected="@(!_remoteChat)">Local model</option>
-                            @foreach (RemoteProviderPreset provider in RemoteProviders.All)
-                            {
-                                <option value="@provider.Id"
-                                        selected="@(_remoteChat && _computeProviderId is null && _remoteProviderId == provider.Id)">
-                                    @provider.Name@(provider.Beta ? " (beta)" : "")
-                                </option>
+                            @{
+                                List<RemoteProviderPreset> configuredProviders =
+                                    [.. RemoteProviders.All.Where(provider => OpenRouter.HasApiKeyFor(provider.Id))];
+                                List<RemoteProviderPreset> availableProviders =
+                                    [.. RemoteProviders.All.Where(provider => !OpenRouter.HasApiKeyFor(provider.Id))];
                             }
-                            @foreach (ComputeProviderSettings host in Compute.Providers)
+                            @if (configuredProviders.Count > 0)
                             {
-                                <option value="@($"compute:{host.Id}")" selected="@(_computeProviderId == host.Id)"
-                                        title="@ComputeProviderPrefabs.Find(host.Prefab).Description">
-                                    @host.Name
-                                </option>
+                                <optgroup label="Configured">
+                                    @foreach (RemoteProviderPreset provider in configuredProviders)
+                                    {
+                                        <option value="@provider.Id"
+                                                selected="@(_remoteChat && _computeProviderId is null && _remoteProviderId == provider.Id)">
+                                            @provider.Name@(provider.Beta ? " (beta)" : "")
+                                        </option>
+                                    }
+                                </optgroup>
+                            }
+                            @if (availableProviders.Count > 0)
+                            {
+                                <optgroup label="Available">
+                                    @foreach (RemoteProviderPreset provider in availableProviders)
+                                    {
+                                        <option value="@provider.Id"
+                                                selected="@(_remoteChat && _computeProviderId is null && _remoteProviderId == provider.Id)">
+                                            @provider.Name@(provider.Beta ? " (beta)" : "")
+                                        </option>
+                                    }
+                                </optgroup>
+                            }
+                            @if (Compute.Providers.Count > 0)
+                            {
+                                <optgroup label="Compute hosts">
+                                    @foreach (ComputeProviderSettings host in Compute.Providers)
+                                    {
+                                        <option value="@($"compute:{host.Id}")" selected="@(_computeProviderId == host.Id)"
+                                                title="@ComputeProviderPrefabs.Find(host.Prefab).Description">
+                                            @host.Name
+                                        </option>
+                                    }
+                                </optgroup>
                             }
                         </select>
                     </div>

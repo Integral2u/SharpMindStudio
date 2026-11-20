@@ -26,9 +26,29 @@
             <div class="row" style="gap:.5rem;">
                 <select id="remote-provider" class="input" style="max-width: 18rem;"
                         @bind="_providerId" @bind:after="OnProviderChanged">
-                    @foreach (RemoteProviderPreset provider in RemoteProviders.All)
+                    @{
+                        List<RemoteProviderPreset> configuredProviders =
+                            [.. RemoteProviders.All.Where(provider => OpenRouter.HasApiKeyFor(provider.Id))];
+                        List<RemoteProviderPreset> availableProviders =
+                            [.. RemoteProviders.All.Where(provider => !OpenRouter.HasApiKeyFor(provider.Id))];
+                    }
+                    @if (configuredProviders.Count > 0)
                     {
-                        <option value="@provider.Id">@provider.Name@(provider.Beta ? " (beta)" : "")</option>
+                        <optgroup label="Configured">
+                            @foreach (RemoteProviderPreset provider in configuredProviders)
+                            {
+                                <option value="@provider.Id">@provider.Name@(provider.Beta ? " (beta)" : "")</option>
+                            }
+                        </optgroup>
+                    }
+                    @if (availableProviders.Count > 0)
+                    {
+                        <optgroup label="Available">
+                            @foreach (RemoteProviderPreset provider in availableProviders)
+                            {
+                                <option value="@provider.Id">@provider.Name@(provider.Beta ? " (beta)" : "")</option>
+                            }
+                        </optgroup>
                     }
                 </select>
                 @if (_preset.Beta)

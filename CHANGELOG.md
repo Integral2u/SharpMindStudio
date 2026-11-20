@@ -68,6 +68,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   context folder set to **Never** refuses whatever the tool says. A tool set to
   **Always** is not downgraded by a folder that only asks. An agent that asks for
   more than the session allows raises a prompt that is never remembered.
+- **Providers grouped by setup** - the provider pickers on the landing page, in Chat
+  and in Settings separate routers that already have a key from the ones still to
+  set up, and list Compute hosts in their own group.
 - **Light appearance** - Settings > Appearance has **Dark** and **Light**. The palette
   is tokenised, so panels, chat, tables and badges follow the appearance instead of
   assuming a dark background. Accent presets have a light variant, and a custom
