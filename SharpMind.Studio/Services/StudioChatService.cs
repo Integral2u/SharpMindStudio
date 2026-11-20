@@ -1940,6 +1940,11 @@ public sealed class StudioChatService : IAsyncDisposable
 #endif
         session.ShowThinking = profile.ShowThinking;
         session.EnableThinking = profile.EnableThinking;
+        session.MtpDraft = profile.MtpDraft;
+        session.MtpDraftTokens = Math.Clamp(
+            profile.MtpDraftTokens ?? SharpMind.Inference.GenerationConfig.Default.MtpDraftTokens,
+            1,
+            SharpMind.Inference.GenerationConfig.MaxMtpDraftTokens);
         session.ToolCallRecovery = profile.ToolCallRecovery;
     }
 

@@ -68,6 +68,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   context folder set to **Never** refuses whatever the tool says. A tool set to
   **Always** is not downgraded by a folder that only asks. An agent that asks for
   more than the session allows raises a prompt that is never remembered.
+- **MTP drafting** - a model with a multi-token prediction head uses it by default.
+  The profile editor has **MTP draft** (On, Off or inherit) and the draft chain
+  length (1-8, blank means the engine default of 4). Tuned presets set 6, 4 and 2
+  for Performance, Balanced and Accuracy, and a session can override either value.
+  A model without an MTP head ignores the setting.
 - **Providers grouped by setup** - the provider pickers on the landing page, in Chat
   and in Settings separate routers that already have a key from the ones still to
   set up, and list Compute hosts in their own group.

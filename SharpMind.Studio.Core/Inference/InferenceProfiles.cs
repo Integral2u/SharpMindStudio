@@ -25,6 +25,12 @@ public sealed record InferenceOverrides
     public int? PromptLookupDraft { get; init; }
     public bool? ShowThinking { get; init; }
     public bool? EnableThinking { get; init; }
+
+    /// <summary>Use the model's multi-token prediction head when it has one.</summary>
+    public bool? MtpDraft { get; init; }
+
+    /// <summary>Draft chain length; null uses the engine default.</summary>
+    public int? MtpDraftTokens { get; init; }
     public string? Compactor { get; init; }
 
     /// <summary>LFM3-Audio TTS voice phrase: "female" or "male".</summary>
@@ -71,6 +77,7 @@ public sealed record InferenceOverrides
         PromptLookupDraft = 0,
         ShowThinking = true,
         EnableThinking = false,
+        MtpDraft = true,
         Compactor = "Summarize",
     };
 }
@@ -98,6 +105,8 @@ public sealed record ResolvedInference
     public required int PromptLookupDraft { get; init; }
     public required bool ShowThinking { get; init; }
     public required bool EnableThinking { get; init; }
+    public required bool MtpDraft { get; init; }
+    public int? MtpDraftTokens { get; init; }
     public required string Compactor { get; init; }
     public required IReadOnlyDictionary<string, string> Sources { get; init; }
 }
@@ -177,6 +186,8 @@ public static class InferenceResolver
             PromptLookupDraft = Value("PromptLookupDraft", session?.PromptLookupDraft, model?.PromptLookupDraft, family?.PromptLookupDraft, system.PromptLookupDraft, 0),
             ShowThinking = Value("ShowThinking", session?.ShowThinking, model?.ShowThinking, family?.ShowThinking, system.ShowThinking, true),
             EnableThinking = Value("EnableThinking", session?.EnableThinking, model?.EnableThinking, family?.EnableThinking, system.EnableThinking, false),
+            MtpDraft = Value("MtpDraft", session?.MtpDraft, model?.MtpDraft, family?.MtpDraft, system.MtpDraft, true),
+            MtpDraftTokens = Nullable("MtpDraftTokens", session?.MtpDraftTokens, model?.MtpDraftTokens, family?.MtpDraftTokens, system.MtpDraftTokens),
             Compactor = String("Compactor", session?.Compactor, model?.Compactor, family?.Compactor, system.Compactor, "Summarize"),
             Sources = sources,
         };

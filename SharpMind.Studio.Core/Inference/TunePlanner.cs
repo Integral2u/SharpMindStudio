@@ -123,6 +123,13 @@ public static class TunePlanner
             RepetitionWindow = 0,
             ShowThinking = true,
             EnableThinking = false,
+            MtpDraft = true,
+            MtpDraftTokens = preset switch
+            {
+                TunePreset.Performance => 6,
+                TunePreset.Balanced => 4,
+                _ => 2,
+            },
             Compactor = "None",
         };
 

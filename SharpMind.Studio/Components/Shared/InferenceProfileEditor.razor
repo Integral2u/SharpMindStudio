@@ -158,6 +158,25 @@
         </div>
 
         <div class="field">
+            <label class="field-label">MTP draft</label>
+            <select class="input" value="@BoolValue(Value.MtpDraft)"
+                    @onchange="e => Update(v => v with { MtpDraft = Bool(e) })">
+                @if (AllowInherit) { <option value="">Inherit</option> }
+                <option value="true">On</option>
+                <option value="false">Off</option>
+            </select>
+            <div class="small faint editor-source">@SourceLabel("MtpDraft")</div>
+        </div>
+
+        <div class="field">
+            <label class="field-label">MTP draft tokens</label>
+            <input class="input" type="number" min="1" max="8" value="@Value.MtpDraftTokens"
+                   placeholder="Engine default (4)"
+                   @onchange="e => Update(v => v with { MtpDraftTokens = Integer(e) })" />
+            <div class="small faint editor-source">@SourceLabel("MtpDraftTokens")</div>
+        </div>
+
+        <div class="field">
             <label class="field-label">Max context</label>
             <input class="input" type="number" min="64" value="@Value.MaxContextTokens"
                    placeholder="Model context"
@@ -274,6 +293,8 @@
         "RepetitionWindow" => Effective?.RepetitionWindow.ToString(),
         "ShowThinking" => Effective is null ? null : (Effective.ShowThinking ? "On" : "Off"),
         "EnableThinking" => Effective is null ? null : (Effective.EnableThinking ? "On" : "Off"),
+        "MtpDraft" => Effective is null ? null : (Effective.MtpDraft ? "On" : "Off"),
+        "MtpDraftTokens" => Effective?.MtpDraftTokens?.ToString() ?? "engine default",
         _ => null,
     };
 }
