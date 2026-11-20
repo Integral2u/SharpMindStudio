@@ -9,7 +9,7 @@ libraries and shares their model, tokenizer and run formats. Models, datasets,
 sessions and checkpoints stay on your machine until you explicitly send a job to a
 compute host or a prompt to a remote provider.
 
-- **Site and wiki:** <https://integral2u.github.io/SharpMindStudio/>
+- **Site and wiki:** <https://www.integral2u.com/>
 - **Watch:** [YouTube playlist](https://www.youtube.com/playlist?list=PLcjsJKYG3RwU)
 - **Installer:** <https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMind.Studio.Setup.msi.zip>
 - **Zip:** <https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMindStudio.zip>
