@@ -2,45 +2,72 @@
 
 @if (Artifacts is { Length: > 0 })
 {
-    <div class="chat-artifacts">
-        @foreach (ChatArtifact artifact in Artifacts)
+    ChatArtifact[] items = Artifacts;
+    ChatArtifact? image = items.FirstOrDefault(IsImage);
+    ChatArtifact? audio = items.FirstOrDefault(IsAudio);
+
+    <div class="reply-artifacts">
+        @if (image is not null)
         {
-            string url = DataUrl(artifact);
-            string name = artifact.FileName ?? DefaultName(artifact);
-            <div class="chat-artifact-card">
-                <div class="chat-artifact-head">
-                    <span>@Label(artifact) &middot; @(Duration(artifact) is { } duration ? $"{duration} · " : "")@Size(artifact)</span>
-                    <span class="chat-artifact-actions">
-                        @if (IsImage(artifact))
+            <a class="reply-thumb" href="@DataUrl(image)" target="_blank" rel="noopener"
+               title="Open @Name(image)">
+                <img src="@DataUrl(image)" alt="@Name(image)" />
+            </a>
+        }
+
+        <div class="reply-chip-row">
+            @foreach (ChatArtifact artifact in items.Take(3))
+            {
+                <span class="reply-chip" title="@Name(artifact)">
+                    <span class="kind">@Kind(artifact)</span>
+                    <span class="name">@Name(artifact)</span>
+                    <span class="size">@Size(artifact)</span>
+                    @if (CanOpen(artifact))
+                    {
+                        <a href="@DataUrl(artifact)" target="_blank" rel="noopener" title="Open">&#8599;</a>
+                    }
+                    <a href="@DataUrl(artifact)" download="@Name(artifact)" title="Download">&#8595;</a>
+                </span>
+            }
+            @if (items.Length > 3)
+            {
+                <button type="button" class="composer-overflow"
+                        title="More items" @onclick="() => _expanded = !_expanded">
+                    @(_expanded ? "−" : "…")
+                </button>
+            }
+        </div>
+
+        @if (_expanded && items.Length > 3)
+        {
+            <div class="reply-chip-row reply-overflow-list">
+                @foreach (ChatArtifact artifact in items.Skip(3))
+                {
+                    <span class="reply-chip" title="@Name(artifact)">
+                        <span class="kind">@Kind(artifact)</span>
+                        <span class="name">@Name(artifact)</span>
+                        <span class="size">@Size(artifact)</span>
+                        @if (CanOpen(artifact))
                         {
-                            <a href="@url" target="_blank" rel="noopener">Open</a>
+                            <a href="@DataUrl(artifact)" target="_blank" rel="noopener" title="Open">&#8599;</a>
                         }
-                        <a href="@url" download="@name">Download</a>
+                        <a href="@DataUrl(artifact)" download="@Name(artifact)" title="Download">&#8595;</a>
                     </span>
-                </div>
-                @if (IsImage(artifact))
-                {
-                    <img class="chat-artifact-image" src="@url" alt="@name" />
-                }
-                else if (IsAudio(artifact))
-                {
-                    <audio class="chat-artifact-audio" controls src="@url"></audio>
-                }
-                else if (IsText(artifact))
-                {
-                    <pre class="chat-artifact-text">@Text(artifact)</pre>
-                }
-                else
-                {
-                    <a class="button chat-artifact-file" download="@name" href="@url">@name</a>
                 }
             </div>
+        }
+
+        @if (audio is not null)
+        {
+            <audio class="chat-artifact-audio" controls src="@DataUrl(audio)"></audio>
         }
     </div>
 }
 
 @code {
     [Parameter] public ChatArtifact[]? Artifacts { get; set; }
+
+    private bool _expanded;
 
     private static bool IsImage(ChatArtifact artifact) =>
         artifact.Type.Contains("image", StringComparison.OrdinalIgnoreCase);
@@ -53,15 +80,22 @@
         || artifact.Type.Contains("code", StringComparison.OrdinalIgnoreCase)
         || artifact.Type.Contains("json", StringComparison.OrdinalIgnoreCase);
 
-    private static string Label(ChatArtifact artifact) =>
-        IsImage(artifact) ? "Image"
-        : IsAudio(artifact) ? "Audio"
-        : artifact.Type.Contains("json", StringComparison.OrdinalIgnoreCase) ? "JSON"
-        : IsText(artifact) ? "Text"
-        : "File";
+    private static bool CanOpen(ChatArtifact artifact) =>
+        IsImage(artifact) || IsText(artifact)
+        || (artifact.MimeType ?? "").Contains("pdf", StringComparison.OrdinalIgnoreCase);
 
-    private static string DefaultName(ChatArtifact artifact) =>
-        artifact.Type.ToLowerInvariant() switch
+    private static string Kind(ChatArtifact artifact) =>
+        IsImage(artifact) ? "IMG"
+        : IsAudio(artifact) ? "AUD"
+        : artifact.Type.Contains("json", StringComparison.OrdinalIgnoreCase) ? "JSON"
+        : artifact.Type.Contains("code", StringComparison.OrdinalIgnoreCase) ? "CODE"
+        : IsText(artifact) ? "TXT"
+        : (artifact.MimeType ?? "").Contains("pdf", StringComparison.OrdinalIgnoreCase) ? "PDF"
+        : (artifact.MimeType ?? "").Contains("zip", StringComparison.OrdinalIgnoreCase) ? "ZIP"
+        : "FILE";
+
+    private static string Name(ChatArtifact artifact) =>
+        artifact.FileName ?? artifact.Type.ToLowerInvariant() switch
         {
             "image" => "image.png",
             "audio" => "audio.wav",
@@ -75,65 +109,18 @@
     {
         long bytes = artifact.Content.LongLength;
         return bytes < 1024 ? $"{bytes} B"
-            : bytes < 1024 * 1024 ? $"{bytes / 1024.0:F1} KB"
+            : bytes < 1024 * 1024 ? $"{bytes / 1024.0:F0} KB"
             : $"{bytes / (1024.0 * 1024.0):F1} MB";
-    }
-
-    /// <summary>
-    /// Reads the duration out of a RIFF/WAVE header. Short synthesized clips are
-    /// otherwise indistinguishable from an empty one in the HTML player (which
-    /// rounds anything under a second to 0:00).
-    /// </summary>
-    private static string? Duration(ChatArtifact artifact)
-    {
-        if (!IsAudio(artifact)) return null;
-        byte[] bytes = artifact.Content;
-        if (bytes.Length < 44 ||
-            bytes[0] != (byte)'R' || bytes[1] != (byte)'I' ||
-            bytes[2] != (byte)'F' || bytes[3] != (byte)'F' ||
-            bytes[8] != (byte)'W' || bytes[9] != (byte)'A' ||
-            bytes[10] != (byte)'V' || bytes[11] != (byte)'E')
-            return null;
-
-        int sampleRate = 0, channels = 0, bits = 0, dataSize = 0;
-        int position = 12;
-        while (position + 8 <= bytes.Length)
-        {
-            string id = System.Text.Encoding.ASCII.GetString(bytes, position, 4);
-            int size = BitConverter.ToInt32(bytes, position + 4);
-            if (size < 0) break;
-
-            if (id == "fmt " && position + 24 <= bytes.Length)
-            {
-                channels = BitConverter.ToUInt16(bytes, position + 10);
-                sampleRate = BitConverter.ToInt32(bytes, position + 12);
-                bits = BitConverter.ToUInt16(bytes, position + 22);
-            }
-            else if (id == "data")
-            {
-                dataSize = Math.Min(size, bytes.Length - position - 8);
-                break;
-            }
-
-            position += 8 + size + (size & 1);
-        }
-
-        if (sampleRate <= 0 || channels <= 0 || bits <= 0 || dataSize <= 0) return null;
-        double seconds = (double)dataSize / (sampleRate * channels * (bits / 8));
-        return seconds < 60
-            ? $"{seconds:0.0} s"
-            : $"{(int)(seconds / 60)}:{(int)(seconds % 60):00}";
     }
 
     private static string DataUrl(ChatArtifact artifact) =>
         $"data:{Mime(artifact)};base64,{Convert.ToBase64String(artifact.Content)}";
 
-    private static string Text(ChatArtifact artifact) =>
-        System.Text.Encoding.UTF8.GetString(artifact.Content);
-
     private static string Mime(ChatArtifact artifact)
     {
+        if (!string.IsNullOrWhiteSpace(artifact.MimeType)) return artifact.MimeType!;
         if (artifact.Type.Contains('/')) return artifact.Type;
+
         string extension = Path.GetExtension(artifact.FileName ?? "").ToLowerInvariant();
         return artifact.Type.ToLowerInvariant() switch
         {

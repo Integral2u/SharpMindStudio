@@ -798,3 +798,50 @@
     gap: .3rem .8rem;
     padding: 0 .2rem;
 }
+
+/* Reply footer: generated items sit at the bottom of the assistant bubble. */
+.reply-artifacts {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+    margin-top: .55rem;
+    padding-top: .55rem;
+    border-top: 1px solid var(--line);
+}
+
+.reply-thumb img {
+    display: block;
+    max-width: 240px;
+    max-height: 180px;
+    border: 1px solid var(--line);
+    border-radius: .55rem;
+}
+
+.reply-chip-row {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    overflow: hidden;
+    flex-wrap: nowrap;
+}
+
+.reply-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    max-width: 15rem;
+    padding: .16rem .45rem;
+    border: 1px solid var(--line);
+    border-radius: .45rem;
+    background: var(--panel-soft);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: .62rem;
+    white-space: nowrap;
+}
+
+.reply-chip .kind { color: var(--faint); letter-spacing: .05em; }
+.reply-chip .name { overflow: hidden; text-overflow: ellipsis; }
+.reply-chip .size { color: var(--faint); }
+.reply-chip a { color: var(--accent); text-decoration: none; padding: 0 .1rem; }
+.reply-overflow-list { flex-wrap: wrap; overflow: visible; }
