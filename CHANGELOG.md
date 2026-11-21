@@ -19,6 +19,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **MCP was buried and its tools were hard to allow.** The server panel sat at the
+  bottom of Settings, under Inference and System defaults, and connecting a server
+  did not refresh the tool list until a reload. MCP now has its own Settings panel:
+  add a server, Connect, then set each tool to Off, Never, Ask or Always right
+  there. Connecting still needs the project's Run permission, and the same
+  permissions are visible in Work under Tool permissions.
 - **Delegated agents did not receive MCP tools.** A specialist got the file,
   web, process and plugin tools but not the MCP tools its parent had. Agents
   now inherit the ones you enabled, subject to the agent's own allow list; an

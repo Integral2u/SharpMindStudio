@@ -1,69 +1,116 @@
 @using SharpMind.Studio.Core.Mcp
 @using SharpMind.Studio.Core.Work
 @using SharpMind.Studio.Services
+@implements IDisposable
 @inject McpSettingsStore Store
 @inject McpServerHost Host
 @inject WorkToolService ToolCatalog
 @inject StudioWorkService Work
 
-<details class="settings-subgroup">
-    <summary class="settings-subgroup-head">
+<details class="panel settings-collapsible" open>
+    <summary class="panel-head">
         <div>
-            <div class="eyebrow">MCP</div>
-            <h3>Servers</h3>
+            <div class="eyebrow">Tools</div>
+            <h2>MCP servers</h2>
         </div>
         <span class="faint small mono">@Store.Servers.Count configured</span>
     </summary>
     <div class="panel-body stack">
         <p class="small faint">
-            Starting a server needs this project's <strong>Run</strong> permission, because the
-            server is a real process. Its tools appear in the tool list and stay
-            <strong>off</strong> until you enable them. Studio gates the call, not what the server
-            does with it.
+            An MCP server is a local process that publishes tools. Studio adds them to the
+            project's tool list, so they sit beside the built-in and plugin tools. Adding a
+            server does not start it: <strong>Connect</strong> starts the process and asks
+            for this project's <strong>Run</strong> permission first. Each tool stays
+            <strong>Off</strong> until you allow it below.
         </p>
+
+        @if (Store.Servers.Count == 0)
+        {
+            <div class="small faint">No servers yet. Add one at the bottom of this panel.</div>
+        }
 
         @foreach (McpServerSettings server in Store.Servers)
         {
             bool running = Host.IsRunning(server.Id);
-            int toolCount = running
-                ? Host.Connected.FirstOrDefault(entry =>
-                    entry.ServerId.Equals(server.Id, StringComparison.OrdinalIgnoreCase))?.Tools.Count ?? 0
-                : 0;
+            IReadOnlyList<McpToolInfo> tools = ToolsFor(server.Id);
 
-            <div class="spread" style="align-items:flex-start;gap:1rem;">
-                <div>
-                    <strong>@server.Name</strong>
-                    <div class="small faint mono">@server.Command @string.Join(" ", server.Args)</div>
-                    <div class="small faint">
-                        @(running ? $"connected · {toolCount} tool(s)" : "stopped")
-                        @if (!server.Enabled) { <text> · disabled</text> }
+            <div class="settings-subgroup" style="padding:.7rem;">
+                <div class="spread" style="align-items:flex-start;gap:1rem;">
+                    <div>
+                        <strong>@server.Name</strong>
+                        <div class="small faint mono">@server.Command @string.Join(" ", server.Args)</div>
+                        <div class="small faint">
+                            @(running ? $"connected - {tools.Count} tool(s)" : "stopped")
+                            @if (!server.Enabled) { <text> - disabled</text> }
+                        </div>
+                        <div class="row" style="margin-top:.4rem;align-items:center;gap:.4rem;">
+                            <label class="small faint" for="mcp-idle-@server.Id">Stop when idle</label>
+                            <select id="mcp-idle-@server.Id" class="input" style="width:auto;"
+                                    title="Studio stops this server after the selected idle time. Never keeps it running until Studio exits."
+                                    value="@server.IdleSeconds"
+                                    @onchange="args => SetIdle(server, args)">
+                                @foreach ((int seconds, string label) in IdleOptions)
+                                {
+                                    <option value="@seconds">@label</option>
+                                }
+                            </select>
+                        </div>
                     </div>
-                    <div class="row" style="margin-top:.4rem;align-items:center;gap:.4rem;">
-                        <label class="small faint" for="mcp-idle-@server.Id">Stop when idle</label>
-                        <select id="mcp-idle-@server.Id" class="input" style="width:auto;"
-                                title="Studio stops this server after the selected idle time. Never keeps it running until Studio exits."
-                                value="@server.IdleSeconds"
-                                @onchange="args => SetIdle(server, args)">
-                            @foreach ((int seconds, string label) in IdleOptions)
+                    <div class="row">
+                        <button type="button" class="button" @onclick="() => ConnectAsync(server)"
+                                disabled="@running">
+                            Connect
+                        </button>
+                        <button type="button" class="button" @onclick="() => DisconnectAsync(server)"
+                                disabled="@(!running)">
+                            Disconnect
+                        </button>
+                        <button type="button" class="button danger" @onclick="() => RemoveAsync(server)">
+                            Remove
+                        </button>
+                    </div>
+                </div>
+
+                @if (running)
+                {
+                    @if (tools.Count == 0)
+                    {
+                        <div class="small faint" style="margin-top:.5rem;">
+                            The server advertised no tools.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="spread" style="margin:.6rem 0 .3rem;">
+                            <span class="small faint">Tools from this server, for this project</span>
+                            <button type="button" class="button" @onclick="() => AllowAll(server.Id, tools)"
+                                    title="Set every tool from this server to Ask. Each call still asks before it runs.">
+                                Allow all (Ask)
+                            </button>
+                        </div>
+                        <div class="work-tools">
+                            @foreach (McpToolInfo tool in tools)
                             {
-                                <option value="@seconds">@label</option>
+                                string name = $"mcp__{server.Id}__{tool.Name}";
+                                WorkToolPermission current = Permission(name);
+                                <div class="work-tool-row" title="@tool.Description">
+                                    <span class="work-tool-name">@tool.Name</span>
+                                    <div class="segmented" role="group" aria-label="@name permission">
+                                        @foreach (WorkToolPermission option in ToolOptions)
+                                        {
+                                            <button type="button"
+                                                    class="segmented-option @(current == option ? "active" : "") @Class(option)"
+                                                    title="@Explain(option)"
+                                                    @onclick="() => SetToolPermission(name, option)">
+                                                @Label(option)
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
                             }
-                        </select>
-                    </div>
-                </div>
-                <div class="row">
-                    <button type="button" class="button" @onclick="() => ConnectAsync(server)"
-                            disabled="@running">
-                        Connect
-                    </button>
-                    <button type="button" class="button" @onclick="() => DisconnectAsync(server)"
-                            disabled="@(!running)">
-                        Disconnect
-                    </button>
-                    <button type="button" class="button danger" @onclick="() => RemoveAsync(server)">
-                        Remove
-                    </button>
-                </div>
+                        </div>
+                    }
+                }
             </div>
         }
 
@@ -112,13 +159,13 @@
 </details>
 
 @code {
-    private string _id = "";
-    private string _name = "";
-    private string _command = "";
-    private string _args = "";
-    private string _environment = "";
-    private string? _status;
-    private int _idleSeconds = 300;
+    private static readonly WorkToolPermission[] ToolOptions =
+    [
+        WorkToolPermission.Off,
+        WorkToolPermission.Never,
+        WorkToolPermission.Ask,
+        WorkToolPermission.Always,
+    ];
 
     private static readonly (int Seconds, string Label)[] IdleOptions =
     [
@@ -128,6 +175,89 @@
         (3600, "60 minutes"),
         (0, "Never"),
     ];
+
+    private string _id = "";
+    private string _name = "";
+    private string _command = "";
+    private string _args = "";
+    private string _environment = "";
+    private string? _status;
+    private int _idleSeconds = 300;
+
+    protected override void OnInitialized() => ToolCatalog.Changed += OnCatalogChanged;
+
+    private void OnCatalogChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => ToolCatalog.Changed -= OnCatalogChanged;
+
+    private IReadOnlyList<McpToolInfo> ToolsFor(string serverId) =>
+        Host.Connected
+            .FirstOrDefault(entry =>
+                entry.ServerId.Equals(serverId, StringComparison.OrdinalIgnoreCase))
+            ?.Tools ?? [];
+
+    private WorkToolPermission Permission(string name) =>
+        Work.Settings.ToolPermissions.TryTool(name, out WorkToolPermission value)
+            ? value
+            : WorkToolPermission.Off;
+
+    private void SetToolPermission(string name, WorkToolPermission permission)
+    {
+        SaveTools(tools => tools[name] = permission);
+        _status = permission == WorkToolPermission.Off
+            ? $"{name}: off."
+            : $"{name}: {Label(permission)}.";
+    }
+
+    private void AllowAll(string serverId, IReadOnlyList<McpToolInfo> tools)
+    {
+        SaveTools(entries =>
+        {
+            foreach (McpToolInfo tool in tools)
+                entries[$"mcp__{serverId}__{tool.Name}"] = WorkToolPermission.Ask;
+        });
+        _status = $"{tools.Count} tool(s) from {serverId} set to Ask.";
+    }
+
+    /// <summary>Writes the project tool layer; this is the consent a session reads.</summary>
+    private void SaveTools(Action<Dictionary<string, WorkToolPermission>> change)
+    {
+        var tools = new Dictionary<string, WorkToolPermission>(
+            Work.Settings.ToolPermissions.Tools, StringComparer.OrdinalIgnoreCase);
+        var groups = new Dictionary<string, WorkToolPermission>(
+            Work.Settings.ToolPermissions.Groups, StringComparer.OrdinalIgnoreCase);
+        change(tools);
+
+        Work.Save(
+            Work.Settings with
+            {
+                ToolPermissions = new ToolPermissionSet { Tools = tools, Groups = groups },
+            },
+            Work.Memory);
+    }
+
+    private void SetIdle(McpServerSettings server, ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out int seconds)) return;
+
+        try
+        {
+            McpServerSettings updated = server with { IdleSeconds = seconds };
+            Store.Save(updated);
+            // A running server keeps its process and tools; only the timeout changes.
+            Host.UpdateSettings(updated);
+            _status = seconds == 0
+                ? $"{server.Name} stays running until Studio exits."
+                : $"{server.Name} stops after {IdleLabel(seconds)} idle.";
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private static string IdleLabel(int seconds) =>
+        IdleOptions.FirstOrDefault(option => option.Seconds == seconds).Label ?? $"{seconds} seconds";
 
     private async Task AddAsync()
     {
@@ -149,7 +279,7 @@
 
             Store.Save(server);
             _id = _name = _command = _args = _environment = "";
-            _status = $"Added {server.Name}.";
+            _status = $"Added {server.Name}. Connect it to see its tools.";
         }
         catch (Exception ex)
         {
@@ -176,7 +306,9 @@
                 server, () => Task.FromResult(true));
 
             ToolCatalog.RegisterMcpTools(server.Id, server.Name, tools);
-            _status = $"{server.Name}: {tools.Count} tool(s). Enable them in the tool list.";
+            _status = tools.Count == 0
+                ? $"{server.Name}: no tools advertised."
+                : $"{server.Name}: {tools.Count} tool(s). Allow the ones you want below.";
         }
         catch (Exception ex)
         {
@@ -205,28 +337,24 @@
         _status = $"{server.Name} removed.";
     }
 
-    private void SetIdle(McpServerSettings server, ChangeEventArgs args)
+    private static string Label(WorkToolPermission value) => value switch
     {
-        if (!int.TryParse(args.Value?.ToString(), out int seconds)) return;
+        WorkToolPermission.Off => "Off",
+        WorkToolPermission.Never => "Never",
+        WorkToolPermission.Ask => "Ask",
+        _ => "Always",
+    };
 
-        try
-        {
-            McpServerSettings updated = server with { IdleSeconds = seconds };
-            Store.Save(updated);
-            // A running server keeps its process and tools; only the timeout changes.
-            Host.UpdateSettings(updated);
-            _status = seconds == 0
-                ? $"{server.Name} stays running until Studio exits."
-                : $"{server.Name} stops after {IdleLabel(seconds)} idle.";
-        }
-        catch (Exception ex)
-        {
-            _status = ex.Message;
-        }
-    }
+    private static string Class(WorkToolPermission value) =>
+        "is-" + Label(value).ToLowerInvariant();
 
-    private static string IdleLabel(int seconds) =>
-        IdleOptions.FirstOrDefault(option => option.Seconds == seconds).Label ?? $"{seconds} seconds";
+    private static string Explain(WorkToolPermission value) => value switch
+    {
+        WorkToolPermission.Off => "Off: the model never sees this tool.",
+        WorkToolPermission.Never => "Never: the tool is visible but every call is refused.",
+        WorkToolPermission.Ask => "Ask: the tool is visible and each call asks first.",
+        _ => "Always: the tool runs without asking.",
+    };
 
     private static IEnumerable<string> Lines(string text) =>
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
