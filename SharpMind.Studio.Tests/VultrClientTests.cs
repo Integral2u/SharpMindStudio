@@ -41,6 +41,61 @@ public sealed class VultrClientTests
     }
 
     [Fact]
+    public async Task ListPlans_FollowsTheNextCursor()
+    {
+        var paths = new List<string>();
+        var handler = new StubHandler(request =>
+        {
+            string path = request.RequestUri!.PathAndQuery;
+            paths.Add(path);
+            return path.Contains("cursor=page2", StringComparison.Ordinal)
+                ? JsonResponse("""
+                    {"plans":[
+                      {"id":"vcg-a40-24c-120g-48vram","type":"vcg","vcpu_count":24,"ram":131072,
+                       "disk":120,"monthly_cost":900,"hourly_cost":1.34,"gpu_vram_gb":48,
+                       "gpu_type":"NVIDIA A40","locations":["ewr"]}
+                    ],"meta":{"links":{"next":"","prev":""}}}
+                    """)
+                : JsonResponse("""
+                    {"plans":[
+                      {"id":"vc2-1c-1gb","type":"vc2","vcpu_count":1,"ram":1024,"disk":25,
+                       "monthly_cost":5,"hourly_cost":0.007,"gpu_vram_gb":0,"locations":["ewr"]}
+                    ],"meta":{"links":{"next":"https://api.vultr.com/v2/plans?per_page=500&cursor=page2","prev":""}}}
+                    """);
+        });
+
+        var client = new VultrClient(handler.Client);
+        IReadOnlyList<VultrPlan> plans = await client.ListPlansAsync(ApiKey);
+
+        Assert.Equal(2, plans.Count);
+        Assert.Contains(plans, plan => plan.Id == "vcg-a40-24c-120g-48vram");
+        Assert.Equal(2, paths.Count);
+        Assert.Contains("cursor=page2", paths[1]);
+    }
+
+    [Fact]
+    public async Task ListPlans_StopsWhenTheCursorDoesNotAdvance()
+    {
+        var requests = 0;
+        var handler = new StubHandler(_ =>
+        {
+            requests++;
+            return JsonResponse("""
+                {"plans":[
+                  {"id":"vc2-1c-1gb","type":"vc2","vcpu_count":1,"ram":1024,"disk":25,
+                   "monthly_cost":5,"hourly_cost":0.007,"gpu_vram_gb":0,"locations":["ewr"]}
+                ],"meta":{"links":{"next":"https://api.vultr.com/v2/plans?per_page=500","prev":""}}}
+                """);
+        });
+
+        var client = new VultrClient(handler.Client);
+        IReadOnlyList<VultrPlan> plans = await client.ListPlansAsync(ApiKey);
+
+        Assert.Single(plans);
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
     public async Task ListSshKeys_ParsesExistingKeys()
     {
         var handler = Json("""

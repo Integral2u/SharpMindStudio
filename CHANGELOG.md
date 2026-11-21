@@ -15,6 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   scanned recursively, the training folder at the top level only, and the result
   is sorted by name. The list refreshes after a download, a conversion or a
   finished run writes a file.
+- **Vultr showed only the first page of plans.** `per_page=500` is also the API
+  maximum and the plans catalogue is larger than that, so the tail — where the
+  GPU shapes people go looking for sit — was never listed. Every list endpoint
+  now follows `meta.links.next`, and the plan picker has a search box and a count
+  of plans hidden because the selected region does not offer them.
 
 ## [1.1.2.0] - 2026-11-15
 

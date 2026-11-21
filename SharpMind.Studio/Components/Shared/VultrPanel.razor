@@ -52,6 +52,11 @@
             </span>
         </div>
         <div class="field">
+            <label class="field-label" for="vultr-plan-search-@ProviderId">Find a plan</label>
+            <input id="vultr-plan-search-@ProviderId" class="input" @bind="_planSearch"
+                   @bind:event="oninput" placeholder="vcg, a40, 48" />
+        </div>
+        <div class="field">
             <label class="field-label" for="vultr-plan-@ProviderId">Plan</label>
             <select id="vultr-plan-@ProviderId" class="input" @bind="_planId">
                 @foreach (VultrPlan plan in VisiblePlans)
@@ -59,6 +64,16 @@
                     <option value="@plan.Id">@PlanLabel(plan)</option>
                 }
             </select>
+            @if (_plans.Count > 0)
+            {
+                <span class="small faint">
+                    @VisiblePlans.Count() of @_plans.Count plan(s) shown.
+                    @if (PlansHiddenByRegion > 0)
+                    {
+                        <text>@PlansHiddenByRegion hidden because they are not offered in @_region.</text>
+                    }
+                </span>
+            }
         </div>
         <div class="field">
             <label class="field-label" for="vultr-os-@ProviderId">Operating system</label>
@@ -161,11 +176,29 @@
     private bool HasInstance => !string.IsNullOrWhiteSpace(Provider?.VultrInstanceId);
     private string StatusLabel => Provider?.VultrInstanceStatus ?? "no instance";
 
-    private IEnumerable<VultrPlan> VisiblePlans =>
-        _plans.Where(plan =>
-            string.IsNullOrWhiteSpace(_region)
-            || plan.Regions.Count == 0
-            || plan.Regions.Contains(_region, StringComparer.OrdinalIgnoreCase));
+    private string _planSearch = "";
+
+    private bool InRegion(VultrPlan plan) =>
+        string.IsNullOrWhiteSpace(_region)
+        || plan.Regions.Count == 0
+        || plan.Regions.Contains(_region, StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<VultrPlan> VisiblePlans
+    {
+        get
+        {
+            string query = _planSearch.Trim();
+            return _plans.Where(plan =>
+                InRegion(plan)
+                && (plan.Id == _planId
+                    || query.Length == 0
+                    || plan.Id.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || plan.Type.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || (plan.GpuType ?? "").Contains(query, StringComparison.OrdinalIgnoreCase)));
+        }
+    }
+
+    private int PlansHiddenByRegion => _plans.Count(plan => !InRegion(plan));
 
     private VultrPlan? SelectedPlan =>
         _plans.FirstOrDefault(plan => plan.Id == _planId);

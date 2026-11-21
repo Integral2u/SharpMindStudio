@@ -123,14 +123,11 @@ public sealed class VultrClient
         string apiKey,
         CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await SendAsync(
-            apiKey, HttpMethod.Get, "plans?per_page=500", content: null, cancellationToken)
-            .ConfigureAwait(false);
+        List<JsonElement> items = await ReadAllPagesAsync(
+            apiKey, "plans?per_page=500", "plans", cancellationToken).ConfigureAwait(false);
 
-        using JsonDocument document = await ReadDocumentAsync(response, cancellationToken)
-            .ConfigureAwait(false);
         var plans = new List<VultrPlan>();
-        foreach (JsonElement item in Array(document.RootElement, "plans"))
+        foreach (JsonElement item in items)
         {
             string? id = ReadString(item, "id");
             if (string.IsNullOrWhiteSpace(id)) continue;
@@ -156,14 +153,11 @@ public sealed class VultrClient
         string apiKey,
         CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await SendAsync(
-            apiKey, HttpMethod.Get, "regions?per_page=500", content: null, cancellationToken)
-            .ConfigureAwait(false);
+        List<JsonElement> items = await ReadAllPagesAsync(
+            apiKey, "regions?per_page=500", "regions", cancellationToken).ConfigureAwait(false);
 
-        using JsonDocument document = await ReadDocumentAsync(response, cancellationToken)
-            .ConfigureAwait(false);
         var regions = new List<VultrRegion>();
-        foreach (JsonElement item in Array(document.RootElement, "regions"))
+        foreach (JsonElement item in items)
         {
             string? id = ReadString(item, "id");
             if (string.IsNullOrWhiteSpace(id)) continue;
@@ -182,14 +176,11 @@ public sealed class VultrClient
         string apiKey,
         CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await SendAsync(
-            apiKey, HttpMethod.Get, "os?per_page=500", content: null, cancellationToken)
-            .ConfigureAwait(false);
+        List<JsonElement> items = await ReadAllPagesAsync(
+            apiKey, "os?per_page=500", "os", cancellationToken).ConfigureAwait(false);
 
-        using JsonDocument document = await ReadDocumentAsync(response, cancellationToken)
-            .ConfigureAwait(false);
         var systems = new List<VultrOs>();
-        foreach (JsonElement item in Array(document.RootElement, "os"))
+        foreach (JsonElement item in items)
         {
             int? id = ReadInt(item, "id");
             string? name = ReadString(item, "name");
@@ -204,14 +195,11 @@ public sealed class VultrClient
         string apiKey,
         CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await SendAsync(
-            apiKey, HttpMethod.Get, "ssh-keys?per_page=500", content: null, cancellationToken)
-            .ConfigureAwait(false);
+        List<JsonElement> items = await ReadAllPagesAsync(
+            apiKey, "ssh-keys?per_page=500", "ssh_keys", cancellationToken).ConfigureAwait(false);
 
-        using JsonDocument document = await ReadDocumentAsync(response, cancellationToken)
-            .ConfigureAwait(false);
         var keys = new List<VultrSshKey>();
-        foreach (JsonElement item in Array(document.RootElement, "ssh_keys"))
+        foreach (JsonElement item in items)
         {
             string? id = ReadString(item, "id");
             if (string.IsNullOrWhiteSpace(id)) continue;
@@ -367,6 +355,55 @@ public sealed class VultrClient
             content: null,
             cancellationToken).ConfigureAwait(false);
         response.Dispose();
+    }
+
+    /// <summary>
+    /// Reads every page of a list endpoint. Vultr caps per_page at 500 and the
+    /// plans catalogue is larger than that, so a single request silently drops
+    /// the tail — which is where the GPU shapes people look for tend to sit.
+    /// </summary>
+    private async Task<List<JsonElement>> ReadAllPagesAsync(
+        string apiKey,
+        string path,
+        string arrayName,
+        CancellationToken cancellationToken)
+    {
+        var items = new List<JsonElement>();
+        string? next = path;
+
+        // Forty pages is a guard against a cursor that never ends, not a limit.
+        for (int page = 0; page < 40 && !string.IsNullOrWhiteSpace(next); page++)
+        {
+            using HttpResponseMessage response = await SendAsync(
+                apiKey, HttpMethod.Get, next, content: null, cancellationToken)
+                .ConfigureAwait(false);
+
+            using JsonDocument document = await ReadDocumentAsync(response, cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (JsonElement item in Array(document.RootElement, arrayName))
+                items.Add(item.Clone());
+
+            string? candidate = NextPath(document.RootElement);
+            next = string.Equals(candidate, next, StringComparison.Ordinal) ? null : candidate;
+        }
+
+        return items;
+    }
+
+    /// <summary>Turns <c>meta.links.next</c> into a path this client can send.</summary>
+    private static string? NextPath(JsonElement root)
+    {
+        if (!root.TryGetProperty("meta", out JsonElement meta)) return null;
+        if (!meta.TryGetProperty("links", out JsonElement links)) return null;
+        if (!links.TryGetProperty("next", out JsonElement next)) return null;
+        if (next.ValueKind != JsonValueKind.String) return null;
+
+        string? href = next.GetString();
+        if (string.IsNullOrWhiteSpace(href)) return null;
+
+        int index = href.IndexOf("/v2/", StringComparison.OrdinalIgnoreCase);
+        return index >= 0 ? href[(index + 4)..] : href.TrimStart('/');
     }
 
     private async Task<HttpResponseMessage> SendAsync(
