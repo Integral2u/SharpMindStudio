@@ -9,6 +9,7 @@ namespace SharpMind.Studio.Tests;
 /// A rehearsal runs the real pipeline but must leave no model, checkpoint or
 /// incremental state behind. This is the guard behind the planner's estimate.
 /// </summary>
+[Collection("studio-paths")]
 public sealed class TrainingRehearsalTests
 {
     [Fact]

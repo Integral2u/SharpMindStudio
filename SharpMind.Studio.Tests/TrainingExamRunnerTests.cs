@@ -9,6 +9,7 @@ namespace SharpMind.Studio.Tests;
 /// score that export on the same deterministic slice. This is also the shortest
 /// proof that the exam can load a packaged model and its embedded tokenizer.
 /// </summary>
+[Collection("studio-paths")]
 public sealed class TrainingExamRunnerTests
 {
     [Fact]

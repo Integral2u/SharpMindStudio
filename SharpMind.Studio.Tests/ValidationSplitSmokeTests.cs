@@ -9,6 +9,7 @@ namespace SharpMind.Studio.Tests;
 /// of documents from the training stream, evaluate the fixed held-out batches,
 /// and report the best step it saw.
 /// </summary>
+[Collection("studio-paths")]
 public sealed class ValidationSplitSmokeTests
 {
     [Fact]

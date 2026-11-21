@@ -13,6 +13,7 @@ namespace SharpMind.Studio.Tests;
 /// merge, export, and prove the result loads for inference. Also proves the
 /// base file is untouched (the fine-tune must be weight-only).
 /// </summary>
+[Collection("studio-paths")]
 public sealed class FineTuneRunnerSmokeTests
 {
     [Fact]

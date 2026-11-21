@@ -12,6 +12,7 @@ namespace SharpMind.Studio.Tests;
 /// the ones that change the model. These tests pin the round trip and one run
 /// with a non-default preset, optimizer, QAT target and checkpoint policy.
 /// </summary>
+[Collection("studio-paths")]
 public sealed class TrainingJobOptionsTests
 {
     [Fact]

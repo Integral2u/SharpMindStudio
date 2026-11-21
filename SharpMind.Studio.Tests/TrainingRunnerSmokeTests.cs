@@ -8,6 +8,7 @@ namespace SharpMind.Studio.Tests;
 /// Studio.Core. Kept deliberately tiny: a character tokenizer, one layer and two
 /// optimizer steps, so the test measures the wiring rather than the hardware.
 /// </summary>
+[Collection("studio-paths")]
 public sealed class TrainingRunnerSmokeTests
 {
     [Fact]

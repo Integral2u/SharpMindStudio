@@ -12,6 +12,7 @@ namespace SharpMind.Studio.Tests;
 ///   * the per-job checkpoint folder (adapter sidecar + recorded step).
 /// The base model is never rewritten in either case.
 /// </summary>
+[Collection("studio-paths")]
 public sealed class AdapterResumeSmokeTests
 {
     [Fact]
