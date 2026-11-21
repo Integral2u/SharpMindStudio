@@ -30,11 +30,11 @@
     <div class="training-form">
         <div class="field">
             <label class="field-label" for="job-name">Model name</label>
-            <input id="job-name" class="input" @bind="Job.Name" placeholder="my-corpus-model" />
+            <input id="job-name" title="Name used for the output model and its checkpoint folder." class="input" @bind="Job.Name" placeholder="my-corpus-model" />
         </div>
         <div class="field">
             <label class="field-label" for="job-preset">Architecture</label>
-            <select id="job-preset" class="input" value="@Job.ArchitecturePreset"
+            <select id="job-preset" title="Fills the architecture fields with a tested size. Custom keeps what you entered." class="input" value="@Job.ArchitecturePreset"
                     @onchange="args => ApplyPreset(args.Value as string)">
                 <option value="">Custom / manual</option>
                 @foreach (TrainingPreset preset in TrainingModelOptions.Presets)
@@ -45,79 +45,79 @@
         </div>
         <div class="field">
             <label class="field-label" for="job-hidden">Hidden</label>
-            <input id="job-hidden" class="input" type="number" min="8" step="8" @bind="Job.HiddenDim" />
+            <input id="job-hidden" title="Width of each layer residual stream. Must divide evenly by the head count." class="input" type="number" min="8" step="8" @bind="Job.HiddenDim" />
         </div>
         <div class="field">
             <label class="field-label" for="job-layers">Layers</label>
-            <input id="job-layers" class="input" type="number" min="1" @bind="Job.NumLayers" />
+            <input id="job-layers" title="Number of transformer blocks. More layers add capacity and slow every step." class="input" type="number" min="1" @bind="Job.NumLayers" />
         </div>
         <div class="field">
             <label class="field-label" for="job-heads">Heads</label>
-            <input id="job-heads" class="input" type="number" min="1" @bind="Job.NumHeads" />
+            <input id="job-heads" title="Attention heads per layer. The hidden width must divide by this number." class="input" type="number" min="1" @bind="Job.NumHeads" />
         </div>
         <div class="field">
             <label class="field-label" for="job-kv-heads">KV heads</label>
-            <input id="job-kv-heads" class="input" type="number" min="1" @bind="Job.NumKvHeads" />
+            <input id="job-kv-heads" title="Key and value heads. Fewer than the attention heads is grouped-query attention, which saves memory." class="input" type="number" min="1" @bind="Job.NumKvHeads" />
         </div>
         <div class="field">
             <label class="field-label" for="job-ffn">FFN width</label>
-            <input id="job-ffn" class="input" type="number" min="8" step="8" @bind="Job.FfnDim" />
+            <input id="job-ffn" title="Feed-forward width inside each block. Commonly four times the hidden width." class="input" type="number" min="8" step="8" @bind="Job.FfnDim" />
         </div>
         <div class="field">
             <label class="field-label" for="job-context">Context length</label>
-            <input id="job-context" class="input" type="number" min="8" step="8" @bind="Job.MaxSeqLen" />
+            <input id="job-context" title="Maximum tokens in a training window. Longer context costs memory and time." class="input" type="number" min="8" step="8" @bind="Job.MaxSeqLen" />
         </div>
         <div class="field">
             <label class="field-label" for="job-norm-eps">Norm epsilon</label>
-            <input id="job-norm-eps" class="input" type="number" step="0.00001"
+            <input id="job-norm-eps" title="Small constant inside normalisation so division stays stable. Rarely needs changing." class="input" type="number" step="0.00001"
                    @bind="NormEpsText" />
         </div>
 
         <div class="field">
             <label class="field-label" for="job-activation">Activation</label>
-            <select id="job-activation" class="input" @bind="Job.Activation">
+            <select id="job-activation" title="Non-linearity inside the feed-forward block. Blank uses the preset." class="input" @bind="Job.Activation">
                 <option value="">Preset default</option>
                 @foreach (string name in Enum.GetNames<ActivationKind>()) { <option value="@name">@name</option> }
             </select>
         </div>
         <div class="field">
             <label class="field-label" for="job-gate">Gate</label>
-            <select id="job-gate" class="input" @bind="Job.Gate">
+            <select id="job-gate" title="Gating style for the feed-forward block. Blank uses the preset." class="input" @bind="Job.Gate">
                 <option value="">Preset default</option>
                 @foreach (string name in Enum.GetNames<GateKind>()) { <option value="@name">@name</option> }
             </select>
         </div>
         <div class="field">
             <label class="field-label" for="job-ffn-kind">FFN kind</label>
-            <select id="job-ffn-kind" class="input" @bind="Job.Ffn">
+            <select id="job-ffn-kind" title="Dense feed-forward, mixture of experts, or the preset default." class="input" @bind="Job.Ffn">
                 <option value="">Preset default</option>
                 @foreach (string name in Enum.GetNames<FfnKind>()) { <option value="@name">@name</option> }
             </select>
         </div>
         <div class="field">
             <label class="field-label" for="job-attention">Attention</label>
-            <select id="job-attention" class="input" @bind="Job.Attention">
+            <select id="job-attention" title="Attention implementation. Blank uses the preset default." class="input" @bind="Job.Attention">
                 <option value="">Preset default</option>
                 @foreach (string name in Enum.GetNames<AttentionKind>()) { <option value="@name">@name</option> }
             </select>
         </div>
         <div class="field">
             <label class="field-label" for="job-norm">Norm</label>
-            <select id="job-norm" class="input" @bind="Job.Norm">
+            <select id="job-norm" title="Normalisation kind. Blank uses the preset default." class="input" @bind="Job.Norm">
                 <option value="">Preset default</option>
                 @foreach (string name in Enum.GetNames<NormKind>()) { <option value="@name">@name</option> }
             </select>
         </div>
         <div class="field">
             <label class="field-label" for="job-arch">Architecture kind</label>
-            <select id="job-arch" class="input" @bind="Job.Arch">
+            <select id="job-arch" title="Model family layout. Blank keeps the preset architecture." class="input" @bind="Job.Arch">
                 <option value="">Preset default</option>
                 @foreach (string name in Enum.GetNames<ArchKind>()) { <option value="@name">@name</option> }
             </select>
         </div>
         <div class="field">
             <label class="field-label" for="job-position">Positional encoding</label>
-            <select id="job-position" class="input" @bind="Job.PositionalEncoding">
+            <select id="job-position" title="How token order is encoded. Blank uses the preset default." class="input" @bind="Job.PositionalEncoding">
                 <option value="">Preset default</option>
                 @foreach (string name in Enum.GetNames<PositionalEncoding>()) { <option value="@name">@name</option> }
             </select>
@@ -127,16 +127,16 @@
         {
             <div class="field">
                 <label class="field-label" for="job-experts">Experts</label>
-                <input id="job-experts" class="input" type="number" min="1" @bind="Job.NumExperts" />
+                <input id="job-experts" title="Number of experts in a mixture-of-experts feed-forward block." class="input" type="number" min="1" @bind="Job.NumExperts" />
             </div>
             <div class="field">
                 <label class="field-label" for="job-topk">Top-k experts</label>
-                <input id="job-topk" class="input" type="number" min="1" @bind="Job.TopKExperts" />
+                <input id="job-topk" title="How many experts each token is routed to." class="input" type="number" min="1" @bind="Job.TopKExperts" />
             </div>
         }
         <div class="field training-form-wide">
             <label class="field-label" for="job-layer-plan">Layer plan (optional)</label>
-            <input id="job-layer-plan" class="input mono" value="@LayerPlanText"
+            <input id="job-layer-plan" title="Optional per-layer attention plan. Blank keeps the global attention setting." class="input mono" value="@LayerPlanText"
                    @onchange="e => SetLayerPlanText(e.Value?.ToString())"
                    placeholder="Full, Full, Sliding, Full" />
             <span class="small faint">
@@ -147,7 +147,7 @@
         </div>
         <div class="field">
             <label class="field-label" for="job-sliding-window">Sliding window</label>
-            <input id="job-sliding-window" class="input" type="number" min="0" step="8"
+            <input id="job-sliding-window" title="Tokens each sliding-attention layer can see. 0 uses full attention." class="input" type="number" min="0" step="8"
                    @bind="Job.LayerSlidingWindowSize" />
         </div>
         @if (Training.PendingTemplate is not null)
@@ -173,38 +173,38 @@
     <div class="training-form">
         <div class="field">
             <label class="field-label" for="job-tokenizer">Tokenizer</label>
-            <select id="job-tokenizer" class="input" @bind="Job.TokenizerKind">
+            <select id="job-tokenizer" title="BPE learns subword pieces. Character training needs no tokenizer file but makes longer sequences." class="input" @bind="Job.TokenizerKind">
                 <option value="Bpe">BPE</option>
                 <option value="Char">Character</option>
             </select>
         </div>
         <div class="field">
             <label class="field-label" for="job-vocab">BPE vocabulary</label>
-            <input id="job-vocab" class="input" type="number" min="64" step="64"
+            <input id="job-vocab" title="Number of BPE merges to learn. A larger vocabulary shortens sequences and grows the embedding." class="input" type="number" min="64" step="64"
                    @bind="Job.TokenizerVocabSize" disabled="@Job.UsesCharacterTokenizer" />
         </div>
         <div class="field">
             <label class="field-label" for="job-batch">Batch size</label>
-            <input id="job-batch" class="input" type="number" min="1" @bind="Job.BatchSize" />
+            <input id="job-batch" title="Sequences per optimiser step. Larger batches are steadier but need more memory." class="input" type="number" min="1" @bind="Job.BatchSize" />
         </div>
         <div class="field">
             <label class="field-label" for="job-seq">Sequence length</label>
-            <input id="job-seq" class="input" type="number" min="1" @bind="Job.SeqLen" />
+            <input id="job-seq" title="Tokens per training sample. Cannot exceed the context length." class="input" type="number" min="1" @bind="Job.SeqLen" />
         </div>
         <div class="field">
             <label class="field-label" for="job-accum">Grad accumulation</label>
-            <input id="job-accum" class="input" type="number" min="1" @bind="Job.GradAccumSteps" />
+            <input id="job-accum" title="Micro-batches averaged before one optimiser step. Effective batch is batch size times this." class="input" type="number" min="1" @bind="Job.GradAccumSteps" />
         </div>
         <div class="field">
             <label class="field-label" for="job-batcher">Batching</label>
-            <select id="job-batcher" class="input" @bind="Job.BatchingKind">
+            <select id="job-batcher" title="Random window takes one window per document. Packing fills each sequence across documents." class="input" @bind="Job.BatchingKind">
                 <option value="RandomWindow">Random window</option>
                 <option value="Packing">Document packing</option>
             </select>
         </div>
         <div class="field">
             <label class="field-label" for="job-steps">Total steps</label>
-            <input id="job-steps" class="input" type="number" min="1" @bind="Job.TotalSteps" />
+            <input id="job-steps" title="Number of optimiser updates to run." class="input" type="number" min="1" @bind="Job.TotalSteps" />
         </div>
         <div class="field">
             <label class="field-label" for="job-seed">Seed</label>
@@ -219,12 +219,12 @@
         </div>
         <div class="field">
             <label class="field-label" for="job-log">Log every</label>
-            <input id="job-log" class="input" type="number" min="1" @bind="Job.LogInterval" />
+            <input id="job-log" title="Steps between loss log lines and chart points." class="input" type="number" min="1" @bind="Job.LogInterval" />
         </div>
         <div class="field training-form-wide">
             <label class="field-label" for="job-tokenizer-cache">Tokenizer cache (optional)</label>
             <div class="row">
-                <input id="job-tokenizer-cache" class="input" @bind="Job.TokenizerCachePath"
+                <input id="job-tokenizer-cache" title="Where the learned tokenizer is stored. Blank keeps it beside the job file." class="input" @bind="Job.TokenizerCachePath"
                        placeholder="Beside the job file by default" />
                 <button type="button" class="button" @onclick="BrowseTokenizerCacheAsync">Browse</button>
             </div>
@@ -241,7 +241,7 @@
     <div class="training-form">
         <div class="field">
             <label class="field-label" for="job-optimizer">Optimizer</label>
-            <select id="job-optimizer" class="input" @bind="Job.Optimizer">
+            <select id="job-optimizer" title="AdamW adapts a rate per parameter and is the usual choice. SGD is simpler and needs tuning." class="input" @bind="Job.Optimizer">
                 <option value="AdamW">AdamW</option>
                 <option value="SGD">SGD</option>
             </select>
@@ -250,36 +250,36 @@
         {
             <div class="field">
                 <label class="field-label" for="job-momentum">SGD momentum</label>
-                <input id="job-momentum" class="input" type="number" min="0" max="0.999" step="0.01"
+                <input id="job-momentum" title="SGD momentum: how much of the previous update carries forward." class="input" type="number" min="0" max="0.999" step="0.01"
                        @bind="Job.SgdMomentum" />
             </div>
         }
         <div class="field">
             <label class="field-label" for="job-lr">Learning rate</label>
-            <input id="job-lr" class="input" type="number" min="0.000001" step="0.00001"
+            <input id="job-lr" title="Step size for each update. Too high diverges; too low wastes steps." class="input" type="number" min="0.000001" step="0.00001"
                    @bind="LearningRateText" />
         </div>
         <div class="field">
             <label class="field-label" for="job-min-lr">Minimum LR</label>
-            <input id="job-min-lr" class="input" type="number" min="0" step="0.00001"
+            <input id="job-min-lr" title="Floor for the learning-rate decay, so the end of the run still learns a little." class="input" type="number" min="0" step="0.00001"
                    @bind="MinLrText" />
         </div>
         <div class="field">
             <label class="field-label" for="job-warmup">Warmup steps</label>
-            <input id="job-warmup" class="input" type="number" min="0" @bind="Job.WarmupSteps" />
+            <input id="job-warmup" title="Steps that ramp the learning rate from near zero to its full value." class="input" type="number" min="0" @bind="Job.WarmupSteps" />
         </div>
         <div class="field">
             <label class="field-label" for="job-weight-decay">Weight decay</label>
-            <input id="job-weight-decay" class="input" type="number" min="0" step="0.01"
+            <input id="job-weight-decay" title="Pulls weights toward zero to reduce overfitting. AdamW applies it apart from the update." class="input" type="number" min="0" step="0.01"
                    @bind="WeightDecayText" />
         </div>
         <div class="field">
             <label class="field-label" for="job-clip">Grad clip norm</label>
-            <input id="job-clip" class="input" type="number" min="0" step="0.1" @bind="Job.GradClipNorm" />
+            <input id="job-clip" title="Rescales the gradient when its global norm exceeds this value. 0 disables clipping." class="input" type="number" min="0" step="0.1" @bind="Job.GradClipNorm" />
         </div>
         <div class="field">
             <label class="field-label" for="job-smoothing">Label smoothing</label>
-            <input id="job-smoothing" class="input" type="number" min="0" max="0.9" step="0.01"
+            <input id="job-smoothing" title="Shares a little probability with other tokens so the model is less overconfident." class="input" type="number" min="0" max="0.9" step="0.01"
                    @bind="LabelSmoothingText" />
         </div>
     </div>
@@ -304,7 +304,7 @@
     <div class="training-form">
         <div class="field">
             <label class="field-label" for="job-accelerator">Accelerator</label>
-            <select id="job-accelerator" class="input" @bind="Job.Accelerator">
+            <select id="job-accelerator" title="CPU or an accelerator plugin. A remote job uses the host devices." class="input" @bind="Job.Accelerator">
                 @if (IsRemoteTarget)
                 {
                     <option value="">Host default (auto)</option>
@@ -335,7 +335,7 @@
         </div>
         <div class="field">
             <label class="field-label" for="job-qat">Quantization-aware training</label>
-            <select id="job-qat" class="input" @bind="Job.QuantAwareTraining">
+            <select id="job-qat" title="Simulates low precision during training so the exported model loses less. Master weights stay F32." class="input" @bind="Job.QuantAwareTraining">
                 <option value="">F32 (off)</option>
                 @foreach (string label in TrainingModelOptions.QatLabels.Skip(1))
                 {
@@ -363,21 +363,21 @@
     <div class="training-form">
         <div class="field">
             <label class="field-label" for="job-ckpt">Checkpoint every</label>
-            <input id="job-ckpt" class="input" type="number" min="0" @bind="Job.CheckpointInterval" />
+            <input id="job-ckpt" title="Steps between checkpoints. 0 writes only the final model." class="input" type="number" min="0" @bind="Job.CheckpointInterval" />
         </div>
         <div class="field">
             <label class="field-label" for="job-keep">Keep recent</label>
-            <input id="job-keep" class="input" type="number" min="-1" @bind="Job.KeepRecent" />
+            <input id="job-keep" title="Which checkpoints to keep: -1 final only, 0 all, N the newest N." class="input" type="number" min="-1" @bind="Job.KeepRecent" />
             <span class="small faint">-1 final only, 0 all, N newest N</span>
         </div>
         <div class="field">
             <label class="field-label" for="job-validation">Validation split (%)</label>
-            <input id="job-validation" class="input" type="number" min="0" max="90" step="5"
+            <input id="job-validation" title="Share of the corpus held back to watch for overfitting during training." class="input" type="number" min="0" max="90" step="5"
                    @bind="Job.ValidationPercent" />
         </div>
         <div class="field">
             <label class="field-label" for="job-exam">Held-out exam (%)</label>
-            <input id="job-exam" class="input" type="number" min="0" max="45" step="5"
+            <input id="job-exam" title="Share held back and never trained on. The final test score comes from it." class="input" type="number" min="0" max="45" step="5"
                    @bind="Job.TestPercent" />
         </div>
         <div class="field training-form-wide">
@@ -389,7 +389,7 @@
         <div class="field">
             <label class="field-label" for="job-resume">Resume from checkpoint</label>
             <div class="row">
-                <input id="job-resume" class="input" @bind="Job.ResumeFrom"
+                <input id="job-resume" title="Continue a previous run from a checkpoint, including the optimiser state." class="input" @bind="Job.ResumeFrom"
                        placeholder="Latest under the checkpoint folder" disabled="@Job.StartFresh" />
                 <button type="button" class="button" @onclick="BrowseResumeAsync" disabled="@Job.StartFresh">Browse</button>
             </div>
@@ -397,7 +397,7 @@
         <div class="field">
             <label class="field-label" for="job-warm">Warm restart from</label>
             <div class="row">
-                <input id="job-warm" class="input" @bind="Job.WarmRestartFrom"
+                <input id="job-warm" title="Reuse the weights but start a fresh schedule, for example after changing the learning rate." class="input" @bind="Job.WarmRestartFrom"
                        placeholder="Reuse weights under a fresh schedule" disabled="@Job.StartFresh" />
                 <button type="button" class="button" @onclick="BrowseWarmRestartAsync" disabled="@Job.StartFresh">Browse</button>
             </div>
@@ -419,7 +419,7 @@
         <div class="field training-form-wide">
             <label class="field-label" for="job-export">Export model (optional)</label>
             <div class="row">
-                <input id="job-export" class="input" @bind="Job.ExportPath"
+                <input id="job-export" title="Where the finished model is written. Blank saves in the Training folder." class="input" @bind="Job.ExportPath"
                        placeholder="Leave blank to save in the Training folder" />
                 <button type="button" class="button" @onclick="BrowseExportFileAsync">File</button>
                 <button type="button" class="button" @onclick="BrowseExportFolderAsync">Folder</button>
@@ -428,7 +428,7 @@
         <div class="field training-form-wide">
             <label class="field-label" for="job-prompt">System prompt file (optional)</label>
             <div class="row">
-                <input id="job-prompt" class="input" @bind="Job.SystemPromptPath"
+                <input id="job-prompt" title="Text file embedded as the system prompt." class="input" @bind="Job.SystemPromptPath"
                        placeholder="C:\path\to\prompt.txt" />
                 <button type="button" class="button" @onclick="BrowsePromptAsync">Browse</button>
             </div>
@@ -436,7 +436,7 @@
         <div class="field training-form-wide">
             <label class="field-label" for="job-skills">Skills folder (optional)</label>
             <div class="row">
-                <input id="job-skills" class="input" @bind="Job.SkillsFolder"
+                <input id="job-skills" title="Folder of Markdown skills embedded with the model." class="input" @bind="Job.SkillsFolder"
                        placeholder="Folder of *.md skills to embed" />
                 <button type="button" class="button" @onclick="BrowseSkillsAsync">Browse</button>
             </div>
@@ -444,7 +444,7 @@
         <div class="field training-form-wide">
             <label class="field-label" for="job-tools">Tool DLLs to embed (optional)</label>
             <div class="row">
-                <input id="job-tools" class="input" @bind="PluginList"
+                <input id="job-tools" title="Plugin DLLs embedded with the model so it can call them." class="input" @bind="PluginList"
                        placeholder="One or more paths separated by ;" />
                 <button type="button" class="button" @onclick="BrowseToolsAsync">Browse</button>
             </div>

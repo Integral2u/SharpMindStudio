@@ -198,7 +198,7 @@ else if (_tab == "improve")
             <div class="training-form">
                 <div class="field training-form-wide">
                     <label class="field-label" for="tune-pick">Base model</label>
-                    <select id="tune-pick" class="input" value="@_tuneBase" @onchange="PickBase">
+                    <select id="tune-pick" title="Choose the model file to adapt." class="input" value="@_tuneBase" @onchange="PickBase">
                         <option value="">Choose an .smm file...</option>
                         @foreach (FileInfo file in SmmModels)
                         {
@@ -208,7 +208,7 @@ else if (_tab == "improve")
                 </div>
                 <div class="field training-form-wide">
                     <label class="field-label" for="tune-base">Base file</label>
-                    <input id="tune-base" class="input" @bind="_tuneBase"
+                    <input id="tune-base" title="Model to adapt. Its weights stay frozen; only the adapter trains." class="input" @bind="_tuneBase"
                            @bind:after="RefreshBaseContents"
                            placeholder="C:\path\to\base.smm" />
                 </div>
@@ -229,7 +229,7 @@ else if (_tab == "improve")
                 <div class="field training-form-wide">
                     <label class="field-label" for="tune-corpus">@(_tuneSft ? "Chat JSONL corpus" : "New corpus")</label>
                     <div class="row">
-                        <input id="tune-corpus" class="input" @bind="_tuneCorpusPath"
+                        <input id="tune-corpus" title="Dataset for the fine-tune. A chat corpus reads JSONL; otherwise plain text." class="input" @bind="_tuneCorpusPath"
                                placeholder="@(_tuneSft ? "C:\\path\\to\\chats.jsonl or C:\\path\\**\\*.jsonl" : "C:\\path\\to\\new-text or C:\\path\\**\\*.txt")" />
                         <button type="button" class="button" @onclick="BrowseTuneCorpus"
                                 title="@(_tuneSft ? "Choose a chat JSONL file." : "Choose a text file.")">
@@ -245,7 +245,7 @@ else if (_tab == "improve")
                 {
                     <div class="field training-form-wide">
                         <label class="field-label" for="tune-sft-formatter">Chat formatter</label>
-                        <select id="tune-sft-formatter" class="input" @bind="_tuneSftFormatter">
+                        <select id="tune-sft-formatter" title="How each record becomes a prompt and a reply. Auto uses the base model chat template." class="input" @bind="_tuneSftFormatter">
                             <option value="auto">Auto - the base model's chat template</option>
                             <option value="chatml">ChatML</option>
                             <option value="jinja">Jinja template</option>
@@ -264,7 +264,7 @@ else if (_tab == "improve")
                     </div>
                     <div class="field">
                         <label class="field-label" for="tune-sft-seq">SFT sequence length</label>
-                        <input id="tune-sft-seq" class="input" type="number" min="16" max="8192" step="16"
+                        <input id="tune-sft-seq" title="Maximum tokens per chat example. Longer examples are truncated." class="input" type="number" min="16" max="8192" step="16"
                                @bind="_tuneSftSeqLen" />
                         <span class="small faint">Longer conversations are truncated.</span>
                     </div>
@@ -373,32 +373,33 @@ else if (_tab == "improve")
                 }
                 <div class="field">
                     <label class="field-label" for="tune-rank">LoRA rank</label>
-                    <input id="tune-rank" class="input" type="number" min="1" max="256" @bind="_tuneRank" />
+                    <input id="tune-rank" title="Adapter rank. Higher values add capacity and size; 8 to 32 is typical." class="input" type="number" min="1" max="256" @bind="_tuneRank" />
                 </div>
                 <div class="field">
                     <label class="field-label" for="tune-alpha">LoRA alpha</label>
-                    <input id="tune-alpha" class="input" type="number" min="1" step="1" @bind="_tuneAlpha" />
+                    <input id="tune-alpha" title="Scaling applied to the adapter. Effective strength is alpha divided by rank." class="input" type="number" min="1" step="1" @bind="_tuneAlpha" />
                 </div>
                 <div class="field">
                     <label class="field-label" for="tune-steps">Steps</label>
-                    <input id="tune-steps" class="input" type="number" min="1" @bind="_tuneSteps" />
+                    <input id="tune-steps" title="Number of optimiser updates to run." class="input" type="number" min="1" @bind="_tuneSteps" />
                 </div>
                 <div class="field">
                     <label class="field-label" for="tune-val">Validation split (%)</label>
-                    <input id="tune-val" class="input" type="number" min="0" max="90" step="5"
+                    <input id="tune-val" title="Share held back to watch for overfitting during training." class="input" type="number" min="0" max="90" step="5"
                            @bind="_tuneValidationPercent" />
                 </div>
                 <div class="field">
                     <label class="field-label" for="tune-exam">Held-out exam (%)</label>
-                    <input id="tune-exam" class="input" type="number" min="0" max="45" step="5"
+                    <input id="tune-exam" title="Share held back and never trained on. The final score comes from it." class="input" type="number" min="0" max="45" step="5"
                            @bind="_tuneTestPercent" />
                 </div>
                 <div class="field">
                     <label class="field-label" for="tune-lr">Learning rate</label>
-                    <input id="tune-lr" class="input" type="number" min="0.000001" step="0.00001" @bind="_tuneLr" />
+                    <input id="tune-lr" title="Step size for each update. LoRA usually tolerates a higher rate than full training." class="input" type="number" min="0.000001" step="0.00001" @bind="_tuneLr" />
                 </div>
                 <div class="field training-form-wide">
-                    <label class="field-label">Adapted projections</label>
+                    <label class="field-label"
+                           title="Which weight matrices receive an adapter. Attention projections are the usual minimum; adding the feed-forward layers trains more parameters.">Adapted projections</label>
                     <div class="training-targets">
                         @foreach ((string id, string label) in LoraTargets)
                         {
@@ -412,16 +413,16 @@ else if (_tab == "improve")
                 </div>
                 <div class="field">
                     <label class="field-label" for="tune-name">Job name</label>
-                    <input id="tune-name" class="input" @bind="_tuneName" placeholder="base-lora" />
+                    <input id="tune-name" title="Name for the job and its checkpoint folder." class="input" @bind="_tuneName" placeholder="base-lora" />
                 </div>
                 <div class="field">
                     <label class="field-label" for="tune-export">Merged model (optional)</label>
-                    <input id="tune-export" class="input" @bind="_tuneExport"
+                    <input id="tune-export" title="Where the merged model is written. Blank saves in the Training folder." class="input" @bind="_tuneExport"
                            placeholder="Leave blank to save in the Training folder" />
                 </div>
                 <div class="field">
                     <label class="field-label" for="tune-output">Output</label>
-                    <select id="tune-output" class="input" @bind="_tuneOutput">
+                    <select id="tune-output" title="Merged model, adapter only, or both." class="input" @bind="_tuneOutput">
                         <option value="merged">Merged .smm</option>
                         <option value="adapter">Adapter only .smlora</option>
                         <option value="both">Merged + adapter</option>
@@ -431,13 +432,13 @@ else if (_tab == "improve")
                 {
                     <div class="field training-form-wide">
                         <label class="field-label" for="tune-adapter">Adapter file (optional)</label>
-                        <input id="tune-adapter" class="input" @bind="_tuneAdapterPath"
+                        <input id="tune-adapter" title="Where the adapter file is written when the output includes it." class="input" @bind="_tuneAdapterPath"
                                placeholder="Beside the model, extension .smlora" />
                     </div>
                 }
                 <div class="field training-form-wide">
                     <label class="field-label" for="tune-resume">Resume from</label>
-                    <select id="tune-resume" class="input" value="@_tuneResume" @onchange="PickResume"
+                    <select id="tune-resume" title="Continue an interrupted run from its latest checkpoint." class="input" value="@_tuneResume" @onchange="PickResume"
                             disabled="@_tuneStartFresh">
                         <option value="">Latest checkpoint for this job</option>
                         @foreach (string path in AdapterResumeOptions)
@@ -448,7 +449,7 @@ else if (_tab == "improve")
                 </div>
                 <div class="field training-form-wide">
                     <label class="field-label" for="tune-resume-path">Adapter file or checkpoint folder</label>
-                    <input id="tune-resume-path" class="input" @bind="_tuneResume"
+                    <input id="tune-resume-path" title="A specific adapter or checkpoint folder to continue from." class="input" @bind="_tuneResume"
                            placeholder="C:\...\adapters.smlora or a checkpoint folder" />
                     <label class="small faint training-check">
                         <input type="checkbox" @bind="_tuneStartFresh" />
@@ -460,7 +461,7 @@ else if (_tab == "improve")
             <div class="training-actions">
                 <div class="field" style="min-width: 16rem;">
                     <label class="field-label" for="tune-compute">Run on</label>
-                    <select id="tune-compute" class="input" @bind="_computeProviderId"
+                    <select id="tune-compute" title="Run on this PC or on a connected compute host." class="input" @bind="_computeProviderId"
                             @bind:after="LoadRunTargetAsync"
                             disabled="@(Lab.IsRunning || Rehearsal.IsRunning)">
                         <option value="">This PC</option>
