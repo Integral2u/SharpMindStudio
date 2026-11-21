@@ -5,6 +5,7 @@ using Microsoft.JSInterop;
 using SharpMind.Data.Sources;
 using SharpMind.Model.Format;
 using SharpMind.Studio.Core.Compute;
+using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.Storage;
 using SharpMind.Studio.Core.Training;
 using SharpMind.Studio.Services;
@@ -96,31 +97,36 @@ public partial class Training
         ("down_proj", "FFN down"),
     ];
 
+    private static readonly TimeSpan ModelFileLifetime = TimeSpan.FromSeconds(10);
+
+    private IReadOnlyList<FileInfo>? _modelFiles;
+    private DateTimeOffset _modelFilesRead;
+
+    /// <summary>
+    /// Every file the pickers can offer: models from the Models folder, scanned
+    /// recursively, plus the adapters a finished run leaves in the training
+    /// folder. Ordered by name and never truncated.
+    /// </summary>
     private IReadOnlyList<FileInfo> Models
     {
         get
         {
-            try
+            // Training re-renders on every tick, so the directory walk is cached
+            // briefly; InvalidateModelFiles runs when Studio writes a new file.
+            if (_modelFiles is null || DateTimeOffset.UtcNow - _modelFilesRead > ModelFileLifetime)
             {
-                var found = new List<FileInfo>();
-                foreach (string folder in new[] { Lab.Folder, StudioPaths.Models }.Distinct(StringComparer.OrdinalIgnoreCase))
-                {
-                    if (!Directory.Exists(folder)) continue;
-                    var directory = new DirectoryInfo(folder);
-                    found.AddRange(directory.GetFiles("*.smm", SearchOption.TopDirectoryOnly));
-                    found.AddRange(directory.GetFiles("*.gguf", SearchOption.TopDirectoryOnly));
-                    found.AddRange(directory.GetFiles("*" + TrainingJobSettings.AdapterExtension, SearchOption.TopDirectoryOnly));
-                }
+                _modelFiles = ModelFileList.Find(
+                    StudioPaths.Models, Lab.Folder, TrainingJobSettings.AdapterExtension);
+                _modelFilesRead = DateTimeOffset.UtcNow;
+            }
 
-                return [.. found
-                    .OrderByDescending(file => file.LastWriteTimeUtc)
-                    .Take(50)];
-            }
-            catch
-            {
-                return [];
-            }
+            return _modelFiles;
         }
+    }
+
+    private void InvalidateModelFiles()
+    {
+        _modelFiles = null;
     }
 
     private IReadOnlyList<FileInfo> SmmModels =>
@@ -212,13 +218,18 @@ public partial class Training
             && !string.Equals(converted, _refreshedConversion, StringComparison.OrdinalIgnoreCase))
         {
             _refreshedConversion = converted;
+            InvalidateModelFiles();
             await Catalog.RefreshAsync(force: true);
         }
 
         if (_tab == "runs") EnsureCompareSelection();
         // A finished run may have written a new adapter checkpoint; the resume
         // picker should see it next time the Improve tab renders.
-        if (!Lab.IsRunning) _resumeOptions = null;
+        if (!Lab.IsRunning)
+        {
+            _resumeOptions = null;
+            InvalidateModelFiles();
+        }
         StateHasChanged();
     });
 
@@ -228,6 +239,7 @@ public partial class Training
     {
         _convertSource = path;
         SuggestDestination();
+        InvalidateModelFiles();
         await Catalog.RefreshAsync(force: true);
         StateHasChanged();
     });
@@ -318,6 +330,7 @@ public partial class Training
             }
 
             string added = await Catalog.AddAsync(file.FullName, overwrite: replace);
+            InvalidateModelFiles();
             _modelNotice = $"Added {Path.GetFileName(added)} to the model list.";
             return true;
         }

@@ -4,6 +4,18 @@ All notable changes to SharpMind Studio are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.3.0] - unreleased
+
+### Fixed
+
+- **The model pickers in Training and conversion were unordered and truncated.**
+  They listed the 50 most recently written files, newest first, and only the top
+  level of `Models`, so an older model — or one inside a subfolder — could not be
+  found at all. They now list every `.smm`, `.gguf` and `.smlora`: `Models` is
+  scanned recursively, the training folder at the top level only, and the result
+  is sorted by name. The list refreshes after a download, a conversion or a
+  finished run writes a file.
+
 ## [1.1.2.0] - 2026-11-15
 
 ### Added
