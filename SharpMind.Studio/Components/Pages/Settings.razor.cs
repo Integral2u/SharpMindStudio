@@ -101,7 +101,7 @@ public partial class Settings
 
     protected override async Task OnParametersSetAsync()
     {
-        _tab = TabQuery is "system" or "families" or "models" or "openrouter" or "pair" ? TabQuery : "appearance";
+        _tab = TabQuery is "system" or "families" or "models" or "openrouter" or "vault" or "pair" ? TabQuery : "appearance";
         _system = Inference.System;
         _studioHost = Theme.StudioHost;
         _studioPort = Theme.StudioPort;

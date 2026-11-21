@@ -1,0 +1,239 @@
+@using SharpMind.Studio.Core.Vault
+@using SharpMind.Studio.Services
+@inject VaultStore Vault
+@inject VaultUsageService Usage
+
+<details class="panel settings-collapsible" open>
+    <summary class="panel-head">
+        <div>
+            <div class="eyebrow">Secrets</div>
+            <h2>Vault</h2>
+        </div>
+        <span class="faint small mono">@Vault.Secrets.Count configured</span>
+    </summary>
+    <div class="panel-body stack">
+        <p class="small faint">
+            Named secrets for provider keys, MCP servers and command lines. A command uses one with
+            <span class="mono">%vault:NAME%</span>; Studio replaces it only when the process or
+            request starts. Values are encrypted on this PC for your Windows account and are
+            <strong>write-only</strong>: once saved, Studio cannot show them again.
+        </p>
+
+        @if (Vault.Secrets.Count == 0)
+        {
+            <div class="small faint">No secrets yet. Add one below.</div>
+        }
+
+        @foreach (VaultSecretInfo secret in Vault.Secrets)
+        {
+            VaultSecretState state = Vault.State(secret.Name);
+            <div class="settings-subgroup" style="padding:.7rem;">
+                <div class="spread" style="align-items:flex-start;gap:1rem;">
+                    <div>
+                        <strong class="mono">@secret.Name</strong>
+                        @if (!string.IsNullOrWhiteSpace(secret.Description))
+                        {
+                            <div class="small faint">@secret.Description</div>
+                        }
+                        <div class="small faint">
+                            Updated @secret.UpdatedUtc.ToLocalTime().ToString("g")
+                        </div>
+                        <div class="small faint">Used by: @UsedByText(secret.Name)</div>
+                        @if (state == VaultSecretState.Unreadable)
+                        {
+                            <div class="small faint">
+                                Unreadable on this Windows account. Replace it, or restore the
+                                <span class="mono">vault.key</span> file with this profile.
+                            </div>
+                        }
+                    </div>
+                    <div class="row">
+                        <button type="button" class="button" @onclick="() => BeginReplace(secret)">
+                            Replace
+                        </button>
+                        <button type="button" class="button danger" @onclick="() => BeginDelete(secret)">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+
+                @if (_replacing == secret.Name)
+                {
+                    <div class="field" style="margin-top:.6rem;">
+                        <label class="field-label" for="vault-replace-@secret.Name">New value</label>
+                        <div class="row">
+                            <input id="vault-replace-@secret.Name" class="input" type="password"
+                                   autocomplete="new-password" @bind="_replaceValue" />
+                            <button type="button" class="button primary"
+                                    @onclick="() => Replace(secret)"
+                                    disabled="@string.IsNullOrWhiteSpace(_replaceValue)">
+                                Save
+                            </button>
+                            <button type="button" class="button" @onclick="CancelReplace">
+                                Cancel
+                            </button>
+                        </div>
+                        <div class="small faint">@_replaceStatus</div>
+                    </div>
+                }
+
+                @if (_deleting == secret.Name)
+                {
+                    <div class="small" style="margin-top:.6rem;">
+                        <strong>Delete @secret.Name?</strong>
+                        <div class="small faint">
+                            This cannot be undone. @DeleteWarning(secret.Name)
+                        </div>
+                        <div class="row" style="margin-top:.4rem;">
+                            <button type="button" class="button danger" @onclick="() => DeleteAsync(secret)">
+                                Delete secret
+                            </button>
+                            <button type="button" class="button" @onclick="CancelDelete">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="settings-subgroup" style="padding:.7rem;">
+            <div class="eyebrow">Add a secret</div>
+            <div class="field">
+                <label class="field-label" for="vault-name">Name</label>
+                <input id="vault-name" class="input mono" @bind="_name" placeholder="GITHUB_TOKEN" />
+                <div class="small faint">
+                    Letters, digits and underscores. Case-insensitive, and cannot be renamed later.
+                </div>
+            </div>
+            <div class="field">
+                <label class="field-label" for="vault-description">Description</label>
+                <input id="vault-description" class="input" @bind="_description"
+                       placeholder="What this key is for" />
+            </div>
+            <div class="field">
+                <label class="field-label" for="vault-value">Value</label>
+                <input id="vault-value" class="input" type="password" autocomplete="new-password"
+                       @bind="_value" />
+                <div class="small faint">
+                    Write-only. Use <strong>Replace</strong> on a row to change it.
+                </div>
+            </div>
+            <div class="row" style="margin-top:.5rem;">
+                <button type="button" class="button primary" @onclick="Add" disabled="@(!CanAdd)">
+                    Add secret
+                </button>
+                <span class="status-line">@_status</span>
+            </div>
+        </div>
+    </div>
+</details>
+
+@code {
+    private string _name = "";
+    private string _description = "";
+    private string _value = "";
+    private string? _status;
+    private string? _replacing;
+    private string _replaceValue = "";
+    private string? _replaceStatus;
+    private string? _deleting;
+    private IReadOnlyList<VaultUsage> _deleteUses = [];
+
+    private bool CanAdd => VaultStore.IsValidName(_name) && !string.IsNullOrWhiteSpace(_value);
+
+    private void Add()
+    {
+        if (Vault.Find(_name) is not null)
+        {
+            _status = "A secret with that name already exists. Use Replace on its row.";
+            return;
+        }
+
+        try
+        {
+            VaultSecretInfo secret = Vault.Set(_name, _value, _description);
+            _status = $"Added {secret.Name}.";
+            _name = _description = _value = "";
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private void BeginReplace(VaultSecretInfo secret)
+    {
+        _replacing = secret.Name;
+        _replaceValue = "";
+        _replaceStatus = null;
+        _deleting = null;
+        _status = null;
+    }
+
+    private void Replace(VaultSecretInfo secret)
+    {
+        try
+        {
+            Vault.Set(secret.Name, _replaceValue, secret.Description);
+            _status = $"Replaced {secret.Name}.";
+            _replacing = null;
+            _replaceValue = "";
+            _replaceStatus = null;
+        }
+        catch (Exception ex)
+        {
+            _replaceStatus = ex.Message;
+        }
+    }
+
+    private void CancelReplace()
+    {
+        _replacing = null;
+        _replaceValue = "";
+        _replaceStatus = null;
+    }
+
+    private void BeginDelete(VaultSecretInfo secret)
+    {
+        _deleting = secret.Name;
+        _deleteUses = Usage.Find(secret.Name);
+        _replacing = null;
+        _status = null;
+    }
+
+    private void CancelDelete()
+    {
+        _deleting = null;
+        _deleteUses = [];
+    }
+
+    private void DeleteAsync(VaultSecretInfo secret)
+    {
+        Vault.Remove(secret.Name);
+        _status = $"Deleted {secret.Name}.";
+        _deleting = null;
+        _deleteUses = [];
+    }
+
+    private string UsedByText(string name)
+    {
+        IReadOnlyList<VaultUsage> uses = Usage.Find(name);
+        return uses.Count == 0
+            ? "not referenced yet"
+            : string.Join("; ", uses.Select(use => use.Where));
+    }
+
+    private string DeleteWarning(string name)
+    {
+        IReadOnlyList<VaultUsage> uses = Usage.Find(name);
+        if (uses.Count == 0) return "Nothing references it.";
+
+        string text = "Used by: " + string.Join("; ", uses.Select(use => use.Where)) + ".";
+        if (uses.Any(use => use.Where.StartsWith("MCP", StringComparison.Ordinal)))
+        {
+            text += " A running MCP server keeps the value it started with until you disconnect it.";
+        }
+        return text;
+    }
+}

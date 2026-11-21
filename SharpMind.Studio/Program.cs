@@ -80,6 +80,13 @@ builder.Services.AddSingleton(new HttpMessageInvoker(new SocketsHttpHandler
 }));
 builder.Services.AddSingleton<WorkToolService>();
 builder.Services.AddSingleton<EmbeddedPluginHost>();
+builder.Services.AddSingleton(_ =>
+    new SharpMind.Studio.Core.Vault.VaultStore(
+        SharpMind.Studio.Core.Storage.StudioPaths.VaultFile,
+        SharpMind.Studio.Core.Storage.StudioPaths.VaultKeyFile));
+builder.Services.AddSingleton<SharpMind.Studio.Core.Vault.ISecretResolver>(services =>
+    services.GetRequiredService<SharpMind.Studio.Core.Vault.VaultStore>());
+builder.Services.AddScoped<VaultUsageService>();
 builder.Services.AddSingleton<SharpMind.Studio.Core.Mcp.McpServerHost>();
 builder.Services.AddHostedService<McpIdleService>();
 builder.Services.AddSingleton(_ =>
