@@ -240,6 +240,7 @@
             if (!string.IsNullOrWhiteSpace(_keySecret))
             {
                 OpenRouter.UseSecretFor(_providerId, _keySecret);
+                OpenRouter.SaveFor(_providerId, null, _baseUrl, _model);
                 _status = $"{_preset.Name} uses Vault secret {_keySecret}.";
             }
             else
