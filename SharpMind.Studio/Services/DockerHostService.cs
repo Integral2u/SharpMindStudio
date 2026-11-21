@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Services;
 
@@ -30,7 +31,11 @@ public sealed record DockerStartRequest
 public sealed record DockerPublishRequest
 {
     public required string DockerHubUser { get; init; }
-    public required string AccessToken { get; init; }
+    public string AccessToken { get; init; } = "";
+
+    /// <summary>A Vault secret name. When set it wins over <see cref="AccessToken"/>.</summary>
+    public string? AccessTokenSecret { get; init; }
+
     public required string SourceImage { get; init; }
     public required string TargetImage { get; init; }
 }
@@ -45,6 +50,13 @@ public sealed record DockerPublishProgress(double? Fraction, string Message);
 public sealed class DockerHostService
 {
     public const string DefaultImage = ComputeProviderPresets.DefaultImage;
+
+    private readonly ISecretResolver _secrets;
+
+    public DockerHostService(ISecretResolver secrets)
+    {
+        _secrets = secrets ?? NullSecretResolver.Instance;
+    }
 
     private static readonly string[] DesktopPaths =
     [
@@ -202,8 +214,16 @@ public sealed class DockerHostService
         ArgumentNullException.ThrowIfNull(request);
         if (string.IsNullOrWhiteSpace(request.DockerHubUser))
             throw new InvalidOperationException("Enter your Docker Hub username.");
-        if (string.IsNullOrWhiteSpace(request.AccessToken))
-            throw new InvalidOperationException("Enter a Docker Hub access token.");
+
+        string? token = !string.IsNullOrWhiteSpace(request.AccessTokenSecret)
+            ? _secrets.Resolve(request.AccessTokenSecret)
+            : request.AccessToken;
+        if (string.IsNullOrWhiteSpace(token))
+            throw new InvalidOperationException(
+                string.IsNullOrWhiteSpace(request.AccessTokenSecret)
+                    ? "Enter a Docker Hub access token."
+                    : $"Vault secret '{request.AccessTokenSecret}' is missing or unreadable.");
+
         if (string.IsNullOrWhiteSpace(request.TargetImage)
             || !request.TargetImage.Contains('/', StringComparison.Ordinal))
             throw new InvalidOperationException("The target image must be <user>/<repository>:<tag>.");
@@ -212,7 +232,7 @@ public sealed class DockerHostService
         (int loginExit, _, string loginError) = await RunAsync(
             ["login", "-u", request.DockerHubUser, "--password-stdin"],
             cancellationToken,
-            stdin: request.AccessToken.Trim());
+            stdin: token.Trim());
         if (loginExit != 0)
             throw new InvalidOperationException($"Docker Hub login failed: {FirstLine(loginError)}");
 

@@ -63,6 +63,9 @@ public sealed record GatewayConfig
     public string Mode { get; init; } = GatewayConfigModes.Local;
     public string? UpstreamUrl { get; init; }
     public string? UpstreamAuthorizationProtected { get; init; }
+
+    /// <summary>A Vault secret name. When set it wins over the inline authorization.</summary>
+    public string? UpstreamAuthorizationSecret { get; init; }
     public string? GatewaySecretProtected { get; init; }
     public bool LanEnabled { get; init; }
     public string? ExternalUrl { get; init; }

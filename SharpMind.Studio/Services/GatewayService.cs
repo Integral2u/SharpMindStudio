@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using QRCoder;
 using SharpMind.Studio.Core.Gateway;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Services;
 
@@ -22,6 +23,7 @@ public sealed class GatewayService : IDisposable
 
     private readonly GatewayStore _store;
     private readonly StudioOptions _options;
+    private readonly ISecretResolver _secrets;
     private readonly ConcurrentDictionary<string, string> _approvedTokens = new();
     private readonly List<Channel<PairingSession>> _subscribers = [];
     private readonly Lock _subscriberGate = new();
@@ -35,9 +37,10 @@ public sealed class GatewayService : IDisposable
         Timeout = TimeSpan.FromSeconds(6),
     };
 
-    public GatewayService(IOptions<StudioOptions> options)
+    public GatewayService(IOptions<StudioOptions> options, ISecretResolver secrets)
     {
         _options = options.Value;
+        _secrets = secrets ?? NullSecretResolver.Instance;
         StudioPaths.EnsureCreated();
         _store = new GatewayStore(StudioPaths.Gateway);
         _keyFile = Path.Combine(_store.Root, "gateway.key");
@@ -106,7 +109,9 @@ public sealed class GatewayService : IDisposable
         GatewaySecretBox.Unprotect(Config.GatewaySecretProtected, _keyFile);
 
     public string? UpstreamAuthorization =>
-        GatewaySecretBox.Unprotect(Config.UpstreamAuthorizationProtected, _keyFile);
+        !string.IsNullOrWhiteSpace(Config.UpstreamAuthorizationSecret)
+            ? _secrets.Resolve(Config.UpstreamAuthorizationSecret)
+            : GatewaySecretBox.Unprotect(Config.UpstreamAuthorizationProtected, _keyFile);
 
     public Uri? UpstreamUri =>
         GatewayProxyRules.TryNormalizeUpstream(Config.UpstreamUrl, out Uri? uri) ? uri : null;
@@ -144,9 +149,17 @@ public sealed class GatewayService : IDisposable
             : GatewayConfigModes.Local;
 
         string? authorization = config.UpstreamAuthorizationProtected;
-        if (clearAuthorization) authorization = null;
+        string? authorizationSecret = config.UpstreamAuthorizationSecret;
+        if (clearAuthorization)
+        {
+            authorization = null;
+            authorizationSecret = null;
+        }
         else if (!string.IsNullOrWhiteSpace(upstreamAuthorization))
+        {
             authorization = GatewaySecretBox.Protect(upstreamAuthorization.Trim(), _keyFile);
+            authorizationSecret = null;
+        }
 
         string? secret = config.GatewaySecretProtected;
         if (clearGatewaySecret) secret = null;
@@ -158,7 +171,20 @@ public sealed class GatewayService : IDisposable
             Mode = normalizedMode,
             UpstreamUrl = string.IsNullOrWhiteSpace(upstreamUrl) ? null : upstreamUrl.Trim(),
             UpstreamAuthorizationProtected = authorization,
+            UpstreamAuthorizationSecret = authorizationSecret,
             GatewaySecretProtected = secret,
+        });
+    }
+
+    /// <summary>Uses a named Vault secret for the upstream token, dropping any inline value.</summary>
+    public void UseUpstreamAuthorizationSecret(string? secretName)
+    {
+        SaveConfig(Config with
+        {
+            UpstreamAuthorizationSecret = string.IsNullOrWhiteSpace(secretName)
+                ? null
+                : secretName.Trim(),
+            UpstreamAuthorizationProtected = null,
         });
     }
 

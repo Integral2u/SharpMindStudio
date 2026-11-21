@@ -65,10 +65,31 @@
 
         <div class="training-form">
             <div class="field training-form-wide">
+                <label class="field-label" for="remote-key-secret">Use a Vault secret</label>
+                <div class="row">
+                    <SecretSelect Value="@_keySecret" ValueChanged="OnKeySecretChanged"
+                                  EmptyLabel="Type a key"
+                                  Title="Use a named secret from Settings > Vault. The value is read only when a request is sent." />
+                </div>
+                <span class="small faint">
+                    A Vault secret wins over the key field. Selecting a secret clears the stored inline key.
+                </span>
+                @if (!string.IsNullOrWhiteSpace(_keySecret) && !OpenRouter.HasApiKeyFor(_providerId))
+                {
+                    <span class="small faint">
+                        Vault secret <span class="mono">@_keySecret</span> is missing or unreadable.
+                        Pick another, or replace it in Vault.
+                    </span>
+                }
+            </div>
+            <div class="field training-form-wide">
                 <label class="field-label" for="remote-key">API key</label>
                 <input id="remote-key" class="input" type="password" @bind="_key"
-                       placeholder="@_preset.KeyHint (leave blank to keep)" autocomplete="off" />
-                <span class="small faint">Stored encrypted under <span class="mono">@StudioPaths.OpenRouterFile</span>.</span>
+                       placeholder="@_preset.KeyHint (leave blank to keep)" autocomplete="off"
+                       disabled="@(!string.IsNullOrWhiteSpace(_keySecret))" />
+                <span class="small faint">
+                    Stored encrypted under <span class="mono">@StudioPaths.OpenRouterFile</span>.
+                </span>
             </div>
             <div class="field training-form-wide">
                 <label class="field-label" for="remote-base">Base URL</label>
@@ -170,6 +191,7 @@
 @code {
     private string _providerId = RemoteProviders.OpenRouter;
     private string _key = "";
+    private string? _keySecret;
     private string _baseUrl = "";
     private string _model = "";
     private string? _status;
@@ -186,11 +208,13 @@
     {
         _baseUrl = OpenRouter.BaseUrlFor(_providerId);
         _model = OpenRouter.DefaultModelFor(_providerId) ?? "";
+        _keySecret = OpenRouter.ApiKeySecretFor(_providerId);
     }
 
     private void OnProviderChanged()
     {
         _key = "";
+        _keySecret = null;
         _models = [];
         _fetchedModelChoice = null;
         _status = null;
@@ -198,17 +222,37 @@
         LoadProfile();
     }
 
+    private void OnKeySecretChanged(string? name)
+    {
+        _keySecret = name;
+        if (string.IsNullOrWhiteSpace(name) && OpenRouter.ApiKeySecretFor(_providerId) is not null)
+        {
+            OpenRouter.ClearApiKeyFor(_providerId);
+            _status = "Vault reference removed. Type a key and Save, or choose a secret.";
+            _error = null;
+        }
+    }
+
     private void Save()
     {
         try
         {
-            OpenRouter.SaveFor(
-                _providerId,
-                string.IsNullOrWhiteSpace(_key) ? null : _key,
-                _baseUrl,
-                _model);
+            if (!string.IsNullOrWhiteSpace(_keySecret))
+            {
+                OpenRouter.UseSecretFor(_providerId, _keySecret);
+                _status = $"{_preset.Name} uses Vault secret {_keySecret}.";
+            }
+            else
+            {
+                OpenRouter.SaveFor(
+                    _providerId,
+                    string.IsNullOrWhiteSpace(_key) ? null : _key,
+                    _baseUrl,
+                    _model);
+                _status = $"{_preset.Name} settings saved.";
+            }
+
             _key = "";
-            _status = $"{_preset.Name} settings saved.";
             _error = null;
         }
         catch (Exception ex)
@@ -348,6 +392,7 @@
 
         OpenRouter.ClearApiKeyFor(_providerId);
         _key = "";
+        _keySecret = null;
         _status = $"{_preset.Name} API key deleted.";
         _error = null;
     }

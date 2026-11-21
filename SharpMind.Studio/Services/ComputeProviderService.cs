@@ -1,5 +1,6 @@
 using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Services;
 
@@ -14,12 +15,18 @@ public sealed class ComputeProviderService
     private readonly ComputeClient _client;
     private readonly ComputeActivityService _activity;
 
-    public ComputeProviderService(ComputeClient client, ComputeActivityService activity)
+    public ComputeProviderService(
+        ComputeClient client,
+        ComputeActivityService activity,
+        ISecretResolver secrets)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _activity = activity ?? throw new ArgumentNullException(nameof(activity));
         StudioPaths.EnsureCreated();
-        _store = new ComputeSettingsStore(StudioPaths.ComputeFile, StudioPaths.ComputeKeyFile);
+        _store = new ComputeSettingsStore(
+            StudioPaths.ComputeFile,
+            StudioPaths.ComputeKeyFile,
+            secrets);
     }
 
     public event Action? Changed;
@@ -110,6 +117,12 @@ public sealed class ComputeProviderService
         if (_store.SetToken(id, token)) Changed?.Invoke();
     }
 
+    /// <summary>Uses a named Vault secret for the host token instead of an inline value.</summary>
+    public void SetTokenSecret(string id, string? secretName)
+    {
+        if (_store.SetTokenSecret(id, secretName)) Changed?.Invoke();
+    }
+
     /// <summary>Returns the saved token, or creates and saves one so the local container and Studio match.</summary>
     public string EnsureToken(string id)
     {
@@ -145,6 +158,11 @@ public sealed class ComputeProviderService
         if (_store.SetRunpod(id, apiKey, image, gpuType, diskGb)) Changed?.Invoke();
     }
 
+    public void SetRunpodApiKeySecret(string id, string? secretName)
+    {
+        if (_store.SetRunpodApiKeySecret(id, secretName)) Changed?.Invoke();
+    }
+
     public void SetRunpodPod(string id, string? podId, string? status)
     {
         if (_store.SetRunpodPod(id, podId, status)) Changed?.Invoke();
@@ -166,6 +184,11 @@ public sealed class ComputeProviderService
     {
         if (_store.SetVultr(id, apiKey, planId, region, osId, sshKeyId, sshKeyName, hourlyCost))
             Changed?.Invoke();
+    }
+
+    public void SetVultrApiKeySecret(string id, string? secretName)
+    {
+        if (_store.SetVultrApiKeySecret(id, secretName)) Changed?.Invoke();
     }
 
     public void SetVultrInstance(
@@ -199,6 +222,16 @@ public sealed class ComputeProviderService
     {
         if (_store.SetSsh(id, host, port, user, keyPath, password, passphrase, containerName, useGpu))
             Changed?.Invoke();
+    }
+
+    public void SetSshPasswordSecret(string id, string? secretName)
+    {
+        if (_store.SetSshPasswordSecret(id, secretName)) Changed?.Invoke();
+    }
+
+    public void SetSshKeyPassphraseSecret(string id, string? secretName)
+    {
+        if (_store.SetSshKeyPassphraseSecret(id, secretName)) Changed?.Invoke();
     }
 
     public void SetImage(string id, string? image)

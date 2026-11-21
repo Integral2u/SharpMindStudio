@@ -22,10 +22,25 @@
             the other provider secrets.
         </p>
         <div class="field">
+            <label class="field-label">Use a Vault secret</label>
+            <SecretSelect Value="@_tokenSecret" ValueChanged="OnTokenSecretChanged"
+                          EmptyLabel="Type a token"
+                          Title="Use a named HuggingFace token from Settings > Vault." />
+            <span class="small faint">
+                A Vault secret wins over the token field. Selecting one clears the stored inline token.
+            </span>
+            @if (!string.IsNullOrWhiteSpace(_tokenSecret) && !HuggingFace.HasToken)
+            {
+                <span class="small faint">
+                    Vault secret <span class="mono">@_tokenSecret</span> is missing or unreadable.
+                </span>
+            }
+        </div>
+        <div class="field">
             <label class="field-label" for="huggingface-token">Access token (optional)</label>
             <input id="huggingface-token" class="input" type="password" @bind="_token"
                    placeholder="@(HuggingFace.HasToken ? "Leave blank to keep the saved token" : "hf_...")"
-                   autocomplete="off" />
+                   autocomplete="off" disabled="@(!string.IsNullOrWhiteSpace(_tokenSecret))" />
             <span class="small faint">Stored encrypted under <span class="mono">@StudioPaths.HuggingFaceFile</span>.</span>
         </div>
         <div class="row">
@@ -47,11 +62,34 @@
 
 @code {
     private string _token = "";
+    private string? _tokenSecret;
     private string? _status;
     private string? _error;
 
+    protected override void OnInitialized() => _tokenSecret = HuggingFace.TokenSecret;
+
+    private void OnTokenSecretChanged(string? name)
+    {
+        _tokenSecret = name;
+        if (string.IsNullOrWhiteSpace(name) && HuggingFace.TokenSecret is not null)
+        {
+            HuggingFace.UseSecret(null);
+            _status = "Vault reference removed. Type a token and Save.";
+            _error = null;
+        }
+    }
+
     private void SaveAsync()
     {
+        if (!string.IsNullOrWhiteSpace(_tokenSecret))
+        {
+            HuggingFace.UseSecret(_tokenSecret);
+            _token = "";
+            _status = $"HuggingFace uses Vault secret {_tokenSecret}.";
+            _error = null;
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_token))
         {
             _status = "Enter a HuggingFace token first.";
@@ -81,6 +119,7 @@
 
         HuggingFace.ClearToken();
         _token = "";
+        _tokenSecret = null;
         _status = "HuggingFace token deleted.";
         _error = null;
     }

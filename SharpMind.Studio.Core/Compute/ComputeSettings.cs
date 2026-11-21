@@ -1,5 +1,6 @@
 using SharpMind.Studio.Core.Gateway;
 using SharpMind.Studio.Core.Serialization;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Core.Compute;
 
@@ -23,6 +24,9 @@ public sealed class ComputeProviderSettings
     public const string DefaultLocalUrl = "http://127.0.0.1:8080";
 
     public string? TokenProtected { get; set; }
+
+    /// <summary>A Vault secret name. When set it wins over <see cref="TokenProtected"/>.</summary>
+    public string? TokenSecret { get; set; }
 
     /// <summary>Where the combined SharpMind Server serves the Studio web UI.</summary>
     public string? StudioUrl { get; set; }
@@ -53,13 +57,16 @@ public sealed class ComputeProviderSettings
     public string? SshUser { get; set; } = SshTargets.DefaultUser;
     public string? SshKeyPath { get; set; }
     public string? SshPasswordProtected { get; set; }
+    public string? SshPasswordSecret { get; set; }
     public string? SshKeyPassphraseProtected { get; set; }
+    public string? SshKeyPassphraseSecret { get; set; }
     public string? SshContainerName { get; set; }
 
     // --- Runpod helper --------------------------------------------------
     // Optional: lets Studio create and terminate the pod through Runpod's API.
 
     public string? RunpodApiKeyProtected { get; set; }
+    public string? RunpodApiKeySecret { get; set; }
     public string? RunpodImage { get; set; }
     public string? RunpodGpuType { get; set; }
     public int? RunpodDiskGb { get; set; }
@@ -70,6 +77,7 @@ public sealed class ComputeProviderSettings
     // Optional: lets Studio create and destroy a Vultr instance through Vultr's
     // API and then run the existing SSH setup against it.
     public string? VultrApiKeyProtected { get; set; }
+    public string? VultrApiKeySecret { get; set; }
     public string? VultrInstanceId { get; set; }
     public string? VultrInstanceStatus { get; set; }
     public string? VultrPlanId { get; set; }
@@ -202,14 +210,19 @@ public sealed class ComputeSettingsStore
 {
     private readonly object _gate = new();
     private readonly string _keyFile;
+    private readonly ISecretResolver _secrets;
     private ComputeSettingsDocument _document;
 
-    public ComputeSettingsStore(string settingsPath, string keyFile)
+    public ComputeSettingsStore(
+        string settingsPath,
+        string keyFile,
+        ISecretResolver? secrets = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(keyFile);
         Path = System.IO.Path.GetFullPath(settingsPath);
         _keyFile = System.IO.Path.GetFullPath(keyFile);
+        _secrets = secrets ?? NullSecretResolver.Instance;
         _document = Load();
     }
 
@@ -259,7 +272,7 @@ public sealed class ComputeSettingsStore
         ComputeProviderSettings? provider = Find(id);
         if (provider is null) return null;
         lock (_gate)
-            return GatewaySecretBox.Unprotect(provider.TokenProtected, _keyFile);
+            return ResolveSecret(provider.TokenSecret, provider.TokenProtected);
     }
 
     public ComputeProvider? Resolve(string? id)
@@ -269,7 +282,7 @@ public sealed class ComputeSettingsStore
 
         string token;
         lock (_gate)
-            token = GatewaySecretBox.Unprotect(provider.TokenProtected, _keyFile) ?? "";
+            token = ResolveSecret(provider.TokenSecret, provider.TokenProtected) ?? "";
 
         return new ComputeProvider(
             provider.Id,
@@ -352,6 +365,7 @@ public sealed class ComputeSettingsStore
 
             if (token is not null)
             {
+                provider.TokenSecret = null;
                 provider.TokenProtected = string.IsNullOrWhiteSpace(token)
                     ? null
                     : GatewaySecretBox.Protect(token.Trim(), _keyFile);
@@ -484,9 +498,28 @@ public sealed class ComputeSettingsStore
                 value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
             if (provider is null) return false;
 
+            provider.TokenSecret = null;
             provider.TokenProtected = string.IsNullOrWhiteSpace(token)
                 ? null
                 : GatewaySecretBox.Protect(token.Trim(), _keyFile);
+            SaveLocked();
+            return true;
+        }
+    }
+
+    /// <summary>Uses a named Vault secret for the host token, dropping the inline value.</summary>
+    public bool SetTokenSecret(string id, string? secretName)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.TokenSecret = string.IsNullOrWhiteSpace(secretName)
+                ? null
+                : secretName.Trim();
+            provider.TokenProtected = null;
             SaveLocked();
             return true;
         }
@@ -518,7 +551,25 @@ public sealed class ComputeSettingsStore
                 value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
             return provider is null
                 ? null
-                : GatewaySecretBox.Unprotect(provider.RunpodApiKeyProtected, _keyFile);
+                : ResolveSecret(provider.RunpodApiKeySecret, provider.RunpodApiKeyProtected);
+        }
+    }
+
+    /// <summary>Uses a named Vault secret for the Runpod key, dropping the inline value.</summary>
+    public bool SetRunpodApiKeySecret(string id, string? secretName)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.RunpodApiKeySecret = string.IsNullOrWhiteSpace(secretName)
+                ? null
+                : secretName.Trim();
+            provider.RunpodApiKeyProtected = null;
+            SaveLocked();
+            return true;
         }
     }
 
@@ -538,6 +589,7 @@ public sealed class ComputeSettingsStore
 
             if (apiKey is not null)
             {
+                provider.RunpodApiKeySecret = null;
                 provider.RunpodApiKeyProtected = string.IsNullOrWhiteSpace(apiKey)
                     ? null
                     : GatewaySecretBox.Protect(apiKey.Trim(), _keyFile);
@@ -575,7 +627,25 @@ public sealed class ComputeSettingsStore
                 value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
             return provider is null
                 ? null
-                : GatewaySecretBox.Unprotect(provider.VultrApiKeyProtected, _keyFile);
+                : ResolveSecret(provider.VultrApiKeySecret, provider.VultrApiKeyProtected);
+        }
+    }
+
+    /// <summary>Uses a named Vault secret for the Vultr key, dropping the inline value.</summary>
+    public bool SetVultrApiKeySecret(string id, string? secretName)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.VultrApiKeySecret = string.IsNullOrWhiteSpace(secretName)
+                ? null
+                : secretName.Trim();
+            provider.VultrApiKeyProtected = null;
+            SaveLocked();
+            return true;
         }
     }
 
@@ -598,6 +668,7 @@ public sealed class ComputeSettingsStore
 
             if (apiKey is not null)
             {
+                provider.VultrApiKeySecret = null;
                 provider.VultrApiKeyProtected = string.IsNullOrWhiteSpace(apiKey)
                     ? null
                     : GatewaySecretBox.Protect(apiKey.Trim(), _keyFile);
@@ -688,6 +759,7 @@ public sealed class ComputeSettingsStore
 
             if (password is not null)
             {
+                provider.SshPasswordSecret = null;
                 provider.SshPasswordProtected = string.IsNullOrWhiteSpace(password)
                     ? null
                     : GatewaySecretBox.Protect(password, _keyFile);
@@ -695,6 +767,7 @@ public sealed class ComputeSettingsStore
 
             if (passphrase is not null)
             {
+                provider.SshKeyPassphraseSecret = null;
                 provider.SshKeyPassphraseProtected = string.IsNullOrWhiteSpace(passphrase)
                     ? null
                     : GatewaySecretBox.Protect(passphrase, _keyFile);
@@ -714,7 +787,25 @@ public sealed class ComputeSettingsStore
                 value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
             return provider is null
                 ? null
-                : GatewaySecretBox.Unprotect(provider.SshPasswordProtected, _keyFile);
+                : ResolveSecret(provider.SshPasswordSecret, provider.SshPasswordProtected);
+        }
+    }
+
+    /// <summary>Uses a named Vault secret for the SSH password, dropping the inline value.</summary>
+    public bool SetSshPasswordSecret(string id, string? secretName)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.SshPasswordSecret = string.IsNullOrWhiteSpace(secretName)
+                ? null
+                : secretName.Trim();
+            provider.SshPasswordProtected = null;
+            SaveLocked();
+            return true;
         }
     }
 
@@ -727,7 +818,27 @@ public sealed class ComputeSettingsStore
                 value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
             return provider is null
                 ? null
-                : GatewaySecretBox.Unprotect(provider.SshKeyPassphraseProtected, _keyFile);
+                : ResolveSecret(
+                    provider.SshKeyPassphraseSecret,
+                    provider.SshKeyPassphraseProtected);
+        }
+    }
+
+    /// <summary>Uses a named Vault secret for the SSH passphrase, dropping the inline value.</summary>
+    public bool SetSshKeyPassphraseSecret(string id, string? secretName)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.SshKeyPassphraseSecret = string.IsNullOrWhiteSpace(secretName)
+                ? null
+                : secretName.Trim();
+            provider.SshKeyPassphraseProtected = null;
+            SaveLocked();
+            return true;
         }
     }
 
@@ -826,6 +937,11 @@ public sealed class ComputeSettingsStore
             value = value[..^3].TrimEnd('/');
         return value;
     }
+
+    private string? ResolveSecret(string? secretName, string? protectedValue) =>
+        !string.IsNullOrWhiteSpace(secretName)
+            ? _secrets.Resolve(secretName)
+            : GatewaySecretBox.Unprotect(protectedValue, _keyFile);
 
     private ComputeSettingsDocument Load()
     {

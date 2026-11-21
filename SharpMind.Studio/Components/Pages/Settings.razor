@@ -340,13 +340,19 @@ else if (_tab == "openrouter")
                                 <input id="compute-token" class="input"
                                        type="@(_computeShowToken ? "text" : "password")" @bind="_computeToken"
                                        placeholder="@(_editingComputeId is null ? "Leave blank to generate" : "leave blank to keep")"
-                                       autocomplete="off" />
+                                       autocomplete="off"
+                                       disabled="@(!string.IsNullOrWhiteSpace(_computeTokenSecret))" />
                                 <button type="button" class="button" @onclick="GenerateComputeToken"
+                                        disabled="@(!string.IsNullOrWhiteSpace(_computeTokenSecret))"
                                         title="Create a strong bearer token; it is saved with this host.">Generate</button>
-                                <button type="button" class="button" @onclick="() => _computeShowToken = !_computeShowToken">
+                                <button type="button" class="button" @onclick="() => _computeShowToken = !_computeShowToken"
+                                        disabled="@(!string.IsNullOrWhiteSpace(_computeTokenSecret))">
                                     @(_computeShowToken ? "Hide" : "Show")
                                 </button>
                             </div>
+                            <SecretSelect Value="@_computeTokenSecret" ValueChanged="OnComputeTokenSecretChanged"
+                                          EmptyLabel="Type a token"
+                                          Title="Use a named host token from Settings > Vault." />
                             <span class="small faint">
                                 The same value as <span class="mono">SHARPMIND_TOKEN</span> on the host.
                                 A generated token is saved with this host, so Studio and the container always match.
@@ -407,7 +413,11 @@ else if (_tab == "openrouter")
                                 <label class="field-label" for="runpod-key">Runpod API key</label>
                                 <input id="runpod-key" class="input" type="password" @bind="_runpodKey"
                                        autocomplete="off"
+                                       disabled="@(!string.IsNullOrWhiteSpace(_runpodKeySecret))"
                                        placeholder="@(_editingComputeId is null ? "rpa_..." : "leave blank to keep")" />
+                                <SecretSelect Value="@_runpodKeySecret" ValueChanged="OnRunpodKeySecretChanged"
+                                              EmptyLabel="Type a key"
+                                              Title="Use a named Runpod key from Settings > Vault." />
                                 <span class="small faint">
                                     Optional. With a key, save the host and use <strong>Deploy pod</strong>
                                     on its card; Studio creates and can terminate the pod for you.
@@ -528,13 +538,23 @@ else if (_tab == "openrouter")
                                 <label class="field-label" for="compute-ssh-passphrase">Key passphrase</label>
                                 <input id="compute-ssh-passphrase" class="input" type="password"
                                        @bind="_computeSshPassphrase" autocomplete="off"
+                                       disabled="@(!string.IsNullOrWhiteSpace(_computeSshPassphraseSecret))"
                                        placeholder="@(_editingComputeId is null ? "if the key is encrypted" : "leave blank to keep")" />
+                                <SecretSelect Value="@_computeSshPassphraseSecret"
+                                              ValueChanged="OnSshPassphraseSecretChanged"
+                                              EmptyLabel="Type a passphrase"
+                                              Title="Use a named passphrase from Settings > Vault." />
                             </div>
                             <div class="field">
                                 <label class="field-label" for="compute-ssh-password">SSH password</label>
                                 <input id="compute-ssh-password" class="input" type="password"
                                        @bind="_computeSshPassword" autocomplete="off"
+                                       disabled="@(!string.IsNullOrWhiteSpace(_computeSshPasswordSecret))"
                                        placeholder="@(_editingComputeId is null ? "alternative to a key" : "leave blank to keep")" />
+                                <SecretSelect Value="@_computeSshPasswordSecret"
+                                              ValueChanged="OnSshPasswordSecretChanged"
+                                              EmptyLabel="Type a password"
+                                              Title="Use a named SSH password from Settings > Vault." />
                                 <span class="small faint">Stored encrypted with the same local key as the token.</span>
                             </div>
                             <div class="field training-form-wide">

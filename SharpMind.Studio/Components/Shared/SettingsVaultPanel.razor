@@ -1,7 +1,12 @@
+@using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.Vault
 @using SharpMind.Studio.Services
 @inject VaultStore Vault
 @inject VaultUsageService Usage
+@inject OpenRouterSettingsService Remote
+@inject HuggingFaceService HuggingFace
+@inject ComputeProviderService Compute
+@inject GatewayService Gateway
 
 <details class="panel settings-collapsible" open>
     <summary class="panel-head">
@@ -218,22 +223,58 @@
 
     private string UsedByText(string name)
     {
-        IReadOnlyList<VaultUsage> uses = Usage.Find(name);
+        IReadOnlyList<string> uses = UsageFor(name);
         return uses.Count == 0
             ? "not referenced yet"
-            : string.Join("; ", uses.Select(use => use.Where));
+            : string.Join("; ", uses);
     }
 
     private string DeleteWarning(string name)
     {
-        IReadOnlyList<VaultUsage> uses = Usage.Find(name);
+        IReadOnlyList<string> uses = UsageFor(name);
         if (uses.Count == 0) return "Nothing references it.";
 
-        string text = "Used by: " + string.Join("; ", uses.Select(use => use.Where)) + ".";
-        if (uses.Any(use => use.Where.StartsWith("MCP", StringComparison.Ordinal)))
+        string text = "Used by: " + string.Join("; ", uses) + ".";
+        if (uses.Any(use => use.StartsWith("MCP", StringComparison.Ordinal)))
         {
             text += " A running MCP server keeps the value it started with until you disconnect it.";
         }
         return text;
     }
+
+    private IReadOnlyList<string> UsageFor(string name)
+    {
+        var uses = new List<string>();
+        uses.AddRange(Usage.Find(name).Select(use => use.Where));
+
+        foreach (var preset in Remote.Providers)
+        {
+            if (Same(Remote.ApiKeySecretFor(preset.Id), name))
+                uses.Add($"{preset.Name} API key");
+        }
+
+        if (Same(HuggingFace.TokenSecret, name)) uses.Add("HuggingFace token");
+
+        foreach (ComputeProviderSettings provider in Compute.Providers)
+        {
+            if (Same(provider.TokenSecret, name)) uses.Add($"Compute {provider.Name} token");
+            if (Same(provider.RunpodApiKeySecret, name))
+                uses.Add($"Compute {provider.Name} Runpod key");
+            if (Same(provider.VultrApiKeySecret, name))
+                uses.Add($"Compute {provider.Name} Vultr key");
+            if (Same(provider.SshPasswordSecret, name))
+                uses.Add($"Compute {provider.Name} SSH password");
+            if (Same(provider.SshKeyPassphraseSecret, name))
+                uses.Add($"Compute {provider.Name} SSH passphrase");
+        }
+
+        if (Same(Gateway.Config.UpstreamAuthorizationSecret, name))
+            uses.Add("Gateway upstream token");
+
+        return [.. uses.Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private static bool Same(string? reference, string name) =>
+        !string.IsNullOrWhiteSpace(reference) &&
+        reference.Equals(name, StringComparison.OrdinalIgnoreCase);
 }

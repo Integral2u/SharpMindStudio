@@ -215,4 +215,62 @@ public sealed class ComputeSettingsStoreTests
         Assert.False(store.Find(id)!.Healthy);
         Assert.Equal("Offline.", store.Find(id)!.LastStatus);
     }
+
+    [Fact]
+    public void EveryComputeCredential_CanComeFromTheVault()
+    {
+        using var temp = new TempDirectory();
+        string settings = temp.Combine("compute.json");
+        string key = temp.Combine("compute.key");
+        var secrets = new TestSecretResolver(
+            ("HOST_TOKEN", "host-secret"),
+            ("RUNPOD_KEY", "runpod-secret"),
+            ("VULTR_KEY", "vultr-secret"),
+            ("SSH_PASSWORD", "ssh-password"),
+            ("SSH_PASSPHRASE", "ssh-passphrase"));
+        var store = new ComputeSettingsStore(settings, key, secrets);
+
+        ComputeProviderSettings provider = store.Add(
+            "Host", ComputeProviderKinds.Remote, "https://host", "inline-token");
+
+        store.SetTokenSecret(provider.Id, "HOST_TOKEN");
+        store.SetRunpodApiKeySecret(provider.Id, "RUNPOD_KEY");
+        store.SetVultrApiKeySecret(provider.Id, "VULTR_KEY");
+        store.SetSshPasswordSecret(provider.Id, "SSH_PASSWORD");
+        store.SetSshKeyPassphraseSecret(provider.Id, "SSH_PASSPHRASE");
+
+        Assert.Equal("host-secret", store.Token(provider.Id));
+        Assert.Equal("runpod-secret", store.RunpodApiKey(provider.Id));
+        Assert.Equal("vultr-secret", store.VultrApiKey(provider.Id));
+        Assert.Equal("ssh-password", store.SshPassword(provider.Id));
+        Assert.Equal("ssh-passphrase", store.SshKeyPassphrase(provider.Id));
+
+        string json = File.ReadAllText(settings);
+        Assert.DoesNotContain("host-secret", json);
+        Assert.DoesNotContain("runpod-secret", json);
+        Assert.DoesNotContain("vultr-secret", json);
+        Assert.DoesNotContain("ssh-password", json);
+        Assert.DoesNotContain("ssh-passphrase", json);
+
+        store.SetToken(provider.Id, "inline-again");
+        Assert.Equal("inline-again", store.Token(provider.Id));
+        Assert.Null(store.Find(provider.Id)!.TokenSecret);
+    }
+
+    [Fact]
+    public void MissingVaultSecret_ReadsAsNoCredential()
+    {
+        using var temp = new TempDirectory();
+        var store = new ComputeSettingsStore(
+            temp.Combine("compute.json"),
+            temp.Combine("compute.key"),
+            new TestSecretResolver());
+        ComputeProviderSettings provider = store.Add(
+            "Host", ComputeProviderKinds.Remote, "https://host", null);
+
+        store.SetTokenSecret(provider.Id, "MISSING");
+
+        Assert.Null(store.Token(provider.Id));
+        Assert.Equal("MISSING", store.Find(provider.Id)!.TokenSecret);
+    }
 }

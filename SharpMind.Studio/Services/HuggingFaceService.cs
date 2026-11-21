@@ -1,5 +1,6 @@
 using SharpMind.Studio.Core.HuggingFace;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Services;
 
@@ -13,13 +14,14 @@ public sealed class HuggingFaceService : IDisposable
     private readonly HuggingFaceSettingsStore _store;
     private CancellationTokenSource? _cts;
 
-    public HuggingFaceService(HuggingFaceClient client)
+    public HuggingFaceService(HuggingFaceClient client, ISecretResolver secrets)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         StudioPaths.EnsureCreated();
         _store = new HuggingFaceSettingsStore(
             StudioPaths.HuggingFaceFile,
-            StudioPaths.HuggingFaceKeyFile);
+            StudioPaths.HuggingFaceKeyFile,
+            secrets);
     }
 
     public event Action? Changed;
@@ -40,6 +42,26 @@ public sealed class HuggingFaceService : IDisposable
 
     public bool HasToken => _store.HasToken;
     public string? Token => _store.ApiToken;
+    public string? TokenSecret => _store.TokenSecret;
+
+    /// <summary>Uses a named Vault secret, dropping any inline token.</summary>
+    public void UseSecret(string? secretName)
+    {
+        try
+        {
+            _store.SetTokenSecret(secretName);
+            Error = null;
+            Status = string.IsNullOrWhiteSpace(secretName)
+                ? "HuggingFace token reference removed."
+                : $"HuggingFace uses Vault secret {secretName}.";
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            Status = "Could not save the HuggingFace token reference.";
+        }
+        Notify();
+    }
 
     public void SaveToken(string? token)
     {

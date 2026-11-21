@@ -1,5 +1,6 @@
 using SharpMind.Studio.Core.Gateway;
 using SharpMind.Studio.Core.Serialization;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Core.HuggingFace;
 
@@ -10,20 +11,28 @@ public sealed record HuggingFaceSettingsDocument
 
     public string Schema { get; init; } = CurrentSchema;
     public string? TokenProtected { get; set; }
+
+    /// <summary>A Vault secret name. When set it wins over <see cref="TokenProtected"/>.</summary>
+    public string? TokenSecret { get; set; }
 }
 
 public sealed class HuggingFaceSettingsStore
 {
     private readonly object _gate = new();
     private readonly string _keyFile;
+    private readonly ISecretResolver _secrets;
     private HuggingFaceSettingsDocument _document;
 
-    public HuggingFaceSettingsStore(string settingsPath, string keyFile)
+    public HuggingFaceSettingsStore(
+        string settingsPath,
+        string keyFile,
+        ISecretResolver? secrets = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(keyFile);
         Path = System.IO.Path.GetFullPath(settingsPath);
         _keyFile = System.IO.Path.GetFullPath(keyFile);
+        _secrets = secrets ?? NullSecretResolver.Instance;
         _document = Load();
     }
 
@@ -33,8 +42,15 @@ public sealed class HuggingFaceSettingsStore
     {
         get
         {
-            lock (_gate)
-                return GatewaySecretBox.Unprotect(_document.TokenProtected, _keyFile);
+            lock (_gate) return ResolveTokenLocked();
+        }
+    }
+
+    public string? TokenSecret
+    {
+        get
+        {
+            lock (_gate) return _document.TokenSecret;
         }
     }
 
@@ -44,9 +60,23 @@ public sealed class HuggingFaceSettingsStore
     {
         lock (_gate)
         {
+            _document.TokenSecret = null;
             _document.TokenProtected = string.IsNullOrWhiteSpace(token)
                 ? null
                 : GatewaySecretBox.Protect(token.Trim(), _keyFile);
+            SaveLocked();
+        }
+    }
+
+    /// <summary>Uses a named Vault secret and drops the inline ciphertext.</summary>
+    public void SetTokenSecret(string? secretName)
+    {
+        lock (_gate)
+        {
+            _document.TokenSecret = string.IsNullOrWhiteSpace(secretName)
+                ? null
+                : secretName.Trim();
+            _document.TokenProtected = null;
             SaveLocked();
         }
     }
@@ -56,9 +86,15 @@ public sealed class HuggingFaceSettingsStore
         lock (_gate)
         {
             _document.TokenProtected = null;
+            _document.TokenSecret = null;
             SaveLocked();
         }
     }
+
+    private string? ResolveTokenLocked() =>
+        !string.IsNullOrWhiteSpace(_document.TokenSecret)
+            ? _secrets.Resolve(_document.TokenSecret)
+            : GatewaySecretBox.Unprotect(_document.TokenProtected, _keyFile);
 
     private HuggingFaceSettingsDocument Load()
     {

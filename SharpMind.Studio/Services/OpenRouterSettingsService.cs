@@ -1,5 +1,6 @@
 using SharpMind.Studio.Core.OpenRouter;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Services;
 
@@ -14,13 +15,14 @@ public sealed class OpenRouterSettingsService
     private readonly OpenRouterSettingsStore _store;
     private readonly OpenRouterClient _client;
 
-    public OpenRouterSettingsService(OpenRouterClient client)
+    public OpenRouterSettingsService(OpenRouterClient client, ISecretResolver secrets)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         StudioPaths.EnsureCreated();
         _store = new OpenRouterSettingsStore(
             StudioPaths.OpenRouterFile,
-            StudioPaths.OpenRouterKeyFile);
+            StudioPaths.OpenRouterKeyFile,
+            secrets);
     }
 
     public event Action? Changed;
@@ -52,6 +54,14 @@ public sealed class OpenRouterSettingsService
         !string.IsNullOrWhiteSpace(ApiKeyFor(providerId));
     public bool IsConfiguredFor(string? providerId) => _store.IsConfigured(providerId);
     public string? ApiKeyFor(string? providerId) => _store.GetApiKey(providerId);
+    public string? ApiKeySecretFor(string? providerId) => _store.ApiKeySecret(providerId);
+
+    /// <summary>Uses a named Vault secret for this provider, dropping any inline key.</summary>
+    public void UseSecretFor(string? providerId, string? secretName)
+    {
+        _store.SetApiKeySecret(providerId, secretName);
+        Changed?.Invoke();
+    }
 
     public OpenRouterConnection ConnectionFor(string? providerId)
     {

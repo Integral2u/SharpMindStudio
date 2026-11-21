@@ -25,7 +25,11 @@
             <label class="field-label" for="vultr-key-@ProviderId">API key</label>
             <input id="vultr-key-@ProviderId" class="input" type="password"
                    @bind="_apiKey" @bind:event="oninput" autocomplete="off"
+                   disabled="@(!string.IsNullOrWhiteSpace(_apiKeySecret))"
                    placeholder="@(HasSavedKey ? "saved; leave blank to keep" : "Vultr personal access token")" />
+            <SecretSelect Value="@_apiKeySecret" ValueChanged="OnApiKeySecretChanged"
+                          EmptyLabel="Type a key"
+                          Title="Use a named Vultr key from Settings > Vault." />
             <span class="small faint">Stored encrypted. Only account-level Vultr keys can create instances.</span>
         </div>
         <div class="field">
@@ -155,6 +159,7 @@
     [Parameter] public string? Purpose { get; set; }
 
     private string _apiKey = "";
+    private string? _apiKeySecret;
     private string _region = "";
     private string _planId = "";
     private int _idleMinutes = ComputeIdleTracker.DefaultTimeoutMinutes;
@@ -233,9 +238,30 @@
         _loaded = true;
         _region = provider.VultrRegion ?? "";
         _planId = provider.VultrPlanId ?? "";
+        _apiKeySecret = provider.VultrApiKeySecret;
         _idleMinutes = provider.IdleTeardownMinutes;
         _osId = provider.VultrOsId ?? 0;
         _sshKeyId = provider.VultrSshKeyId ?? "";
+    }
+
+    private void OnApiKeySecretChanged(string? name)
+    {
+        _apiKeySecret = name;
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            Compute.SetVultrApiKeySecret(ProviderId, name);
+            _apiKey = "";
+            _error = null;
+            _status = $"Using Vault secret {name}. Press Load plans.";
+            return;
+        }
+
+        if (Provider?.VultrApiKeySecret is not null)
+        {
+            Compute.SetVultrApiKeySecret(ProviderId, null);
+            _status = "Vault reference removed. Type a key or choose a secret.";
+            _error = null;
+        }
     }
 
     private void OnIdleChanged(ChangeEventArgs args)

@@ -46,8 +46,10 @@ public partial class Settings
     private string _computePrefab = ComputeProviderPrefabs.LocalDocker;
     private string _computeBaseUrl = ComputeProviderSettings.DefaultLocalUrl;
     private string _computeToken = "";
+    private string? _computeTokenSecret;
     private string _computeStudioUrl = "";
     private string _runpodKey = "";
+    private string? _runpodKeySecret;
     private string _runpodImage = ComputeProviderPresets.DefaultServerImage;
     private string _runpodGpu = ComputeProviderPresets.DefaultGpuType;
     private int _runpodDisk = ComputeProviderPresets.DefaultRunpodDiskGb;
@@ -75,7 +77,9 @@ public partial class Settings
     private string _computeSshUser = SshTargets.DefaultUser;
     private string _computeSshKeyPath = "";
     private string _computeSshPassphrase = "";
+    private string? _computeSshPassphraseSecret;
     private string _computeSshPassword = "";
+    private string? _computeSshPasswordSecret;
     private string _computeSshContainer = "sharpmind";
     private string _sshKeyStatus = "";
     private string _sshPublicKey = "";
@@ -281,6 +285,7 @@ public partial class Settings
         _computeKind = ComputeProviderKinds.Local;
         _computeBaseUrl = ComputeProviderSettings.DefaultLocalUrl;
         _computeToken = "";
+        _computeTokenSecret = null;
         _computeImage = ComputeProviderPresets.DefaultImage;
         _computePort = ComputeProviderPresets.DefaultPort;
         _computeUseGpu = false;
@@ -289,6 +294,7 @@ public partial class Settings
             ComputeProviderPresets.LocalUrl(_computePort)) ?? "";
         _computeShowToken = false;
         _runpodKey = "";
+        _runpodKeySecret = null;
         _runpodImage = Compute.RegistryImage ?? ComputeProviderPresets.DefaultServerImage;
         _runpodGpu = ComputeProviderPresets.DefaultGpuType;
         _runpodDisk = ComputeProviderPresets.DefaultRunpodDiskGb;
@@ -309,6 +315,7 @@ public partial class Settings
         _computeKind = provider.NormalizedKind;
         _computeBaseUrl = provider.BaseUrl;
         _computeToken = "";
+        _computeTokenSecret = provider.TokenSecret;
         _computeImage = provider.Prefab is ComputeProviderPrefabs.Vultr
                 or ComputeProviderPrefabs.VastAi
                 or ComputeProviderPrefabs.MaxCloudOn
@@ -325,6 +332,7 @@ public partial class Settings
         _computeShowToken = false;
         LoadSshEditor(provider);
         _runpodKey = "";
+        _runpodKeySecret = provider.RunpodApiKeySecret;
         _runpodImage = string.IsNullOrWhiteSpace(provider.RunpodImage)
             || string.Equals(provider.RunpodImage, ComputeProviderPresets.DefaultServerImage, StringComparison.OrdinalIgnoreCase)
                 ? Compute.RegistryImage ?? provider.RunpodImage ?? ComputeProviderPresets.DefaultServerImage
@@ -358,6 +366,10 @@ public partial class Settings
         _computeEditing = false;
         _editingComputeId = null;
         _computeToken = "";
+        _computeTokenSecret = null;
+        _runpodKeySecret = null;
+        _computeSshPasswordSecret = null;
+        _computeSshPassphraseSecret = null;
         _computeError = null;
         _computeErrorHostId = null;
     }
@@ -382,6 +394,8 @@ public partial class Settings
                 baseUrl,
                 string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken,
                 _computePrefab);
+            if (!string.IsNullOrWhiteSpace(_computeTokenSecret))
+                Compute.SetTokenSecret(provider.Id, _computeTokenSecret);
             ApplyDockerSettings(provider.Id);
             Compute.SetStudioUrl(provider.Id, _computeStudioUrl);
             SaveRunpodSettings(provider.Id);
@@ -399,6 +413,8 @@ public partial class Settings
                 baseUrl,
                 string.IsNullOrWhiteSpace(_computeToken) ? null : _computeToken,
                 prefab: _computePrefab);
+            if (!string.IsNullOrWhiteSpace(_computeTokenSecret))
+                Compute.SetTokenSecret(_editingComputeId, _computeTokenSecret);
             ApplyDockerSettings(_editingComputeId);
             Compute.SetStudioUrl(_editingComputeId, _computeStudioUrl);
             SaveRunpodSettings(_editingComputeId);
@@ -409,6 +425,10 @@ public partial class Settings
         _computeEditing = false;
         _editingComputeId = null;
         _computeToken = "";
+        _computeTokenSecret = null;
+        _runpodKeySecret = null;
+        _computeSshPasswordSecret = null;
+        _computeSshPassphraseSecret = null;
     }
 
     private void SyncPrefab()
@@ -459,6 +479,56 @@ public partial class Settings
             _runpodImage,
             _runpodGpu,
             _runpodDisk);
+        if (!string.IsNullOrWhiteSpace(_runpodKeySecret))
+            Compute.SetRunpodApiKeySecret(id, _runpodKeySecret);
+    }
+
+    private void OnComputeTokenSecretChanged(string? name)
+    {
+        _computeTokenSecret = name;
+        if (string.IsNullOrWhiteSpace(name) &&
+            _editingComputeId is { } id &&
+            Compute.Find(id)?.TokenSecret is not null)
+        {
+            Compute.SetTokenSecret(id, null);
+            _computeStatus = "Vault reference removed. Type a token and save, or choose a secret.";
+        }
+    }
+
+    private void OnRunpodKeySecretChanged(string? name)
+    {
+        _runpodKeySecret = name;
+        if (string.IsNullOrWhiteSpace(name) &&
+            _editingComputeId is { } id &&
+            Compute.Find(id)?.RunpodApiKeySecret is not null)
+        {
+            Compute.SetRunpodApiKeySecret(id, null);
+            _runpodStatus = "Vault reference removed. Type a key and save, or choose a secret.";
+        }
+    }
+
+    private void OnSshPasswordSecretChanged(string? name)
+    {
+        _computeSshPasswordSecret = name;
+        if (string.IsNullOrWhiteSpace(name) &&
+            _editingComputeId is { } id &&
+            Compute.Find(id)?.SshPasswordSecret is not null)
+        {
+            Compute.SetSshPasswordSecret(id, null);
+            _computeStatus = "Vault reference removed. Type a password and save, or choose a secret.";
+        }
+    }
+
+    private void OnSshPassphraseSecretChanged(string? name)
+    {
+        _computeSshPassphraseSecret = name;
+        if (string.IsNullOrWhiteSpace(name) &&
+            _editingComputeId is { } id &&
+            Compute.Find(id)?.SshKeyPassphraseSecret is not null)
+        {
+            Compute.SetSshKeyPassphraseSecret(id, null);
+            _computeStatus = "Vault reference removed. Type a passphrase and save, or choose a secret.";
+        }
     }
 
     private void ResetSshEditor()
@@ -468,7 +538,9 @@ public partial class Settings
         _computeSshUser = SshTargets.DefaultUser;
         _computeSshKeyPath = "";
         _computeSshPassphrase = "";
+        _computeSshPassphraseSecret = null;
         _computeSshPassword = "";
+        _computeSshPasswordSecret = null;
         _computeSshContainer = "sharpmind";
         _sshKeyStatus = "";
         _sshPublicKey = "";
@@ -487,7 +559,9 @@ public partial class Settings
             : provider.SshUser;
         _computeSshKeyPath = provider.SshKeyPath ?? "";
         _computeSshPassphrase = "";
+        _computeSshPassphraseSecret = provider.SshKeyPassphraseSecret;
         _computeSshPassword = "";
+        _computeSshPasswordSecret = provider.SshPasswordSecret;
         _computeSshContainer = string.IsNullOrWhiteSpace(provider.SshContainerName)
             ? "sharpmind"
             : provider.SshContainerName;
@@ -521,6 +595,11 @@ public partial class Settings
             string.IsNullOrWhiteSpace(_computeSshPassphrase) ? null : _computeSshPassphrase,
             _computeSshContainer,
             _computeUseGpu);
+
+        if (!string.IsNullOrWhiteSpace(_computeSshPasswordSecret))
+            Compute.SetSshPasswordSecret(id, _computeSshPasswordSecret);
+        if (!string.IsNullOrWhiteSpace(_computeSshPassphraseSecret))
+            Compute.SetSshKeyPassphraseSecret(id, _computeSshPassphraseSecret);
     }
 
     private async Task BrowseSshKey()

@@ -28,7 +28,11 @@
                 <label class="field-label" for="registry-token">Access token</label>
                 <input id="registry-token" class="input" type="password"
                        @bind="_token" autocomplete="off"
+                       disabled="@(!string.IsNullOrWhiteSpace(_tokenSecret))"
                        placeholder="Docker Hub read/write token" />
+                <SecretSelect Value="@_tokenSecret" ValueChanged="OnTokenSecretChanged"
+                              EmptyLabel="Type a token"
+                              Title="Use a named Docker Hub token from Settings > Vault. It is not saved." />
             </div>
             <div class="field">
                 <label class="field-label" for="registry-source">Local image</label>
@@ -72,6 +76,7 @@
 @code {
     private string _user = "";
     private string _token = "";
+    private string? _tokenSecret;
     private string _source = ComputeProviderPresets.DefaultServerImage;
     private string _target = "";
     private string? _status;
@@ -83,6 +88,12 @@
     {
         if (string.IsNullOrWhiteSpace(_user)) return;
         _target = $"{_user.Trim().ToLowerInvariant()}/sharpmind-server:gpu";
+    }
+
+    private void OnTokenSecretChanged(string? name)
+    {
+        _tokenSecret = name;
+        if (!string.IsNullOrWhiteSpace(name)) _token = "";
     }
 
     private async Task PublishAsync()
@@ -105,6 +116,7 @@
             {
                 DockerHubUser = _user.Trim(),
                 AccessToken = _token,
+                AccessTokenSecret = string.IsNullOrWhiteSpace(_tokenSecret) ? null : _tokenSecret,
                 SourceImage = _source.Trim(),
                 TargetImage = _target.Trim(),
             }, progress);

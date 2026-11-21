@@ -157,6 +157,29 @@ public sealed class HuggingFaceClientTests
         Assert.Null(reopened.ApiToken);
     }
 
+    [Fact]
+    public void Token_CanComeFromTheVault()
+    {
+        using var temp = new TempDirectory();
+        string settings = temp.Combine("huggingface.json");
+        string key = temp.Combine("huggingface.key");
+        var secrets = new TestSecretResolver(("HF_TOKEN", "hf_vault_secret"));
+        var store = new HuggingFaceSettingsStore(settings, key, secrets);
+
+        store.SetToken("hf_inline");
+        store.SetTokenSecret("HF_TOKEN");
+
+        Assert.True(store.HasToken);
+        Assert.Equal("hf_vault_secret", store.ApiToken);
+        Assert.Equal("HF_TOKEN", store.TokenSecret);
+        Assert.DoesNotContain("hf_vault_secret", File.ReadAllText(settings));
+        Assert.DoesNotContain("hf_inline", File.ReadAllText(settings));
+
+        store.SetToken("hf_other");
+        Assert.Null(store.TokenSecret);
+        Assert.Equal("hf_other", store.ApiToken);
+    }
+
     private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(json, Encoding.UTF8, "application/json"),

@@ -35,6 +35,64 @@ public sealed class OpenRouterSettingsStoreTests
     }
 
     [Fact]
+    public void ApiKey_CanComeFromTheVaultAndWinsOverTheInlineValue()
+    {
+        using var temp = new TempDirectory();
+        string settings = temp.Combine("openrouter.json");
+        string key = temp.Combine("openrouter.key");
+        var secrets = new TestSecretResolver(("OPENROUTER_KEY", "sk-or-vault"));
+        var store = new OpenRouterSettingsStore(settings, key, secrets);
+
+        store.SetApiKey(OpenRouter, "sk-or-inline");
+        store.SetApiKeySecret(OpenRouter, "OPENROUTER_KEY");
+
+        Assert.Equal("sk-or-vault", store.GetApiKey(OpenRouter));
+        Assert.True(store.IsConfigured(OpenRouter));
+        Assert.Equal("OPENROUTER_KEY", store.ApiKeySecret(OpenRouter));
+        Assert.DoesNotContain("sk-or-vault", File.ReadAllText(settings));
+        Assert.DoesNotContain("sk-or-inline", File.ReadAllText(settings));
+        Assert.Contains("OPENROUTER_KEY", File.ReadAllText(settings));
+    }
+
+    [Fact]
+    public void ApiKey_MissingVaultSecretReadsAsUnconfigured()
+    {
+        using var temp = new TempDirectory();
+        var store = new OpenRouterSettingsStore(
+            temp.Combine("openrouter.json"),
+            temp.Combine("openrouter.key"),
+            new TestSecretResolver());
+
+        store.SetApiKeySecret(OpenRouter, "MISSING");
+
+        Assert.Null(store.GetApiKey(OpenRouter));
+        Assert.False(store.IsConfigured(OpenRouter));
+        Assert.Equal("MISSING", store.ApiKeySecret(OpenRouter));
+    }
+
+    [Fact]
+    public void ApiKey_TypingAnInlineKeyClearsTheVaultReference()
+    {
+        using var temp = new TempDirectory();
+        var secrets = new TestSecretResolver(("OPENROUTER_KEY", "sk-or-vault"));
+        var store = new OpenRouterSettingsStore(
+            temp.Combine("openrouter.json"),
+            temp.Combine("openrouter.key"),
+            secrets);
+
+        store.SetApiKeySecret(OpenRouter, "OPENROUTER_KEY");
+        store.SetApiKey(OpenRouter, "sk-or-inline");
+
+        Assert.Null(store.ApiKeySecret(OpenRouter));
+        Assert.Equal("sk-or-inline", store.GetApiKey(OpenRouter));
+
+        store.SetApiKeySecret(OpenRouter, "OPENROUTER_KEY");
+        store.ClearApiKey(OpenRouter);
+        Assert.Null(store.ApiKeySecret(OpenRouter));
+        Assert.Null(store.GetApiKey(OpenRouter));
+    }
+
+    [Fact]
     public void ClearAndDefaults_AreApplied()
     {
         using var temp = new TempDirectory();

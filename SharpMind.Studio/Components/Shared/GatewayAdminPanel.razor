@@ -242,7 +242,14 @@
                         <label class="field-label" for="gateway-upstream-token">Upstream token</label>
                         <input id="gateway-upstream-token" type="password" class="input" autocomplete="off"
                                placeholder="@(_hasUpstreamAuthorization ? "stored - type to replace" : "optional")"
+                               disabled="@(!string.IsNullOrWhiteSpace(_upstreamSecret))"
                                @bind="_upstreamAuthorization" @bind:after="SaveGatewaySettingsAsync" />
+                    </div>
+                    <div class="field" style="flex: 2 1 16rem;">
+                        <label class="field-label">Use a Vault secret</label>
+                        <SecretSelect Value="@_upstreamSecret" ValueChanged="OnUpstreamSecretChanged"
+                                      EmptyLabel="Type a token"
+                                      Title="Use a named upstream token from Settings > Vault." />
                     </div>
                     <button type="button" class="button" @onclick="ClearUpstreamAuthorizationAsync"
                             disabled="@(!_hasUpstreamAuthorization)">
@@ -250,6 +257,13 @@
                     </button>
                     <span class="status @HealthClass">@HealthLabel</span>
                 </div>
+                @if (!string.IsNullOrWhiteSpace(_upstreamSecret) &&
+                     string.IsNullOrWhiteSpace(Gateway.UpstreamAuthorization))
+                {
+                    <div class="small faint">
+                        Vault secret <span class="mono">@_upstreamSecret</span> is missing or unreadable.
+                    </div>
+                }
                 <div class="small faint">@(_health?.Detail ?? "Checking the upstream Studio...")</div>
             }
 
@@ -368,6 +382,7 @@
     private string _mode = GatewayConfigModes.Local;
     private string _upstreamUrl = "";
     private string _upstreamAuthorization = "";
+    private string? _upstreamSecret;
     private string _gatewaySecret = "";
     private bool _hasUpstreamAuthorization;
     private UpstreamHealth? _health;
@@ -425,7 +440,10 @@
             ? GatewayConfigModes.Proxy
             : GatewayConfigModes.Local;
         _upstreamUrl = config.UpstreamUrl ?? "";
-        _hasUpstreamAuthorization = !string.IsNullOrWhiteSpace(config.UpstreamAuthorizationProtected);
+        _upstreamSecret = config.UpstreamAuthorizationSecret;
+        _hasUpstreamAuthorization =
+            !string.IsNullOrWhiteSpace(config.UpstreamAuthorizationProtected) ||
+            !string.IsNullOrWhiteSpace(config.UpstreamAuthorizationSecret);
         _gatewaySecret = Gateway.GatewaySecret ?? "";
         _externalUrl = Gateway.ExternalUrl ?? "";
     }
@@ -437,6 +455,8 @@
         try
         {
             Gateway.SaveProxySettings(_mode, _upstreamUrl, _upstreamAuthorization, _gatewaySecret);
+            if (!string.IsNullOrWhiteSpace(_upstreamSecret))
+                Gateway.UseUpstreamAuthorizationSecret(_upstreamSecret);
             _upstreamAuthorization = "";
             LoadSettings();
             _error = null;
@@ -499,10 +519,33 @@
         return Task.CompletedTask;
     }
 
+    private async Task OnUpstreamSecretChanged(string? name)
+    {
+        _upstreamSecret = name;
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            Gateway.UseUpstreamAuthorizationSecret(name);
+            _upstreamAuthorization = "";
+            _status = $"Upstream token uses Vault secret {name}.";
+            _error = null;
+            await RefreshHealthAsync();
+            return;
+        }
+
+        if (Gateway.Config.UpstreamAuthorizationSecret is not null)
+        {
+            Gateway.UseUpstreamAuthorizationSecret(null);
+            _status = "Vault reference removed. Type a token or choose a secret.";
+            _error = null;
+            await RefreshHealthAsync();
+        }
+    }
+
     private async Task ClearUpstreamAuthorizationAsync()
     {
         Gateway.SaveProxySettings(_mode, _upstreamUrl, clearAuthorization: true);
         _upstreamAuthorization = "";
+        _upstreamSecret = null;
         LoadSettings();
         _status = "Upstream token cleared.";
         await RefreshHealthAsync();

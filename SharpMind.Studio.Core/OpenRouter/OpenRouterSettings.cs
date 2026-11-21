@@ -1,6 +1,7 @@
 using SharpMind.Studio.Core.Gateway;
 using SharpMind.Studio.Core.Serialization;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Core.OpenRouter;
 
@@ -9,6 +10,10 @@ public sealed record RemoteProviderProfile
 {
     public string BaseUrl { get; set; } = "";
     public string? ApiKeyProtected { get; set; }
+
+    /// <summary>A Vault secret name. When set it wins over <see cref="ApiKeyProtected"/>.</summary>
+    public string? ApiKeySecret { get; set; }
+
     public string? DefaultModel { get; set; }
 
     /// <summary>Models shown in the Chat/Work chooser and the Settings default picker.</summary>
@@ -61,14 +66,19 @@ public sealed class OpenRouterSettingsStore
 {
     private readonly object _gate = new();
     private readonly string _keyFile;
+    private readonly ISecretResolver _secrets;
     private OpenRouterSettingsDocument _document;
 
-    public OpenRouterSettingsStore(string settingsPath, string keyFile)
+    public OpenRouterSettingsStore(
+        string settingsPath,
+        string keyFile,
+        ISecretResolver? secrets = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(keyFile);
         Path = System.IO.Path.GetFullPath(settingsPath);
         _keyFile = System.IO.Path.GetFullPath(keyFile);
+        _secrets = secrets ?? NullSecretResolver.Instance;
         _document = Load();
     }
 
@@ -89,8 +99,13 @@ public sealed class OpenRouterSettingsStore
         lock (_gate)
         {
             RemoteProviderProfile profile = GetProfileLocked(providerId);
-            return GatewaySecretBox.Unprotect(profile.ApiKeyProtected, _keyFile);
+            return ResolveApiKeyLocked(profile);
         }
+    }
+
+    public string? ApiKeySecret(string? providerId)
+    {
+        lock (_gate) return GetProfileLocked(providerId).ApiKeySecret;
     }
 
     public bool IsConfigured(string? providerId)
@@ -98,8 +113,7 @@ public sealed class OpenRouterSettingsStore
         lock (_gate)
         {
             RemoteProviderProfile profile = GetProfileLocked(providerId);
-            return !string.IsNullOrWhiteSpace(
-                    GatewaySecretBox.Unprotect(profile.ApiKeyProtected, _keyFile)) &&
+            return !string.IsNullOrWhiteSpace(ResolveApiKeyLocked(profile)) &&
                 !string.IsNullOrWhiteSpace(profile.BaseUrl);
         }
     }
@@ -109,9 +123,24 @@ public sealed class OpenRouterSettingsStore
         lock (_gate)
         {
             RemoteProviderProfile profile = GetProfileLocked(providerId);
+            profile.ApiKeySecret = null;
             profile.ApiKeyProtected = string.IsNullOrWhiteSpace(apiKey)
                 ? null
                 : GatewaySecretBox.Protect(apiKey.Trim(), _keyFile);
+            SaveLocked();
+        }
+    }
+
+    /// <summary>Uses a named Vault secret and drops the inline ciphertext.</summary>
+    public void SetApiKeySecret(string? providerId, string? secretName)
+    {
+        lock (_gate)
+        {
+            RemoteProviderProfile profile = GetProfileLocked(providerId);
+            profile.ApiKeySecret = string.IsNullOrWhiteSpace(secretName)
+                ? null
+                : secretName.Trim();
+            profile.ApiKeyProtected = null;
             SaveLocked();
         }
     }
@@ -238,6 +267,7 @@ public sealed class OpenRouterSettingsStore
         {
             RemoteProviderProfile profile = GetProfileLocked(providerId);
             profile.ApiKeyProtected = null;
+            profile.ApiKeySecret = null;
             SaveLocked();
         }
     }
@@ -252,6 +282,11 @@ public sealed class OpenRouterSettingsStore
             SaveLocked();
         }
     }
+
+    private string? ResolveApiKeyLocked(RemoteProviderProfile profile) =>
+        !string.IsNullOrWhiteSpace(profile.ApiKeySecret)
+            ? _secrets.Resolve(profile.ApiKeySecret)
+            : GatewaySecretBox.Unprotect(profile.ApiKeyProtected, _keyFile);
 
     private RemoteProviderProfile GetProfileLocked(string? providerId)
     {
