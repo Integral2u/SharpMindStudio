@@ -5,7 +5,13 @@ on:
   pull_request:
 
 jobs:
+  # main (and feature branches) build the published SharpMind packages, so a
+  # clean clone needs no engine checkout and CI sees exactly what a contributor
+  # sees. The release branch is the exception: it develops against the engine
+  # source, because that is where 1.1.3 engine changes land.
   package:
+    name: published packages
+    if: github.ref_name != 'release/1.1.3' && github.base_ref != 'release/1.1.3'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,7 +20,32 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # Published SharpMind 1.1.1 packages from nuget.org. The source solution
-      # remains the development target and uses the sibling engine projects.
       - name: Build against published packages
-        run: dotnet build SharpMind.Studio.Package.slnx -c Release -p:SharpMindSource=package
+        run: dotnet build SharpMind.Studio.slnx -c Release -p:SharpMindSource=package
+
+  source:
+    name: engine source
+    if: github.ref_name == 'release/1.1.3' || github.base_ref == 'release/1.1.3'
+    runs-on: windows-latest
+    steps:
+      # The local-source projects resolve through ..\SharpMind, so both trees
+      # are checked out side by side.
+      - name: Check out Studio
+        uses: actions/checkout@v4
+        with:
+          path: SharpMind.Studio
+
+      - name: Check out the matching engine branch
+        uses: actions/checkout@v4
+        with:
+          repository: Integral2u/SharpMind
+          ref: release/1.1.3
+          path: SharpMind
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build against the engine source
+        working-directory: SharpMind.Studio
+        run: dotnet build SharpMind.Studio.slnx -c Release
