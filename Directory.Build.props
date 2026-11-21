@@ -12,11 +12,11 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
-  <!-- Local development builds the sibling SharpMind projects. The package-only
-       solution passes -p:SharpMindSource=package, which wins as a global property. -->
+  <!-- main builds the published SharpMind packages, so a clean clone works with
+       no engine checkout. Pass -p:SharpMindSource=project to build against a
+       sibling SharpMind tree; release branches default to project instead. -->
   <PropertyGroup>
     <SharpMindRoot Condition="'$(SharpMindRoot)' == ''">$(MSBuildThisFileDirectory)..\SharpMind\</SharpMindRoot>
-    <SharpMindSource Condition="'$(SharpMindSource)' == '' and Exists('$(SharpMindRoot)SharpMind.Core\SharpMind.Core.csproj')">project</SharpMindSource>
     <SharpMindSource Condition="'$(SharpMindSource)' == ''">package</SharpMindSource>
   </PropertyGroup>
 </Project>

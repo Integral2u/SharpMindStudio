@@ -1,14 +1,9 @@
 <Solution>
-  <!-- Default development solution: the sibling SharpMind checkout is a first-class
-       part of the solution, so Visual Studio restores and builds the engine projects
-       instead of raising NU1105 for project references outside the solution.
-       Clean clones and CI use SharpMind.Studio.Package.slnx. -->
-  <Project Path="../SharpMind/SharpMind.Core/SharpMind.Core.csproj" />
-  <Project Path="../SharpMind/SharpMind.Data/SharpMind.Data.csproj" />
-  <Project Path="../SharpMind/SharpMind.Inference/SharpMind.Inference.csproj" />
-  <Project Path="../SharpMind/SharpMind.Model/SharpMind.Model.csproj" />
-  <Project Path="../SharpMind/SharpMind.Tokenization/SharpMind.Tokenization.csproj" />
-  <Project Path="../SharpMind/SharpMind.Training/SharpMind.Training.csproj" />
+  <!-- main builds the published SharpMind packages, so this solution is
+       self-contained and a clean clone needs no engine checkout. To develop
+       against a local engine tree, pass -p:SharpMindSource=project with a
+       sibling SharpMind clone; the release/1.1.3 branch includes the engine
+       projects in the solution for that. -->
   <Project Path="SharpMind.Studio.Cli/SharpMind.Studio.Cli.csproj" />
   <Project Path="SharpMind.Studio.ComputeHost/SharpMind.Studio.ComputeHost.csproj" />
   <Project Path="SharpMind.Studio.Core/SharpMind.Studio.Core.csproj" />
