@@ -15,13 +15,25 @@ dotnet build SharpMind.Studio.slnx -c Debug
 dotnet test SharpMind.Studio.slnx -c Debug --no-build
 ```
 
-Studio normally builds against the sibling `SharpMind` source checkout when it exists. A clean clone with no sibling uses the published NuGet packages; keep both paths working:
+Studio builds against the published SharpMind packages by default, so a clean
+clone needs no engine checkout:
 
 ```powershell
-dotnet build SharpMind.Studio.slnx -c Release -p:SharpMindSource=package
+dotnet build SharpMind.Studio.slnx -c Release
 ```
 
-CI runs that package-mode build on every push, so do not add a Studio dependency on an unreleased SharpMind API.
+To develop against the sibling `SharpMind` source tree instead, check it out
+beside this repository on its matching `release/x.y.z` branch and pass the
+switch:
+
+```powershell
+dotnet build SharpMind.Studio.slnx -c Release -p:SharpMindSource=project
+```
+
+The `release/x.y.z` branch defaults to the source tree and `main` defaults to the
+packages. Keep both paths working: CI builds and tests the package mode on every
+push, and the release branch against the engine source, so do not add a Studio
+dependency on an unreleased SharpMind API.
 
 ## Encoding guard
 
@@ -46,6 +58,14 @@ The per-user MSI is built from `SharpMind.Studio.Setup.sln` with Visual Studio 1
 - Bump `PackageCode` for every rebuilt MSI; bump `ProductCode` only when the product identity changes.
 - Do not commit the generated MSI or `setup.exe`.
 - The app repairs the installer's advertised shortcut on first launch (icon and target), so test a clean install, not only a source build.
+
+## Branch and release workflow
+
+See [docs/contributing/workflow.md](docs/contributing/workflow.md) for the
+local-first branch, push, release, Store resubmission and hotfix rules. In
+short: work on `release/x.y.z` or a short-lived branch off it, commit locally,
+push for backups or for gates that cannot run locally, and merge to `main` only
+at release time or for an urgent fix.
 
 ## Pull requests
 
