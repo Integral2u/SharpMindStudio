@@ -23,6 +23,17 @@ public sealed class McpServerHost : IAsyncDisposable
 
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Entry> _running = new(StringComparer.OrdinalIgnoreCase);
+    private readonly TimeProvider _time;
+
+    public McpServerHost()
+        : this(TimeProvider.System)
+    {
+    }
+
+    public McpServerHost(TimeProvider time)
+    {
+        _time = time ?? TimeProvider.System;
+    }
 
     public bool IsRunning(string serverId)
     {
@@ -79,7 +90,7 @@ public sealed class McpServerHost : IAsyncDisposable
                     return raced.Tools;
                 }
 
-                _running[server.Id] = new Entry(server, client, tools, DateTimeOffset.UtcNow);
+                _running[server.Id] = new Entry(server, client, tools, _time.GetUtcNow());
             }
 
             return tools;
@@ -103,7 +114,7 @@ public sealed class McpServerHost : IAsyncDisposable
             if (!_running.TryGetValue(serverId, out Entry? found))
                 throw new InvalidOperationException($"MCP server '{serverId}' is not connected.");
             entry = found;
-            _running[serverId] = entry with { LastUsed = DateTimeOffset.UtcNow };
+            _running[serverId] = entry with { LastUsed = _time.GetUtcNow() };
         }
 
         return await entry.Client
@@ -126,7 +137,7 @@ public sealed class McpServerHost : IAsyncDisposable
     public async Task StopIdleAsync()
     {
         List<Entry> stale = [];
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = _time.GetUtcNow();
 
         lock (_gate)
         {
