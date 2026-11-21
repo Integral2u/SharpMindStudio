@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using SharpMind.Studio.Core.Mcp;
+using SharpMind.Studio.Core.Vault;
 using Xunit;
 
 namespace SharpMind.Studio.Tests;
@@ -22,7 +23,7 @@ public sealed class McpIntegrationTests
         await client.InitializeAsync();
         IReadOnlyList<McpToolInfo> tools = await client.ListToolsAsync();
 
-        Assert.Equal(4, tools.Count);
+        Assert.Equal(6, tools.Count);
         Assert.Contains(tools, tool => tool.Name == "echo");
         McpToolInfo echo = Assert.Single(tools, tool => tool.Name == "echo");
         Assert.Equal("Echoes the text argument", echo.Description);
@@ -83,6 +84,109 @@ public sealed class McpIntegrationTests
 
         Assert.False(host.IsRunning(ServerId));
         Assert.Empty(host.Connected);
+    }
+
+    [Fact]
+    public async Task Client_ExpandsASecretIntoTheServerEnvironment()
+    {
+        TestSecretResolver secrets = FakeMcpServer.Resolver(("TOKEN", "s3cret-value"));
+        McpServerSettings settings = FakeMcpServer.Settings(
+            environment: new Dictionary<string, string>
+            {
+                ["TOKEN"] = "%vault:TOKEN%",
+            });
+
+        await using McpStdioClient client = McpStdioClient.Start(settings, secrets);
+        await client.InitializeAsync();
+
+        McpToolResult result = await client.CallToolAsync(
+            "env",
+            new JsonObject { ["name"] = "TOKEN" });
+
+        // The server saw the value; the client removed it from the result.
+        Assert.Equal("***", result.Text);
+    }
+
+    [Fact]
+    public async Task Client_ExpandsASecretIntoToolArgumentsAndRedactsTheEcho()
+    {
+        TestSecretResolver secrets = FakeMcpServer.Resolver(("TOKEN", "s3cret-value"));
+        await using McpStdioClient client = McpStdioClient.Start(Server(), secrets);
+        await client.InitializeAsync();
+
+        McpToolResult result = await client.CallToolAsync(
+            "echo",
+            new JsonObject { ["text"] = "Bearer %vault:TOKEN%" });
+
+        Assert.Equal("Bearer ***", result.Text);
+    }
+
+    [Fact]
+    public async Task Client_ExpandsASecretIntoItsOwnArguments()
+    {
+        TestSecretResolver secrets = FakeMcpServer.Resolver(("TOKEN", "s3cret-value"));
+        McpServerSettings settings = FakeMcpServer.Settings(
+            arguments: ["--token", "%vault:TOKEN%"]);
+
+        await using McpStdioClient client = McpStdioClient.Start(settings, secrets);
+        await client.InitializeAsync();
+
+        McpToolResult result = await client.CallToolAsync("argv", null);
+
+        Assert.Contains("***", result.Text);
+        Assert.DoesNotContain("s3cret-value", result.Text);
+    }
+
+    [Fact]
+    public void Client_RefusesToStartWithAMissingReference()
+    {
+        McpServerSettings settings = FakeMcpServer.Settings(
+            environment: new Dictionary<string, string>
+            {
+                ["TOKEN"] = "%vault:MISSING%",
+            });
+
+        SecretMissingException error = Assert.Throws<SecretMissingException>(
+            () => McpStdioClient.Start(settings, FakeMcpServer.Resolver()));
+
+        Assert.Contains("MISSING", error.Message);
+    }
+
+    [Fact]
+    public async Task Client_RefusesAToolCallWithAMissingArgumentReference()
+    {
+        await using McpStdioClient client = McpStdioClient.Start(
+            Server(),
+            FakeMcpServer.Resolver());
+
+        await client.InitializeAsync();
+
+        SecretMissingException error = await Assert.ThrowsAsync<SecretMissingException>(
+            () => client.CallToolAsync(
+                "echo",
+                new JsonObject { ["text"] = "%vault:MISSING%" }));
+
+        Assert.Contains("MISSING", error.Message);
+    }
+
+    [Fact]
+    public async Task Client_RedactsASecretFromTheServerErrorTail()
+    {
+        TestSecretResolver secrets = FakeMcpServer.Resolver(("TOKEN", "s3cret-value"));
+        McpServerSettings settings = FakeMcpServer.Settings(
+            environment: new Dictionary<string, string>
+            {
+                ["LEAK_VALUE"] = "%vault:TOKEN%",
+            });
+
+        await using McpStdioClient client = McpStdioClient.Start(settings, secrets);
+        await client.InitializeAsync();
+
+        IOException error = await Assert.ThrowsAsync<IOException>(
+            () => client.CallToolAsync("crash", null));
+
+        Assert.Contains("***", error.Message);
+        Assert.DoesNotContain("s3cret-value", error.Message);
     }
 
     private static McpServerSettings Server(int idleSeconds = 300) =>

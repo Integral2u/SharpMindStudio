@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Core.Mcp;
 
@@ -23,23 +24,42 @@ public sealed class McpStdioClient : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly StringBuilder _errors = new();
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly ISecretResolver _secrets;
+    private readonly Lock _secretGate = new();
+    private readonly HashSet<string> _secretValues = new(StringComparer.Ordinal);
     private int _nextId;
 
-    private McpStdioClient(Process? process, TextWriter stdin, TextReader stdout)
+    private McpStdioClient(
+        Process? process,
+        TextWriter stdin,
+        TextReader stdout,
+        ISecretResolver secrets)
     {
         _process = process;
         _stdin = stdin;
         _stdout = stdout;
+        _secrets = secrets;
     }
 
-    /// <summary>Starts the server. Throws when the command cannot be launched.</summary>
-    public static McpStdioClient Start(McpServerSettings settings)
+    /// <summary>
+    /// Starts the server. <c>%vault:NAME%</c> in the command, arguments or
+    /// environment is resolved here, once, so the value exists only in this
+    /// process and the child. Throws when the command cannot be launched or a
+    /// reference is missing.
+    /// </summary>
+    public static McpStdioClient Start(
+        McpServerSettings settings,
+        ISecretResolver? secrets = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         if (!settings.IsValid)
             throw new ArgumentException("An MCP server needs an id and a command.", nameof(settings));
 
-        var startInfo = new ProcessStartInfo(settings.Command)
+        secrets ??= NullSecretResolver.Instance;
+        var used = new List<SecretUse>();
+
+        string command = ExpandRequired(settings.Command, secrets, used);
+        var startInfo = new ProcessStartInfo(command)
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -49,9 +69,10 @@ public sealed class McpStdioClient : IAsyncDisposable
         };
 
         foreach (string argument in settings.Args)
-            startInfo.ArgumentList.Add(argument);
+            startInfo.ArgumentList.Add(ExpandRequired(argument, secrets, used));
+
         foreach ((string key, string value) in settings.Environment)
-            startInfo.Environment[key] = value;
+            startInfo.Environment[key] = ExpandRequired(value, secrets, used);
 
         var process = new Process { StartInfo = startInfo };
         if (!process.Start())
@@ -60,20 +81,30 @@ public sealed class McpStdioClient : IAsyncDisposable
         var client = new McpStdioClient(
             process,
             process.StandardInput,
-            process.StandardOutput);
+            process.StandardOutput,
+            secrets);
+        client.AddSecrets(used);
 
         client.DrainErrors(process.StandardError);
         return client;
     }
 
     /// <summary>For tests: speak the protocol over supplied streams.</summary>
-    public static McpStdioClient FromStreams(TextWriter stdin, TextReader stdout) =>
-        new(null, stdin, stdout);
+    public static McpStdioClient FromStreams(
+        TextWriter stdin,
+        TextReader stdout,
+        ISecretResolver? secrets = null) =>
+        new(null, stdin, stdout, secrets ?? NullSecretResolver.Instance);
 
-    /// <summary>The last few lines of server stderr, for a status panel.</summary>
+    /// <summary>The last few lines of server stderr, with used secrets removed.</summary>
     public string ErrorTail
     {
-        get { lock (_errors) return _errors.ToString(); }
+        get
+        {
+            string text;
+            lock (_errors) text = _errors.ToString();
+            return SecretTemplate.Redact(text, SecretValues());
+        }
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -87,7 +118,7 @@ public sealed class McpStdioClient : IAsyncDisposable
                 ["clientInfo"] = new JsonObject
                 {
                     ["name"] = "SharpMind Studio",
-                    ["version"] = "1.1.2",
+                    ["version"] = "1.1.3",
                 },
             },
             cancellationToken).ConfigureAwait(false);
@@ -123,16 +154,30 @@ public sealed class McpStdioClient : IAsyncDisposable
         JsonNode? arguments,
         CancellationToken cancellationToken = default)
     {
+        JsonNode? expandedArguments = null;
+        if (arguments is not null)
+        {
+            expandedArguments = SecretTemplate.ExpandJson(
+                arguments,
+                _secrets.Resolve,
+                out IReadOnlyList<SecretUse> used,
+                out IReadOnlyList<string> missing);
+
+            if (missing.Count > 0) throw new SecretMissingException(missing);
+            AddSecrets(used);
+        }
+
         JsonNode result = await RequestAsync(
             "tools/call",
             new JsonObject
             {
                 ["name"] = tool,
-                ["arguments"] = arguments?.DeepClone() ?? new JsonObject(),
+                ["arguments"] = expandedArguments ?? new JsonObject(),
             },
             cancellationToken).ConfigureAwait(false);
 
         bool isError = result["isError"]?.GetValue<bool>() ?? false;
+        IReadOnlyList<string> secrets = SecretValues();
 
         if (result["content"] is JsonArray content)
         {
@@ -152,10 +197,12 @@ public sealed class McpStdioClient : IAsyncDisposable
                     text.Append($"[{type} content]");
                 }
             }
-            return new McpToolResult(isError, text.ToString());
+            return new McpToolResult(isError, SecretTemplate.Redact(text.ToString(), secrets));
         }
 
-        return new McpToolResult(isError, result.ToJsonString());
+        return new McpToolResult(
+            isError,
+            SecretTemplate.Redact(result.ToJsonString(), secrets));
     }
 
     private async Task NotifyAsync(string method, CancellationToken cancellationToken)
@@ -233,8 +280,10 @@ public sealed class McpStdioClient : IAsyncDisposable
 
                 if (response["error"] is JsonObject error)
                 {
+                    string errorMessage = error["message"]?.GetValue<string>()
+                        ?? "The MCP server returned an error.";
                     throw new InvalidOperationException(
-                        error["message"]?.GetValue<string>() ?? "The MCP server returned an error.");
+                        SecretTemplate.Redact(errorMessage, SecretValues()));
                 }
 
                 return response["result"] ?? new JsonObject();
@@ -246,9 +295,35 @@ public sealed class McpStdioClient : IAsyncDisposable
         }
     }
 
-    private void DrainErrors(StreamReader stderr)
+    private static string ExpandRequired(
+        string text,
+        ISecretResolver secrets,
+        List<SecretUse> used)
     {
-        _ = Task.Run(async () =>
+        SecretExpansion expansion = SecretTemplate.Expand(text, secrets.Resolve);
+        if (expansion.Missing.Count > 0) throw new SecretMissingException(expansion.Missing);
+        used.AddRange(expansion.Used);
+        return expansion.Text;
+    }
+
+    private void AddSecrets(IEnumerable<SecretUse> uses)
+    {
+        lock (_secretGate)
+        {
+            foreach (SecretUse use in uses)
+            {
+                if (!string.IsNullOrEmpty(use.Value)) _secretValues.Add(use.Value);
+            }
+        }
+    }
+
+    private IReadOnlyList<string> SecretValues()
+    {
+        lock (_secretGate) return [.. _secretValues];
+    }
+
+    private void DrainErrors(StreamReader stderr)
+    {        _ = Task.Run(async () =>
         {
             try
             {
@@ -274,6 +349,7 @@ public sealed class McpStdioClient : IAsyncDisposable
         _lifetime.Cancel();
         _lifetime.Dispose();
         _gate.Dispose();
+        lock (_secretGate) _secretValues.Clear();
 
         if (_process is null) return;
 

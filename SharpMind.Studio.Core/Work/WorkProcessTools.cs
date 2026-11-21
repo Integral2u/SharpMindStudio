@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using SharpMind.Core;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Core.Work;
 
@@ -14,13 +15,15 @@ namespace SharpMind.Studio.Core.Work;
 public sealed class WorkProcessTools(
     string projectRoot,
     IReadOnlyList<string> allowedRoots,
-    Func<WorkToolAccess, Task<bool>>? permission = null)
+    Func<WorkToolAccess, Task<bool>>? permission = null,
+    ISecretResolver? secrets = null)
 {
     private const int MaxOutput = 20_000;
 
     private readonly string _root = NormalizeRoot(projectRoot);
     private readonly IReadOnlyList<string> _roots =
         [.. allowedRoots.Select(NormalizeRoot).Distinct(StringComparer.OrdinalIgnoreCase)];
+    private readonly ISecretResolver _secrets = secrets ?? NullSecretResolver.Instance;
 
     [ToolDesc("Runs a program inside an allowed context folder and returns its output. Use it to build, test or inspect a project. This runs real code with the user's permissions: Studio gates the command, not everything the program touches. No shell is used, so pipes and redirection must be part of the program's own arguments.")]
     public async Task<string> RunProcess(
@@ -38,8 +41,32 @@ public sealed class WorkProcessTools(
             string commandLine = string.IsNullOrWhiteSpace(arguments)
                 ? fileName
                 : $"{fileName} {arguments}";
-            if (!await AllowedAsync(nameof(RunProcess), WorkToolCategory.Execute, cwd, commandLine))
+
+            // The permission prompt shows the reference, never the value.
+            IReadOnlyList<string> secretNames = SecretTemplate.Names(arguments);
+            string detail = secretNames.Count > 0
+                ? $"{commandLine} (uses secret: {string.Join(", ", secretNames)})"
+                : commandLine;
+
+            if (!await AllowedAsync(nameof(RunProcess), WorkToolCategory.Execute, cwd, detail))
                 return $"Permission denied: RunProcess may not run a program in '{workingDirectory}' with the current project permission.";
+
+            var used = new List<SecretUse>();
+            var expanded = new List<string>();
+            foreach (string argument in SplitArguments(arguments ?? ""))
+            {
+                SecretExpansion expansion = SecretTemplate.Expand(argument, _secrets.Resolve);
+                if (expansion.Missing.Count > 0)
+                    return new SecretMissingException(expansion.Missing).Message;
+
+                used.AddRange(expansion.Used);
+                expanded.Add(expansion.Text);
+            }
+
+            string[] secretValues = [.. used
+                .Select(use => use.Value)
+                .Where(value => value.Length > 0)
+                .Distinct(StringComparer.Ordinal)];
 
             var startInfo = new ProcessStartInfo(fileName)
             {
@@ -50,7 +77,7 @@ public sealed class WorkProcessTools(
                 CreateNoWindow = true,
             };
 
-            foreach (string argument in SplitArguments(arguments ?? ""))
+            foreach (string argument in expanded)
                 startInfo.ArgumentList.Add(argument);
 
             using var process = new Process { StartInfo = startInfo };
@@ -61,7 +88,9 @@ public sealed class WorkProcessTools(
             }
             catch (Exception ex)
             {
-                return $"Could not start {fileName}: {ex.GetBaseException().Message}";
+                return SecretTemplate.Redact(
+                    $"Could not start {fileName}: {ex.GetBaseException().Message}",
+                    secretValues);
             }
 
             Task<string> stdout = process.StandardOutput.ReadToEndAsync();
@@ -78,10 +107,16 @@ public sealed class WorkProcessTools(
                 try { process.Kill(entireProcessTree: true); } catch { }
 
                 return $"Timed out after {timeoutSeconds}s; the process tree was killed."
-                       + Format(null, await stdout, await stderr);
+                       + Format(
+                           null,
+                           SecretTemplate.Redact(await stdout, secretValues),
+                           SecretTemplate.Redact(await stderr, secretValues));
             }
 
-            return Format(process.ExitCode, await stdout, await stderr);
+            return Format(
+                process.ExitCode,
+                SecretTemplate.Redact(await stdout, secretValues),
+                SecretTemplate.Redact(await stderr, secretValues));
         }
         catch (Exception ex)
         {

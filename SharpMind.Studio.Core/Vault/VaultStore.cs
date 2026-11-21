@@ -85,6 +85,7 @@ public sealed class VaultStore : ISecretResolver
 {
     public const string FileName = "vault.json";
     public const int MaxNameLength = 64;
+    public const int MinValueLength = 4;
     public const int MaxValueLength = 16_384;
     public const int MaxDescriptionLength = 512;
 
@@ -168,6 +169,10 @@ public sealed class VaultStore : ISecretResolver
 
         if (string.IsNullOrWhiteSpace(value))
             throw new ArgumentException("A secret needs a value.", nameof(value));
+        if (value.Length < MinValueLength)
+            throw new ArgumentException(
+                $"A secret must be at least {MinValueLength} characters, so redaction can remove it safely.",
+                nameof(value));
         if (value.Length > MaxValueLength)
             throw new ArgumentException(
                 $"A secret can be at most {MaxValueLength:N0} characters.", nameof(value));

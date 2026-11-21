@@ -57,6 +57,9 @@
                         </div>
                     </div>
                     <div class="row">
+                        <button type="button" class="button" @onclick="() => BeginEdit(server)">
+                            Edit
+                        </button>
                         <button type="button" class="button" @onclick="() => ConnectAsync(server)"
                                 disabled="@running">
                             Connect
@@ -115,10 +118,15 @@
         }
 
         <div class="settings-subgroup" style="padding:.7rem;">
-            <div class="eyebrow">Add a server</div>
+            <div class="eyebrow">@(_editingId is null ? "Add a server" : $"Edit {_name}")</div>
             <div class="field">
                 <label class="field-label" for="mcp-id">Id</label>
-                <input id="mcp-id" class="input" @bind="_id" placeholder="files" />
+                <input id="mcp-id" class="input" @bind="_id" placeholder="files"
+                       disabled="@(_editingId is not null)" />
+                @if (_editingId is not null)
+                {
+                    <div class="small faint">The id is fixed once a server exists.</div>
+                }
             </div>
             <div class="field">
                 <label class="field-label" for="mcp-name">Name</label>
@@ -127,15 +135,22 @@
             <div class="field">
                 <label class="field-label" for="mcp-command">Command</label>
                 <input id="mcp-command" class="input" @bind="_command" placeholder="npx" />
+                <SecretInsert OnInsert="InsertCommand" />
             </div>
             <div class="field">
                 <label class="field-label" for="mcp-args">Arguments, one per line</label>
                 <textarea id="mcp-args" class="textarea work-textarea" @bind="_args"
                           placeholder="-y&#10;@@modelcontextprotocol/server-filesystem&#10;C:\work"></textarea>
+                <SecretInsert OnInsert="InsertArgument" />
             </div>
             <div class="field">
                 <label class="field-label" for="mcp-env">Environment, KEY=value per line</label>
                 <textarea id="mcp-env" class="textarea work-textarea" @bind="_environment"></textarea>
+                <SecretInsert EnvMode="true" OnInsert="InsertEnvironment" />
+                <div class="small faint">
+                    Plain values here are stored in <span class="mono">mcp.json</span>.
+                    Use <span class="mono">%vault:NAME%</span> for anything private.
+                </div>
             </div>
             <div class="field">
                 <label class="field-label" for="mcp-idle-new">Stop when idle</label>
@@ -148,10 +163,14 @@
                 </select>
             </div>
             <div class="row" style="margin-top:.5rem;">
-                <button type="button" class="button primary" @onclick="AddAsync"
+                <button type="button" class="button primary" @onclick="Save"
                         disabled="@(string.IsNullOrWhiteSpace(_command))">
-                    Add server
+                    @(_editingId is null ? "Add server" : "Save changes")
                 </button>
+                @if (_editingId is not null)
+                {
+                    <button type="button" class="button" @onclick="CancelEdit">Cancel</button>
+                }
                 <span class="status-line">@_status</span>
             </div>
         </div>
@@ -182,6 +201,7 @@
     private string _args = "";
     private string _environment = "";
     private string? _status;
+    private string? _editingId;
     private int _idleSeconds = 300;
 
     protected override void OnInitialized() => ToolCatalog.Changed += OnCatalogChanged;
@@ -259,11 +279,48 @@
     private static string IdleLabel(int seconds) =>
         IdleOptions.FirstOrDefault(option => option.Seconds == seconds).Label ?? $"{seconds} seconds";
 
-    private async Task AddAsync()
+    private void BeginEdit(McpServerSettings server)
+    {
+        _editingId = server.Id;
+        _id = server.Id;
+        _name = server.Name;
+        _command = server.Command;
+        _args = string.Join("\n", server.Args);
+        _environment = string.Join("\n", server.Environment.Select(pair => $"{pair.Key}={pair.Value}"));
+        _idleSeconds = server.IdleSeconds;
+        _status = $"Editing {server.Name}.";
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _id = _name = _command = _args = _environment = "";
+        _idleSeconds = 300;
+        _status = null;
+    }
+
+    private void InsertCommand(string reference) =>
+        _command = string.IsNullOrWhiteSpace(_command)
+            ? reference
+            : $"{_command.TrimEnd()} {reference}";
+
+    private void InsertArgument(string reference) =>
+        _args = string.IsNullOrWhiteSpace(_args)
+            ? reference
+            : $"{_args.TrimEnd()}\n{reference}";
+
+    private void InsertEnvironment(string entry) =>
+        _environment = string.IsNullOrWhiteSpace(_environment)
+            ? entry
+            : $"{_environment.TrimEnd()}\n{entry}";
+
+    private void Save()
     {
         try
         {
-            string id = string.IsNullOrWhiteSpace(_id) ? Slug(_name.Length > 0 ? _name : _command) : _id.Trim();
+            bool editing = _editingId is not null;
+            string id = _editingId
+                ?? (string.IsNullOrWhiteSpace(_id) ? Slug(_name.Length > 0 ? _name : _command) : _id.Trim());
             var server = new McpServerSettings
             {
                 Id = id,
@@ -277,9 +334,19 @@
                 IdleSeconds = _idleSeconds,
             };
 
+            bool running = Host.IsRunning(id);
             Store.Save(server);
+            if (running) Host.UpdateSettings(server);
+
+            _status = editing
+                ? $"Saved {server.Name}." + (running
+                    ? " Disconnect and Connect to apply a changed command, argument or environment."
+                    : "")
+                : $"Added {server.Name}. Connect it to see its tools.";
+
+            _editingId = null;
             _id = _name = _command = _args = _environment = "";
-            _status = $"Added {server.Name}. Connect it to see its tools.";
+            _idleSeconds = 300;
         }
         catch (Exception ex)
         {
@@ -334,6 +401,7 @@
     {
         await DisconnectAsync(server);
         Store.Remove(server.Id);
+        if (_editingId == server.Id) CancelEdit();
         _status = $"{server.Name} removed.";
     }
 

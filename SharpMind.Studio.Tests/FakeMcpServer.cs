@@ -1,5 +1,4 @@
 using SharpMind.Studio.Core.Mcp;
-using Xunit;
 
 namespace SharpMind.Studio.Tests;
 
@@ -8,15 +7,37 @@ internal static class FakeMcpServer
 {
     public const string Id = "fake";
     public const string EchoTool = "mcp__fake__echo";
+    public const string EnvTool = "mcp__fake__env";
+    public const string ArgvTool = "mcp__fake__argv";
+    public const string CrashTool = "mcp__fake__crash";
 
-    public static McpServerSettings Settings(int idleSeconds = 300) => new()
+    public static McpServerSettings Settings(
+        int idleSeconds = 300,
+        IReadOnlyList<string>? arguments = null,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
-        Id = Id,
-        Name = "Fake MCP",
-        Command = "dotnet",
-        Args = [DllPath],
-        IdleSeconds = idleSeconds,
-    };
+        var args = new List<string> { DllPath };
+        if (arguments is not null) args.AddRange(arguments);
+
+        var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (environment is not null)
+        {
+            foreach ((string key, string value) in environment) env[key] = value;
+        }
+
+        return new McpServerSettings
+        {
+            Id = Id,
+            Name = "Fake MCP",
+            Command = "dotnet",
+            Args = args,
+            Environment = env,
+            IdleSeconds = idleSeconds,
+        };
+    }
+
+    public static TestSecretResolver Resolver(
+        params (string Name, string Value)[] values) => new(values);
 
     public static string DllPath
     {

@@ -134,6 +134,15 @@ public sealed class VaultStoreTests
     }
 
     [Fact]
+    public void Store_RejectsAValueTooShortToRedactSafely()
+    {
+        using var temp = new TempDirectory();
+        var store = new VaultStore(temp.Combine("vault.json"), temp.Combine("vault.key"));
+
+        Assert.ThrowsAny<ArgumentException>(() => store.Set("TOKEN", "abc"));
+    }
+
+    [Fact]
     public void Store_SurvivesADamagedFile()
     {
         using var temp = new TempDirectory();

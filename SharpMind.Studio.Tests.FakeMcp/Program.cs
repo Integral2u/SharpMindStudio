@@ -63,6 +63,8 @@ while (Console.ReadLine() is { } line)
                 ["tools"] = new JsonArray
                 {
                     Tool("echo", "Echoes the text argument", "text"),
+                    Tool("env", "Returns an environment variable", "name"),
+                    Tool("argv", "Returns the process command line", null),
                     Tool("fail", "Returns an isError result", null),
                     Tool("error", "Returns a JSON-RPC error", null),
                     Tool("crash", "Writes to stderr and exits", null),
@@ -121,6 +123,15 @@ static void CallTool(JsonNode? id, JsonObject? parameters)
             });
             break;
 
+        case "env":
+            string variable = arguments["name"]?.GetValue<string>() ?? "";
+            Reply(id, Text(Environment.GetEnvironmentVariable(variable) ?? ""));
+            break;
+
+        case "argv":
+            Reply(id, Text(string.Join("|", Environment.GetCommandLineArgs())));
+            break;
+
         case "error":
             Respond(new JsonObject
             {
@@ -135,7 +146,8 @@ static void CallTool(JsonNode? id, JsonObject? parameters)
             break;
 
         case "crash":
-            Console.Error.WriteLine("fake server crashed");
+            string leak = Environment.GetEnvironmentVariable("LEAK_VALUE") ?? "fake server crashed";
+            Console.Error.WriteLine($"fake server crashed: {leak}");
             Console.Error.Flush();
             // Give the client's stderr drain a moment to see the line.
             Thread.Sleep(300);
@@ -156,6 +168,14 @@ static void CallTool(JsonNode? id, JsonObject? parameters)
             break;
     }
 }
+
+static JsonObject Text(string value) => new()
+{
+    ["content"] = new JsonArray
+    {
+        new JsonObject { ["type"] = "text", ["text"] = value },
+    },
+};
 
 static JsonObject Tool(string name, string description, string? argument) => new()
 {

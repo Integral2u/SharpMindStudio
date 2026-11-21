@@ -488,6 +488,58 @@ public sealed class WorkProcessToolsTests
     }
 
     [Fact]
+    public async Task Run_ExpandsASecretAndRedactsItsValue()
+    {
+        using var temp = new TempDirectory();
+        var secrets = new TestSecretResolver(("TOKEN", "s3cret-value"));
+        var tools = new WorkProcessTools(
+            temp.Path, [temp.Path], _ => Task.FromResult(true), secrets);
+
+        string result = await tools.RunProcess("cmd", "/c echo %vault:TOKEN%");
+
+        Assert.Contains("***", result);
+        Assert.DoesNotContain("s3cret-value", result);
+    }
+
+    [Fact]
+    public async Task Run_PermissionDetailShowsTheReferenceNotTheValue()
+    {
+        using var temp = new TempDirectory();
+        var secrets = new TestSecretResolver(("TOKEN", "s3cret-value"));
+        string? detail = null;
+        var tools = new WorkProcessTools(
+            temp.Path,
+            [temp.Path],
+            access =>
+            {
+                detail = access.Detail;
+                return Task.FromResult(true);
+            },
+            secrets);
+
+        await tools.RunProcess("cmd", "/c echo %vault:TOKEN%");
+
+        Assert.NotNull(detail);
+        Assert.Contains("%vault:TOKEN%", detail);
+        Assert.Contains("uses secret: TOKEN", detail);
+        Assert.DoesNotContain("s3cret-value", detail);
+    }
+
+    [Fact]
+    public async Task Run_RefusesAMissingSecretWithoutStarting()
+    {
+        using var temp = new TempDirectory();
+        var tools = new WorkProcessTools(
+            temp.Path, [temp.Path], _ => Task.FromResult(true), new TestSecretResolver());
+
+        string result = await tools.RunProcess("cmd", "/c echo %vault:MISSING%");
+
+        Assert.Contains("MISSING", result);
+        Assert.Contains("not in the Vault", result);
+        Assert.DoesNotContain("Exit code", result);
+    }
+
+    [Fact]
     public async Task WorkingDirectoryOutsideTheRoot_IsRefused()
     {
         using var temp = new TempDirectory();

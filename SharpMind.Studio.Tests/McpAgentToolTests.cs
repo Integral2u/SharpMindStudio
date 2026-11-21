@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -6,6 +7,7 @@ using SharpMind.Studio;
 using SharpMind.Studio.Core.Agents;
 using SharpMind.Studio.Core.Mcp;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Vault;
 using SharpMind.Studio.Core.Work;
 using SharpMind.Studio.Services;
 using Xunit;
@@ -26,6 +28,7 @@ public sealed class McpAgentToolTests : IDisposable
     private readonly StudioAgentService _agents;
     private readonly WorkToolService _tools;
     private readonly McpServerHost _mcp;
+    private readonly TestSecretResolver _secrets;
     private readonly StudioWorkService _work;
 
     public McpAgentToolTests()
@@ -43,7 +46,8 @@ public sealed class McpAgentToolTests : IDisposable
         var workspace = new StudioWorkspaceService(options, environment);
         _agents = new StudioAgentService(workspace);
         _tools = new WorkToolService(workspace);
-        _mcp = new McpServerHost();
+        _secrets = new TestSecretResolver(("TOKEN", "s3cret-value"));
+        _mcp = new McpServerHost(_secrets);
         _work = new StudioWorkService(
             workspace,
             new SystemWorkSkillsService(),
@@ -51,7 +55,8 @@ public sealed class McpAgentToolTests : IDisposable
             new StudioDeviceAccess(),
             _agents,
             new InferenceSettingsService(),
-            _mcp);
+            _mcp,
+            _secrets);
     }
 
     [Fact]
@@ -119,6 +124,64 @@ public sealed class McpAgentToolTests : IDisposable
             ConsentedTo(WorkToolPermission.Off))!;
 
         Assert.DoesNotContain(FakeMcpServer.EchoTool, agent.RegisteredToolNames);
+    }
+
+    [Fact]
+    public async Task Agent_NeverPermissionBlocksTheCall()
+    {
+        await ConnectAsync();
+        AllowRun();
+
+        var agent = (AgentBuilder)_work.CreateAgentTools(
+            Agent(),
+            ConsentedTo(WorkToolPermission.Never))!;
+
+        Assert.Contains(FakeMcpServer.EchoTool, agent.RegisteredToolNames);
+
+        JsonObject result = await agent.CallToolAsync(new JsonObject
+        {
+            ["tool"] = FakeMcpServer.EchoTool,
+            ["arguments"] = new JsonObject { ["text"] = "hello" },
+        });
+
+        Assert.Equal("success", result["status"]!.GetValue<string>());
+        Assert.Contains("Permission denied", result["data"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Agent_ResolvesVaultReferencesInToolArgumentsAndRedactsTheEcho()
+    {
+        await ConnectAsync();
+        AllowRun();
+
+        var agent = (AgentBuilder)_work.CreateAgentTools(
+            Agent(),
+            ConsentedTo(WorkToolPermission.Always))!;
+
+        JsonObject result = await agent.CallToolAsync(new JsonObject
+        {
+            ["tool"] = FakeMcpServer.EchoTool,
+            ["arguments"] = new JsonObject { ["text"] = "Bearer %vault:TOKEN%" },
+        });
+
+        Assert.Equal("success", result["status"]!.GetValue<string>());
+        Assert.Equal("Bearer ***", result["data"]!.GetValue<string>());
+    }
+
+    /// <summary>
+    /// The project gate. Connect asks for Run in the real UI; these tests call
+    /// the host directly, so they open Run for the project root themselves.
+    /// </summary>
+    private void AllowRun()
+    {
+        var contexts = _work.Settings.Contexts
+            .Select(context => context with
+            {
+                Permissions = context.Permissions with { Execute = WorkPermission.Ask },
+            })
+            .ToList();
+
+        _work.Save(_work.Settings with { Contexts = contexts }, _work.Memory);
     }
 
     public void Dispose()

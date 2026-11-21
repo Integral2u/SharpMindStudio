@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using SharpMind.Inference.Agent;
 using SharpMind.Studio.Core.Agents;
 using SharpMind.Studio.Core.Mcp;
+using SharpMind.Studio.Core.Vault;
 using SharpMind.Studio.Core.Work;
 
 namespace SharpMind.Studio.Services;
@@ -69,6 +70,7 @@ public sealed class StudioWorkService : IDisposable
     private readonly StudioAgentService _agents;
     private readonly InferenceSettingsService _inference;
     private readonly SharpMind.Studio.Core.Mcp.McpServerHost _mcp;
+    private readonly ISecretResolver _secrets;
     private readonly Lock _gate = new();
     private WorkSettingsStore _store;
     private WorkSettings _settings;
@@ -86,7 +88,7 @@ public sealed class StudioWorkService : IDisposable
     /// <summary>The tool-call gate for the running turn, inherited by delegated agents.</summary>
     private IToolCallFilter? _activeFilter;
 
-    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents, InferenceSettingsService inference, SharpMind.Studio.Core.Mcp.McpServerHost mcp)
+    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents, InferenceSettingsService inference, SharpMind.Studio.Core.Mcp.McpServerHost mcp, ISecretResolver secrets)
     {
         _workspace = workspace;
         _systemSkills = systemSkills;
@@ -95,6 +97,7 @@ public sealed class StudioWorkService : IDisposable
         _agents = agents;
         _inference = inference;
         _mcp = mcp;
+        _secrets = secrets ?? NullSecretResolver.Instance;
         _store = new WorkSettingsStore(workspace.Project.Root);
         _settings = _store.Load();
         _memory = _store.ReadMemory();
@@ -204,14 +207,18 @@ public sealed class StudioWorkService : IDisposable
             builder.WithTools(new WorkProcessTools(
                 _workspace.Project.Root,
                 AllowedRoots(),
-                access => CheckAccessAsync(access, profile: effective)));
+                access => CheckAccessAsync(access, profile: effective),
+                _secrets));
             builder.WithTools(new WorkUiTools(RequestChoiceAsync));
             if (_tools.PluginTools.Count > 0)
                 builder.WithTools([.. _tools.PluginTools]);
             if (embeddedTools is { Count: > 0 })
                 builder.WithTools([.. embeddedTools]);
 
-            AddMcpTools(builder, effective);
+            AddMcpTools(
+                builder,
+                effective,
+                access => CheckAccessAsync(access, profile: effective));
         }
         if (work)
         {
@@ -328,20 +335,23 @@ public sealed class StudioWorkService : IDisposable
     /// Adds the MCP tools the user has explicitly allowed to a builder. A
     /// server's own code cannot be gated per call, so consent is an explicit
     /// project (or session) entry: a default inherited value keeps the tool out
-    /// of the prompt. <paramref name="allowed"/> lets an agent narrow the set
-    /// with its own allow list; it can never widen it.
+    /// of the prompt. <paramref name="permission"/> is the same gate the built-in
+    /// tools use, so Never refuses and Ask prompts. <paramref name="allowed"/>
+    /// lets an agent narrow the set with its own allow list; it can never widen
+    /// it.
     /// </summary>
     private void AddMcpTools(
         AgentBuilder builder,
         ToolPermissionProfile effective,
+        Func<WorkToolAccess, Task<bool>> permission,
         IReadOnlySet<string>? allowed = null)
     {
         foreach (WorkToolInfo tool in _tools.Tools.Where(tool => tool.IsMcp))
         {
             if (allowed is not null && !allowed.Contains(tool.Name)) continue;
 
-            ToolPermissionValue permission = effective.For(tool.Name, tool.Group);
-            if (permission.Permission == WorkToolPermission.Off) continue;
+            ToolPermissionValue permissionValue = effective.For(tool.Name, tool.Group);
+            if (permissionValue.Permission == WorkToolPermission.Off) continue;
 
             // Consent lives below the agent layer. An agent that asks for an MCP
             // tool the user never granted must not get it, so resolve the chain
@@ -377,7 +387,8 @@ public sealed class StudioWorkService : IDisposable
                 tool.Name,
                 info.Description,
                 schema,
-                arguments => CallMcpToolAsync(serverId, mcpTool, arguments));
+                arguments => CallMcpToolAsync(
+                    serverId, mcpTool, tool.Name, arguments, permission));
         }
     }
 
@@ -392,13 +403,41 @@ public sealed class StudioWorkService : IDisposable
         return serverId.Length > 0 && tool.Length > 0;
     }
 
-    private async Task<string> CallMcpToolAsync(string serverId, string tool, JsonObject arguments)
+    private async Task<string> CallMcpToolAsync(
+        string serverId,
+        string tool,
+        string toolName,
+        JsonObject arguments,
+        Func<WorkToolAccess, Task<bool>> permission)
     {
-        McpToolResult result = await _mcp
-            .CallAsync(serverId, tool, arguments)
-            .ConfigureAwait(false);
+        IReadOnlyList<string> secretNames = SecretTemplate.Names(arguments);
+        string detail = $"{serverId}/{tool}";
+        if (secretNames.Count > 0)
+            detail += $" (uses secret: {string.Join(", ", secretNames)})";
 
-        return result.IsError ? $"MCP error: {result.Text}" : result.Text;
+        var access = new WorkToolAccess(
+            toolName,
+            WorkToolCategory.Execute,
+            _workspace.Project.Root)
+        {
+            Detail = detail,
+        };
+
+        if (!await permission(access).ConfigureAwait(false))
+            return "Permission denied for this MCP tool.";
+
+        try
+        {
+            McpToolResult result = await _mcp
+                .CallAsync(serverId, tool, arguments)
+                .ConfigureAwait(false);
+
+            return result.IsError ? $"MCP error: {result.Text}" : result.Text;
+        }
+        catch (SecretMissingException ex)
+        {
+            return ex.Message;
+        }
     }
 
     private Task<string> InvokeAgentToolAsync(string toolName, JsonObject arguments)    {
@@ -531,7 +570,7 @@ public sealed class StudioWorkService : IDisposable
         [
             new WorkFileTools(_workspace.Project.Root, AllowedRoots(), Permission),
             new WorkWebTools(Permission),
-            new WorkProcessTools(_workspace.Project.Root, AllowedRoots(), Permission),
+            new WorkProcessTools(_workspace.Project.Root, AllowedRoots(), Permission, _secrets),
             .. _tools.PluginTools,
         ];
         var probe = new AgentBuilder(agent.Name);
@@ -548,7 +587,14 @@ public sealed class StudioWorkService : IDisposable
             ToolCallFilter = _activeFilter,
         };
         builder.WithTools(toolObjects);
-        AddMcpTools(builder, effective, allowed);
+        // MCP is a process, so the project's Run permission is the consent gate,
+        // the same check Connect uses. The agent's own tool layer and allow list
+        // still narrow which servers and tools it can reach.
+        AddMcpTools(
+            builder,
+            effective,
+            access => CheckAccessAsync(access, profile: effective),
+            allowed);
         string rules = string.IsNullOrWhiteSpace(agent.Rules)
             ? $"You are {agent.Name}. {agent.Description}".Trim()
             : agent.Rules.Trim();

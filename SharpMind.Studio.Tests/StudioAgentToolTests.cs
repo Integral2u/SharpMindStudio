@@ -6,6 +6,7 @@ using SharpMind.Inference.Agent;
 using SharpMind.Studio;
 using SharpMind.Studio.Core.Agents;
 using SharpMind.Studio.Core.Storage;
+using SharpMind.Studio.Core.Vault;
 using SharpMind.Studio.Services;
 using Xunit;
 
@@ -50,7 +51,8 @@ public sealed class StudioAgentToolTests : IDisposable
             new StudioDeviceAccess(),
             _agents,
             new InferenceSettingsService(),
-            new SharpMind.Studio.Core.Mcp.McpServerHost());
+            new SharpMind.Studio.Core.Mcp.McpServerHost(),
+            NullSecretResolver.Instance);
     }
 
     [Fact]

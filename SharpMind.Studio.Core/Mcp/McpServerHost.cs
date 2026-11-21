@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Core.Mcp;
 
@@ -23,15 +24,27 @@ public sealed class McpServerHost : IAsyncDisposable
 
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Entry> _running = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ISecretResolver _secrets;
     private readonly TimeProvider _time;
 
     public McpServerHost()
-        : this(TimeProvider.System)
+        : this(NullSecretResolver.Instance, TimeProvider.System)
     {
     }
 
     public McpServerHost(TimeProvider time)
+        : this(NullSecretResolver.Instance, time)
     {
+    }
+
+    public McpServerHost(ISecretResolver secrets)
+        : this(secrets, TimeProvider.System)
+    {
+    }
+
+    public McpServerHost(ISecretResolver secrets, TimeProvider time)
+    {
+        _secrets = secrets ?? NullSecretResolver.Instance;
         _time = time ?? TimeProvider.System;
     }
 
@@ -74,7 +87,7 @@ public sealed class McpServerHost : IAsyncDisposable
             throw new UnauthorizedAccessException(
                 $"Running MCP server '{server.Name}' needs the Run permission for this project.");
 
-        McpStdioClient client = McpStdioClient.Start(server);
+        McpStdioClient client = McpStdioClient.Start(server, _secrets);
         try
         {
             await client.InitializeAsync(cancellationToken).ConfigureAwait(false);
