@@ -211,37 +211,7 @@ public sealed class StudioWorkService : IDisposable
             if (embeddedTools is { Count: > 0 })
                 builder.WithTools([.. embeddedTools]);
 
-            // MCP tools are off unless the user has chosen a value for them: there
-            // is no way to gate a server's own code, so consent is explicit.
-            foreach (WorkToolInfo tool in _tools.Tools.Where(tool => tool.IsMcp))
-            {
-                ToolPermissionValue permission = effective.For(tool.Name, tool.Group);
-                if (permission.Permission == WorkToolPermission.Off ||
-                    permission.Source == ToolPermissionResolver.DefaultSource)
-                {
-                    continue;
-                }
-
-                if (!TrySplitMcpName(tool.Name, out string serverId, out string mcpTool)) continue;
-
-                McpToolInfo? info = _mcp.Connected
-                    .FirstOrDefault(server =>
-                        server.ServerId.Equals(serverId, StringComparison.OrdinalIgnoreCase))
-                    ?.Tools.FirstOrDefault(candidate => candidate.Name == mcpTool);
-                if (info is null) continue;
-
-                var schema = info.InputSchema as JsonObject ?? new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject(),
-                };
-
-                builder.WithTool(
-                    tool.Name,
-                    info.Description,
-                    schema,
-                    arguments => CallMcpToolAsync(serverId, mcpTool, arguments));
-            }
+            AddMcpTools(builder, effective);
         }
         if (work)
         {
@@ -352,6 +322,63 @@ public sealed class StudioWorkService : IDisposable
             arguments => InvokeAgentToolAsync("spawn_agent", arguments));
 
         return builder;
+    }
+
+    /// <summary>
+    /// Adds the MCP tools the user has explicitly allowed to a builder. A
+    /// server's own code cannot be gated per call, so consent is an explicit
+    /// project (or session) entry: a default inherited value keeps the tool out
+    /// of the prompt. <paramref name="allowed"/> lets an agent narrow the set
+    /// with its own allow list; it can never widen it.
+    /// </summary>
+    private void AddMcpTools(
+        AgentBuilder builder,
+        ToolPermissionProfile effective,
+        IReadOnlySet<string>? allowed = null)
+    {
+        foreach (WorkToolInfo tool in _tools.Tools.Where(tool => tool.IsMcp))
+        {
+            if (allowed is not null && !allowed.Contains(tool.Name)) continue;
+
+            ToolPermissionValue permission = effective.For(tool.Name, tool.Group);
+            if (permission.Permission == WorkToolPermission.Off) continue;
+
+            // Consent lives below the agent layer. An agent that asks for an MCP
+            // tool the user never granted must not get it, so resolve the chain
+            // without the agent's own entry.
+            ToolPermissionValue inherited = (effective with { Agent = null })
+                .For(tool.Name, tool.Group);
+            if (inherited.Permission == WorkToolPermission.Off ||
+                inherited.Source == ToolPermissionResolver.DefaultSource)
+            {
+                continue;
+            }
+
+            if (!TrySplitMcpName(tool.Name, out string serverId, out string mcpTool)) continue;
+
+            McpToolInfo? info = _mcp.Connected
+                .FirstOrDefault(server =>
+                    server.ServerId.Equals(serverId, StringComparison.OrdinalIgnoreCase))
+                ?.Tools.FirstOrDefault(candidate => candidate.Name == mcpTool);
+            if (info is null) continue;
+
+            // The schema is cached with the connected server and shared by every
+            // builder. A JsonNode can only have one parent, so hand the builder a
+            // clone; without this the second chat turn throws while registering.
+            var schema = info.InputSchema is JsonObject input
+                ? (JsonObject)input.DeepClone()
+                : new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject(),
+                };
+
+            builder.WithTool(
+                tool.Name,
+                info.Description,
+                schema,
+                arguments => CallMcpToolAsync(serverId, mcpTool, arguments));
+        }
     }
 
     private static bool TrySplitMcpName(string name, out string serverId, out string tool)
@@ -521,6 +548,7 @@ public sealed class StudioWorkService : IDisposable
             ToolCallFilter = _activeFilter,
         };
         builder.WithTools(toolObjects);
+        AddMcpTools(builder, effective, allowed);
         string rules = string.IsNullOrWhiteSpace(agent.Rules)
             ? $"You are {agent.Name}. {agent.Description}".Trim()
             : agent.Rules.Trim();
