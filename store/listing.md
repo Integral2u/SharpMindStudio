@@ -129,17 +129,41 @@ Graphics: optional; a discrete GPU makes local inference and training faster
 Notes: the .NET runtime is bundled; WebView2 is present on current Windows and installs automatically if missing
 ```
 
-## Age rating
+## Age rating (IARC questionnaire)
 
-Answer the IARC questionnaire honestly; the answers that matter here:
+Start with **"I'm ready to complete the questionnaire"** — there is no existing
+IARC Certificate ID or GRID for this app.
 
-- **Unrestricted internet access: yes.** Remote model providers and web fetch are user-initiated but not filtered.
-- **User-generated content: no.** There is no user-to-user content or social surface. Model output is generated, not shared.
-- **Purchases: no.** Studio never sells anything; provider accounts and compute are paid directly to those providers.
+| Question | Answer | Why |
+|---|---|---|
+| App type | **All Other App Types** | It is not a game. It is not a social or communication app: the chat partner is a model, and nothing is exchanged between people. |
+| Downloaded App — ratings-relevant content in the package | **No** | The package is code, UI and icons. It ships no media, no curated model and no sample content of that kind. |
+| User Content Sharing — interact or exchange content with other users | **No** | There is no messaging, sharing or social surface. Phone pairing gives *your* devices access to *your* Studio; it is not a channel between users. |
+| Online Content — content not in the initial download | **Yes** | Remote model providers, downloaded models, web fetch and **generated AI content**, which IARC names in this question. |
+| Violence | **No** | No curated violent material in the catalog. Model output is covered by Online Content. |
+| Sexuality | **No** | Same. |
+| Language | **No** | Same. |
+| Controlled Substance | **No** | Same. |
+| Age-restricted products or activities | **No** | Nothing is promoted or sold. Compute and provider accounts are bought on those providers' own sites. |
+| Share precise physical location with other users | **No** | The gateway looks up *your* public IP to build a URL; it is not shared with anyone, and no location data is collected. |
+| Purchase digital goods | **No** | Studio sells nothing and processes no payments. |
+| Cash rewards, gift cards, play-to-earn, crypto, NFTs | **No** | Provider links carry their own partner parameters; the user receives no reward or transferable asset. |
+| Web browser or search engine | **No** | There is a fetch tool for the model and a local gateway, not general browsing. |
+| Primarily news or educational | **No** | It is a developer/AI tool. |
+| Ratings from a ratings board, physical media | **No** | Store-only distribution. |
 
-Expect a **12+ / Teen** result for unrestricted internet access. Do not claim
-"Everyone" by answering no to internet access if remote models are enabled in the
-build you ship.
+The two answers doing the work are **Online Content = Yes** (which is where
+generated AI content belongs) and **All Other App Types** (not Social, despite
+the word "chat"). Everything else is a genuine no for this build.
+
+Expect **12+ / Teen**, driven by unrestricted access to generated and
+third-party content. If the result comes back Everyone, accept it — the answers
+above are the accurate ones.
+
+If a future version ships a curated model gallery, sample prompts or a shared
+gallery, revisit Violence/Sexuality/Language: curated content is what those
+questions ask about, and it would then be Yes.
+
 
 ## Listing details
 
