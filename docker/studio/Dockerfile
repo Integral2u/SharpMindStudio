@@ -3,7 +3,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # The SharpMind packages come from NuGet. The preview package feed is not
-# copied here: publish the 1.1.0 packages before building the public image.
+# copied here: publish the 1.1.2 packages before building the public image.
 COPY Directory.Build.props Directory.Packages.props SharpMind.References.props ./
 COPY SharpMind.Studio.Core/ SharpMind.Studio.Core/
 COPY SharpMind.Studio/ SharpMind.Studio/

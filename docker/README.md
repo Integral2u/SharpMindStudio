@@ -62,7 +62,7 @@ default. The combined image does both behind the same volume.
 
 ## Build order
 
-1. For public/CI images, publish the six SharpMind 1.1.0 packages.
+1. For public/CI images, publish the six SharpMind 1.1.2 packages.
 2. Build `docker/studio` or the combined `docker/server`.
 3. Build `docker/compute` for API-only workers.
 4. Test the CPU image first, then the GPU image on a GPU host such as Runpod or
