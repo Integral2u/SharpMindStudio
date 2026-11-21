@@ -175,6 +175,42 @@ Copyright: © 2026 Integral2u
 Developer: SharpMind Studio
 ```
 
+## Restricted capability: runFullTrust
+
+The package declares `runFullTrust` because it is a Win32 desktop application
+with a companion process, not a sandboxed app. Paste this into the request form:
+
+```
+SharpMind Studio is a Win32 desktop application packaged as MSIX, with no
+service, driver or elevated component. runFullTrust is required because the app
+is a local AI and developer workbench, and an AppContainer app cannot do the
+job it exists to do.
+
+It must:
+- Launch its own UI. The package entry point is a WPF shell that starts the
+  bundled ASP.NET Core host (SharpMind.Studio.exe) as a child process and renders
+  it in WebView2. A packaged app cannot start a sibling executable without full
+  trust.
+- Read and write folders the user chooses. Work mode opens a project directory
+  and reads and edits files in it; models, datasets, LoRA checkpoints and chat
+  history are stored under %USERPROFILE%\SharpMind.
+- Load native inference kernels and an optional accelerator plugin from the
+  user's model folder, which are outside the package.
+- Run developer tools the user approves (for example dotnet, git or npm) in
+  their own project folder, showing the exact command line before it runs.
+- Serve its own UI on 127.0.0.1 and, only when the user configures them,
+  connect to compute hosts over SSH and to devices paired on their local
+  network.
+
+Every file and process access is initiated by the user. The app has no
+background service, adds no startup task, changes no system settings, collects
+no telemetry, and requests no other restricted capability.
+```
+
+If the form allows more room, add the sentence that matters most to a reviewer:
+**the product's purpose is running the user's own models and toolchains against
+their own folders, which the AppContainer model cannot reach.**
+
 ## Screenshots
 
 Partner Center requires at least one desktop screenshot at **1366×768** or
