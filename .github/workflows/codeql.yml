@@ -1,0 +1,51 @@
+name: "CodeQL Advanced"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '29 10 * * 5'
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for all workflows.
+      security-events: write
+
+      # Required to fetch internal or private CodeQL packs.
+      packages: read
+
+      # Only required for workflows in private repositories.
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The workflows themselves.
+          - language: actions
+            build-mode: none
+          # Studio's C# and Razor sources. No build is needed for extraction,
+          # so this does not depend on the .slnx or on a NuGet restore.
+          - language: csharp
+            build-mode: none
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{matrix.language}}"
