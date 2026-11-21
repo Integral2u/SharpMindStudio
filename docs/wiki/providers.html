@@ -271,6 +271,9 @@
             <h2 id="tokens">Tokens and security</h2>
             <ul>
                 <li>The host token is generated in Studio and stored encrypted with the local key box.</li>
+                <li>Any token, SSH password or passphrase can come from a named
+                    <a href="settings.html#vault">Vault</a> secret instead of an inline value, so
+                    rotating it does not mean editing every host.</li>
                 <li>SSH passwords and key passphrases use the same encryption; private keys stay on this PC.</li>
                 <li>The SSH host key is trusted on first use. If that matters for your environment, pin it manually.</li>
                 <li>Rotate the token before opening a host to the internet; a literal value such as <span class="mono">PASTE_YOUR_TOKEN</span> is not a secret.</li>

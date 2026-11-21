@@ -168,6 +168,37 @@
                 panel stores its API key encrypted, checks it with <strong>Load plans</strong> and
                 only saves it after Vultr accepts it; its SSH key list comes from the account, so
                 add the key in the Vultr console first.
+                OpenRouter, HuggingFace, Compute, Runpod, Vultr and the Gateway upstream token can
+                also use a named secret from <strong>Vault</strong> instead of an inline value.
+            </p>
+
+            <h2 id="vault">Vault</h2>
+            <p>
+                Vault holds named secrets: provider keys, host tokens, SSH passwords and
+                passphrases, and Docker Hub publish tokens. A name is used in a command or field as
+                <span class="mono">%vault:NAME%</span>. Studio reads the value only when the
+                process or request starts, so the model, the chat history and the settings files
+                see the reference rather than the secret.
+            </p>
+            <ul>
+                <li>Names are case-insensitive, use letters, digits and underscores, and cannot be
+                    renamed. Use <strong>Replace</strong> to rotate the value.</li>
+                <li>Values are write-only. After saving, Studio cannot show or copy one; replace
+                    or delete it instead.</li>
+                <li>The value is encrypted on this PC for your Windows account. Copying the
+                    settings without the matching key file makes the entry read as unreadable, not
+                    as an empty secret.</li>
+                <li><strong>Used by</strong> shows every MCP server, provider and host reference
+                    before a delete. A running MCP server keeps the value it connected with until
+                    it is disconnected.</li>
+            </ul>
+            <p>
+                In an MCP server, the helper inserts <span class="mono">%vault:NAME%</span> into
+                the command or arguments, or <span class="mono">KEY=%vault:NAME%</span> into the
+                environment. The same reference works in a Work <span class="mono">RunProcess</span>
+                command and in MCP tool arguments. Prefer the environment over an argument for a
+                server: Windows exposes process command lines to other processes running as the
+                same user.
             </p>
 
             <h2 id="pair">Pairing</h2>

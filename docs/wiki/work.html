@@ -150,6 +150,23 @@
                 its root, so the file tools work before the settings have ever been opened.
             </p>
 
+            <h3 id="secrets">Secrets in commands</h3>
+            <p>
+                A <span class="mono">RunProcess</span> command can use a named secret from
+                <a href="settings.html#vault">Settings &gt; Vault</a> as
+                <span class="mono">%vault:NAME%</span>. Studio expands it after the arguments are
+                split and before the process starts, so a value with spaces stays one argument.
+                The permission prompt shows the reference and the secret name, never the value.
+                A missing name refuses the command instead of passing the literal reference, and
+                the value is removed from stdout, stderr and a timeout message.
+            </p>
+            <p>
+                Redaction is best effort: a program that encodes, splits or transforms the value
+                can defeat it. The permission gate is the real control, so use
+                <strong>Ask</strong> for anything that can reach the network, and do not give an
+                untrusted model or plugin <strong>Always</strong>.
+            </p>
+
             <h2 id="skills">Skills</h2>
             <p>
                 Skills are reusable instructions with a name, description and body. They can be

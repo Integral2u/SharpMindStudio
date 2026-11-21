@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Vault for named secrets.** Settings → Vault keeps API keys, host tokens,
+  SSH passwords, passphrases and Docker Hub tokens under a name. Values are
+  encrypted on this PC for your Windows account and are write-only after saving.
+  A provider or compute field can use a secret from the Vault instead of an
+  inline value, and the Vault lists what references each name before you delete
+  it.
+- **Commands can use a secret without seeing it.** A RunProcess command, an MCP
+  server command/argument/environment value, or an MCP tool argument can contain
+  `%vault:NAME%`. Studio expands it once, just before the process or request
+  starts, and removes the value from captured output and tool results. A missing
+  name refuses to run instead of passing the literal reference.
 - **MCP servers stop when idle.** Each server has a **Stop when idle** choice
   (5, 15, 30 or 60 minutes, or **Never**), both when adding it and in its row
   in Settings. A background sweep stops the process once the timeout passes;
@@ -19,6 +30,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **MCP tools ignored Never and Ask.** Only Off was honoured; a tool set to
+  Never still ran and one set to Ask never prompted. MCP calls now go through
+  the same permission gate as built-in tools, using the project's Run
+  permission.
 - **MCP was buried and its tools were hard to allow.** The server panel sat at the
   bottom of Settings, under Inference and System defaults, and connecting a server
   did not refresh the tool list until a reload. MCP now has its own Settings panel:
