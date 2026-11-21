@@ -6,8 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **MCP servers stop when idle.** Each server has a **Stop when idle** choice
+  (5, 15, 30 or 60 minutes, or **Never**), both when adding it and in its row
+  in Settings. A background sweep stops the process once the timeout passes;
+  **Never** keeps it running until Studio exits.
+- **Training parameters explain themselves.** Hovering a field in Training now
+  says what it does: FFN width, KV heads, grad accumulation, LoRA alpha, the
+  validation and exam splits, checkpoint retention, and the rest of the model,
+  data, optimisation, precision and output fields.
+
 ### Fixed
 
+- **Delegated agents did not receive MCP tools.** A specialist got the file,
+  web, process and plugin tools but not the MCP tools its parent had. Agents
+  now inherit the ones you enabled, subject to the agent's own allow list; an
+  agent still cannot grant itself a server tool.
+- **An enabled MCP tool could fail on the second turn.** The tool schema cached
+  from the server was registered with the model builder directly, and a JSON
+  node can only have one parent, so registering the same tool again threw. The
+  schema is now cloned for each builder.
 - **The model pickers in Training and conversion were unordered and truncated.**
   They listed the 50 most recently written files, newest first, and only the top
   level of `Models`, so an older model — or one inside a subfolder — could not be
