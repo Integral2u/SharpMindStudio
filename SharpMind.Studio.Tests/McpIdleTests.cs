@@ -46,6 +46,22 @@ public sealed class McpIdleTests
         Assert.True(host.IsRunning(FakeMcpServer.Id));
     }
 
+    [Fact]
+    public async Task Host_AppliesAnUpdatedIdleTimeoutToARunningServer()
+    {
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        await using var host = new McpServerHost(time);
+
+        McpServerSettings settings = FakeMcpServer.Settings(idleSeconds: 300);
+        await host.EnsureStartedAsync(settings, () => Task.FromResult(true));
+
+        host.UpdateSettings(settings with { IdleSeconds = 5 });
+        time.Advance(TimeSpan.FromSeconds(6));
+        await host.StopIdleAsync();
+
+        Assert.False(host.IsRunning(FakeMcpServer.Id));
+    }
+
     private sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
     {
         private DateTimeOffset _now = start;

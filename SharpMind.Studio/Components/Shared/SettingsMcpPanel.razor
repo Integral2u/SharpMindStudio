@@ -38,6 +38,18 @@
                         @(running ? $"connected · {toolCount} tool(s)" : "stopped")
                         @if (!server.Enabled) { <text> · disabled</text> }
                     </div>
+                    <div class="row" style="margin-top:.4rem;align-items:center;gap:.4rem;">
+                        <label class="small faint" for="mcp-idle-@server.Id">Stop when idle</label>
+                        <select id="mcp-idle-@server.Id" class="input" style="width:auto;"
+                                title="Studio stops this server after the selected idle time. Never keeps it running until Studio exits."
+                                value="@server.IdleSeconds"
+                                @onchange="args => SetIdle(server, args)">
+                            @foreach ((int seconds, string label) in IdleOptions)
+                            {
+                                <option value="@seconds">@label</option>
+                            }
+                        </select>
+                    </div>
                 </div>
                 <div class="row">
                     <button type="button" class="button" @onclick="() => ConnectAsync(server)"
@@ -78,6 +90,16 @@
                 <label class="field-label" for="mcp-env">Environment, KEY=value per line</label>
                 <textarea id="mcp-env" class="textarea work-textarea" @bind="_environment"></textarea>
             </div>
+            <div class="field">
+                <label class="field-label" for="mcp-idle-new">Stop when idle</label>
+                <select id="mcp-idle-new" class="input" @bind="_idleSeconds"
+                        title="Studio stops the server after this much idle time. Never keeps it running until Studio exits.">
+                    @foreach ((int seconds, string label) in IdleOptions)
+                    {
+                        <option value="@seconds">@label</option>
+                    }
+                </select>
+            </div>
             <div class="row" style="margin-top:.5rem;">
                 <button type="button" class="button primary" @onclick="AddAsync"
                         disabled="@(string.IsNullOrWhiteSpace(_command))">
@@ -96,6 +118,16 @@
     private string _args = "";
     private string _environment = "";
     private string? _status;
+    private int _idleSeconds = 300;
+
+    private static readonly (int Seconds, string Label)[] IdleOptions =
+    [
+        (300, "5 minutes"),
+        (900, "15 minutes"),
+        (1800, "30 minutes"),
+        (3600, "60 minutes"),
+        (0, "Never"),
+    ];
 
     private async Task AddAsync()
     {
@@ -112,6 +144,7 @@
                     .Select(line => line.Split('=', 2))
                     .Where(pair => pair.Length == 2)
                     .ToDictionary(pair => pair[0].Trim(), pair => pair[1], StringComparer.OrdinalIgnoreCase),
+                IdleSeconds = _idleSeconds,
             };
 
             Store.Save(server);
@@ -171,6 +204,29 @@
         Store.Remove(server.Id);
         _status = $"{server.Name} removed.";
     }
+
+    private void SetIdle(McpServerSettings server, ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out int seconds)) return;
+
+        try
+        {
+            McpServerSettings updated = server with { IdleSeconds = seconds };
+            Store.Save(updated);
+            // A running server keeps its process and tools; only the timeout changes.
+            Host.UpdateSettings(updated);
+            _status = seconds == 0
+                ? $"{server.Name} stays running until Studio exits."
+                : $"{server.Name} stops after {IdleLabel(seconds)} idle.";
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private static string IdleLabel(int seconds) =>
+        IdleOptions.FirstOrDefault(option => option.Seconds == seconds).Label ?? $"{seconds} seconds";
 
     private static IEnumerable<string> Lines(string text) =>
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

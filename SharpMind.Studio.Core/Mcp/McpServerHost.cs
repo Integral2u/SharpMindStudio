@@ -133,6 +133,21 @@ public sealed class McpServerHost : IAsyncDisposable
         if (entry is not null) await entry.Client.DisposeAsync().ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Applies a saved change, such as a new idle timeout, to a server that is
+    /// already running. The tools and process stay as they are.
+    /// </summary>
+    public void UpdateSettings(McpServerSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        lock (_gate)
+        {
+            if (_running.TryGetValue(settings.Id, out Entry? entry))
+                _running[settings.Id] = entry with { Settings = settings };
+        }
+    }
+
     /// <summary>Stops every server that has been idle past its own timeout.</summary>
     public async Task StopIdleAsync()
     {
