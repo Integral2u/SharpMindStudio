@@ -1,20 +1,19 @@
 <Project>
   <PropertyGroup>
-    <!-- Use the sibling source tree when it exists; fall back to the published packages. -->
+    <!-- release/1.1.3 builds the sibling engine tree; main defaults to packages.
+         -p:SharpMindSource=... overrides either way. -->
     <SharpMindRoot Condition="'$(SharpMindRoot)' == ''">$(MSBuildThisFileDirectory)..\SharpMind\</SharpMindRoot>
-    <SharpMindSource Condition="'$(SharpMindSource)' == '' and Exists('$(SharpMindRoot)SharpMind.Core\SharpMind.Core.csproj')">project</SharpMindSource>
-    <SharpMindSource Condition="'$(SharpMindSource)' == ''">package</SharpMindSource>
+    <SharpMindSource Condition="'$(SharpMindSource)' == ''">project</SharpMindSource>
   </PropertyGroup>
 
-  <!-- The published 1.1.1 packages carry the audio, analysis and vision APIs,
-       so both the sibling source tree and the packages expose the full Studio
-       feature set. Source development uses project references; package builds
-       use nuget.org. -->
+  <!-- The published 1.1.2 packages carry the audio, analysis and vision APIs,
+       so both a local engine checkout and the packages expose the full Studio
+       feature set. -->
   <PropertyGroup>
     <DefineConstants>$(DefineConstants);SHARPMIND_AUDIO;SHARPMIND_SOURCE</DefineConstants>
   </PropertyGroup>
 
-  <!-- Local source-tree references: used automatically when the sibling SharpMind checkout exists. -->
+  <!-- Local engine projects, built from the sibling checkout on release/1.1.3. -->
   <ItemGroup Condition="'$(SharpMindSource)' == 'project'">
     <ProjectReference Include="$(SharpMindRoot)SharpMind.Core\SharpMind.Core.csproj"
                       SetConfiguration="Configuration=$(Configuration)" />

@@ -40,21 +40,26 @@ dotnet test  SharpMind.Studio.slnx -c Debug
 dotnet run --project SharpMind.Studio
 ```
 
-In Visual Studio, open **`SharpMind.Studio.slnx`** when the sibling `SharpMind`
-checkout is present. It includes the engine projects in the solution, so the IDE
-restores and builds them instead of reporting `NU1105` for project references
-outside the solution.
+In Visual Studio, open **`SharpMind.Studio.slnx`**. This is the `release/1.1.3`
+branch, so it builds the sibling `SharpMind` projects: check that repository out
+on **its** `release/1.1.3` branch first.
 
-A clean Studio-only clone uses the package solution. It builds against the
-published SharpMind 1.1.1 packages from nuget.org:
+```powershell
+cd ..\SharpMind
+git switch release/1.1.3
+cd ..\SharpMind.Studio
+dotnet build SharpMind.Studio.slnx -c Debug
+```
+
+`SharpMindSource` defaults to `project` here. To check this branch against the
+published packages instead:
 
 ```powershell
 dotnet build SharpMind.Studio.Package.slnx -c Debug -p:SharpMindSource=package
 ```
 
-The source solution remains the development target and uses the sibling engine
-projects. The package solution is the clean-clone and published-package
-compatibility check; CI builds it directly from nuget.org.
+`main` builds the published packages by default, so a clean clone of `main`
+needs no engine checkout.
 
 Open <http://127.0.0.1:5117>. Add a `.smm` or GGUF model in **Training → Models**,
 or connect a remote provider or a SharpMind Compute host.

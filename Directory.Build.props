@@ -1,8 +1,8 @@
 <Project>
   <PropertyGroup>
-    <Version>1.1.2.0</Version>
-    <AssemblyVersion>1.1.2.0</AssemblyVersion>
-    <FileVersion>1.1.2.0</FileVersion>
+    <Version>1.1.3.0</Version>
+    <AssemblyVersion>1.1.3.0</AssemblyVersion>
+    <FileVersion>1.1.3.0</FileVersion>
     <Company>SharpMind</Company>
     <Product>SharpMind Studio</Product>
     <IsPackable>false</IsPackable>
@@ -12,11 +12,11 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
-  <!-- Local development builds the sibling SharpMind projects. The package-only
-       solution passes -p:SharpMindSource=package, which wins as a global property. -->
+  <!-- This branch develops against the sibling SharpMind tree, so the engine
+       checkout must be on its own release/1.1.3 branch. main builds the published
+       packages instead; pass -p:SharpMindSource=package to do the same here. -->
   <PropertyGroup>
     <SharpMindRoot Condition="'$(SharpMindRoot)' == ''">$(MSBuildThisFileDirectory)..\SharpMind\</SharpMindRoot>
-    <SharpMindSource Condition="'$(SharpMindSource)' == '' and Exists('$(SharpMindRoot)SharpMind.Core\SharpMind.Core.csproj')">project</SharpMindSource>
-    <SharpMindSource Condition="'$(SharpMindSource)' == ''">package</SharpMindSource>
+    <SharpMindSource Condition="'$(SharpMindSource)' == ''">project</SharpMindSource>
   </PropertyGroup>
 </Project>
