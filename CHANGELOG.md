@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Microsoft Store availability.** SharpMind Studio is now listed in the
+  Microsoft Store. The site, wiki and README point there for the primary
+  download; the MSI and ZIP remain on GitHub Releases for direct and offline
+  installs, and the in-app version link opens the Store listing.
+
 - **Medusa head calibration and persistence.** Selecting the Medusa generator
   can now load a calibrated head sidecar: chat sessions pass the head count,
   path and model fingerprint through to the builder. `studio medusacal <model>`

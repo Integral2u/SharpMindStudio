@@ -87,7 +87,7 @@ matching `SharpMind.Studio.cer`.
 - Signing a submission with a self-signed certificate is fine: the Store
   re-signs the package. The certificate only matters for local installs, where
   `SharpMind.Studio.cer` must be trusted in `LocalMachine\TrustedPeople` first.
-- The MSIX is Store-only. GitHub releases keep the MSI and zip until the Store
-  listing is live.
+- The MSIX is the Store package. The MSI and zip remain on GitHub Releases for
+  direct and offline installs.
 - The manifest declares `runFullTrust` because the wrapper starts the web host as
   a sibling process and binds loopback listeners.
