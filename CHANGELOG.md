@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **OAuth for HTTP MCP servers.** An HTTP server can sign in with OAuth 2.1:
+  protected-resource and authorization-server discovery, dynamic client
+  registration, authorization code with PKCE in the system browser, a loopback
+  redirect, encrypted token storage and refresh. A pre-registered client can
+  supply its ID and use the displayed redirect URI.
+- **MCP runtime check.** **Check runtime** resolves the command through PATH and
+  PATHEXT and reads a known runtime's version, so a missing Node or uv is a clear
+  message. It never installs a runtime and never executes an arbitrary server
+  just to probe it.
 - **HTTP MCP servers, and a transport layer that can grow.** MCP servers can now
   be a local stdio process or a Streamable HTTP endpoint. The client, JSON-RPC
   session and transport are separate, so a server is no longer tied to a child
@@ -38,6 +47,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Windows `.cmd` and `.bat` MCP launchers could not start.** `npx`, `dnx` and
+  other command-script shims need `cmd.exe`; launching them directly with
+  redirected stdio failed. Studio now resolves the shim and wraps it correctly,
+  including paths with spaces.
 - **Stopping an MCP server left its tools in the list.** An idle stop disposed
   the process or session but did not remove the registered tools, so the model
   could call a tool belonging to a server that was no longer running. A stop now

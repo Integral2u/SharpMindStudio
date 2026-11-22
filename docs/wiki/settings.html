@@ -123,7 +123,8 @@
                     <strong>Filesystem</strong> uses <span class="mono">npx</span> and needs Node.js;
                     <strong>Git</strong> uses <span class="mono">uvx</span> and needs uv;
                     <strong>Remote HTTP</strong> needs only a URL. Studio does not install a
-                    runtime, fetch a package or connect on its own.</li>
+                    runtime, fetch a package or connect on its own. <strong>Check runtime</strong>
+                    resolves the command in PATH and reads a known runtime's version.</li>
                 <li>For a local server, enter the command and one argument per line, and add any
                     environment variables as <span class="mono">KEY=value</span>. For HTTP, enter
                     the URL and any headers as <span class="mono">Name: value</span>.</li>
@@ -131,6 +132,13 @@
                     <span class="mono">GITHUB_TOKEN=%vault:GITHUB_TOKEN%</span> in the environment
                     or <span class="mono">Authorization: Bearer %vault:MCP_TOKEN%</span> in a
                     header. Studio expands it only when the process or request starts.</li>
+                <li>An HTTP server can use <strong>OAuth</strong>. Save it first, then
+                    <strong>Sign in</strong>. Studio discovers the resource and authorization
+                    servers, registers a client when the server allows it, opens the system
+                    browser, and exchanges the authorization code with PKCE. Access and refresh
+                    tokens are stored encrypted, refreshed automatically and removed by
+                    <strong>Sign out</strong>. A pre-registered client must allow the redirect URI
+                    shown in the form, <span class="mono">http://127.0.0.1:33418/callback</span>.</li>
                 <li><strong>Connect</strong> starts the process or opens the HTTP session. Studio
                     asks for the project's <strong>Run</strong> permission first, because the
                     server is being invoked. For a local server that is a real process; for HTTP it
@@ -154,8 +162,8 @@
             </p>
             <p>
                 HTTP support is Streamable HTTP over POST, with JSON or server-sent-event replies.
-                It does not yet open a separate server-to-client stream or run an OAuth flow; use a
-                static header, preferably a Vault reference.
+                OAuth uses the authorization-code flow with PKCE and refresh tokens. A separate
+                server-to-client GET stream is not opened yet.
             </p>
             <h3 id="plugin-components">Plugin components</h3>
             <p>
