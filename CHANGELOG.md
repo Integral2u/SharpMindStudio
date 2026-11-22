@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Medusa head calibration and persistence.** Selecting the Medusa generator
+  can now load a calibrated head sidecar: chat sessions pass the head count,
+  path and model fingerprint through to the builder. `studio medusacal <model>`
+  trains heads as a cancellable run with per-epoch progress and writes the
+  sidecar where chat looks for it, so a session does not recalibrate.
+
 - **OAuth for HTTP MCP servers.** An HTTP server can sign in with OAuth 2.1:
   protected-resource and authorization-server discovery, dynamic client
   registration, authorization code with PKCE in the system browser, a loopback
@@ -46,6 +52,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   data, optimisation, precision and output fields.
 
 ### Fixed
+
+- **Bench throughput was reported per streamed fragment.** A generator can emit
+  two tokens from one forward, so the next fragment arrived with ~0 ms and the
+  chart spiked past 1000 tok/s while the real rate was under 1. Steps now report
+  the cumulative rate since the measurement window opened. A bench also warms
+  the decode loop before the measured window, so tier-0 JIT is not counted.
+
+- **Performance presets preferred the slower int8 cache.** Cache selection now
+  prefers float KV whenever it fits, falls back to int8 only when that keeps the
+  requested context, and switches to Streaming when the weights themselves
+  exceed the budget. Existing system defaults of Speculative + Int8 are migrated
+  once to Standard + float KV; a later explicit choice is left alone.
+
+- **The Speculative option forced greedy decoding.** It now uses the engine's
+  Standard path, so temperature, top-p, MTP and prompt-lookup drafting behave
+  like the standard generator.
 
 - **Windows `.cmd` and `.bat` MCP launchers could not start.** `npx`, `dnx` and
   other command-script shims need `cmd.exe`; launching them directly with

@@ -20,6 +20,9 @@ public sealed record ModelBenchRequest
     public bool FullLoad { get; init; } = true;
     public Type? GeneratorType { get; init; }
     public Type? CacheType { get; init; }
+
+    /// <summary>Optional builder configuration, such as Medusa head paths.</summary>
+    public IGeneratorBuilderConfigurator? ConfigureBuilder { get; init; }
 }
 
 public sealed record ModelBenchResult
@@ -104,10 +107,36 @@ public static class ModelBenchJob
             cancellationToken.ThrowIfCancellationRequested();
 
             using var model = ModelFactory.CreateTransformer(weights, sharpConfig, mapping);
+
+            // Tiered JIT makes the first decode loop run 2-3x slower than the
+            // same code after promotion. Burn one short generation before the
+            // measured one so a 16-token warmup is not still paying tier-0.
+            int jitTokens = Math.Max(32, request.WarmupTokens);
+            using (IDisposable warmGenerator = GeneratorFactory.Create(
+                       request.GeneratorType ?? typeof(StandardGeneratorBuilder<>),
+                       request.CacheType ?? typeof(KVCacherBuilder),
+                       model, tokenizer, request.ConfigureBuilder))
+            {
+                var warmConfig = new GenerationConfig
+                {
+                    MaxNewTokens = jitTokens,
+                    Stream = true,
+                    RepetitionPenalty = 1.0f,
+                };
+                int warmSeen = 0;
+                await foreach (var _ in GeneratorFactory.GenerateAsync(
+                                   warmGenerator, request.Prompt,
+                                   new SamplingConfig { Temperature = 0f, TopK = 1 },
+                                   warmConfig, cancellationToken).ConfigureAwait(false))
+                {
+                    if (++warmSeen >= jitTokens) break;
+                }
+            }
+
             using IDisposable generator = GeneratorFactory.Create(
                 request.GeneratorType ?? typeof(StandardGeneratorBuilder<>),
                 request.CacheType ?? typeof(KVCacherBuilder),
-                model, tokenizer);
+                model, tokenizer, request.ConfigureBuilder);
 
             var sampling = new SamplingConfig { Temperature = 0f, TopK = 1 };
             var generation = new GenerationConfig
@@ -119,7 +148,6 @@ public static class ModelBenchJob
 
             int consumed = 0;
             long measureStart = 0;
-            long previousStamp = 0;
             long allocStart = 0;
             var text = new System.Text.StringBuilder();
 
@@ -133,22 +161,31 @@ public static class ModelBenchJob
                 if (consumed == request.WarmupTokens)
                 {
                     measureStart = Stopwatch.GetTimestamp();
-                    previousStamp = measureStart;
                     allocStart = GC.GetTotalAllocatedBytes();
                 }
                 else if (consumed > request.WarmupTokens)
                 {
-                    long now = Stopwatch.GetTimestamp();
-                    double ms = (now - previousStamp) * 1000.0 / Stopwatch.Frequency;
-                    previousStamp = now;
                     int step = consumed - request.WarmupTokens;
+
+                    // Report the rate since the measurement window opened, not
+                    // 1000/ms since the previous fragment. A generator can emit
+                    // several tokens from one forward (a bonus token, accepted
+                    // drafts), so the next fragment often arrives with ~0 ms and
+                    // the instantaneous value explodes. The cumulative rate is
+                    // what the run summary and the chart should show.
+                    double elapsedMs = (Stopwatch.GetTimestamp() - measureStart)
+                                       * 1000.0 / Stopwatch.Frequency;
+                    float cumulative = elapsedMs > 0
+                        ? (float)(step / (elapsedMs / 1000.0))
+                        : 0f;
+
                     text.Append(fragment);
                     await events.WriteAsync(new StepLogged
                     {
                         Step = step,
                         TokensThisStep = 1,
                         TokensSeen = consumed,
-                        TokensPerSecond = ms > 0 ? (float)(1000.0 / ms) : 0f,
+                        TokensPerSecond = cumulative,
                         MemoryBytes = GC.GetTotalMemory(forceFullCollection: false),
                         AtUtc = DateTimeOffset.UtcNow,
                     }, cancellationToken).ConfigureAwait(false);

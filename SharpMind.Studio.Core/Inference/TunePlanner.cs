@@ -42,11 +42,8 @@ public static class TunePlanner
         if (totalMemory <= 0) totalMemory = 16L * 1024 * 1024 * 1024;
         long budget = (long)(totalMemory * 0.90);
 
-        string cache = preset == TunePreset.Performance &&
-                       availableCaches.Contains("Int8KVCacherBuilder", StringComparer.OrdinalIgnoreCase)
-            ? "Int8KVCacherBuilder"
-            : "KVCacherBuilder";
-        int bytesPerKvElement = cache == "Int8KVCacherBuilder" ? 1 : 4;
+        bool int8Available = availableCaches.Contains(
+            "Int8KVCacherBuilder", StringComparer.OrdinalIgnoreCase);
 
         long modelBytes = Math.Max(0, model.SizeBytes);
         int modelContext = model.ContextLength > 0 ? model.ContextLength : 8192;
@@ -57,19 +54,66 @@ public static class TunePlanner
             _ => 16384,
         };
         int wantedContext = Math.Min(modelContext, presetContext);
+        int contextCap = Math.Max(512, modelContext);
 
         int layers = Math.Max(1, model.NumLayers);
         int kvHeads = Math.Max(1, model.NumKvHeads);
         int keyLength = Math.Max(1, model.KeyLength);
         int valueLength = Math.Max(1, model.ValueLength);
-        long kvBytesPerToken = (long)layers * kvHeads * (keyLength + valueLength) * bytesPerKvElement;
+        long kvPerTokenF32 = (long)layers * kvHeads * (keyLength + valueLength) * 4;
+        long kvPerTokenInt8 = (long)layers * kvHeads * (keyLength + valueLength);
 
+        // Prefer the float cache whenever it fits: the int8 cache saves memory
+        // but is lossy and was not faster on this CPU. Fall back to int8 only
+        // when float KV would force a smaller context, and to streaming when the
+        // weights themselves do not fit.
         long freeForKv = Math.Max(0, budget - modelBytes);
-        int fitContext = kvBytesPerToken > 0 ? (int)Math.Min(int.MaxValue, freeForKv / kvBytesPerToken) : wantedContext;
-        int contextCap = Math.Max(512, modelContext);
-        int context = Math.Clamp(Math.Min(wantedContext, fitContext), 512, contextCap);
+        int ContextThatFits(long perToken) => perToken > 0
+            ? (int)Math.Min(int.MaxValue, freeForKv / perToken)
+            : wantedContext;
+
+        int f32Context = ContextThatFits(kvPerTokenF32);
+        int int8Context = ContextThatFits(kvPerTokenInt8);
+
+        string cache;
+        int context;
+        bool fitsFull;
+
+        if (modelBytes > budget)
+        {
+            cache = int8Available ? "Int8KVCacherBuilder" : "KVCacherBuilder";
+            context = Math.Clamp(
+                Math.Min(wantedContext, cache == "Int8KVCacherBuilder" ? int8Context : f32Context),
+                512, contextCap);
+            fitsFull = false;
+        }
+        else if (f32Context >= wantedContext)
+        {
+            cache = "KVCacherBuilder";
+            context = wantedContext;
+            fitsFull = true;
+        }
+        else if (int8Available && int8Context >= wantedContext)
+        {
+            cache = "Int8KVCacherBuilder";
+            context = wantedContext;
+            fitsFull = true;
+        }
+        else if (int8Available && int8Context > f32Context)
+        {
+            cache = "Int8KVCacherBuilder";
+            context = Math.Clamp(int8Context, 512, contextCap);
+            fitsFull = modelBytes + kvPerTokenInt8 * context <= budget;
+        }
+        else
+        {
+            cache = "KVCacherBuilder";
+            context = Math.Clamp(f32Context, 512, contextCap);
+            fitsFull = modelBytes + kvPerTokenF32 * context <= budget;
+        }
+
+        long kvBytesPerToken = cache == "Int8KVCacherBuilder" ? kvPerTokenInt8 : kvPerTokenF32;
         long kvBytes = kvBytesPerToken * context;
-        bool fitsFull = modelBytes + kvBytes <= budget;
         string loadMode = fitsFull ? "Full" : "Streaming";
 
         var notes = new List<string>
@@ -80,6 +124,8 @@ public static class TunePlanner
                 ? "Weights and KV fit; Full load selected."
                 : "Weights and KV exceed the budget; Streaming selected.",
         };
+        if (cache == "Int8KVCacherBuilder")
+            notes.Add("Int8 KV selected for memory; it is lossy and may change greedy ids.");
         if (target == TuneTarget.Work)
             notes.Add("Work presets default to StandardGeneratorBuilder; other and plugin generators can be selected, but verify tool calls after changing it.");
 
@@ -90,8 +136,8 @@ public static class TunePlanner
             : "Strict";
         if (target == TuneTarget.Work)
             notes.Add($"Tool-call recovery: {toolCallRecovery} (Loose never guesses filesystem paths).");
-        if (!fitsFull && kvBytes > budget)
-            notes.Add("The KV cache alone exceeds the budget; lower context or use an Int8 cache.");
+        if (modelBytes > budget)
+            notes.Add("Weights alone exceed the budget; Streaming keeps a resident window instead of loading everything.");
         if (context < wantedContext)
             notes.Add($"Context reduced from {wantedContext:N0} to {context:N0} to respect memory.");
 

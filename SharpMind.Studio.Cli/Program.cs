@@ -1,6 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
+using SharpMind.Model.Layers;
+using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.Jobs;
 using SharpMind.Studio.Core.Projects;
 using SharpMind.Studio.Core.Recipes;
@@ -29,6 +31,7 @@ internal static class StudioCli
                 "validate" => Validate(args),
                 "replay" => await ReplayAsync(args),
                 "bench" => await BenchAsync(args),
+                "medusacal" => await MedusaCalibrateAsync(args),
                 "canary" => await CanaryAsync(args),
                 "tooltest" => await ToolTestAsync(args),
                 "merge" => await MergeAsync(args),
@@ -156,6 +159,57 @@ internal static class StudioCli
         Console.WriteLine();
         Console.WriteLine($"Decode  {result.TokensPerSecond:F2} tok/s  ({result.MeasureMs / result.Steps:F2} ms/token)");
         Console.WriteLine($"Alloc   {result.AllocatedBytesPerToken:N0} B/token");
+        Console.WriteLine($"Events  {run.EventsPath}");
+        return 0;
+    }
+
+    private static async Task<int> MedusaCalibrateAsync(string[] args)
+    {
+        if (args.Length < 2) return UsageError("medusacal needs a model path.");
+
+        string modelPath = Path.GetFullPath(args[1]);
+        if (!File.Exists(modelPath)) return UsageError($"model '{modelPath}' was not found.");
+
+        string prompt = args.Length > 2 && !args[2].StartsWith("--", StringComparison.Ordinal)
+            ? args[2]
+            : "The capital of France is";
+        int samples = args.Length > 3 && int.TryParse(args[3], out int s) ? Math.Max(1, s) : 16;
+        int steps = args.Length > 4 && int.TryParse(args[4], out int st) ? Math.Max(1, st) : 10;
+        int heads = int.TryParse(Option(args, "--heads"), out int h) ? Math.Max(1, h) : 3;
+        float learningRate = float.TryParse(Option(args, "--lr"), out float lr) ? lr : 0.02f;
+        string headsPath = Option(args, "--path") ?? StudioMedusaPaths.DefaultFor(modelPath, heads);
+
+        RunHandle run = new RunStore(RunsRoot()).Create(
+            MedusaCalibrationJob.Kind, Path.GetFileNameWithoutExtension(modelPath));
+        await using var writer = run.OpenWriter();
+
+        Console.WriteLine($"Run     {run.RunId}");
+        Console.WriteLine($"Model   {Path.GetFileName(modelPath)}");
+        Console.WriteLine($"Heads   {headsPath}");
+        Console.WriteLine($"Train   samples={samples} steps={steps} lr={learningRate}");
+        Console.WriteLine();
+
+        var progress = new Progress<MedusaCalibrationProgress>(value =>
+            Console.WriteLine(
+                $"  {value.Phase,-10} {value.Completed,3}/{value.Total,-3}" +
+                (value.Loss is { } loss ? $" loss={loss:F4}" : "")));
+
+        MedusaCalibrationOutcome result = await MedusaCalibrationJob.RunAsync(
+            new MedusaCalibrationRequest
+            {
+                ModelPath = modelPath,
+                HeadsPath = headsPath,
+                Prompt = prompt,
+                NumHeads = heads,
+                Samples = samples,
+                Steps = steps,
+                LearningRate = learningRate,
+            },
+            run, writer, progress: progress);
+
+        Console.WriteLine();
+        Console.WriteLine($"Loss    {result.FinalLoss:F4}");
+        Console.WriteLine($"Saved   {result.HeadsPath}");
         Console.WriteLine($"Events  {run.EventsPath}");
         return 0;
     }
@@ -588,6 +642,7 @@ internal static class StudioCli
         Console.WriteLine("  studio validate <recipe.smmtx>   check the step graph and print its hash");
         Console.WriteLine("  studio replay [run]              print a run's event stream (latest by default)");
         Console.WriteLine("  studio bench <model> [prompt] [warmup] [measure] [--streaming]");
+        Console.WriteLine("  studio medusacal <model> [prompt] [samples] [steps] [--heads N] [--lr R] [--path FILE]");
         Console.WriteLine("  studio canary <models.txt> [prompt] [warmup] [measure] [--streaming]");
         Console.WriteLine("  studio tooltest <model> [prompt] [maxTokens] [--streaming]");
         Console.WriteLine("  studio merge <folder> <output> [--format jsonl|text] [--layout auto|whole|blank|qa|html|separator]");
@@ -605,6 +660,8 @@ internal static class StudioCli
         ExpertStats e => $"{Stamp(e)} expert step={e.Step} layer={e.Layer} entropy={e.RoutingEntropy:F3}",
         CheckpointSaved e => $"{Stamp(e)} checkpoint step={e.Step} {e.Path}",
         ProbeAnswered e => $"{Stamp(e)} probe  {e.ProbeId}: {Truncate(e.Text, 120)}",
+        CalibrationProgress e => $"{Stamp(e)} medusa {e.Phase,-10} {e.Completed}/{e.Total}" +
+                                 (e.Loss is { } loss ? $" loss={loss:F4}" : ""),
         RunFinished e => $"{Stamp(e)} runFinished {e.Status} {e.DurationMs:F0} ms{(e.Error is null ? "" : $" error={e.Error}")}",
         _ => $"{Stamp(runEvent)} {runEvent.GetType().Name}",
     };

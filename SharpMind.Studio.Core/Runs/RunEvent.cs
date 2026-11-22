@@ -13,6 +13,7 @@ namespace SharpMind.Studio.Core.Runs;
 [JsonDerivedType(typeof(ExpertStats), "expertStats")]
 [JsonDerivedType(typeof(CheckpointSaved), "checkpointSaved")]
 [JsonDerivedType(typeof(ProbeAnswered), "probeAnswered")]
+[JsonDerivedType(typeof(CalibrationProgress), "calibrationProgress")]
 [JsonDerivedType(typeof(ToolProbeCompleted), "toolProbeCompleted")]
 [JsonDerivedType(typeof(RunFinished), "runFinished")]
 public abstract record RunEvent
@@ -76,6 +77,15 @@ public sealed record ProbeAnswered : RunEvent
     public required int Step { get; init; }
     public required string ProbeId { get; init; }
     public required string Text { get; init; }
+}
+
+/// <summary>Medusa head calibration progress (collecting samples or training).</summary>
+public sealed record CalibrationProgress : RunEvent
+{
+    public required string Phase { get; init; }
+    public int Completed { get; init; }
+    public int Total { get; init; }
+    public float? Loss { get; init; }
 }
 
 public sealed record ToolProbeCompleted : RunEvent

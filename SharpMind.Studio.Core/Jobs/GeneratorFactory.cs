@@ -17,7 +17,8 @@ internal static class GeneratorFactory
         Type generatorType,
         Type cacheType,
         Transformer model,
-        Tokenizer tokenizer)
+        Tokenizer tokenizer,
+        IGeneratorBuilderConfigurator? configureBuilder = null)
     {
         Type closedBuilder = generatorType.IsGenericTypeDefinition
             ? generatorType.MakeGenericType(cacheType)
@@ -25,6 +26,8 @@ internal static class GeneratorFactory
 
         object builder = Activator.CreateInstance(closedBuilder)
             ?? throw new InvalidOperationException($"Could not create {closedBuilder.Name}.");
+
+        configureBuilder?.Configure(builder);
 
         MethodInfo create = closedBuilder.GetMethod(
             "CreateGenerator",

@@ -22,6 +22,13 @@ public sealed record InferenceSettingsDocument
 
     /// <summary>Per-model tool overrides, keyed by normalized model path.</summary>
     public Dictionary<string, ToolPermissionSet> ModelTools { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// One-time upgrade of the old "Speculative + Int8" system defaults, which
+    /// were slower than Standard + float KV on CPU. Recorded so a later explicit
+    /// choice of that combination is not overwritten again.
+    /// </summary>
+    public bool InferenceOptimizationMigrated { get; set; }
 }
 
 public sealed class InferenceSettingsStore
@@ -34,6 +41,27 @@ public sealed class InferenceSettingsStore
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         Path = System.IO.Path.GetFullPath(path);
         _document = Load();
+        if (MigrateLegacyThroughputDefaults())
+            SaveLocked();
+    }
+
+    private bool MigrateLegacyThroughputDefaults()
+    {
+        if (_document.InferenceOptimizationMigrated)
+            return false;
+
+        if (_document.System is
+            { Generator: "SpeculativeGeneratorBuilder", Cache: "Int8KVCacherBuilder" })
+        {
+            _document.System = _document.System with
+            {
+                Generator = "StandardGeneratorBuilder",
+                Cache = "KVCacherBuilder",
+            };
+        }
+
+        _document.InferenceOptimizationMigrated = true;
+        return true;
     }
 
     public string Path { get; }

@@ -95,6 +95,65 @@ public sealed class TunePlannerTests
     }
 
     [Fact]
+    public void PerformancePreset_PrefersFloatCacheWhenItFits()
+    {
+        TuneRecommendation tune = TunePlanner.Recommend(
+            Model(), TuneTarget.Chat, TunePreset.Performance,
+            ["KVCacherBuilder", "Int8KVCacherBuilder"],
+            totalMemoryOverride: 16L * 1024 * 1024 * 1024);
+
+        Assert.Equal("KVCacherBuilder", tune.Overrides.Cache);
+        Assert.Equal("Full", tune.Overrides.LoadMode);
+        Assert.True(tune.Estimate.FitsFull);
+        Assert.DoesNotContain(tune.Notes, note => note.Contains("lossy"));
+    }
+
+    [Fact]
+    public void CacheFallsBackToInt8WhenFloatKvDoesNotFit()
+    {
+        // 24 layers x 8 kv heads x 256 elements is 192 KB/token as float and
+        // 48 KB/token as int8. At a 2 GB budget and 1.2 GB weights, the 4k
+        // performance context needs int8; float KV would not fit.
+        TuneRecommendation tune = TunePlanner.Recommend(
+            Model((long)(1.2 * 1024 * 1024 * 1024)), TuneTarget.Chat, TunePreset.Performance,
+            ["KVCacherBuilder", "Int8KVCacherBuilder"],
+            totalMemoryOverride: 2L * 1024 * 1024 * 1024);
+
+        Assert.Equal("Int8KVCacherBuilder", tune.Overrides.Cache);
+        Assert.Equal("Full", tune.Overrides.LoadMode);
+        Assert.True(tune.Estimate.FitsFull);
+        Assert.Contains(tune.Notes, note => note.Contains("lossy"));
+    }
+
+    [Fact]
+    public void ContextShrinksBeforeFallingBackToStreaming()
+    {
+        TuneRecommendation tune = TunePlanner.Recommend(
+            Model((long)(1.5 * 1024 * 1024 * 1024)), TuneTarget.Chat, TunePreset.Balanced,
+            ["KVCacherBuilder", "Int8KVCacherBuilder"],
+            totalMemoryOverride: 2L * 1024 * 1024 * 1024);
+
+        Assert.Equal("Full", tune.Overrides.LoadMode);
+        Assert.True(tune.Estimate.FitsFull);
+        Assert.InRange(tune.Estimate.ContextTokens, 512, 8191);
+        Assert.Contains(tune.Notes, note => note.Contains("Context reduced"));
+    }
+
+    [Fact]
+    public void WeightsOverBudget_UseStreamingAndMinimumContext()
+    {
+        TuneRecommendation tune = TunePlanner.Recommend(
+            Model(3L * 1024 * 1024 * 1024), TuneTarget.Chat, TunePreset.Balanced,
+            ["KVCacherBuilder", "Int8KVCacherBuilder"],
+            totalMemoryOverride: 2L * 1024 * 1024 * 1024);
+
+        Assert.Equal("Streaming", tune.Overrides.LoadMode);
+        Assert.Equal(512, tune.Estimate.ContextTokens);
+        Assert.False(tune.Estimate.FitsFull);
+        Assert.Contains(tune.Notes, note => note.Contains("Weights alone exceed"));
+    }
+
+    [Fact]
     public void ProfileSet_RequiresAllThreePresets()
     {
         var set = new TuneProfileSet

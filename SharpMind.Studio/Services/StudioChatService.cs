@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
+using SharpMind.Inference;
 using SharpMind.Inference.Agent;
 using SharpMind.Inference.Chat;
 #if SHARPMIND_AUDIO
@@ -1797,9 +1798,59 @@ public sealed class StudioChatService : IAsyncDisposable
             permissions: _work.CheckToolPermissionAsync,
             fileSystem: _ioGate.Files,
             networkHandler: _ioGate.Network,
-            seed: profile.Seed);
+            seed: profile.Seed,
+            configureBuilder: new DelegateBuilderConfigurator(
+                builder => ConfigureBuilder(builder, profile, loaded)));
         session.ProcessToolRequest = HandleAgentToolAsync;
         return session;
+    }
+
+    /// <summary>
+    /// Applies Medusa head options to the selected builder. Other builders have
+    /// none of these properties, so the reflection setters are no-ops.
+    /// </summary>
+    private void ConfigureBuilder(object builder, ResolvedInference profile, LoadedStudioModel loaded)
+    {
+        if (!profile.Generator.Contains("Medusa", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        string headsPath = string.IsNullOrWhiteSpace(profile.MedusaHeadsPath)
+            ? StudioMedusaPaths.DefaultFor(loaded.Descriptor.Path, profile.MedusaNumHeads)
+            : profile.MedusaHeadsPath;
+
+        // Calibration only uses this when samples > 0; otherwise the builder
+        // loads the sidecar or fails loudly when it is missing.
+        string? prompt = profile.MedusaCalibrationPrompt;
+        if (string.IsNullOrWhiteSpace(prompt) && profile.MedusaCalibrationSamples > 0)
+        {
+            prompt = string.Join("\n", (_document?.Messages ?? [])
+                .Where(message => message.Role is ChatRole.System or ChatRole.User)
+                .Take(2)
+                .Select(message => message.Content)
+                .Where(text => !string.IsNullOrWhiteSpace(text)));
+            if (string.IsNullOrWhiteSpace(prompt))
+                prompt = "The capital of France is";
+        }
+
+        SetBuildProperty(builder, "NumHeads", profile.MedusaNumHeads);
+        SetBuildProperty(builder, "CalibrationSamples", profile.MedusaCalibrationSamples);
+        SetBuildProperty(builder, "CalibrationSteps", profile.MedusaCalibrationSteps);
+        SetBuildProperty(builder, "CalibrationLearningRate", profile.MedusaCalibrationLearningRate);
+        SetBuildProperty(builder, "CalibrationPrompt", prompt);
+        SetBuildProperty(builder, "MedusaHeadsPath", headsPath);
+        SetBuildProperty(builder, "CalibrationFingerprint",
+            profile.MedusaFingerprint ?? StudioMedusaPaths.FingerprintFor(loaded.Descriptor.Path));
+    }
+
+    private static void SetBuildProperty(object target, string name, object? value)
+    {
+        if (value is null) return;
+        var property = target.GetType().GetProperty(
+            name,
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        if (property is null || !property.CanWrite) return;
+        if (!property.PropertyType.IsInstanceOfType(value)) return;
+        property.SetValue(target, value);
     }
 
     /// <summary>

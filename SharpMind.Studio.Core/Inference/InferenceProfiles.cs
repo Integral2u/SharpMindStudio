@@ -31,6 +31,28 @@ public sealed record InferenceOverrides
 
     /// <summary>Draft chain length; null uses the engine default.</summary>
     public int? MtpDraftTokens { get; init; }
+
+    /// <summary>Draft heads requested when the Medusa generator is selected.</summary>
+    public int? MedusaNumHeads { get; init; }
+
+    /// <summary>Greedy samples used to calibrate Medusa heads; 0 skips calibration.</summary>
+    public int? MedusaCalibrationSamples { get; init; }
+
+    /// <summary>SGD epochs over the calibration samples.</summary>
+    public int? MedusaCalibrationSteps { get; init; }
+
+    /// <summary>Learning rate for Medusa head calibration.</summary>
+    public float? MedusaCalibrationLearningRate { get; init; }
+
+    /// <summary>Optional seed text for calibration; null uses the chat prompt.</summary>
+    public string? MedusaCalibrationPrompt { get; init; }
+
+    /// <summary>Sidecar file for calibrated heads; null uses the Studio default location.</summary>
+    public string? MedusaHeadsPath { get; init; }
+
+    /// <summary>Optional model identity checked when loading a head file.</summary>
+    public string? MedusaFingerprint { get; init; }
+
     public string? Compactor { get; init; }
 
     /// <summary>LFM3-Audio TTS voice phrase: "female" or "male".</summary>
@@ -78,6 +100,8 @@ public sealed record InferenceOverrides
         ShowThinking = true,
         EnableThinking = false,
         MtpDraft = true,
+        MedusaNumHeads = 3,
+        MedusaCalibrationSamples = 0,
         Compactor = "Summarize",
     };
 }
@@ -107,6 +131,13 @@ public sealed record ResolvedInference
     public required bool EnableThinking { get; init; }
     public required bool MtpDraft { get; init; }
     public int? MtpDraftTokens { get; init; }
+    public required int MedusaNumHeads { get; init; }
+    public required int MedusaCalibrationSamples { get; init; }
+    public required int MedusaCalibrationSteps { get; init; }
+    public required float MedusaCalibrationLearningRate { get; init; }
+    public string? MedusaCalibrationPrompt { get; init; }
+    public string? MedusaHeadsPath { get; init; }
+    public string? MedusaFingerprint { get; init; }
     public required string Compactor { get; init; }
     public required IReadOnlyDictionary<string, string> Sources { get; init; }
 }
@@ -129,6 +160,15 @@ public static class InferenceResolver
             if (!string.IsNullOrWhiteSpace(sys)) { sources[key] = "System"; return sys; }
             sources[key] = "Default";
             return fallback;
+        }
+
+        string? NullableString(string key, string? s, string? m, string? f, string? sys)
+        {
+            if (!string.IsNullOrWhiteSpace(s)) { sources[key] = "Session"; return s; }
+            if (!string.IsNullOrWhiteSpace(m)) { sources[key] = "Model"; return m; }
+            if (!string.IsNullOrWhiteSpace(f)) { sources[key] = "Family"; return f; }
+            if (!string.IsNullOrWhiteSpace(sys)) { sources[key] = "System"; return sys; }
+            return null;
         }
 
         T Value<T>(string key, T? s, T? m, T? f, T? sys, T fallback) where T : struct
@@ -188,6 +228,13 @@ public static class InferenceResolver
             EnableThinking = Value("EnableThinking", session?.EnableThinking, model?.EnableThinking, family?.EnableThinking, system.EnableThinking, false),
             MtpDraft = Value("MtpDraft", session?.MtpDraft, model?.MtpDraft, family?.MtpDraft, system.MtpDraft, true),
             MtpDraftTokens = Nullable("MtpDraftTokens", session?.MtpDraftTokens, model?.MtpDraftTokens, family?.MtpDraftTokens, system.MtpDraftTokens),
+            MedusaNumHeads = Value("MedusaNumHeads", session?.MedusaNumHeads, model?.MedusaNumHeads, family?.MedusaNumHeads, system.MedusaNumHeads, 3),
+            MedusaCalibrationSamples = Value("MedusaCalibrationSamples", session?.MedusaCalibrationSamples, model?.MedusaCalibrationSamples, family?.MedusaCalibrationSamples, system.MedusaCalibrationSamples, 0),
+            MedusaCalibrationSteps = Value("MedusaCalibrationSteps", session?.MedusaCalibrationSteps, model?.MedusaCalibrationSteps, family?.MedusaCalibrationSteps, system.MedusaCalibrationSteps, 20),
+            MedusaCalibrationLearningRate = Value("MedusaCalibrationLearningRate", session?.MedusaCalibrationLearningRate, model?.MedusaCalibrationLearningRate, family?.MedusaCalibrationLearningRate, system.MedusaCalibrationLearningRate, 0.01f),
+            MedusaCalibrationPrompt = NullableString("MedusaCalibrationPrompt", session?.MedusaCalibrationPrompt, model?.MedusaCalibrationPrompt, family?.MedusaCalibrationPrompt, system.MedusaCalibrationPrompt),
+            MedusaHeadsPath = NullableString("MedusaHeadsPath", session?.MedusaHeadsPath, model?.MedusaHeadsPath, family?.MedusaHeadsPath, system.MedusaHeadsPath),
+            MedusaFingerprint = NullableString("MedusaFingerprint", session?.MedusaFingerprint, model?.MedusaFingerprint, family?.MedusaFingerprint, system.MedusaFingerprint),
             Compactor = String("Compactor", session?.Compactor, model?.Compactor, family?.Compactor, system.Compactor, "Summarize"),
             Sources = sources,
         };
