@@ -5,10 +5,10 @@ using SharpMind.Studio.Core.Mcp;
 namespace SharpMind.Studio.Services;
 
 /// <summary>
-/// Stops MCP server processes that have been idle past their own timeout. A
-/// server starts on first use and keeps its tool list cached; without this
-/// sweep every server Studio ever started would stay alive until the app
-/// exited, and the per-server idle setting would do nothing.
+/// Stops MCP servers that have been idle past their own timeout. A server starts
+/// on first use and keeps its tool list cached; without this sweep every process
+/// or HTTP session Studio ever opened would stay alive until the app exited, and
+/// the per-server idle setting would do nothing.
 /// </summary>
 public sealed class McpIdleService : BackgroundService
 {

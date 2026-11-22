@@ -15,6 +15,8 @@ public sealed class McpIdleTests
     {
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         await using var host = new McpServerHost(time);
+        string? stopped = null;
+        host.Stopped += id => stopped = id;
 
         await host.EnsureStartedAsync(
             FakeMcpServer.Settings(idleSeconds: 5),
@@ -29,6 +31,7 @@ public sealed class McpIdleTests
 
         Assert.False(host.IsRunning(FakeMcpServer.Id));
         Assert.Empty(host.Connected);
+        Assert.Equal(FakeMcpServer.Id, stopped);
     }
 
     [Fact]

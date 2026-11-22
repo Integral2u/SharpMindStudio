@@ -30,6 +30,14 @@ public sealed class VaultUsageTests
             Name = "Other",
             Command = "%vault:CMD_TOKEN%",
         });
+        store.Save(new McpServerSettings
+        {
+            Id = "remote",
+            Name = "Remote",
+            Transport = McpTransports.Http,
+            Url = "https://example.test/mcp",
+            Headers = { ["Authorization"] = "Bearer %vault:HEADER_TOKEN%" },
+        });
 
         var usage = new VaultUsageService(store);
 
@@ -39,6 +47,8 @@ public sealed class VaultUsageTests
             use.Where.Contains("arguments"));
         Assert.Contains(usage.Find("CMD_TOKEN"), use =>
             use.Where.Contains("command"));
+        Assert.Contains(usage.Find("HEADER_TOKEN"), use =>
+            use.Where.Contains("header Authorization"));
         Assert.Empty(usage.Find("not-a-secret"));
         Assert.Empty(usage.Find("ESCAPED"));
         Assert.Empty(usage.Find("NOPE"));

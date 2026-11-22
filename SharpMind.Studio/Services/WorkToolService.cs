@@ -64,11 +64,12 @@ public sealed class WorkToolService
     private HashSet<string> _disabledByDefault = new(StringComparer.OrdinalIgnoreCase);
     private List<string> _warnings = [];
 
-    public WorkToolService(StudioWorkspaceService workspace)
+    public WorkToolService(StudioWorkspaceService workspace, McpServerHost? mcp = null)
     {
         _workspace = workspace;
         LoadDefaults();
         Reload();
+        if (mcp is not null) mcp.Stopped += ClearMcpTools;
     }
 
     public event Action? Changed;

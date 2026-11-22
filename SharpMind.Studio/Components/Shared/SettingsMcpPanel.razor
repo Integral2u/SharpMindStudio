@@ -17,11 +17,11 @@
     </summary>
     <div class="panel-body stack">
         <p class="small faint">
-            An MCP server is a local process that publishes tools. Studio adds them to the
-            project's tool list, so they sit beside the built-in and plugin tools. Adding a
-            server does not start it: <strong>Connect</strong> starts the process and asks
-            for this project's <strong>Run</strong> permission first. Each tool stays
-            <strong>Off</strong> until you allow it below.
+            An MCP server is a local process or an HTTP endpoint that publishes tools. Studio adds
+            them to the project's tool list, so they sit beside the built-in and plugin tools.
+            Adding a server does not start it: <strong>Connect</strong> starts the process or opens
+            the HTTP session and asks for this project's <strong>Run</strong> permission first.
+            Each tool stays <strong>Off</strong> until you allow it below.
         </p>
 
         @if (Store.Servers.Count == 0)
@@ -38,15 +38,20 @@
                 <div class="spread" style="align-items:flex-start;gap:1rem;">
                     <div>
                         <strong>@server.Name</strong>
-                        <div class="small faint mono">@server.Command @string.Join(" ", server.Args)</div>
+                        <div class="small faint mono">
+                            @(server.IsHttp
+                                ? server.Url
+                                : $"{server.Command} {string.Join(" ", server.Args)}")
+                        </div>
                         <div class="small faint">
+                            @(server.IsHttp ? "HTTP" : "local process") -
                             @(running ? $"connected - {tools.Count} tool(s)" : "stopped")
                             @if (!server.Enabled) { <text> - disabled</text> }
                         </div>
                         <div class="row" style="margin-top:.4rem;align-items:center;gap:.4rem;">
                             <label class="small faint" for="mcp-idle-@server.Id">Stop when idle</label>
                             <select id="mcp-idle-@server.Id" class="input" style="width:auto;"
-                                    title="Studio stops this server after the selected idle time. Never keeps it running until Studio exits."
+                                    title="Studio stops the process or session after the selected idle time. Never keeps it running until Studio exits."
                                     value="@server.IdleSeconds"
                                     @onchange="args => SetIdle(server, args)">
                                 @foreach ((int seconds, string label) in IdleOptions)
@@ -120,6 +125,28 @@
         <div class="settings-subgroup" style="padding:.7rem;">
             <div class="eyebrow">@(_editingId is null ? "Add a server" : $"Edit {_name}")</div>
             <div class="field">
+                <label class="field-label" for="mcp-preset">Start from a preset</label>
+                <select id="mcp-preset" class="input" @bind="_presetId" @bind:after="ApplyPreset">
+                    @foreach (McpServerPreset preset in McpServerPresets.All)
+                    {
+                        <option value="@preset.Id">@preset.Name</option>
+                    }
+                </select>
+                @if (_presetRequires is { Length: > 0 })
+                {
+                    <div class="small faint">
+                        Requires @_presetRequires. Studio does not install it.
+                    </div>
+                }
+            </div>
+            <div class="field">
+                <label class="field-label" for="mcp-transport">Server type</label>
+                <select id="mcp-transport" class="input" @bind="_transport">
+                    <option value="@McpTransports.Stdio">Local process (stdio)</option>
+                    <option value="@McpTransports.Http">HTTP server</option>
+                </select>
+            </div>
+            <div class="field">
                 <label class="field-label" for="mcp-id">Id</label>
                 <input id="mcp-id" class="input" @bind="_id" placeholder="files"
                        disabled="@(_editingId is not null)" />
@@ -132,30 +159,57 @@
                 <label class="field-label" for="mcp-name">Name</label>
                 <input id="mcp-name" class="input" @bind="_name" placeholder="Files" />
             </div>
-            <div class="field">
-                <label class="field-label" for="mcp-command">Command</label>
-                <input id="mcp-command" class="input" @bind="_command" placeholder="npx" />
-                <SecretInsert OnInsert="InsertCommand" />
-            </div>
-            <div class="field">
-                <label class="field-label" for="mcp-args">Arguments, one per line</label>
-                <textarea id="mcp-args" class="textarea work-textarea" @bind="_args"
-                          placeholder="-y&#10;@@modelcontextprotocol/server-filesystem&#10;C:\work"></textarea>
-                <SecretInsert OnInsert="InsertArgument" />
-            </div>
-            <div class="field">
-                <label class="field-label" for="mcp-env">Environment, KEY=value per line</label>
-                <textarea id="mcp-env" class="textarea work-textarea" @bind="_environment"></textarea>
-                <SecretInsert EnvMode="true" OnInsert="InsertEnvironment" />
-                <div class="small faint">
-                    Plain values here are stored in <span class="mono">mcp.json</span>.
-                    Use <span class="mono">%vault:NAME%</span> for anything private.
+
+            @if (!IsHttp)
+            {
+                <div class="field">
+                    <label class="field-label" for="mcp-command">Command</label>
+                    <input id="mcp-command" class="input" @bind="_command" placeholder="npx" />
+                    <SecretInsert OnInsert="InsertCommand" />
                 </div>
-            </div>
+                <div class="field">
+                    <label class="field-label" for="mcp-args">Arguments, one per line</label>
+                    <textarea id="mcp-args" class="textarea work-textarea" @bind="_args"
+                              placeholder="-y&#10;@@modelcontextprotocol/server-filesystem&#10;C:\work"></textarea>
+                    <SecretInsert OnInsert="InsertArgument" />
+                </div>
+                <div class="field">
+                    <label class="field-label" for="mcp-env">Environment, KEY=value per line</label>
+                    <textarea id="mcp-env" class="textarea work-textarea" @bind="_environment"></textarea>
+                    <SecretInsert EnvMode="true" OnInsert="InsertEnvironment" />
+                    <div class="small faint">
+                        Plain values here are stored in <span class="mono">mcp.json</span>.
+                        Use <span class="mono">%vault:NAME%</span> for anything private.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="field">
+                    <label class="field-label" for="mcp-url">Server URL</label>
+                    <input id="mcp-url" class="input" @bind="_url"
+                           placeholder="https://example.com/mcp" />
+                    <div class="small faint">
+                        Streamable HTTP. Use https unless the endpoint is on this machine.
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="mcp-headers">Headers, Name: value per line</label>
+                    <textarea id="mcp-headers" class="textarea work-textarea" @bind="_headers"
+                              placeholder="Authorization: Bearer %vault:MCP_TOKEN%"></textarea>
+                    <SecretInsert HeaderMode="true" OnInsert="InsertHeader" />
+                    <div class="small faint">
+                        Plain values are stored in <span class="mono">mcp.json</span>. The remote
+                        server receives these headers; use <span class="mono">%vault:NAME%</span>
+                        for a token.
+                    </div>
+                </div>
+            }
+
             <div class="field">
                 <label class="field-label" for="mcp-idle-new">Stop when idle</label>
                 <select id="mcp-idle-new" class="input" @bind="_idleSeconds"
-                        title="Studio stops the server after this much idle time. Never keeps it running until Studio exits.">
+                        title="Studio stops the process or session after this much idle time. Never keeps it running until Studio exits.">
                     @foreach ((int seconds, string label) in IdleOptions)
                     {
                         <option value="@seconds">@label</option>
@@ -164,7 +218,7 @@
             </div>
             <div class="row" style="margin-top:.5rem;">
                 <button type="button" class="button primary" @onclick="Save"
-                        disabled="@(string.IsNullOrWhiteSpace(_command))">
+                        disabled="@(!CanSave)">
                     @(_editingId is null ? "Add server" : "Save changes")
                 </button>
                 @if (_editingId is not null)
@@ -197,12 +251,24 @@
 
     private string _id = "";
     private string _name = "";
+    private string _transport = McpTransports.Stdio;
     private string _command = "";
     private string _args = "";
     private string _environment = "";
+    private string _url = "";
+    private string _headers = "";
     private string? _status;
     private string? _editingId;
+    private string _presetId = McpServerPresets.Custom;
+    private string? _presetRequires;
     private int _idleSeconds = 300;
+
+    private bool IsHttp => McpTransports.IsHttp(_transport);
+
+    private bool CanSave => IsHttp
+        ? Uri.TryCreate(_url.Trim(), UriKind.Absolute, out Uri? uri) &&
+          uri.Scheme is "http" or "https"
+        : !string.IsNullOrWhiteSpace(_command);
 
     protected override void OnInitialized() => ToolCatalog.Changed += OnCatalogChanged;
 
@@ -264,7 +330,7 @@
         {
             McpServerSettings updated = server with { IdleSeconds = seconds };
             Store.Save(updated);
-            // A running server keeps its process and tools; only the timeout changes.
+            // A running server keeps its process or session; only the timeout changes.
             Host.UpdateSettings(updated);
             _status = seconds == 0
                 ? $"{server.Name} stays running until Studio exits."
@@ -279,14 +345,41 @@
     private static string IdleLabel(int seconds) =>
         IdleOptions.FirstOrDefault(option => option.Seconds == seconds).Label ?? $"{seconds} seconds";
 
+    private void ApplyPreset()
+    {
+        McpServerPreset preset = McpServerPresets.Find(_presetId);
+        _transport = preset.Transport;
+        _command = preset.Command;
+        _args = string.Join("\n", preset.Args);
+        _url = preset.Url;
+        _headers = FormatHeaders(preset.Headers);
+        _environment = FormatEnvironment(preset.Environment);
+        _presetRequires = preset.Requires;
+
+        bool presetName = McpServerPresets.All.Any(candidate =>
+            candidate.Name.Equals(_name.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (preset.Id != McpServerPresets.Custom &&
+            (string.IsNullOrWhiteSpace(_name) || presetName))
+        {
+            _name = preset.Name;
+        }
+
+        _status = null;
+    }
+
     private void BeginEdit(McpServerSettings server)
     {
         _editingId = server.Id;
         _id = server.Id;
         _name = server.Name;
+        _transport = McpTransports.Normalize(server.Transport);
         _command = server.Command;
         _args = string.Join("\n", server.Args);
-        _environment = string.Join("\n", server.Environment.Select(pair => $"{pair.Key}={pair.Value}"));
+        _environment = FormatEnvironment(server.Environment);
+        _url = server.Url;
+        _headers = FormatHeaders(server.Headers);
+        _presetId = McpServerPresets.Custom;
+        _presetRequires = null;
         _idleSeconds = server.IdleSeconds;
         _status = $"Editing {server.Name}.";
     }
@@ -294,9 +387,17 @@
     private void CancelEdit()
     {
         _editingId = null;
-        _id = _name = _command = _args = _environment = "";
-        _idleSeconds = 300;
+        ClearForm();
         _status = null;
+    }
+
+    private void ClearForm()
+    {
+        _id = _name = _command = _args = _environment = _url = _headers = "";
+        _transport = McpTransports.Stdio;
+        _presetId = McpServerPresets.Custom;
+        _presetRequires = null;
+        _idleSeconds = 300;
     }
 
     private void InsertCommand(string reference) =>
@@ -314,23 +415,30 @@
             ? entry
             : $"{_environment.TrimEnd()}\n{entry}";
 
+    private void InsertHeader(string entry) =>
+        _headers = string.IsNullOrWhiteSpace(_headers)
+            ? entry
+            : $"{_headers.TrimEnd()}\n{entry}";
+
     private void Save()
     {
         try
         {
             bool editing = _editingId is not null;
+            string transport = McpTransports.Normalize(_transport);
+            bool http = McpTransports.IsHttp(transport);
             string id = _editingId
                 ?? (string.IsNullOrWhiteSpace(_id) ? Slug(_name.Length > 0 ? _name : _command) : _id.Trim());
             var server = new McpServerSettings
             {
                 Id = id,
                 Name = string.IsNullOrWhiteSpace(_name) ? id : _name.Trim(),
-                Command = _command.Trim(),
-                Args = [.. Lines(_args)],
-                Environment = Lines(_environment)
-                    .Select(line => line.Split('=', 2))
-                    .Where(pair => pair.Length == 2)
-                    .ToDictionary(pair => pair[0].Trim(), pair => pair[1], StringComparer.OrdinalIgnoreCase),
+                Transport = transport,
+                Command = http ? "" : _command.Trim(),
+                Args = http ? [] : [.. Lines(_args)],
+                Environment = http ? [] : ParseEnvironment(_environment),
+                Url = http ? _url.Trim() : "",
+                Headers = http ? ParseHeaders(_headers) : [],
                 IdleSeconds = _idleSeconds,
             };
 
@@ -340,13 +448,12 @@
 
             _status = editing
                 ? $"Saved {server.Name}." + (running
-                    ? " Disconnect and Connect to apply a changed command, argument or environment."
+                    ? " Disconnect and Connect to apply a changed command, URL, header or environment."
                     : "")
                 : $"Added {server.Name}. Connect it to see its tools.";
 
             _editingId = null;
-            _id = _name = _command = _args = _environment = "";
-            _idleSeconds = 300;
+            ClearForm();
         }
         catch (Exception ex)
         {
@@ -426,6 +533,42 @@
 
     private static IEnumerable<string> Lines(string text) =>
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static Dictionary<string, string> ParseEnvironment(string text)
+    {
+        var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string line in Lines(text))
+        {
+            int equals = line.IndexOf('=');
+            if (equals <= 0) continue;
+            environment[line[..equals].Trim()] = line[(equals + 1)..];
+        }
+        return environment;
+    }
+
+    private static Dictionary<string, string> ParseHeaders(string text)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string line in Lines(text))
+        {
+            int colon = line.IndexOf(':');
+            if (colon <= 0) continue;
+            headers[line[..colon].Trim()] = line[(colon + 1)..].Trim();
+        }
+        return headers;
+    }
+
+    private static string FormatHeaders(IReadOnlyDictionary<string, string> headers) =>
+        string.Join("\n", headers.Select(pair => $"{pair.Key}: {pair.Value}"));
+
+    private static string FormatHeaders(IReadOnlyList<McpPresetPair> headers) =>
+        string.Join("\n", headers.Select(pair => $"{pair.Name}: {pair.Value}"));
+
+    private static string FormatEnvironment(IReadOnlyDictionary<string, string> environment) =>
+        string.Join("\n", environment.Select(pair => $"{pair.Key}={pair.Value}"));
+
+    private static string FormatEnvironment(IReadOnlyList<McpPresetPair> environment) =>
+        string.Join("\n", environment.Select(pair => $"{pair.Name}={pair.Value}"));
 
     private static string Slug(string value)
     {

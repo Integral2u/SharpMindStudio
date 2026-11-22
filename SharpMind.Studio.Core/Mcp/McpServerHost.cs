@@ -18,7 +18,7 @@ public sealed class McpServerHost : IAsyncDisposable
 {
     private sealed record Entry(
         McpServerSettings Settings,
-        McpStdioClient Client,
+        McpServerClient Client,
         IReadOnlyList<McpToolInfo> Tools,
         DateTimeOffset LastUsed);
 
@@ -52,6 +52,9 @@ public sealed class McpServerHost : IAsyncDisposable
     {
         lock (_gate) return _running.ContainsKey(serverId);
     }
+
+    /// <summary>A server was stopped, including by the idle sweep.</summary>
+    public event Action<string>? Stopped;
 
     public IReadOnlyList<McpServerTools> Connected
     {
@@ -87,7 +90,7 @@ public sealed class McpServerHost : IAsyncDisposable
             throw new UnauthorizedAccessException(
                 $"Running MCP server '{server.Name}' needs the Run permission for this project.");
 
-        McpStdioClient client = McpStdioClient.Start(server, _secrets);
+        McpServerClient client = McpClientFactory.Create(server, _secrets);
         try
         {
             await client.InitializeAsync(cancellationToken).ConfigureAwait(false);
@@ -143,7 +146,11 @@ public sealed class McpServerHost : IAsyncDisposable
             if (_running.Remove(serverId, out Entry? found)) entry = found;
         }
 
-        if (entry is not null) await entry.Client.DisposeAsync().ConfigureAwait(false);
+        if (entry is not null)
+        {
+            await entry.Client.DisposeAsync().ConfigureAwait(false);
+            Stopped?.Invoke(serverId);
+        }
     }
 
     /// <summary>
@@ -179,7 +186,10 @@ public sealed class McpServerHost : IAsyncDisposable
         }
 
         foreach (Entry entry in stale)
+        {
             await entry.Client.DisposeAsync().ConfigureAwait(false);
+            Stopped?.Invoke(entry.Settings.Id);
+        }
     }
 
     public async ValueTask DisposeAsync()

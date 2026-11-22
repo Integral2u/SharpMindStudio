@@ -30,6 +30,9 @@ public sealed class VaultUsageService
             if (Uses(server.Command, name))
                 uses.Add(new VaultUsage(name, $"MCP {server.Name} (command)"));
 
+            if (Uses(server.Url, name))
+                uses.Add(new VaultUsage(name, $"MCP {server.Name} (URL)"));
+
             if (server.Args.Any(argument => Uses(argument, name)))
                 uses.Add(new VaultUsage(name, $"MCP {server.Name} (arguments)"));
 
@@ -37,6 +40,12 @@ public sealed class VaultUsageService
             {
                 if (Uses(value, name))
                     uses.Add(new VaultUsage(name, $"MCP {server.Name} (env {variable})"));
+            }
+
+            foreach ((string header, string value) in server.Headers)
+            {
+                if (Uses(value, name))
+                    uses.Add(new VaultUsage(name, $"MCP {server.Name} (header {header})"));
             }
         }
 
