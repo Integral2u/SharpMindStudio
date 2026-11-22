@@ -48,18 +48,7 @@ public sealed class StdioMcpTransport : IMcpTransport
         cancellationToken.ThrowIfCancellationRequested();
         if (_process is not null) return Task.CompletedTask;
 
-        var startInfo = new ProcessStartInfo(_command)
-        {
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
-        foreach (string argument in _args) startInfo.ArgumentList.Add(argument);
-        foreach ((string key, string value) in _environment)
-            startInfo.Environment[key] = value;
+        var startInfo = McpCommandResolver.CreateStartInfo(_command, _args, _environment);
 
         var process = new Process { StartInfo = startInfo };
         if (!process.Start())

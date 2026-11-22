@@ -6,6 +6,8 @@
 @inject McpServerHost Host
 @inject WorkToolService ToolCatalog
 @inject StudioWorkService Work
+@inject McpRuntimeCheckService RuntimeCheck
+@inject McpOAuthService OAuth
 
 <details class="panel settings-collapsible" open>
     <summary class="panel-head">
@@ -166,6 +168,14 @@
                     <label class="field-label" for="mcp-command">Command</label>
                     <input id="mcp-command" class="input" @bind="_command" placeholder="npx" />
                     <SecretInsert OnInsert="InsertCommand" />
+                    <div class="row" style="margin-top:.35rem;align-items:center;gap:.4rem;">
+                        <button type="button" class="button" @onclick="CheckRuntimeAsync"
+                                disabled="@_checkingRuntime"
+                                title="Resolve the command in PATH and read a known runtime's version. Studio does not install anything.">
+                            @(_checkingRuntime ? "Checking..." : "Check runtime")
+                        </button>
+                        <span class="small faint">@_runtimeStatus</span>
+                    </div>
                 </div>
                 <div class="field">
                     <label class="field-label" for="mcp-args">Arguments, one per line</label>
@@ -204,6 +214,52 @@
                         for a token.
                     </div>
                 </div>
+                <div class="field">
+                    <label class="field-label" for="mcp-auth">Authentication</label>
+                    <select id="mcp-auth" class="input" @bind="_auth">
+                        <option value="@McpAuth.None">None</option>
+                        <option value="@McpAuth.OAuth">OAuth</option>
+                    </select>
+                </div>
+                @if (IsOAuth)
+                {
+                    <div class="field">
+                        <label class="field-label" for="mcp-oauth-scopes">Scopes (optional)</label>
+                        <input id="mcp-oauth-scopes" class="input" @bind="_oauthScopes"
+                               placeholder="space separated; discovered scopes are used when blank" />
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="mcp-oauth-client">Client ID (optional)</label>
+                        <input id="mcp-oauth-client" class="input" @bind="_oauthClientId"
+                               placeholder="blank: register automatically when the server allows it" />
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="mcp-oauth-server">Authorization server (optional)</label>
+                        <input id="mcp-oauth-server" class="input" @bind="_oauthAuthorizationServer"
+                               placeholder="blank: discover from the server URL" />
+                    </div>
+                    <div class="field">
+                        <div class="row" style="align-items:center;gap:.4rem;">
+                            <button type="button" class="button" @onclick="SignInAsync"
+                                    disabled="@(_oauthBusy || _editingId is null || !CanSave)">
+                                @(_oauthBusy ? "Waiting for browser..." : "Sign in")
+                            </button>
+                            <button type="button" class="button danger" @onclick="SignOut"
+                                    disabled="@(!_signedIn)">
+                                Sign out
+                            </button>
+                            <span class="small faint">@_oauthStatus</span>
+                        </div>
+                        @if (_editingId is null)
+                        {
+                            <div class="small faint">Save the server first, then sign in.</div>
+                        }
+                        <div class="small faint">
+                            Redirect URI for a pre-registered client:
+                            <span class="mono">@OAuth.RedirectUri</span>
+                        </div>
+                    </div>
+                }
             }
 
             <div class="field">
@@ -257,13 +313,23 @@
     private string _environment = "";
     private string _url = "";
     private string _headers = "";
+    private string _auth = McpAuth.None;
+    private string _oauthScopes = "";
+    private string _oauthClientId = "";
+    private string _oauthAuthorizationServer = "";
+    private string? _oauthStatus;
+    private bool _oauthBusy;
+    private bool _signedIn;
     private string? _status;
     private string? _editingId;
     private string _presetId = McpServerPresets.Custom;
     private string? _presetRequires;
+    private string? _runtimeStatus;
+    private bool _checkingRuntime;
     private int _idleSeconds = 300;
 
     private bool IsHttp => McpTransports.IsHttp(_transport);
+    private bool IsOAuth => McpAuth.IsOAuth(_auth);
 
     private bool CanSave => IsHttp
         ? Uri.TryCreate(_url.Trim(), UriKind.Absolute, out Uri? uri) &&
@@ -345,6 +411,40 @@
     private static string IdleLabel(int seconds) =>
         IdleOptions.FirstOrDefault(option => option.Seconds == seconds).Label ?? $"{seconds} seconds";
 
+    private async Task CheckRuntimeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_command))
+        {
+            _runtimeStatus = "Enter a command first.";
+            return;
+        }
+
+        _checkingRuntime = true;
+        _runtimeStatus = "Checking...";
+        try
+        {
+            var server = new McpServerSettings
+            {
+                Id = "runtime-check",
+                Name = "Runtime check",
+                Transport = McpTransports.Stdio,
+                Command = _command.Trim(),
+                Environment = ParseEnvironment(_environment),
+            };
+
+            McpRuntimeStatus status = await RuntimeCheck.CheckAsync(server);
+            _runtimeStatus = status.Detail;
+        }
+        catch (Exception ex)
+        {
+            _runtimeStatus = ex.Message;
+        }
+        finally
+        {
+            _checkingRuntime = false;
+        }
+    }
+
     private void ApplyPreset()
     {
         McpServerPreset preset = McpServerPresets.Find(_presetId);
@@ -355,6 +455,12 @@
         _headers = FormatHeaders(preset.Headers);
         _environment = FormatEnvironment(preset.Environment);
         _presetRequires = preset.Requires;
+        _auth = McpAuth.None;
+        _oauthScopes = "";
+        _oauthClientId = "";
+        _oauthAuthorizationServer = "";
+        _oauthStatus = null;
+        _signedIn = false;
 
         bool presetName = McpServerPresets.All.Any(candidate =>
             candidate.Name.Equals(_name.Trim(), StringComparison.OrdinalIgnoreCase));
@@ -365,6 +471,7 @@
         }
 
         _status = null;
+        _runtimeStatus = null;
     }
 
     private void BeginEdit(McpServerSettings server)
@@ -378,8 +485,16 @@
         _environment = FormatEnvironment(server.Environment);
         _url = server.Url;
         _headers = FormatHeaders(server.Headers);
+        _auth = McpAuth.Normalize(server.Auth);
+        _oauthScopes = server.OAuthScopes;
+        _oauthClientId = server.OAuthClientId;
+        _oauthAuthorizationServer = server.OAuthAuthorizationServer;
+        _oauthStatus = null;
+        _signedIn = OAuth.IsSignedIn(server.Id);
+        if (_signedIn) _oauthStatus = "A token is saved.";
         _presetId = McpServerPresets.Custom;
         _presetRequires = null;
+        _runtimeStatus = null;
         _idleSeconds = server.IdleSeconds;
         _status = $"Editing {server.Name}.";
     }
@@ -395,8 +510,15 @@
     {
         _id = _name = _command = _args = _environment = _url = _headers = "";
         _transport = McpTransports.Stdio;
+        _auth = McpAuth.None;
+        _oauthScopes = "";
+        _oauthClientId = "";
+        _oauthAuthorizationServer = "";
+        _oauthStatus = null;
+        _signedIn = false;
         _presetId = McpServerPresets.Custom;
         _presetRequires = null;
+        _runtimeStatus = null;
         _idleSeconds = 300;
     }
 
@@ -420,27 +542,35 @@
             ? entry
             : $"{_headers.TrimEnd()}\n{entry}";
 
+    private McpServerSettings BuildServer(string id)
+    {
+        bool http = IsHttp;
+        return new McpServerSettings
+        {
+            Id = id,
+            Name = string.IsNullOrWhiteSpace(_name) ? id : _name.Trim(),
+            Transport = McpTransports.Normalize(_transport),
+            Command = http ? "" : _command.Trim(),
+            Args = http ? [] : [.. Lines(_args)],
+            Environment = http ? [] : ParseEnvironment(_environment),
+            Url = http ? _url.Trim() : "",
+            Headers = http ? ParseHeaders(_headers) : [],
+            Auth = http ? McpAuth.Normalize(_auth) : McpAuth.None,
+            OAuthScopes = http ? _oauthScopes.Trim() : "",
+            OAuthClientId = http ? _oauthClientId.Trim() : "",
+            OAuthAuthorizationServer = http ? _oauthAuthorizationServer.Trim() : "",
+            IdleSeconds = _idleSeconds,
+        };
+    }
+
     private void Save()
     {
         try
         {
             bool editing = _editingId is not null;
-            string transport = McpTransports.Normalize(_transport);
-            bool http = McpTransports.IsHttp(transport);
             string id = _editingId
                 ?? (string.IsNullOrWhiteSpace(_id) ? Slug(_name.Length > 0 ? _name : _command) : _id.Trim());
-            var server = new McpServerSettings
-            {
-                Id = id,
-                Name = string.IsNullOrWhiteSpace(_name) ? id : _name.Trim(),
-                Transport = transport,
-                Command = http ? "" : _command.Trim(),
-                Args = http ? [] : [.. Lines(_args)],
-                Environment = http ? [] : ParseEnvironment(_environment),
-                Url = http ? _url.Trim() : "",
-                Headers = http ? ParseHeaders(_headers) : [],
-                IdleSeconds = _idleSeconds,
-            };
+            McpServerSettings server = BuildServer(id);
 
             bool running = Host.IsRunning(id);
             Store.Save(server);
@@ -461,10 +591,59 @@
         }
     }
 
+    private async Task SignInAsync()
+    {
+        if (_editingId is null)
+        {
+            _oauthStatus = "Save the server first, then sign in.";
+            return;
+        }
+
+        _oauthBusy = true;
+        _oauthStatus = "Opening the browser...";
+        try
+        {
+            McpServerSettings server = BuildServer(_editingId);
+            bool running = Host.IsRunning(server.Id);
+            Store.Save(server);
+            if (running) Host.UpdateSettings(server);
+
+            McpOAuthSignInResult result = await OAuth.SignInAsync(server);
+            _signedIn = result.SignedIn;
+            _oauthStatus = result.Detail;
+            _status = running
+                ? "Signed in. Disconnect and Connect to use the new token."
+                : "Signed in. Connect to load tools.";
+        }
+        catch (Exception ex)
+        {
+            _oauthStatus = ex.Message;
+        }
+        finally
+        {
+            _oauthBusy = false;
+        }
+    }
+
+    private void SignOut()
+    {
+        if (_editingId is null) return;
+
+        OAuth.SignOut(_editingId);
+        _signedIn = false;
+        _oauthStatus = "Signed out.";
+    }
+
     private async Task ConnectAsync(McpServerSettings server)
     {
         try
         {
+            if (server.IsHttp && server.UsesOAuth && !OAuth.IsSignedIn(server.Id))
+            {
+                _status = "Sign in first; the server has no saved OAuth token.";
+                return;
+            }
+
             bool allowed = await Work.CheckAccessAsync(new WorkToolAccess(
                 $"mcp:{server.Id}",
                 WorkToolCategory.Execute,

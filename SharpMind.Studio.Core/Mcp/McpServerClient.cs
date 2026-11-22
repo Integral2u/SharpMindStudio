@@ -187,7 +187,7 @@ public sealed class McpServerClient : IAsyncDisposable
 
     private Exception Redact(Exception ex)
     {
-        if (ex is SecretMissingException) return ex;
+        if (ex is SecretMissingException or McpSignInRequiredException) return ex;
 
         string message = ex.Message;
         if (ex is IOException)

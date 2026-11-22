@@ -44,6 +44,8 @@ public static class StudioPaths
     public static string ComputeKeyFile => Path.Combine(Projects, "compute.key");
     public static string VaultFile => Path.Combine(Projects, "vault.json");
     public static string VaultKeyFile => Path.Combine(Projects, "vault.key");
+    public static string McpOAuthFile => Path.Combine(Projects, "mcp-oauth.json");
+    public static string McpOAuthKeyFile => Path.Combine(Projects, "mcp-oauth.key");
     public static string Compute => Path.Combine(Root, "Compute");
     public static string Gateway => Path.Combine(Projects, "Gateway");
 

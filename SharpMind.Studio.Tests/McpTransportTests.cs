@@ -224,6 +224,69 @@ public sealed class McpTransportTests
         Assert.Contains("MISSING", error.Message);
     }
 
+    [Fact]
+    public async Task HttpTransport_SendsTheOAuthBearerTokenInsteadOfAManualHeader()
+    {
+        var captured = new List<CapturedRequest>();
+        var handler = new StubHandler(async request =>
+        {
+            JsonObject message = await ReadMessageAsync(request);
+            string method = message["method"]!.GetValue<string>();
+            captured.Add(Capture(method, request));
+
+            if (method == "notifications/initialized")
+                return new HttpResponseMessage(HttpStatusCode.Accepted);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    new JsonObject
+                    {
+                        ["jsonrpc"] = "2.0",
+                        ["id"] = message["id"]?.DeepClone(),
+                        ["result"] = new JsonObject
+                        {
+                            ["protocolVersion"] = "2025-03-26",
+                        },
+                    }.ToJsonString(),
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+        });
+
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Authorization"] = "Bearer manual",
+        };
+        var transport = new HttpMcpTransport(
+            "https://example.test/mcp",
+            headers,
+            new HttpClient(handler),
+            accessToken: _ => Task.FromResult<string?>("oauth-token"));
+        await using var client = new McpServerClient(
+            transport, new TestSecretResolver(), [], "2025-03-26");
+
+        await client.InitializeAsync();
+
+        Assert.Equal("Bearer oauth-token", captured[0].Authorization);
+    }
+
+    [Fact]
+    public void ClientFactory_RejectsOAuthWithoutATokenProvider()
+    {
+        var settings = new McpServerSettings
+        {
+            Id = "remote",
+            Name = "Remote",
+            Transport = McpTransports.Http,
+            Url = "https://example.test/mcp",
+            Auth = McpAuth.OAuth,
+        };
+
+        Assert.Throws<McpSignInRequiredException>(
+            () => McpClientFactory.Create(settings, new TestSecretResolver()));
+    }
+
     private static async Task<JsonObject> ReadMessageAsync(HttpRequestMessage request)
     {
         string body = await request.Content!.ReadAsStringAsync();

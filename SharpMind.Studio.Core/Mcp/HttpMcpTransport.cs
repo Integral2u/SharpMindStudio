@@ -16,6 +16,7 @@ public sealed class HttpMcpTransport : IMcpTransport
     private readonly IReadOnlyDictionary<string, string> _headers;
     private readonly HttpClient _http;
     private readonly bool _ownsHttp;
+    private readonly Func<CancellationToken, Task<string?>>? _accessToken;
     private readonly Channel<JsonNode> _messages = Channel.CreateUnbounded<JsonNode>(
         new UnboundedChannelOptions
         {
@@ -33,12 +34,14 @@ public sealed class HttpMcpTransport : IMcpTransport
         string url,
         IReadOnlyDictionary<string, string> headers,
         HttpClient? http = null,
-        string protocolVersion = "2025-03-26")
+        string protocolVersion = "2025-03-26",
+        Func<CancellationToken, Task<string?>>? accessToken = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
         _url = url.Trim();
         _headers = headers;
         _protocolVersion = protocolVersion;
+        _accessToken = accessToken;
 
         if (http is null)
         {
@@ -105,8 +108,21 @@ public sealed class HttpMcpTransport : IMcpTransport
         if (!string.IsNullOrWhiteSpace(_sessionId))
             request.Headers.TryAddWithoutValidation("Mcp-Session-Id", _sessionId);
 
+        if (_accessToken is not null)
+        {
+            string? token = await _accessToken(cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(token))
+                request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+        }
+
         foreach ((string name, string value) in _headers)
         {
+            if (name.Equals("Authorization", StringComparison.OrdinalIgnoreCase) &&
+                request.Headers.Contains("Authorization"))
+            {
+                continue;
+            }
+
             if (!request.Headers.TryAddWithoutValidation(name, value))
                 request.Content.Headers.TryAddWithoutValidation(name, value);
         }

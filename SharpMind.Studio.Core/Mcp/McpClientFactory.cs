@@ -10,13 +10,14 @@ public static class McpClientFactory
 {
     public static McpServerClient Create(
         McpServerSettings settings,
-        ISecretResolver? secrets = null)
+        ISecretResolver? secrets = null,
+        IMcpAccessTokenProvider? tokens = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         secrets ??= NullSecretResolver.Instance;
 
         if (McpTransports.IsHttp(settings.Transport))
-            return CreateHttp(settings, secrets);
+            return CreateHttp(settings, secrets, tokens);
 
         return CreateStdio(settings, secrets);
     }
@@ -40,7 +41,8 @@ public static class McpClientFactory
 
     private static McpServerClient CreateHttp(
         McpServerSettings settings,
-        ISecretResolver secrets)
+        ISecretResolver secrets,
+        IMcpAccessTokenProvider? tokens)
     {
         string url = (settings.Url ?? "").Trim();
         if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) ||
@@ -55,7 +57,21 @@ public static class McpClientFactory
         foreach ((string name, string value) in settings.Headers)
             headers[name] = ExpandRequired(value, secrets, used);
 
-        var transport = new HttpMcpTransport(url, headers);
+        Func<CancellationToken, Task<string?>>? accessToken = null;
+        if (settings.UsesOAuth)
+        {
+            if (tokens is null)
+            {
+                throw new McpSignInRequiredException(
+                    $"Sign in is required for MCP server '{settings.Name}'.");
+            }
+
+            headers.Remove("Authorization");
+            accessToken = cancellationToken =>
+                tokens.GetAccessTokenAsync(settings, cancellationToken);
+        }
+
+        var transport = new HttpMcpTransport(url, headers, accessToken: accessToken);
         return new McpServerClient(transport, secrets, used, "2025-03-26");
     }
 

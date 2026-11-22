@@ -87,7 +87,31 @@ builder.Services.AddSingleton(_ =>
 builder.Services.AddSingleton<SharpMind.Studio.Core.Vault.ISecretResolver>(services =>
     services.GetRequiredService<SharpMind.Studio.Core.Vault.VaultStore>());
 builder.Services.AddScoped<VaultUsageService>();
-builder.Services.AddSingleton<SharpMind.Studio.Core.Mcp.McpServerHost>();
+builder.Services.AddSingleton<McpRuntimeCheckService>();
+builder.Services.AddSingleton(_ =>
+    new SharpMind.Studio.Core.Mcp.McpOAuthStore(
+        SharpMind.Studio.Core.Storage.StudioPaths.McpOAuthFile,
+        SharpMind.Studio.Core.Storage.StudioPaths.McpOAuthKeyFile));
+builder.Services.AddSingleton(_ =>
+    new SharpMind.Studio.Core.Mcp.McpOAuthClient(
+        new HttpClient(new HttpClientHandler
+        {
+            AllowAutoRedirect = true,
+            UseCookies = false,
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(30),
+        }));
+builder.Services.AddSingleton<IMcpOAuthBrowser, SystemOAuthBrowser>();
+builder.Services.AddSingleton<IMcpOAuthLoopback, LoopbackOAuthListener>();
+builder.Services.AddSingleton<McpOAuthService>();
+builder.Services.AddSingleton<SharpMind.Studio.Core.Mcp.IMcpAccessTokenProvider>(services =>
+    services.GetRequiredService<McpOAuthService>());
+builder.Services.AddSingleton(services =>
+    new SharpMind.Studio.Core.Mcp.McpServerHost(
+        services.GetRequiredService<SharpMind.Studio.Core.Vault.ISecretResolver>(),
+        services.GetRequiredService<SharpMind.Studio.Core.Mcp.IMcpAccessTokenProvider>(),
+        TimeProvider.System));
 builder.Services.AddHostedService<McpIdleService>();
 builder.Services.AddSingleton(_ =>
     new SharpMind.Studio.Core.Mcp.McpSettingsStore(

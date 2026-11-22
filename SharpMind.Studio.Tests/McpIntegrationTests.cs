@@ -189,6 +189,31 @@ public sealed class McpIntegrationTests
         Assert.DoesNotContain("s3cret-value", error.Message);
     }
 
+    [Fact]
+    public async Task Client_StartsAWindowsCommandScript()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var temp = new TempDirectory();
+        string script = temp.Combine("fake server.cmd");
+        await File.WriteAllTextAsync(
+            script,
+            $"@echo off\r\ndotnet \"{FakeMcpServer.DllPath}\" %*\r\n");
+
+        var settings = new McpServerSettings
+        {
+            Id = "script",
+            Name = "Script",
+            Command = script,
+        };
+
+        await using McpStdioClient client = McpStdioClient.Start(settings);
+        await client.InitializeAsync();
+
+        IReadOnlyList<McpToolInfo> tools = await client.ListToolsAsync();
+        Assert.Equal(6, tools.Count);
+    }
+
     private static McpServerSettings Server(int idleSeconds = 300) =>
         FakeMcpServer.Settings(idleSeconds);
 }

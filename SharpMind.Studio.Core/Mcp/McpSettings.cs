@@ -19,12 +19,17 @@ public sealed record McpServerSettings
     public Dictionary<string, string> Environment { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public string Url { get; init; } = "";
     public Dictionary<string, string> Headers { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public string Auth { get; init; } = McpAuth.None;
+    public string OAuthScopes { get; init; } = "";
+    public string OAuthClientId { get; init; } = "";
+    public string OAuthAuthorizationServer { get; init; } = "";
     public bool Enabled { get; init; } = true;
 
     /// <summary>Stop the process or session after this many idle seconds; 0 keeps it alive for the session.</summary>
     public int IdleSeconds { get; init; } = 300;
 
     public bool IsHttp => McpTransports.IsHttp(Transport);
+    public bool UsesOAuth => McpAuth.IsOAuth(Auth);
 
     public bool IsValid => Id.Length > 0 && (IsHttp
         ? !string.IsNullOrWhiteSpace(Url) &&
@@ -43,6 +48,18 @@ public static class McpTransports
 
     public static bool IsHttp(string? value) =>
         string.Equals(value, Http, StringComparison.OrdinalIgnoreCase);
+}
+
+public static class McpAuth
+{
+    public const string None = "none";
+    public const string OAuth = "oauth";
+
+    public static string Normalize(string? value) =>
+        IsOAuth(value) ? OAuth : None;
+
+    public static bool IsOAuth(string? value) =>
+        string.Equals(value, OAuth, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record McpSettingsDocument
@@ -107,6 +124,10 @@ public sealed class McpSettingsStore
             Transport = McpTransports.Normalize(server.Transport),
             Command = (server.Command ?? "").Trim(),
             Url = (server.Url ?? "").Trim(),
+            Auth = McpAuth.Normalize(server.Auth),
+            OAuthScopes = (server.OAuthScopes ?? "").Trim(),
+            OAuthClientId = (server.OAuthClientId ?? "").Trim(),
+            OAuthAuthorizationServer = (server.OAuthAuthorizationServer ?? "").Trim(),
             Args = [.. (server.Args ?? []).Where(arg => arg.Length > 0)],
             Environment = server.Environment is null
                 ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -162,6 +183,10 @@ public sealed class McpSettingsStore
                         Transport = McpTransports.Normalize(server.Transport),
                         Command = server.Command ?? "",
                         Url = server.Url ?? "",
+                        Auth = McpAuth.Normalize(server.Auth),
+                        OAuthScopes = server.OAuthScopes ?? "",
+                        OAuthClientId = server.OAuthClientId ?? "",
+                        OAuthAuthorizationServer = server.OAuthAuthorizationServer ?? "",
                         Args = [.. (server.Args ?? [])],
                         Environment = server.Environment is null
                             ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

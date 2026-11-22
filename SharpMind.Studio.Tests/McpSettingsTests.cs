@@ -70,6 +70,9 @@ public sealed class McpSettingsTests
                 Name = "Remote",
                 Transport = McpTransports.Http,
                 Url = "https://example.test/mcp",
+                Auth = McpAuth.OAuth,
+                OAuthScopes = "mcp:read",
+                OAuthClientId = "client-1",
                 Headers =
                 {
                     ["Authorization"] = "Bearer %vault:MCP_TOKEN%",
@@ -79,6 +82,9 @@ public sealed class McpSettingsTests
             var reopened = new McpSettingsStore(root);
             McpServerSettings server = Assert.Single(reopened.Servers);
             Assert.True(server.IsHttp);
+            Assert.Equal(McpAuth.OAuth, server.Auth);
+            Assert.Equal("mcp:read", server.OAuthScopes);
+            Assert.Equal("client-1", server.OAuthClientId);
             Assert.Equal("https://example.test/mcp", server.Url);
             Assert.Equal(
                 "Bearer %vault:MCP_TOKEN%",

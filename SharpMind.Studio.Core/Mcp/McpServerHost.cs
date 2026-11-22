@@ -25,26 +25,31 @@ public sealed class McpServerHost : IAsyncDisposable
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Entry> _running = new(StringComparer.OrdinalIgnoreCase);
     private readonly ISecretResolver _secrets;
+    private readonly IMcpAccessTokenProvider? _tokens;
     private readonly TimeProvider _time;
 
     public McpServerHost()
-        : this(NullSecretResolver.Instance, TimeProvider.System)
+        : this(NullSecretResolver.Instance, null, TimeProvider.System)
     {
     }
 
     public McpServerHost(TimeProvider time)
-        : this(NullSecretResolver.Instance, time)
+        : this(NullSecretResolver.Instance, null, time)
     {
     }
 
     public McpServerHost(ISecretResolver secrets)
-        : this(secrets, TimeProvider.System)
+        : this(secrets, null, TimeProvider.System)
     {
     }
 
-    public McpServerHost(ISecretResolver secrets, TimeProvider time)
+    public McpServerHost(
+        ISecretResolver secrets,
+        IMcpAccessTokenProvider? tokens,
+        TimeProvider time)
     {
         _secrets = secrets ?? NullSecretResolver.Instance;
+        _tokens = tokens;
         _time = time ?? TimeProvider.System;
     }
 
@@ -90,7 +95,7 @@ public sealed class McpServerHost : IAsyncDisposable
             throw new UnauthorizedAccessException(
                 $"Running MCP server '{server.Name}' needs the Run permission for this project.");
 
-        McpServerClient client = McpClientFactory.Create(server, _secrets);
+        McpServerClient client = McpClientFactory.Create(server, _secrets, _tokens);
         try
         {
             await client.InitializeAsync(cancellationToken).ConfigureAwait(false);
