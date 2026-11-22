@@ -152,6 +152,11 @@
                 launcher's own output must go to stderr; anything written to stdout before the
                 server starts would corrupt the JSON-RPC stream.
             </p>
+            <p>
+                HTTP support is Streamable HTTP over POST, with JSON or server-sent-event replies.
+                It does not yet open a separate server-to-client stream or run an OAuth flow; use a
+                static header, preferably a Vault reference.
+            </p>
             <h3 id="plugin-components">Plugin components</h3>
             <p>
                 <strong>Plugin components</strong> below System tools lists the other plugin types
