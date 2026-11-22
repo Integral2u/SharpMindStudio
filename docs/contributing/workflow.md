@@ -178,8 +178,9 @@ without a sibling engine checkout.
 
 ## Store submission
 
-The MSIX is the Store package; the MSI and ZIP remain the GitHub downloads until
-the listing is live.
+The MSIX is the Store package. Public download links point at
+<https://apps.microsoft.com/detail/9n792cx03gtv>; the MSI and ZIP remain on
+GitHub Releases for direct and offline installs.
 
 - The package version must be four parts with the revision at `0`
   (`x.y.z.0`). `scripts/build-msix.ps1` enforces this, because the Store

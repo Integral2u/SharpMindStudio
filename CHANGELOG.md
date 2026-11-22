@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Microsoft Store availability.** SharpMind Studio is now listed in the
+  Microsoft Store. The site, wiki and README point there for the primary
+  download; the MSI and ZIP remain on GitHub Releases for direct and offline
+  installs, and the in-app version link opens the Store listing.
+
 ### Fixed
 
 - **The model pickers in Training and conversion were unordered and truncated.**

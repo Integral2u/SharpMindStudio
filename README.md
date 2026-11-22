@@ -11,6 +11,7 @@ compute host or a prompt to a remote provider.
 
 - **Site and wiki:** <https://www.integral2u.com/>
 - **Watch:** [YouTube playlist](https://www.youtube.com/playlist?list=PLcjsJKYG3RwU)
+- **Microsoft Store:** <https://apps.microsoft.com/detail/9n792cx03gtv>
 - **Installer:** <https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMind.Studio.Setup.msi.zip>
 - **Zip:** <https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMindStudio.zip>
 - **Source:** <https://github.com/Integral2u/SharpMindStudio>
@@ -21,9 +22,13 @@ compute host or a prompt to a remote provider.
 
 ## Install
 
-Download the Windows installer:
-[SharpMind Studio Setup](https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMind.Studio.Setup.msi.zip).
-The source path below needs the .NET 10 SDK; the installer is built from the same release.
+Install from the Microsoft Store:
+[SharpMind Studio](https://apps.microsoft.com/detail/9n792cx03gtv).
+
+For an offline or direct install, use the
+[MSI installer](https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMind.Studio.Setup.msi.zip)
+or the [ZIP](https://github.com/Integral2u/SharpMindStudio/releases/latest/download/SharpMindStudio.zip).
+The source path below needs the .NET 10 SDK; every package is built from the same release.
 
 ## Build from source
 
