@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using SharpMind.Core;
+using SharpMind.Studio.Core.Mcp;
 using SharpMind.Studio.Core.Vault;
 
 namespace SharpMind.Studio.Core.Work;
@@ -16,7 +17,8 @@ public sealed class WorkProcessTools(
     string projectRoot,
     IReadOnlyList<string> allowedRoots,
     Func<WorkToolAccess, Task<bool>>? permission = null,
-    ISecretResolver? secrets = null)
+    ISecretResolver? secrets = null,
+    CommandPolicy? policy = null)
 {
     private const int MaxOutput = 20_000;
 
@@ -24,6 +26,7 @@ public sealed class WorkProcessTools(
     private readonly IReadOnlyList<string> _roots =
         [.. allowedRoots.Select(NormalizeRoot).Distinct(StringComparer.OrdinalIgnoreCase)];
     private readonly ISecretResolver _secrets = secrets ?? NullSecretResolver.Instance;
+    private readonly CommandPolicy? _policy = policy;
 
     [ToolDesc("Runs a program inside an allowed context folder and returns its output. Use it to build, test or inspect a project. This runs real code with the user's permissions: Studio gates the command, not everything the program touches. No shell is used, so pipes and redirection must be part of the program's own arguments.")]
     public async Task<string> RunProcess(
@@ -38,12 +41,30 @@ public sealed class WorkProcessTools(
                 return "A program name is required.";
 
             string cwd = ResolveDirectory(workingDirectory);
-            string commandLine = string.IsNullOrWhiteSpace(arguments)
-                ? fileName
-                : $"{fileName} {arguments}";
+            AllowedCommandMatch? match = null;
+            if (_policy is { IsEmpty: false })
+            {
+                match = _policy.Resolve(fileName);
+                if (match is null)
+                {
+                    return $"Command '{fileName}' is not in the allowed list."
+                        + (_policy.IsEmpty ? "" : $" Allowed: {_policy.AllowedNames}.");
+                }
+            }
+
+            string executable = match?.Executable ?? fileName;
+            string prefix = match is null
+                ? ""
+                : string.Join(" ", match.PrefixArguments);
+            string commandLine = string.Join(
+                " ",
+                new[] { fileName, prefix, arguments }
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
 
             // The permission prompt shows the reference, never the value.
-            IReadOnlyList<string> secretNames = SecretTemplate.Names(arguments);
+            IReadOnlyList<string> secretNames = match is null
+                ? SecretTemplate.Names(arguments)
+                : [.. SecretTemplate.Names(prefix).Concat(SecretTemplate.Names(arguments))];
             string detail = secretNames.Count > 0
                 ? $"{commandLine} (uses secret: {string.Join(", ", secretNames)})"
                 : commandLine;
@@ -53,6 +74,19 @@ public sealed class WorkProcessTools(
 
             var used = new List<SecretUse>();
             var expanded = new List<string>();
+            if (match is not null)
+            {
+                foreach (string prefixArgument in match.PrefixArguments)
+                {
+                    SecretExpansion expansion = SecretTemplate.Expand(prefixArgument, _secrets.Resolve);
+                    if (expansion.Missing.Count > 0)
+                        return new SecretMissingException(expansion.Missing).Message;
+
+                    used.AddRange(expansion.Used);
+                    expanded.Add(expansion.Text);
+                }
+            }
+
             foreach (string argument in SplitArguments(arguments ?? ""))
             {
                 SecretExpansion expansion = SecretTemplate.Expand(argument, _secrets.Resolve);
@@ -68,28 +102,22 @@ public sealed class WorkProcessTools(
                 .Where(value => value.Length > 0)
                 .Distinct(StringComparer.Ordinal)];
 
-            var startInfo = new ProcessStartInfo(fileName)
-            {
-                WorkingDirectory = cwd,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-
-            foreach (string argument in expanded)
-                startInfo.ArgumentList.Add(argument);
+            ProcessStartInfo startInfo = McpCommandResolver.CreateStartInfo(
+                executable,
+                expanded,
+                new Dictionary<string, string>());
+            startInfo.WorkingDirectory = cwd;
 
             using var process = new Process { StartInfo = startInfo };
             try
             {
                 if (!process.Start())
-                    return $"Could not start {fileName}.";
+                    return $"Could not start {executable}.";
             }
             catch (Exception ex)
             {
                 return SecretTemplate.Redact(
-                    $"Could not start {fileName}: {ex.GetBaseException().Message}",
+                    $"Could not start {executable}: {ex.GetBaseException().Message}",
                     secretValues);
             }
 

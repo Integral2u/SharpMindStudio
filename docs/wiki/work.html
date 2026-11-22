@@ -53,6 +53,7 @@
             <a href="#sessions">Sessions and names</a>
             <a href="#context">Context and permissions</a>
             <a href="#tools">Tool permissions</a>
+            <a href="#command-line">Command line</a>
             <a href="#skills">Skills</a>
             <a href="#loop">The work loop</a>
             <a href="#providers">Model providers</a>
@@ -150,15 +151,68 @@
                 its root, so the file tools work before the settings have ever been opened.
             </p>
 
+            <h2 id="command-line">Command line</h2>
+            <p>
+                Work can run CLI tools through typed wrappers and a small, shell-shaped
+                command line called the <strong>softshell</strong>. Both use the same
+                project allowlist in <strong>Work project → Command line</strong>: add an
+                executable such as <span class="mono">git</span>,
+                <span class="mono">dotnet</span>, <span class="mono">rg</span> or
+                <span class="mono">curl</span>, or start
+                from a preset. An entry can also be a friendly alias with fixed leading
+                arguments. Removing the entry removes the capability; an empty list leaves
+                both the softshell and the wrappers unregistered.
+            </p>
+            <p>
+                The softshell parses familiar syntax itself and starts each program directly:
+                pipes (<span class="mono">|</span>), output and input redirection
+                (<span class="mono">&gt;</span>, <span class="mono">&gt;&gt;</span>,
+                <span class="mono">&lt;</span>, <span class="mono">2&gt;</span>,
+                <span class="mono">2&gt;&amp;1</span>), <span class="mono">&amp;&amp;</span>,
+                <span class="mono">||</span>, <span class="mono">;</span>,
+                <span class="mono">cd</span>, <span class="mono">pwd</span>,
+                <span class="mono">echo</span>, inline <span class="mono">NAME=value</span>
+                and <span class="mono">$VAR</span>. It never starts PowerShell, cmd or bash.
+                Command substitution, backticks, here-docs, background jobs and globbing are
+                refused with a readable message rather than approximated; quote an argument
+                to pass <span class="mono">*</span>, <span class="mono">?</span> or
+                <span class="mono">[</span> literally. Shells are never
+                allowed, and an interpreter such as Python or Node needs the
+                <strong>interpreter</strong> flag on its entry. Windows
+                <span class="mono">.cmd</span>, <span class="mono">.bat</span> and
+                <span class="mono">.ps1</span> shims are refused as well, because launching
+                them would start cmd or PowerShell; allow the native executable instead.
+            </p>
+            <p>
+                Pipes are buffered between stages, so a later stage starts with the complete
+                output of the previous one. Redirection targets must stay inside the project
+                contexts and go through the Read or Write gate. A redirect outside those
+                locations is refused. The whole command shares one timeout, and a timeout
+                kills the process tree.
+            </p>
+            <p>
+                Curated wrappers take precedence over the generic shell when the matching
+                executable is allowed: <span class="mono">git_status</span>,
+                <span class="mono">git_diff</span>, <span class="mono">git_log</span>,
+                <span class="mono">dotnet_build</span>, <span class="mono">dotnet_test</span>
+                and <span class="mono">rg_search</span>. They use argv rather than the parser
+                and are the better choice for routine repository, build and search work.
+                <span class="mono">RunProcess</span> remains available, and when the
+                allowlist is not empty it must resolve through the same policy.
+            </p>
+
             <h3 id="secrets">Secrets in commands</h3>
             <p>
-                A <span class="mono">RunProcess</span> command can use a named secret from
+                A command can use a named secret from
                 <a href="settings.html#vault">Settings &gt; Vault</a> as
-                <span class="mono">%vault:NAME%</span>. Studio expands it after the arguments are
-                split and before the process starts, so a value with spaces stays one argument.
-                The permission prompt shows the reference and the secret name, never the value.
-                A missing name refuses the command instead of passing the literal reference, and
-                the value is removed from stdout, stderr and a timeout message.
+                <span class="mono">%vault:NAME%</span>. This works in
+                <span class="mono">RunProcess</span>, the softshell, a CLI wrapper, an MCP
+                server command, argument or environment value, and an MCP tool argument.
+                Studio expands it after the arguments are split and before the process or
+                request starts, so a value with spaces stays one argument. The permission
+                prompt shows the reference and the secret name, never the value. A missing
+                name refuses the command instead of passing the literal reference, and the
+                value is removed from stdout, stderr and a timeout message.
             </p>
             <p>
                 Redaction is best effort: a program that encodes, splits or transforms the value

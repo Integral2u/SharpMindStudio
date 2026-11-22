@@ -17,6 +17,8 @@
     <!-- Built but not referenced: the MCP integration tests launch it as a process. -->
     <ProjectReference Include="..\SharpMind.Studio.Tests.FakeMcp\SharpMind.Studio.Tests.FakeMcp.csproj"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\SharpMind.Studio.Tests.ShellHelper\SharpMind.Studio.Tests.ShellHelper.csproj"
+                      ReferenceOutputAssembly="false" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
@@ -32,6 +34,15 @@
     </ItemGroup>
     <Copy SourceFiles="@(FakeMcpOutput)"
           DestinationFiles="@(FakeMcpOutput->'$(OutDir)FakeMcp\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyShellHelper" AfterTargets="Build">
+    <ItemGroup>
+      <ShellHelperOutput Include="$(MSBuildThisFileDirectory)..\SharpMind.Studio.Tests.ShellHelper\bin\$(Configuration)\$(TargetFramework)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ShellHelperOutput)"
+          DestinationFiles="@(ShellHelperOutput->'$(OutDir)ShellHelper\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
   </Target>
 

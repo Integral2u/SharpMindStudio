@@ -14,6 +14,7 @@
   <Project Path="SharpMind.Studio.Core/SharpMind.Studio.Core.csproj" />
   <Project Path="SharpMind.Studio.Tests/SharpMind.Studio.Tests.csproj" />
   <Project Path="SharpMind.Studio.Tests.FakeMcp/SharpMind.Studio.Tests.FakeMcp.csproj" />
+  <Project Path="SharpMind.Studio.Tests.ShellHelper/SharpMind.Studio.Tests.ShellHelper.csproj" />
   <Project Path="SharpMind.Studio.UI/SharpMind.Studio.UI.csproj" />
   <Project Path="SharpMind.Studio/SharpMind.Studio.csproj" />
 </Solution>

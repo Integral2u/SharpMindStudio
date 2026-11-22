@@ -75,6 +75,9 @@ public sealed record WorkSettings
     public List<string> DisabledTools { get; init; } = [];
     public List<string> EnabledTools { get; init; } = [];
 
+    /// <summary>Executables the softshell and CLI wrappers may run for this project.</summary>
+    public List<AllowedCommand> AllowedCommands { get; init; } = [];
+
     /// <summary>
     /// Per-tool permissions for this project. An empty set inherits the Studio
     /// defaults. The on/off lists above are the 1.1 shape and are folded into

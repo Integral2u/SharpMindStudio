@@ -197,8 +197,28 @@ public sealed class StudioWorkService : IDisposable
         builder.ToolCallFilter = filter;
         if (embeddedDisabled is { Count: > 0 })
             builder.DisabledTools.UnionWith(embeddedDisabled);
+        CommandPolicy? commandPolicy = null;
         if (work && !_device.IsMobile)
         {
+            commandPolicy = new CommandPolicy(_settings.AllowedCommands, _workspace.Project.Root);
+            var pathPolicy = new WorkPathPolicy(_workspace.Project.Root, AllowedRoots());
+            var commandRunner = new WorkCommandRunner(
+                commandPolicy,
+                pathPolicy,
+                access => CheckAccessAsync(access, profile: effective),
+                _secrets);
+            var cliRunner = new CliToolRunner(commandRunner);
+
+            // Wrappers first: the tool list is registration-ordered, and the
+            // model should see the typed repository/build/search tools before
+            // the generic built-ins and the shell.
+            if (commandPolicy.Contains("git"))
+                builder.WithTools(new GitCliTools(cliRunner));
+            if (commandPolicy.Contains("dotnet"))
+                builder.WithTools(new DotnetCliTools(cliRunner));
+            if (commandPolicy.Contains("rg"))
+                builder.WithTools(new RipgrepCliTools(cliRunner));
+
             builder.WithTools(new WorkFileTools(
                 _workspace.Project.Root,
                 AllowedRoots(),
@@ -208,7 +228,8 @@ public sealed class StudioWorkService : IDisposable
                 _workspace.Project.Root,
                 AllowedRoots(),
                 access => CheckAccessAsync(access, profile: effective),
-                _secrets));
+                _secrets,
+                commandPolicy));
             builder.WithTools(new WorkUiTools(RequestChoiceAsync));
             if (_tools.PluginTools.Count > 0)
                 builder.WithTools([.. _tools.PluginTools]);
@@ -219,6 +240,15 @@ public sealed class StudioWorkService : IDisposable
                 builder,
                 effective,
                 access => CheckAccessAsync(access, profile: effective));
+
+            if (!commandPolicy.IsEmpty)
+            {
+                builder.WithTools(new SoftShellTools(new SoftShellRunner(
+                    pathPolicy,
+                    commandPolicy,
+                    access => CheckAccessAsync(access, profile: effective),
+                    _secrets)));
+            }
         }
         if (work)
         {
@@ -226,6 +256,13 @@ public sealed class StudioWorkService : IDisposable
                 "You are working inside one local project. File tools are limited to the configured context locations. " +
                 "Use relative paths from the project root, or an absolute path inside a context. " +
                 "Never claim a file was read, created, changed or deleted unless the tool result says it succeeded.");
+            if (commandPolicy is { IsEmpty: false })
+            {
+                builder.WithCustomRule(
+                    "Prefer an enabled CLI wrapper (git_*, dotnet_*, rg_*) over a generic shell or built-in tool when it fits. "
+                    + "Use the file tools for reading and editing files. Allowed shell commands: "
+                    + commandPolicy.AllowedNames + ".");
+            }
             foreach (WorkSkill skill in WorkSkillResolver.Resolve(
                          _systemSkills.Skills,
                          IsSystemSkillEnabled,
@@ -564,13 +601,35 @@ public sealed class StudioWorkService : IDisposable
         Task<bool> Permission(WorkToolAccess access) =>
             CheckAccessAsync(access, agent.Permissions, effective);
 
+        var commandPolicy = new CommandPolicy(
+            _settings.AllowedCommands, _workspace.Project.Root);
+        var pathPolicy = new WorkPathPolicy(_workspace.Project.Root, AllowedRoots());
+        var commandRunner = new WorkCommandRunner(
+            commandPolicy, pathPolicy, Permission, _secrets);
+        var cliRunner = new CliToolRunner(commandRunner);
+
+        var wrapperTools = new List<object>();
+        if (commandPolicy.Contains("git"))
+            wrapperTools.Add(new GitCliTools(cliRunner));
+        if (commandPolicy.Contains("dotnet"))
+            wrapperTools.Add(new DotnetCliTools(cliRunner));
+        if (commandPolicy.Contains("rg"))
+            wrapperTools.Add(new RipgrepCliTools(cliRunner));
+        if (!commandPolicy.IsEmpty)
+        {
+            wrapperTools.Add(new SoftShellTools(new SoftShellRunner(
+                pathPolicy, commandPolicy, Permission, _secrets)));
+        }
+
         // AgentBuilder filters DisabledTools while it reflects the tool objects, so
         // discover the names first and set the filter before the real registration.
         object[] toolObjects =
         [
+            .. wrapperTools,
             new WorkFileTools(_workspace.Project.Root, AllowedRoots(), Permission),
             new WorkWebTools(Permission),
-            new WorkProcessTools(_workspace.Project.Root, AllowedRoots(), Permission, _secrets),
+            new WorkProcessTools(
+                _workspace.Project.Root, AllowedRoots(), Permission, _secrets, commandPolicy),
             .. _tools.PluginTools,
         ];
         var probe = new AgentBuilder(agent.Name);
@@ -599,6 +658,13 @@ public sealed class StudioWorkService : IDisposable
             ? $"You are {agent.Name}. {agent.Description}".Trim()
             : agent.Rules.Trim();
         builder.WithCustomRule(rules);
+        if (!commandPolicy.IsEmpty)
+        {
+            builder.WithCustomRule(
+                "Prefer an enabled CLI wrapper (git_*, dotnet_*, rg_*) over the generic shell or a built-in tool when it fits. "
+                + "Use the file tools for reading and editing files. Allowed shell commands: "
+                + commandPolicy.AllowedNames + ".");
+        }
         return builder;
     }
 

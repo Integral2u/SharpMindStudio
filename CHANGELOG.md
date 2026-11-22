@@ -31,6 +31,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **MCP presets.** The add form can start from Filesystem (Node), Git (uv),
   Remote HTTP or Custom. The preset fills the command, arguments and headers and
   says which runtime it needs; Studio never installs it or connects on its own.
+- **Softshell and a project command allowlist.** Work can now run CLI tools from a
+  familiar shell command line. Studio parses the command itself, supports pipes,
+  `> >> < 2> 2>&1`, `&& || ;`, `cd`, `pwd`, `echo`, inline `NAME=value` and
+  `%vault:NAME%`, and starts each program directly. It never launches PowerShell,
+  cmd or bash; command substitution, backticks, here-docs, background jobs and
+  globbing are refused. Commands and redirection targets stay inside the project
+  contexts, pipes are buffered, and one timeout bounds the whole command. A
+  project-level allowlist adds or removes executables and aliases with fixed
+  arguments; shells are never allowed and interpreters need an explicit flag.
+  Typed wrappers (`git_status`, `git_diff`, `git_log`, `dotnet_build`,
+  `dotnet_test`, `rg_search`) are registered ahead of the generic shell when the
+  matching executable is allowed. `RunProcess` uses the same policy once the
+  allowlist is non-empty.
 - **Vault for named secrets.** Settings → Vault keeps API keys, host tokens,
   SSH passwords, passphrases and Docker Hub tokens under a name. Values are
   encrypted on this PC for your Windows account and are write-only after saving.

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A tiny process used by the softshell tests: echo, cat, fail, sleep and
+       env modes. Built but never referenced; the tests launch it as a child. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>SharpMind.Studio.Tests.ShellHelper</AssemblyName>
+    <RootNamespace>SharpMind.Studio.Tests.ShellHelper</RootNamespace>
+  </PropertyGroup>
+
+</Project>

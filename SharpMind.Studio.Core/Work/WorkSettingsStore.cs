@@ -53,6 +53,17 @@ public sealed class WorkSettingsStore
             Contexts = settings.Contexts ?? [],
             DisabledTools = settings.DisabledTools ?? [],
             EnabledTools = settings.EnabledTools ?? [],
+            AllowedCommands = [.. (settings.AllowedCommands ?? [])
+                .Where(command => !string.IsNullOrWhiteSpace(command.Executable))
+                .Select(command => command with
+                {
+                    Name = string.IsNullOrWhiteSpace(command.Name)
+                        ? DefaultCommandName(command.Executable)
+                        : command.Name.Trim(),
+                    Executable = command.Executable.Trim(),
+                    ArgumentsPrefix = [.. (command.ArgumentsPrefix ?? [])],
+                    Description = (command.Description ?? "").Trim(),
+                })],
             ToolPermissions = settings.ToolPermissions ?? new(),
         };
 
@@ -106,6 +117,13 @@ public sealed class WorkSettingsStore
         string retired = SkillsFile + ".imported";
         if (File.Exists(retired)) File.Delete(retired);
         File.Move(SkillsFile, retired);
+    }
+
+    private static string DefaultCommandName(string executable)
+    {
+        string trimmed = executable.Trim();
+        string name = Path.GetFileNameWithoutExtension(trimmed);
+        return name.Length == 0 ? trimmed : name;
     }
 
     private static string ReadText(string path) =>

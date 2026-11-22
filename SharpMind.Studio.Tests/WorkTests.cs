@@ -300,6 +300,58 @@ public sealed class WorkSettingsStoreTests
     }
 
     [Fact]
+    public void SaveAndLoad_RoundTripsAllowedCommands()
+    {
+        using var temp = new TempDirectory();
+        var store = new WorkSettingsStore(temp.Path);
+        var settings = new WorkSettings
+        {
+            AllowedCommands =
+            [
+                new AllowedCommand
+                {
+                    Name = "helper",
+                    Executable = "dotnet",
+                    ArgumentsPrefix = ["tool.dll", "--quiet"],
+                    Description = "Test alias.",
+                    UsesNetwork = true,
+                },
+            ],
+        };
+
+        store.Save(settings);
+        WorkSettings loaded = store.Load();
+
+        AllowedCommand command = Assert.Single(loaded.AllowedCommands);
+        Assert.Equal("helper", command.Name);
+        Assert.Equal("dotnet", command.Executable);
+        Assert.Equal(["tool.dll", "--quiet"], command.ArgumentsPrefix);
+        Assert.Equal("Test alias.", command.Description);
+        Assert.True(command.UsesNetwork);
+    }
+
+    [Fact]
+    public void Load_FillsAMissingCommandNameFromTheExecutable()
+    {
+        using var temp = new TempDirectory();
+        var store = new WorkSettingsStore(temp.Path);
+        store.Save(new WorkSettings
+        {
+            AllowedCommands =
+            [
+                new AllowedCommand
+                {
+                    Executable = Path.Combine("bin", "my-tool.exe"),
+                },
+            ],
+        });
+
+        AllowedCommand command = Assert.Single(store.Load().AllowedCommands);
+
+        Assert.Equal("my-tool", command.Name);
+    }
+
+    [Fact]
     public void Load_AddsTheProjectRootContextWhenMissing()
     {
         using var temp = new TempDirectory();
