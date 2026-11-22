@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **HTTP MCP servers, and a transport layer that can grow.** MCP servers can now
+  be a local stdio process or a Streamable HTTP endpoint. The client, JSON-RPC
+  session and transport are separate, so a server is no longer tied to a child
+  process. HTTP headers accept `%vault:NAME%`, and the project's Run permission
+  is still the connection gate for both types.
+- **MCP presets.** The add form can start from Filesystem (Node), Git (uv),
+  Remote HTTP or Custom. The preset fills the command, arguments and headers and
+  says which runtime it needs; Studio never installs it or connects on its own.
 - **Vault for named secrets.** Settings → Vault keeps API keys, host tokens,
   SSH passwords, passphrases and Docker Hub tokens under a name. Values are
   encrypted on this PC for your Windows account and are write-only after saving.
@@ -30,6 +38,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Stopping an MCP server left its tools in the list.** An idle stop disposed
+  the process or session but did not remove the registered tools, so the model
+  could call a tool belonging to a server that was no longer running. A stop now
+  clears that server's tools.
 - **MCP tools ignored Never and Ask.** Only Off was honoured; a tool set to
   Never still ran and one set to Ask never prompted. MCP calls now go through
   the same permission gate as built-in tools, using the project's Run

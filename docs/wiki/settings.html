@@ -107,28 +107,50 @@
             <h3 id="mcp">MCP servers</h3>
             <p>
                 <strong>MCP servers</strong> sits below the Studio server connection. An MCP
-                server is a local process that publishes tools; Studio adds them to the same tool
-                list as the built-in and plugin tools, so they appear in the project's
-                <strong>Tool permissions</strong> as
-                <span class="mono">mcp__&lt;server&gt;__&lt;tool&gt;</span>.
+                server publishes tools; Studio adds them to the same tool list as the built-in and
+                plugin tools, so they appear in the project's <strong>Tool permissions</strong> as
+                <span class="mono">mcp__&lt;server&gt;__&lt;tool&gt;</span>. There are two server
+                types:
             </p>
+            <ul>
+                <li><strong>Local process (stdio)</strong> starts a command and speaks JSON-RPC
+                    over its stdin and stdout.</li>
+                <li><strong>HTTP server</strong> posts to a Streamable HTTP endpoint, with optional
+                    request headers for authentication. No local runtime is needed.</li>
+            </ul>
             <ol>
-                <li>Fill in an id, a name and the command, with one argument per line. Add any
-                    environment variables as <span class="mono">KEY=value</span>.</li>
-                <li><strong>Connect</strong> starts the process. Studio asks for the project's
-                    <strong>Run</strong> permission first, because a server is a real process.</li>
+                <li>Choose a preset or fill in the fields. Presets are starting points:
+                    <strong>Filesystem</strong> uses <span class="mono">npx</span> and needs Node.js;
+                    <strong>Git</strong> uses <span class="mono">uvx</span> and needs uv;
+                    <strong>Remote HTTP</strong> needs only a URL. Studio does not install a
+                    runtime, fetch a package or connect on its own.</li>
+                <li>For a local server, enter the command and one argument per line, and add any
+                    environment variables as <span class="mono">KEY=value</span>. For HTTP, enter
+                    the URL and any headers as <span class="mono">Name: value</span>.</li>
+                <li>Use a Vault reference for a credential, for example
+                    <span class="mono">GITHUB_TOKEN=%vault:GITHUB_TOKEN%</span> in the environment
+                    or <span class="mono">Authorization: Bearer %vault:MCP_TOKEN%</span> in a
+                    header. Studio expands it only when the process or request starts.</li>
+                <li><strong>Connect</strong> starts the process or opens the HTTP session. Studio
+                    asks for the project's <strong>Run</strong> permission first, because the
+                    server is being invoked. For a local server that is a real process; for HTTP it
+                    is permission to call the remote endpoint.</li>
                 <li>Each tool the server advertises appears under it with
                     <strong>Off</strong>, <strong>Never</strong>, <strong>Ask</strong> and
                     <strong>Always</strong>. Tools start <strong>Off</strong>, so the model never
                     sees one until you allow it. <strong>Allow all (Ask)</strong> sets every tool
                     from that server to ask on each call.</li>
-                <li><strong>Stop when idle</strong> stops the process after 5, 15, 30 or 60
-                    minutes without a call. <strong>Never</strong> keeps it until Studio exits.</li>
+                <li><strong>Stop when idle</strong> stops the process or closes the session after
+                    5, 15, 30 or 60 minutes without a call. <strong>Never</strong> keeps it until
+                    Studio exits. Stopping also removes its tools from the active list.</li>
             </ol>
             <p>
-                Studio gates the call, not what the server does with it: a server can still act
-                on its own code, files and network. Only add servers you trust, and prefer
-                <strong>Ask</strong> over <strong>Always</strong> for anything that writes.
+                Studio gates the call, not what the server does with it: a local server can still
+                act on its own code, files and network, and a remote server sees every header and
+                tool argument you send. Only add servers you trust, and prefer
+                <strong>Ask</strong> over <strong>Always</strong> for anything that writes. The
+                launcher's own output must go to stderr; anything written to stdout before the
+                server starts would corrupt the JSON-RPC stream.
             </p>
             <h3 id="plugin-components">Plugin components</h3>
             <p>
