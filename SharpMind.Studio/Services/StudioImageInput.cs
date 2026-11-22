@@ -1,6 +1,4 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+using SkiaSharp;
 
 namespace SharpMind.Studio.Services;
 
@@ -14,22 +12,37 @@ public static class StudioImageInput
     public static float[] Decode(byte[] content, int maxSide, out int height, out int width)
     {
         ArgumentNullException.ThrowIfNull(content);
-        using Image<Rgb24> image = Image.Load<Rgb24>(content);
-        double scale = Math.Min(1.0, (double)maxSide / Math.Max(image.Width, image.Height));
-        int resizedWidth = Math.Max(32, (int)Math.Round(image.Width * scale / 32.0) * 32);
-        int resizedHeight = Math.Max(32, (int)Math.Round(image.Height * scale / 32.0) * 32);
-        image.Mutate(context => context.Resize(resizedWidth, resizedHeight, KnownResamplers.Bicubic));
 
+        using SKData data = SKData.CreateCopy(content);
+        using SKBitmap? decoded = SKBitmap.Decode(data);
+        if (decoded is null)
+            throw new InvalidOperationException("Could not decode the image.");
+
+        double scale = Math.Min(1.0, (double)maxSide / Math.Max(decoded.Width, decoded.Height));
+        int resizedWidth = Math.Max(32, (int)Math.Round(decoded.Width * scale / 32.0) * 32);
+        int resizedHeight = Math.Max(32, (int)Math.Round(decoded.Height * scale / 32.0) * 32);
+
+        using SKBitmap? resized = decoded.Resize(
+            new SKImageInfo(
+                resizedWidth,
+                resizedHeight,
+                SKColorType.Rgba8888,
+                SKAlphaType.Premul),
+            new SKSamplingOptions(SKCubicResampler.Mitchell));
+        if (resized is null)
+            throw new InvalidOperationException("Could not resize the image.");
+
+        SKColor[] pixels = resized.Pixels;
         var chw = new float[3 * resizedHeight * resizedWidth];
         int plane = resizedHeight * resizedWidth;
         for (int y = 0; y < resizedHeight; y++)
         {
             for (int x = 0; x < resizedWidth; x++)
             {
-                Rgb24 pixel = image[x, y];
-                chw[y * resizedWidth + x] = (pixel.R / 255f - 0.5f) / 0.5f;
-                chw[plane + y * resizedWidth + x] = (pixel.G / 255f - 0.5f) / 0.5f;
-                chw[2 * plane + y * resizedWidth + x] = (pixel.B / 255f - 0.5f) / 0.5f;
+                SKColor pixel = pixels[y * resizedWidth + x];
+                chw[y * resizedWidth + x] = (pixel.Red / 255f - 0.5f) / 0.5f;
+                chw[plane + y * resizedWidth + x] = (pixel.Green / 255f - 0.5f) / 0.5f;
+                chw[2 * plane + y * resizedWidth + x] = (pixel.Blue / 255f - 0.5f) / 0.5f;
             }
         }
 

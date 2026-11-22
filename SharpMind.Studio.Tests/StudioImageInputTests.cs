@@ -1,5 +1,4 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using SkiaSharp;
 using SharpMind.Studio.Services;
 using Xunit;
 
@@ -10,14 +9,9 @@ public sealed class StudioImageInputTests
     [Fact]
     public void Decode_NormalizesAnImageIntoChw()
     {
-        using var image = new Image<Rgb24>(64, 64);
-        for (int y = 0; y < image.Height; y++)
-            for (int x = 0; x < image.Width; x++)
-                image[x, y] = new Rgb24(255, 0, 0);
-        using var stream = new MemoryStream();
-        image.SaveAsPng(stream);
+        byte[] png = Encode(SKColors.Red, 64, 64, SKEncodedImageFormat.Png);
 
-        float[] chw = StudioImageInput.Decode(stream.ToArray(), 512, out int height, out int width);
+        float[] chw = StudioImageInput.Decode(png, 512, out int height, out int width);
 
         Assert.Equal(64, width);
         Assert.Equal(64, height);
@@ -30,13 +24,37 @@ public sealed class StudioImageInputTests
     [Fact]
     public void Decode_RoundsTheResizeToThePatchGrid()
     {
-        using var image = new Image<Rgb24>(100, 50);
-        using var stream = new MemoryStream();
-        image.SaveAsPng(stream);
+        byte[] png = Encode(SKColors.Black, 100, 50, SKEncodedImageFormat.Png);
 
-        StudioImageInput.Decode(stream.ToArray(), 512, out int height, out int width);
+        StudioImageInput.Decode(png, 512, out int height, out int width);
 
         Assert.Equal(96, width);
         Assert.Equal(64, height);
+    }
+
+    [Fact]
+    public void Decode_ReadsWebP()
+    {
+        byte[] webp = Encode(SKColors.Red, 32, 32, SKEncodedImageFormat.Webp);
+
+        float[] chw = StudioImageInput.Decode(webp, 512, out int height, out int width);
+
+        Assert.Equal(32, width);
+        Assert.Equal(32, height);
+        Assert.Equal(1.0f, chw[0], 3);
+    }
+
+    private static byte[] Encode(
+        SKColor color,
+        int width,
+        int height,
+        SKEncodedImageFormat format)
+    {
+        using var bitmap = new SKBitmap(width, height);
+        bitmap.Erase(color);
+        using SKImage image = SKImage.FromBitmap(bitmap);
+        using SKData data = image.Encode(format, 100)
+            ?? throw new InvalidOperationException($"SkiaSharp could not encode {format}.");
+        return data.ToArray();
     }
 }

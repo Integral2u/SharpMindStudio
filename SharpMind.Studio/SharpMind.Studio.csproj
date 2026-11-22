@@ -11,7 +11,8 @@
     <PackageReference Include="HtmlSanitizer" />
     <PackageReference Include="Markdig" />
     <PackageReference Include="QRCoder" />
-    <PackageReference Include="SixLabors.ImageSharp" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" />
     <PackageReference Include="Yarp.ReverseProxy" />
     <ProjectReference Include="..\SharpMind.Studio.Core\SharpMind.Studio.Core.csproj" />
   </ItemGroup>

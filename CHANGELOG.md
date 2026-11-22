@@ -53,6 +53,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Image attachments use a maintained decoder.** SixLabors.ImageSharp 3.1.7
+  carried several high-severity decoder advisories, and the patched 3.x release
+  requires a build-time Six Labors licence key. Image decoding and resizing now
+  use SkiaSharp, which is MIT-licensed and keeps WebP, JPEG, PNG, GIF and BMP
+  support. The native library adds about 12 MB to the package.
 - **Bench throughput was reported per streamed fragment.** A generator can emit
   two tokens from one forward, so the next fragment arrived with ~0 ms and the
   chart spiked past 1000 tok/s while the real rate was under 1. Steps now report
