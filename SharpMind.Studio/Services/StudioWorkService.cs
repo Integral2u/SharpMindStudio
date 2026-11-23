@@ -361,7 +361,7 @@ public sealed class StudioWorkService : IDisposable
         // the nested run gets the agent tools, not this tool again.
         builder.WithTool(
             "spawn_agent",
-            "Creates a temporary specialist for one self-contained task. Nothing is saved: name, rules, optional model and optional tool list come from this call. Use it when no defined agent fits. The specialist inherits the enabled project tools and its file/web permissions default to Ask.",
+            "Creates a temporary specialist for one self-contained task. Nothing is saved: name, rules, optional model, optional tool list and optional tool-call budget come from this call. Use it when no defined agent fits. The specialist inherits the enabled project tools and its file/web permissions default to Ask.",
             new JsonObject
             {
                 ["type"] = "object",
@@ -392,6 +392,13 @@ public sealed class StudioWorkService : IDisposable
                         ["type"] = "array",
                         ["items"] = new JsonObject { ["type"] = "string" },
                         ["description"] = "Optional tool names; omit to inherit the enabled tools.",
+                    },
+                    ["max_tool_calls"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["minimum"] = 0,
+                        ["maximum"] = 1000,
+                        ["description"] = "Optional tool-call budget for this specialist; 0 means unrestricted. Defaults to 10.",
                     },
                     ["task"] = new JsonObject
                     {

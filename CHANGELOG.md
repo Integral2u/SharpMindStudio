@@ -13,6 +13,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   download; the MSI and ZIP remain on GitHub Releases for direct and offline
   installs, and the in-app version link opens the Store listing.
 
+- **Multi-step tool work is no longer cut off at ten calls.** The main session
+  and remote turns keep going until the model finishes. A saved agent has a
+  **Max tool calls** setting (0 = unrestricted), and `spawn_agent` accepts an
+  optional `max_tool_calls` budget, so a session can still restrict a specialist
+  it creates.
+
 - **Medusa head calibration and persistence.** Selecting the Medusa generator
   can now load a calibrated head sidecar: chat sessions pass the head count,
   path and model fingerprint through to the builder. `studio medusacal <model>`

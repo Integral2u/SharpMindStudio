@@ -260,6 +260,9 @@ public sealed class StudioAgentRunner
         session.TopP = profile.TopP;
         session.RepetitionPenalty = profile.RepetitionPenalty;
         session.RepetitionWindow = profile.RepetitionWindow;
+        session.MaxToolCallsPerTurn = agent.MaxToolCalls > 0
+            ? agent.MaxToolCalls
+            : int.MaxValue;
         return session;
     }
 }

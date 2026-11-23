@@ -179,6 +179,11 @@
                     <input class="input" type="number" min="0" max="1440" value="@editing.TtlMinutes"
                            @onchange="e => _editing = editing with { TtlMinutes = int.TryParse(e.Value?.ToString(), out int value) ? value : 0 }" />
                 </div>
+                <div class="field">
+                    <label class="field-label">Max tool calls (0 = unrestricted)</label>
+                    <input class="input" type="number" min="0" max="1000" value="@editing.MaxToolCalls"
+                           @onchange="e => _editing = editing with { MaxToolCalls = int.TryParse(e.Value?.ToString(), out int value) ? Math.Clamp(value, 0, 1000) : 10 }" />
+                </div>
                 <label class="field grow">
                     <span class="field-label">Inherit enabled tools</span>
                     <input type="checkbox" checked="@editing.InheritTools"

@@ -211,6 +211,7 @@
                 <li><strong>File and web access</strong> is Ask, Allow or Deny per category. A new agent starts at Ask for read, write, delete and web, and an agent's answer never changes the project policy.</li>
                 <li><strong>spawn_agent</strong> lets the model create a temporary specialist from task-supplied name, rules, model and tools. The temporary agent uses the same Ask defaults.</li>
                 <li><strong>Max delegation depth</strong> bounds nested agent calls; a delegated agent can call the other enabled specialists until that depth is reached.</li>
+                <li><strong>Max tool calls</strong> bounds one agent turn. <strong>0</strong> is unrestricted; the default is 10. A session can set <span class="mono">max_tool_calls</span> when it spawns a temporary specialist.</li>
             </ul>
 
             <h2 id="audio-vision">Audio and vision</h2>

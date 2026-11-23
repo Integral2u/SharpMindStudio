@@ -52,6 +52,9 @@ public sealed record StudioAgentDefinition
     /// <summary>Idle minutes before the loaded model may be evicted; 0 keeps the host default.</summary>
     public int TtlMinutes { get; init; } = 30;
 
+    /// <summary>Tool calls allowed in one turn; 0 means unrestricted. Agents default to 10.</summary>
+    public int MaxToolCalls { get; init; } = 10;
+
     public bool Enabled { get; init; } = true;
 }
 

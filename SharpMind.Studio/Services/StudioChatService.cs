@@ -1804,6 +1804,7 @@ public sealed class StudioChatService : IAsyncDisposable
             configureBuilder: new DelegateBuilderConfigurator(
                 builder => ConfigureBuilder(builder, profile, loaded)));
         session.ProcessToolRequest = HandleAgentToolAsync;
+        session.MaxToolCallsPerTurn = int.MaxValue;
         return session;
     }
 
@@ -1930,6 +1931,13 @@ public sealed class StudioChatService : IAsyncDisposable
             }
         }
 
+        int maxToolCalls = 10;
+        if (arguments["max_tool_calls"] is JsonNode budget &&
+            int.TryParse(budget.ToString(), out int parsed))
+        {
+            maxToolCalls = Math.Clamp(parsed, 0, 1000);
+        }
+
         var definition = new StudioAgentDefinition
         {
             Id = $"spawn-{Guid.NewGuid():n}",
@@ -1938,6 +1946,7 @@ public sealed class StudioChatService : IAsyncDisposable
             Rules = rules.Trim(),
             ModelPath = string.IsNullOrWhiteSpace(model) ? null : model.Trim(),
             AllowedTools = allowedTools,
+            MaxToolCalls = maxToolCalls,
             // A spawned specialist keeps the same safe Ask defaults as a defined agent.
             Permissions = new WorkPermissions
             {

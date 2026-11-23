@@ -20,8 +20,6 @@ public sealed class OpenRouterChatBackend(
     WorkToolService toolCatalog,
     ToolIoGate gate) : IChatBackend
 {
-    private const int MaxToolCalls = 10;
-
     public string Provider => "openrouter";
 
     public string? Validate(ChatSessionDocument document)
@@ -126,12 +124,6 @@ public sealed class OpenRouterChatBackend(
             }
 
             if (accumulators.Count == 0) break;
-
-            if (toolCallsUsed >= MaxToolCalls)
-            {
-                assistant.Content += "\n\n[Tool-call limit reached for this turn.]";
-                break;
-            }
 
             List<OpenRouterCompletedToolCall> completed = [.. accumulators.Values
                 .OrderBy(call => call.Index)
