@@ -68,21 +68,16 @@
             one context, or every allowlisted command will be refused.
         </div>
     }
-    @if (RunShellIsNever && !Unrestricted)
+    @if (Scope == "project" && AnyCommandToolIsNever)
     {
         <div class="note">
-            <strong>RunShell is set to Never.</strong> Change it to Ask or Always under Enabled
-            tools; the context's Run permission alone is not enough.
+            <strong>Command tools are set to Never.</strong>
+            @(Unrestricted
+                ? "Unrestricted removes the allowlist, but the tool and context Run permissions still apply."
+                : "Set RunShell, RunProcess and the wrappers to Ask or Always under Enabled tools.")
         </div>
     }
-    @if (Scope == "project" && Unrestricted && (NoContextCanRun || RunProcessIsNever))
-    {
-        <div class="note">
-            <strong>RunProcess is still blocked.</strong> Unrestricted removes the allowlist, but
-            the RunProcess tool permission and the context's Run permission still apply.
-        </div>
-    }
-    @if (Scope == "project" && (NoContextCanRun || (Unrestricted ? RunProcessIsNever : RunShellIsNever)))
+    @if (Scope == "project" && (NoContextCanRun || AnyCommandToolIsNever))
     {
         <button type="button" class="button" @onclick="GrantRun">
             Set command tools and Run to Ask
@@ -240,6 +235,17 @@
     private bool RunProcessIsNever =>
         string.Equals(Scope, "project", StringComparison.OrdinalIgnoreCase) &&
         Work.ProjectToolPermission("RunProcess") == WorkToolPermission.Never;
+
+    private static readonly string[] CommandToolNames =
+    [
+        "RunShell", "RunProcess",
+        "git_status", "git_diff", "git_log",
+        "dotnet_build", "dotnet_test", "rg_search",
+    ];
+
+    private bool AnyCommandToolIsNever =>
+        string.Equals(Scope, "project", StringComparison.OrdinalIgnoreCase) &&
+        CommandToolNames.Any(name => Work.ProjectToolPermission(name) == WorkToolPermission.Never);
 
     protected override void OnParametersSet()
     {

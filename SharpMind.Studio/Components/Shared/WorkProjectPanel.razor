@@ -257,11 +257,12 @@
                 </p>
                 <ToolPermissionEditor Value="_toolPermissions" ValueChanged="OnToolPermissionsChanged"
                                       AllowInherit="true" Effective="ProjectToolsEffective" />
-                @if (Work.ProjectToolPermission("RunShell") == WorkToolPermission.Never)
+                @if (AnyCommandToolIsNever)
                 {
                     <div class="note">
-                        <strong>RunShell is set to Never.</strong> Change it to Ask or Always here;
-                        the context's Run permission alone will not enable the softshell.
+                        <strong>One or more command tools are set to Never.</strong> Set RunShell,
+                        RunProcess and the wrappers to Ask or Always here; the context's Run
+                        permission alone will not enable them.
                         <div style="margin-top:.4rem;">
                             <button type="button" class="button"
                                     @onclick="() => Work.GrantCommandRunForProject()">
@@ -487,6 +488,14 @@
 
     private ToolPermissionValue ProjectToolsEffective(string tool, string? group) =>
         Work.SystemToolPermission(tool, group);
+
+    private bool AnyCommandToolIsNever =>
+        new[]
+        {
+            "RunShell", "RunProcess",
+            "git_status", "git_diff", "git_log",
+            "dotnet_build", "dotnet_test", "rg_search",
+        }.Any(name => Work.ProjectToolPermission(name) == WorkToolPermission.Never);
 
     private IReadOnlyList<WorkSkill> FilteredSkills
     {
