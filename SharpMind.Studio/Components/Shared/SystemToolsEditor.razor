@@ -17,9 +17,11 @@
         <p class="small faint">
             These defaults apply to every model and to new Work projects. A project can override
             an individual tool afterwards. Chat has no tools. Unset tools use <strong>Ask</strong>.
-            Plugin tools are loaded from <span class="mono">@Tools.Folder</span>.
+            Plugin tools are loaded from <span class="mono">@Tools.Folder</span>. The command line
+            section below controls the Studio-level command mode and allowlist.
         </p>
         <ToolPermissionEditor Value="Inference.SystemTools" ValueChanged="SaveSystemTools" />
+        <CommandAccessEditor Scope="system" />
         @if (Tools.Warnings.Count > 0)
         {
             <div class="small faint">
