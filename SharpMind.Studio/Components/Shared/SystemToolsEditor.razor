@@ -1,7 +1,9 @@
-﻿@using SharpMind.Studio.Services
+﻿@using SharpMind.Studio.Core.Work
+@using SharpMind.Studio.Services
 @inject WorkToolService Tools
 @inject StudioPluginService Plugins
 @inject StudioChatService ChatService
+@inject InferenceSettingsService Inference
 
 <details class="panel settings-collapsible">
     <summary class="panel-head">
@@ -13,37 +15,11 @@
     </summary>
     <div class="panel-body stack">
         <p class="small faint">
-            These defaults apply to new Work projects. A project can enable or disable individual tools afterwards. Chat has no tools.
+            These defaults apply to every model and to new Work projects. A project can override
+            an individual tool afterwards. Chat has no tools. Unset tools use <strong>Ask</strong>.
             Plugin tools are loaded from <span class="mono">@Tools.Folder</span>.
         </p>
-        @foreach (IGrouping<string, WorkToolInfo> group in Tools.Tools.GroupBy(tool => tool.Group))
-        {
-            <div class="work-tool-group">
-                <div class="spread work-tool-group-head">
-                    <div class="eyebrow">@group.Key</div>
-                    <div class="row">
-                        <button type="button" class="button"
-                                @onclick="() => SetGroupAsync(group, true)">All</button>
-                        <button type="button" class="button"
-                                @onclick="() => SetGroupAsync(group, false)">None</button>
-                    </div>
-                </div>
-                <div class="work-tools">
-                    @foreach (WorkToolInfo tool in group)
-                    {
-                        <label class="work-tool" title="@tool.Source">
-                            <input type="checkbox" checked="@Tools.IsDefaultEnabled(tool.Name)"
-                                   @onchange="e => SetDefaultAsync(tool, e.Value)" />
-                            <span>@tool.Name</span>
-                            @if (tool.IsPlugin)
-                            {
-                                <span class="small faint">plugin</span>
-                            }
-                        </label>
-                    }
-                </div>
-            </div>
-        }
+        <ToolPermissionEditor Value="Inference.SystemTools" ValueChanged="SaveSystemTools" />
         @if (Tools.Warnings.Count > 0)
         {
             <div class="small faint">
@@ -57,15 +33,9 @@
 </details>
 
 @code {
-    private async Task SetDefaultAsync(WorkToolInfo tool, object? enabled)
+    private async Task SaveSystemTools(ToolPermissionSet permissions)
     {
-        Tools.SetDefault(tool.Name, enabled is true);
-        await ChatService.ReloadWorkContextAsync();
-    }
-
-    private async Task SetGroupAsync(IEnumerable<WorkToolInfo> group, bool enabled)
-    {
-        Tools.SetDefaults([.. group.Select(tool => tool.Name)], enabled);
+        Inference.SetSystemTools(permissions);
         await ChatService.ReloadWorkContextAsync();
     }
 
@@ -76,6 +46,3 @@
         StateHasChanged();
     }
 }
-
-
-

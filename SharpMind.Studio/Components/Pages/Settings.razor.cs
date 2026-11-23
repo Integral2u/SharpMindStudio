@@ -1466,12 +1466,6 @@ public partial class Settings
         _status = "System defaults saved.";
     }
 
-    private void SaveSystemTools(ToolPermissionSet permissions)
-    {
-        Inference.SetSystemTools(permissions);
-        _status = "System tool permissions saved.";
-    }
-
     private void ToggleSafety(ChangeEventArgs args) =>
         Safety.SetEnabled(args.Value is true);
 

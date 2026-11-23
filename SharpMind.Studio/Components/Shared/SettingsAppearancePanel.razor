@@ -2,14 +2,14 @@
 @implements IDisposable
 @inject ThemeService Theme
 
-<section class="panel">
-    <div class="panel-head">
+<details class="panel settings-collapsible">
+    <summary class="panel-head">
         <div>
             <div class="eyebrow">UI &amp; Appearance</div>
             <h2>Light or dark</h2>
         </div>
         <span class="faint small mono">@ThemeService.LabelAppearance(Theme.Appearance)</span>
-    </div>
+    </summary>
     <div class="panel-body stack">
         <div class="segmented appearance-toggle" role="group" aria-label="Appearance">
             @foreach (string appearance in ThemeService.AvailableAppearances)
@@ -27,16 +27,16 @@
             An existing choice outside the range is moved to the nearest allowed colour.
         </span>
     </div>
-</section>
+</details>
 
-<section class="panel">
-    <div class="panel-head">
+<details class="panel settings-collapsible" open>
+    <summary class="panel-head">
         <div>
-            <div class="eyebrow">Appearance</div>
+            <div class="eyebrow">UI &amp; Appearance</div>
             <h2>Accent colour</h2>
         </div>
         <span class="faint small mono">@ThemeService.Label(Theme.Theme)</span>
-    </div>
+    </summary>
     <div class="panel-body stack">
         <div class="theme-grid">
             @foreach (string theme in new[] { "green", "blue", "purple", "red" })
@@ -67,7 +67,7 @@
             <span class="small faint">Choosing a custom colour switches the theme to Custom.</span>
         </div>
     </div>
-</section>
+</details>
 
 @code {
     protected override void OnInitialized() => Theme.Changed += OnThemeChanged;

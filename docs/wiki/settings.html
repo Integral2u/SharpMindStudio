@@ -87,9 +87,12 @@
 
             <h2 id="tools">System tools</h2>
             <p>
-                System tools is the shared Work tool registry. The defaults here apply to new Work
-                projects; an existing project can then enable or disable individual tools in its
-                own project settings. Tools are grouped by what they touch:
+                System tools is the shared Work tool registry. The defaults here apply to every
+                model and to new Work projects; an existing project can then override individual
+                tools in its own project settings. Each tool and group has four states:
+                <strong>Off</strong> hides it, <strong>Never</strong> refuses every call,
+                <strong>Ask</strong> prompts, and <strong>Always</strong> permits. Unset tools use
+                <strong>Ask</strong>. Tools are grouped by what they touch:
             </p>
             <ul>
                 <li><strong>Files · read</strong> — list, read and search inside a context location.</li>
