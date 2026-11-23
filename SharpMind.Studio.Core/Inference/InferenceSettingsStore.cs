@@ -23,6 +23,18 @@ public sealed record InferenceSettingsDocument
     /// <summary>Per-model tool overrides, keyed by normalized model path.</summary>
     public Dictionary<string, ToolPermissionSet> ModelTools { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Studio-level command access and allowlist.</summary>
+    public CommandAccessLayer SystemCommands { get; set; } =
+        new() { Mode = CommandAccessMode.Restricted };
+
+    /// <summary>Per-family command additions, keyed by lower-case family id.</summary>
+    public Dictionary<string, CommandAccessLayer> FamilyCommands { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Per-model command additions, keyed by normalized model path.</summary>
+    public Dictionary<string, CommandAccessLayer> ModelCommands { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// One-time upgrade of the old "Speculative + Int8" system defaults, which
     /// were slower than Standard + float KV on CPU. Recorded so a later explicit
@@ -154,6 +166,73 @@ public sealed class InferenceSettingsStore
         lock (_gate)
         {
             _document.FamilyTools.Remove(familyId.Trim().ToLowerInvariant());
+            SaveLocked();
+        }
+    }
+
+    /// <summary>Command access shared by every model.</summary>
+    public CommandAccessLayer SystemCommands
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return (_document.SystemCommands ?? new CommandAccessLayer
+                {
+                    Mode = CommandAccessMode.Restricted,
+                }).Normalize();
+            }
+        }
+    }
+
+    public CommandAccessLayer? FamilyCommands(string familyId)
+    {
+        if (string.IsNullOrWhiteSpace(familyId)) return null;
+        lock (_gate)
+            return _document.FamilyCommands.GetValueOrDefault(
+                familyId.Trim().ToLowerInvariant())?.Normalize();
+    }
+
+    public CommandAccessLayer? ModelCommands(string modelPath)
+    {
+        if (string.IsNullOrWhiteSpace(modelPath)) return null;
+        string key = NormalizeModel(modelPath);
+        lock (_gate)
+            return _document.ModelCommands.GetValueOrDefault(key)?.Normalize();
+    }
+
+    public void SetSystemCommands(CommandAccessLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        lock (_gate)
+        {
+            _document.SystemCommands = layer.Normalize();
+            SaveLocked();
+        }
+    }
+
+    public void SetFamilyCommands(string familyId, CommandAccessLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        if (string.IsNullOrWhiteSpace(familyId)) return;
+        string key = familyId.Trim().ToLowerInvariant();
+        lock (_gate)
+        {
+            if (layer.IsEmpty) _document.FamilyCommands.Remove(key);
+            else _document.FamilyCommands[key] = layer.Normalize();
+            SaveLocked();
+        }
+    }
+
+    public void SetModelCommands(string modelPath, CommandAccessLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        if (string.IsNullOrWhiteSpace(modelPath)) return;
+        string key = NormalizeModel(modelPath);
+        lock (_gate)
+        {
+            if (layer.IsEmpty) _document.ModelCommands.Remove(key);
+            else _document.ModelCommands[key] = layer.Normalize();
             SaveLocked();
         }
     }
@@ -290,6 +369,18 @@ public sealed class InferenceSettingsStore
                 ? new Dictionary<string, ToolPermissionSet>(StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, ToolPermissionSet>(
                     document.ModelTools, StringComparer.OrdinalIgnoreCase);
+            document.SystemCommands ??= new CommandAccessLayer
+            {
+                Mode = CommandAccessMode.Restricted,
+            };
+            document.FamilyCommands = document.FamilyCommands is null
+                ? new Dictionary<string, CommandAccessLayer>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, CommandAccessLayer>(
+                    document.FamilyCommands, StringComparer.OrdinalIgnoreCase);
+            document.ModelCommands = document.ModelCommands is null
+                ? new Dictionary<string, CommandAccessLayer>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, CommandAccessLayer>(
+                    document.ModelCommands, StringComparer.OrdinalIgnoreCase);
             return document;
         }
         catch

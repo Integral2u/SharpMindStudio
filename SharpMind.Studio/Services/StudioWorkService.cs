@@ -178,6 +178,19 @@ public sealed class StudioWorkService : IDisposable
         _memory = _store.ReadMemory();
     }
 
+    public void SaveProjectCommandLine(CommandAccessLayer layer)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        layer = layer.Normalize();
+        Save(_settings with
+        {
+            CommandAccess = layer.Mode,
+            AllowedCommands = [.. layer.Commands],
+            DisabledCommands = [.. layer.DisabledCommands],
+        }, _memory);
+        Notify();
+    }
+
     public IAgentBuilder? CreateAgent(
         string mode,
         float? temperature = null,
@@ -185,7 +198,10 @@ public sealed class StudioWorkService : IDisposable
         IToolCallFilter? filter = null,
         IReadOnlyList<object>? embeddedTools = null,
         IReadOnlyList<string>? embeddedDisabled = null,
-        string? sessionId = null)
+        string? sessionId = null,
+        string? familyId = null,
+        string? modelPath = null,
+        CommandAccessLayer? sessionCommands = null)
     {
         bool work = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase);
         IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = _agents.EnabledAgents;
@@ -209,13 +225,15 @@ public sealed class StudioWorkService : IDisposable
         if (embeddedDisabled is { Count: > 0 })
             builder.DisabledTools.UnionWith(embeddedDisabled);
         CommandPolicy? commandPolicy = null;
-        bool unrestricted = _settings.CommandAccess == CommandAccessMode.Unrestricted;
+        EffectiveCommandAccess commandAccess = ResolveCommandAccess(
+            familyId, modelPath, sessionCommands);
+        bool unrestricted = commandAccess.IsUnrestricted;
         if (work && !_device.IsMobile)
         {
             var pathPolicy = new WorkPathPolicy(_workspace.Project.Root, AllowedRoots());
             var shell = new WorkShellDirectory(_shells, sessionId, pathPolicy);
             if (!unrestricted)
-                commandPolicy = new CommandPolicy(_settings.AllowedCommands, _workspace.Project.Root);
+                commandPolicy = new CommandPolicy(commandAccess.Commands, _workspace.Project.Root);
 
             var commandRunner = new WorkCommandRunner(
                 commandPolicy,
@@ -593,6 +611,54 @@ public sealed class StudioWorkService : IDisposable
         return layer;
     }
 
+    public CommandAccessLayer ProjectCommandLayer() => new()
+    {
+        Mode = _settings.CommandAccess,
+        Commands = [.. _settings.AllowedCommands],
+        DisabledCommands = [.. _settings.DisabledCommands],
+    };
+
+    /// <summary>
+    /// Resolves the command layers for one session. The project layer is read
+    /// live, so a settings change applies to the next turn.
+    /// </summary>
+    public EffectiveCommandAccess ResolveCommandAccess(
+        string? familyId,
+        string? modelPath,
+        CommandAccessLayer? session)
+    {
+        return CommandAccessResolver.Resolve(
+            _inference.SystemCommands,
+            ProjectCommandLayer(),
+            _inference.FamilyCommands(familyId),
+            _inference.ModelCommands(modelPath),
+            session);
+    }
+
+    /// <summary>The inherited command layer for one settings editor.</summary>
+    public EffectiveCommandAccess InheritedCommandAccess(
+        string scope,
+        string? familyId = null,
+        string? modelPath = null)
+    {
+        CommandAccessLayer project = ProjectCommandLayer();
+        CommandAccessLayer? family = _inference.FamilyCommands(familyId);
+        CommandAccessLayer? model = _inference.ModelCommands(modelPath);
+        return scope switch
+        {
+            "system" => CommandAccessResolver.Resolve(null),
+            "project" => CommandAccessResolver.Resolve(_inference.SystemCommands),
+            "family" => CommandAccessResolver.Resolve(
+                _inference.SystemCommands, project),
+            "model" => CommandAccessResolver.Resolve(
+                _inference.SystemCommands, project, family),
+            "session" => CommandAccessResolver.Resolve(
+                _inference.SystemCommands, project, family, model),
+            _ => CommandAccessResolver.Resolve(
+                _inference.SystemCommands, project, family, model),
+        };
+    }
+
     /// <summary>The project-and-system value for a tool, for the settings panel. Session, model, family and agent overrides are deliberately not included.</summary>
     public WorkToolPermission ProjectToolPermission(string name) =>
         ResolveProfile(null).For(name, _tools.GroupFor(name)).Permission;
@@ -634,7 +700,10 @@ public sealed class StudioWorkService : IDisposable
     public IAgentBuilder? CreateAgentTools(
         SharpMind.Studio.Core.Agents.StudioAgentDefinition agent,
         ToolPermissionProfile? profile = null,
-        string? sessionId = null)
+        string? sessionId = null,
+        string? familyId = null,
+        string? modelPath = null,
+        CommandAccessLayer? sessionCommands = null)
     {
         if (_device.IsMobile) return null;
         if (!agent.InheritTools && agent.AllowedTools.Count == 0) return null;
@@ -648,12 +717,14 @@ public sealed class StudioWorkService : IDisposable
         Task<bool> Permission(WorkToolAccess access) =>
             CheckAccessAsync(access, agent.Permissions, effective);
 
-        bool unrestricted = _settings.CommandAccess == CommandAccessMode.Unrestricted;
+        EffectiveCommandAccess commandAccess = ResolveCommandAccess(
+            familyId, modelPath, sessionCommands);
+        bool unrestricted = commandAccess.IsUnrestricted;
         CommandPolicy? commandPolicy = null;
         var pathPolicy = new WorkPathPolicy(_workspace.Project.Root, AllowedRoots());
         var shell = new WorkShellDirectory(_shells, sessionId, pathPolicy);
         if (!unrestricted)
-            commandPolicy = new CommandPolicy(_settings.AllowedCommands, _workspace.Project.Root);
+            commandPolicy = new CommandPolicy(commandAccess.Commands, _workspace.Project.Root);
 
         var commandRunner = new WorkCommandRunner(
             commandPolicy, pathPolicy, Permission, _secrets, () => shell.Current);

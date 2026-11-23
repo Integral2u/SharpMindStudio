@@ -1,4 +1,5 @@
 using SharpMind.Studio.Core.Inference;
+using SharpMind.Studio.Core.Work;
 using Xunit;
 
 namespace SharpMind.Studio.Tests;
@@ -69,6 +70,52 @@ public sealed class InferenceSettingsTests
 
             Assert.Equal("StandardGeneratorBuilder", store.Document.System.Generator);
             Assert.Equal("PagedKVCacherBuilder", store.Document.System.Cache);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void CommandLayers_RoundTripAndEmptyLayersAreRemoved()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(), $"studio-inference-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new InferenceSettingsStore(path);
+            store.SetSystemCommands(new CommandAccessLayer
+            {
+                Mode = CommandAccessMode.Restricted,
+                Commands =
+                [
+                    new AllowedCommand { Name = "git", Executable = "git" },
+                ],
+            });
+            store.SetFamilyCommands("qwen", new CommandAccessLayer
+            {
+                Commands =
+                [
+                    new AllowedCommand { Name = "rg", Executable = "rg" },
+                ],
+            });
+            store.SetModelCommands(@"C:\models\one.smm", new CommandAccessLayer
+            {
+                Mode = CommandAccessMode.Unrestricted,
+            });
+
+            var reloaded = new InferenceSettingsStore(path);
+            Assert.Equal(CommandAccessMode.Restricted, reloaded.SystemCommands.Mode);
+            Assert.Equal("git", Assert.Single(reloaded.SystemCommands.Commands).Name);
+            Assert.Equal("rg", Assert.Single(reloaded.FamilyCommands("qwen")!.Commands).Name);
+            Assert.Equal(
+                CommandAccessMode.Unrestricted,
+                reloaded.ModelCommands(@"C:\models\one.smm")!.Mode);
+
+            reloaded.SetFamilyCommands("qwen", new CommandAccessLayer());
+            var cleared = new InferenceSettingsStore(path);
+            Assert.Null(cleared.FamilyCommands("qwen"));
         }
         finally
         {

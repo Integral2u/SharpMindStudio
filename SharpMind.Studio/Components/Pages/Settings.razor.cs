@@ -1494,6 +1494,9 @@ public partial class Settings
 
     private ToolPermissionSet ModelToolsValue => Inference.ModelTools(_selectedModelPath) ?? new();
 
+    private string? SelectedModelFamilyId =>
+        _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.Family.Id;
+
     private void SaveModelTools(ToolPermissionSet permissions)
     {
         if (_selectedModelPath is null) return;

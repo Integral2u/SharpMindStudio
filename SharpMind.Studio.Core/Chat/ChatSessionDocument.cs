@@ -36,6 +36,12 @@ public sealed record ChatSessionDocument
     public ToolPermissionSet ToolPermissions { get; set; } = new();
 
     /// <summary>
+    /// Session-level command access and allowlist. Null inherits the model,
+    /// family, project and system layers.
+    /// </summary>
+    public CommandAccessLayer? CommandLine { get; set; }
+
+    /// <summary>
     /// Names of plugin assemblies embedded in the .smm that this session may
     /// load. Empty by default; the code only runs after the user enables it.
     /// </summary>

@@ -53,9 +53,13 @@ public sealed class WorkSettingsStore
             Contexts = settings.Contexts ?? [],
             DisabledTools = settings.DisabledTools ?? [],
             EnabledTools = settings.EnabledTools ?? [],
-            CommandAccess = Enum.IsDefined(settings.CommandAccess)
-                ? settings.CommandAccess
-                : CommandAccessMode.Restricted,
+            CommandAccess = settings.CommandAccess is { } mode && Enum.IsDefined(mode)
+                ? mode
+                : null,
+            DisabledCommands = [.. (settings.DisabledCommands ?? [])
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)],
             AllowedCommands = [.. (settings.AllowedCommands ?? [])
                 .Where(command => !string.IsNullOrWhiteSpace(command.Executable))
                 .Select(command => command with

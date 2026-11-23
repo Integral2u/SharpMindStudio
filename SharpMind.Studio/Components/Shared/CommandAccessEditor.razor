@@ -1,0 +1,446 @@
+@using SharpMind.Studio.Core.Mcp
+@using SharpMind.Studio.Core.Work
+@using SharpMind.Studio.Services
+@inject StudioWorkService Work
+@inject InferenceSettingsService Inference
+@inject StudioChatService Chat
+@inject IJSRuntime JS
+
+<div class="work-settings-section">
+    <div class="spread">
+        <div>
+            <div class="eyebrow">Execution</div>
+            <h3>Command line</h3>
+        </div>
+        <span class="small faint">
+            @(Unrestricted ? "allowlist off" : $"{_layer.Commands.Count} local · {InheritedCommands.Count} inherited")
+        </span>
+    </div>
+
+    <div class="row" style="margin-top:.35rem;align-items:center;gap:.4rem;">
+        <span class="small faint">Command access</span>
+        @if (AllowInherit)
+        {
+            <button type="button"
+                    class="button @(_layer.Mode is null ? "primary" : "")"
+                    @onclick="() => SetModeAsync(null)">
+                Inherit
+            </button>
+        }
+        <button type="button"
+                class="button @(ModeSelected(CommandAccessMode.Restricted) ? "primary" : "")"
+                @onclick="() => SetModeAsync(CommandAccessMode.Restricted)">
+            Restricted
+        </button>
+        <button type="button"
+                class="button @(ModeSelected(CommandAccessMode.Unrestricted) ? "primary" : "")"
+                @onclick="() => SetModeAsync(CommandAccessMode.Unrestricted)">
+            Unrestricted
+        </button>
+        @if (AllowInherit)
+        {
+            <span class="small faint">inherits @_inherited.Mode.ToString().ToLowerInvariant()</span>
+        }
+    </div>
+
+    <p class="small faint">
+        Restricted runs only the effective allowlist. The softshell parses pipes, redirection and
+        <span class="mono">&amp;&amp;</span>/<span class="mono">||</span> itself and never starts
+        PowerShell or cmd. This is a guardrail, not a sandbox: an allowed program still has your
+        account permissions. A command also needs <strong>Run</strong> permission on the context
+        and <strong>Ask</strong> or <strong>Always</strong> on the command tool.
+    </p>
+
+    @if (Unrestricted)
+    {
+        <div class="note">
+            <strong>Unrestricted.</strong> RunProcess may start any program with your account
+            permissions for this scope, and the allowlist is ignored. The softshell is off because
+            it requires an allowlist.
+        </div>
+    }
+
+    @if (Scope == "project" && _layer.Commands.Count + InheritedCommands.Count > 0 && NoContextCanRun)
+    {
+        <div class="note">
+            <strong>No context has Run permission.</strong> Set Execute to Ask or Always on at least
+            one context, or every allowlisted command will be refused.
+        </div>
+    }
+    @if (RunShellIsNever && !Unrestricted)
+    {
+        <div class="note">
+            <strong>RunShell is set to Never.</strong> Change it to Ask or Always under Enabled
+            tools, or the softshell will refuse every command.
+        </div>
+    }
+
+    @if (ShowShellDirectory)
+    {
+        <div class="row" style="margin-top:.45rem;align-items:center;gap:.5rem;">
+            <span class="small faint">Shell directory</span>
+            <span class="mono small" style="flex:1;overflow-wrap:anywhere;">@ShellDirectory</span>
+            <button type="button" class="button" @onclick="ResetShellDirectory"
+                    disabled="@(string.Equals(ShellDirectory, Work.ProjectRoot, StringComparison.OrdinalIgnoreCase))">
+                Reset
+            </button>
+        </div>
+        <div class="small faint">
+            cd persists across RunShell calls in this session. A new session starts at the project root.
+        </div>
+    }
+
+    @if (InheritedCommands.Count > 0)
+    {
+        <div class="small faint" style="margin-top:.7rem;">Inherited from @ParentLabel</div>
+        <div class="work-contexts">
+            @foreach (AllowedCommand command in InheritedCommands)
+            {
+                bool disabled = _layer.DisabledCommands.Contains(command.Name, StringComparer.OrdinalIgnoreCase);
+                <div class="work-context" style="align-items:flex-start;opacity:@(disabled ? "0.55" : "1");">
+                    <div style="flex:1;">
+                        <strong class="mono">@command.Name</strong>
+                        <span class="small faint mono">@command.Executable</span>
+                        <div class="small faint">@ResolvedCommandPath(command)</div>
+                        <div class="small faint">@CapabilityLabel(command)</div>
+                    </div>
+                    <button type="button" class="button"
+                            @onclick="() => ToggleInheritedAsync(command.Name)"
+                            disabled="@Unrestricted">
+                        @(disabled ? "Enable" : "Disable")
+                    </button>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_layer.Commands.Count > 0)
+    {
+        <div class="small faint" style="margin-top:.7rem;">Local to this scope</div>
+        <div class="work-contexts" style="opacity:@(Unrestricted ? "0.55" : "1");">
+            @foreach (AllowedCommand command in _layer.Commands)
+            {
+                <div class="work-context" style="align-items:flex-start;">
+                    <div style="flex:1;">
+                        <strong class="mono">@command.Name</strong>
+                        <span class="small faint mono">@command.Executable</span>
+                        <div class="small faint">@ResolvedCommandPath(command)</div>
+                        @if (!string.IsNullOrWhiteSpace(command.Description))
+                        {
+                            <div class="small faint">@command.Description</div>
+                        }
+                        <div class="small faint">@CapabilityLabel(command)</div>
+                    </div>
+                    <button type="button" class="button danger"
+                            @onclick="() => RemoveCommandAsync(command)"
+                            disabled="@Unrestricted">
+                        Remove
+                    </button>
+                </div>
+            }
+        </div>
+    }
+    else if (InheritedCommands.Count == 0)
+    {
+        <div class="small faint" style="margin-top:.45rem;">
+            @(Unrestricted ? "No local commands. This scope is unrestricted." : "No commands in the effective allowlist.")
+        </div>
+    }
+
+    <div class="row" style="margin-top:.5rem;align-items:center;gap:.4rem;">
+        <input class="input" style="max-width:11rem;" placeholder="git" @bind="_newCommand" disabled="@Unrestricted" />
+        <input class="input" style="max-width:9rem;" placeholder="alias (optional)" @bind="_newAlias" disabled="@Unrestricted" />
+        <input class="input" style="max-width:14rem;" placeholder="fixed arguments" @bind="_newArguments" disabled="@Unrestricted" />
+        <button type="button" class="button" @onclick="AddCommandAsync"
+                disabled="@(Unrestricted || string.IsNullOrWhiteSpace(_newCommand))">
+            Add command
+        </button>
+    </div>
+    <div class="row" style="margin-top:.35rem;align-items:center;gap:.6rem;">
+        <label class="small faint"><input type="checkbox" @bind="_network" disabled="@Unrestricted" /> network</label>
+        <label class="small faint"><input type="checkbox" @bind="_destructive" disabled="@Unrestricted" /> destructive</label>
+        <label class="small faint"><input type="checkbox" @bind="_interpreter" disabled="@Unrestricted" /> interpreter</label>
+    </div>
+    <div class="row" style="margin-top:.35rem;align-items:center;gap:.5rem;">
+        <label class="small faint">Start from a preset</label>
+        <select class="input" style="max-width:12rem;" @bind="_preset" @bind:after="AddPresetAsync"
+                disabled="@Unrestricted">
+            <option value="">Choose...</option>
+            @foreach (AllowedCommand preset in AllowedCommandPresets.All)
+            {
+                <option value="@preset.Name">@preset.Name</option>
+            }
+        </select>
+        <span class="small faint">@_status</span>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Scope { get; set; } = "project";
+    [Parameter] public string? FamilyId { get; set; }
+    [Parameter] public string? ModelPath { get; set; }
+    [Parameter] public bool ShowShellDirectory { get; set; }
+
+    private CommandAccessLayer _layer = new();
+    private EffectiveCommandAccess _inherited = new(
+        CommandAccessMode.Restricted, [], new HashSet<string>());
+    private string _key = "";
+    private string _newCommand = "";
+    private string _newAlias = "";
+    private string _newArguments = "";
+    private bool _network;
+    private bool _destructive;
+    private bool _interpreter;
+    private string _preset = "";
+    private string? _status;
+
+    private bool AllowInherit => !string.Equals(Scope, "system", StringComparison.OrdinalIgnoreCase);
+    private CommandAccessMode EffectiveMode => _layer.Mode ?? _inherited.Mode;
+    private bool Unrestricted => EffectiveMode == CommandAccessMode.Unrestricted;
+    private bool ModeSelected(CommandAccessMode mode) =>
+        _layer.Mode == mode ||
+        (!AllowInherit && _layer.Mode is null && mode == CommandAccessMode.Restricted);
+    private string ShellDirectory => Work.GetShellDirectory(Chat.Document?.Id);
+
+    private string ParentLabel => Scope.ToLowerInvariant() switch
+    {
+        "project" => "System",
+        "family" => "System + Project",
+        "model" => "System + Project + Family",
+        "session" => "System + Project + Family + Model",
+        _ => "System",
+    };
+
+    private IReadOnlyList<AllowedCommand> InheritedCommands => [.. _inherited.Commands
+        .Where(command => !_layer.Commands.Any(local =>
+            local.Name.Equals(command.Name, StringComparison.OrdinalIgnoreCase)))];
+
+    private bool NoContextCanRun =>
+        Work.Settings.Contexts.Count > 0 &&
+        Work.Settings.Contexts.All(context => context.Permissions.Execute == WorkPermission.Never);
+
+    private bool RunShellIsNever =>
+        string.Equals(Scope, "project", StringComparison.OrdinalIgnoreCase) &&
+        Work.ProjectToolPermission("RunShell") == WorkToolPermission.Never;
+
+    protected override void OnParametersSet()
+    {
+        string key = $"{Scope}|{FamilyId}|{ModelPath}|{Chat.Document?.Id}|{Work.ProjectRoot}";
+        if (key == _key) return;
+        _key = key;
+        Load();
+    }
+
+    private void Load()
+    {
+        _layer = Scope.ToLowerInvariant() switch
+        {
+            "system" => Inference.SystemCommands,
+            "project" => Work.ProjectCommandLayer(),
+            "family" => Inference.FamilyCommands(FamilyId) ?? new CommandAccessLayer(),
+            "model" => Inference.ModelCommands(ModelPath) ?? new CommandAccessLayer(),
+            "session" => Chat.Document?.CommandLine ?? new CommandAccessLayer(),
+            _ => new CommandAccessLayer(),
+        };
+        _layer = _layer.Normalize();
+        _inherited = Work.InheritedCommandAccess(Scope, FamilyId, ModelPath);
+        _status = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        switch (Scope.ToLowerInvariant())
+        {
+            case "system":
+                Inference.SetSystemCommands(_layer);
+                break;
+            case "project":
+                Work.SaveProjectCommandLine(_layer);
+                break;
+            case "family":
+                if (!string.IsNullOrWhiteSpace(FamilyId))
+                    Inference.SetFamilyCommands(FamilyId, _layer);
+                break;
+            case "model":
+                if (!string.IsNullOrWhiteSpace(ModelPath))
+                    Inference.SetModelCommands(ModelPath, _layer);
+                break;
+            case "session":
+                await Chat.ApplyCommandLineAsync(_layer);
+                break;
+        }
+
+        _inherited = Work.InheritedCommandAccess(Scope, FamilyId, ModelPath);
+    }
+
+    private async Task SetModeAsync(CommandAccessMode? mode)
+    {
+        if (mode == CommandAccessMode.Unrestricted && !Unrestricted)
+        {
+            bool confirmed = await JS.InvokeAsync<bool>(
+                "confirm",
+                "Unrestricted lets RunProcess start any program with your account "
+                + "permissions for this scope. The softshell stays off. Continue?");
+            if (!confirmed) return;
+        }
+
+        _layer = _layer with { Mode = mode };
+        await SaveAsync();
+    }
+
+    private async Task AddCommandAsync()
+    {
+        string executable = _newCommand.Trim();
+        if (executable.Length == 0) return;
+
+        string? resolved = McpCommandResolver.Resolve(executable);
+        if (resolved is null)
+        {
+            _status = $"'{executable}' was not found in PATH.";
+            return;
+        }
+
+        if (Path.GetExtension(resolved).ToLowerInvariant() is ".cmd" or ".bat" or ".ps1")
+        {
+            _status = $"'{executable}' is a batch or PowerShell shim; allow its native executable instead.";
+            return;
+        }
+
+        string name = _newAlias.Trim();
+        if (name.Length == 0) name = Path.GetFileNameWithoutExtension(executable);
+        if (name.Length == 0) name = executable;
+        if (_layer.Commands.Any(command => command.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            _status = $"{name} is already local to this scope.";
+            return;
+        }
+
+        _layer = _layer with
+        {
+            Commands =
+            [
+                .. _layer.Commands,
+                new AllowedCommand
+                {
+                    Name = name,
+                    Executable = executable,
+                    ArgumentsPrefix = SplitArguments(_newArguments),
+                    UsesNetwork = _network,
+                    Destructive = _destructive,
+                    AllowInterpreter = _interpreter,
+                },
+            ],
+        };
+
+        _newCommand = "";
+        _newAlias = "";
+        _newArguments = "";
+        _network = false;
+        _destructive = false;
+        _interpreter = false;
+        _status = $"Added {name}.";
+        await SaveAsync();
+    }
+
+    private async Task AddPresetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_preset)) return;
+        AllowedCommand? preset = AllowedCommandPresets.Find(_preset);
+        _preset = "";
+        if (preset is null) return;
+
+        if (_layer.Commands.Any(command =>
+                command.Name.Equals(preset.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            _status = $"{preset.Name} is already local to this scope.";
+            return;
+        }
+
+        _layer = _layer with
+        {
+            Commands =
+            [
+                .. _layer.Commands,
+                preset with { ArgumentsPrefix = [.. preset.ArgumentsPrefix] },
+            ],
+        };
+        _status = McpCommandResolver.Resolve(preset.Executable) is null
+            ? $"{preset.Name} added, but it is not installed yet."
+            : $"Added {preset.Name}.";
+        await SaveAsync();
+    }
+
+    private async Task RemoveCommandAsync(AllowedCommand command)
+    {
+        _layer = _layer with
+        {
+            Commands = [.. _layer.Commands.Where(item =>
+                !item.Name.Equals(command.Name, StringComparison.OrdinalIgnoreCase))],
+        };
+        _status = $"{command.Name} removed.";
+        await SaveAsync();
+    }
+
+    private async Task ToggleInheritedAsync(string name)
+    {
+        bool disabled = _layer.DisabledCommands.Contains(name, StringComparer.OrdinalIgnoreCase);
+        _layer = _layer with
+        {
+            DisabledCommands = disabled
+                ? [.. _layer.DisabledCommands.Where(item =>
+                    !item.Equals(name, StringComparison.OrdinalIgnoreCase))]
+                : [.. _layer.DisabledCommands, name],
+        };
+        await SaveAsync();
+    }
+
+    private void ResetShellDirectory()
+    {
+        Work.ResetShellDirectory(Chat.Document?.Id);
+        StateHasChanged();
+    }
+
+    private static string ResolvedCommandPath(AllowedCommand command)
+    {
+        string? resolved = McpCommandResolver.Resolve(command.Executable);
+        return resolved is null ? "not found in PATH" : resolved;
+    }
+
+    private static string CapabilityLabel(AllowedCommand command)
+    {
+        var parts = new List<string>();
+        if (command.UsesNetwork) parts.Add("network");
+        if (command.Destructive) parts.Add("destructive");
+        if (command.AllowInterpreter) parts.Add("interpreter");
+        return parts.Count == 0 ? "local only" : string.Join(" · ", parts);
+    }
+
+    private static List<string> SplitArguments(string text)
+    {
+        var values = new List<string>();
+        var current = new System.Text.StringBuilder();
+        bool quoted = false;
+
+        foreach (char character in text ?? "")
+        {
+            if (character == '"')
+            {
+                quoted = !quoted;
+                continue;
+            }
+
+            if (!quoted && char.IsWhiteSpace(character))
+            {
+                if (current.Length == 0) continue;
+                values.Add(current.ToString());
+                current.Clear();
+                continue;
+            }
+
+            current.Append(character);
+        }
+
+        if (current.Length > 0) values.Add(current.ToString());
+        return values;
+    }
+}

@@ -1144,7 +1144,10 @@ public sealed class StudioChatService : IAsyncDisposable
             BuildToolCallFilter(),
             embedded.Tools,
             embedded.Disabled,
-            _document?.Id);
+            _document?.Id,
+            _document?.FamilyId,
+            _document?.ModelPath,
+            _document?.CommandLine);
         ChatMessage userMessage = ChatMessage.User(text, "You");
         userMessage.Artifacts = artifacts?.ToArray();
         _document.Messages.Add(userMessage);
@@ -1284,6 +1287,25 @@ public sealed class StudioChatService : IAsyncDisposable
             _document.ToolPermissions = permissions;
             _store.Save(_document);
             _status = "Tool permissions applied.";
+            Notify();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>Saves the session command layer and rebuilds Work tools on the next turn.</summary>
+    public async Task ApplyCommandLineAsync(CommandAccessLayer? layer)
+    {
+        if (_device.IsMobile || _document is null || _streaming) return;
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _document.CommandLine = layer is null || layer.IsEmpty ? null : layer;
+            _store.Save(_document);
+            _status = "Command access applied.";
             Notify();
         }
         finally
@@ -1777,7 +1799,10 @@ public sealed class StudioChatService : IAsyncDisposable
             BuildToolCallFilter(),
             embedded.Tools,
             embedded.Disabled,
-            _document?.Id);
+            _document?.Id,
+            _document?.FamilyId,
+            _document?.ModelPath,
+            _document?.CommandLine);
         if (agent is AgentBuilder builder)
         {
             builder.PluginCompactors = _plugins.Compactors;
@@ -1974,7 +1999,8 @@ public sealed class StudioChatService : IAsyncDisposable
                     _loaded,
                     _resolved,
                     cancellationToken,
-                    sessionId: _document?.Id)
+                    sessionId: _document?.Id,
+                    sessionCommands: _document?.CommandLine)
                 .ConfigureAwait(false);
             return ToolRequestResult.Handled(result);
         }

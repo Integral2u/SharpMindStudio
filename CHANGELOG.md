@@ -62,6 +62,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   explicit project toggle that ignores the allowlist for `RunProcess`; the
   softshell stays off, while installed wrappers remain available and can be
   disabled individually under Enabled tools.
+- **Layered command access.** Command mode and the allowlist now follow
+  System → Project → Family → Model → Session. Each layer can inherit, restrict
+  or widen; commands flow down, lower layers can add local commands or disable
+  inherited ones, and the nearest definition wins. A command disabled above
+  cannot be re-enabled below.
 - **Vault for named secrets.** Settings → Vault keeps API keys, host tokens,
   SSH passwords, passphrases and Docker Hub tokens under a name. Values are
   encrypted on this PC for your Windows account and are write-only after saving.

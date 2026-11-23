@@ -4,6 +4,7 @@ using SharpMind.Inference.Chat;
 using SharpMind.Studio.Core.Agents;
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Inference;
+using SharpMind.Studio.Core.Work;
 
 namespace SharpMind.Studio.Services;
 
@@ -51,7 +52,8 @@ public sealed class StudioAgentRunner
         ResolvedInference? currentProfile,
         CancellationToken cancellationToken = default,
         int depth = 0,
-        string? sessionId = null)
+        string? sessionId = null,
+        CommandAccessLayer? sessionCommands = null)
     {
         ArgumentNullException.ThrowIfNull(agent);
         ArgumentException.ThrowIfNullOrWhiteSpace(task);
@@ -86,7 +88,12 @@ public sealed class StudioAgentRunner
 
         try
         {
-            IAgentBuilder? tools = _work.CreateAgentTools(agent, sessionId: sessionId);
+            IAgentBuilder? tools = _work.CreateAgentTools(
+                agent,
+                sessionId: sessionId,
+                familyId: loaded.Descriptor.Family.Id,
+                modelPath: loaded.Descriptor.Path,
+                sessionCommands: sessionCommands);
             if (tools is AgentBuilder builder)
             {
                 builder.WithAdditionalSystemPrompt(AgentPromptText.DelegatedTask);
@@ -97,7 +104,9 @@ public sealed class StudioAgentRunner
                     ?? _plugins.FindCompactor(_theme.PluginCompactor);
             }
 
-            AddNestedDelegate(tools, agent, loaded, profile, depth, cancellationToken, sessionId);
+            AddNestedDelegate(
+                tools, agent, loaded, profile, depth, cancellationToken,
+                sessionId, sessionCommands);
             IChatSession session = CreateSession(loaded, profile, agent, tools);
             try
             {
@@ -157,7 +166,8 @@ public sealed class StudioAgentRunner
         ResolvedInference profile,
         int depth,
         CancellationToken cancellationToken,
-        string? sessionId)
+        string? sessionId,
+        CommandAccessLayer? sessionCommands)
     {
         if (tools is null || depth >= _agents.MaxDepth || !_work.IsToolEnabled("delegate"))
             return;
@@ -216,7 +226,8 @@ public sealed class StudioAgentRunner
                     profile,
                     cancellationToken,
                     depth + 1,
-                    sessionId)
+                    sessionId,
+                    sessionCommands)
                     .ConfigureAwait(false);
             });
     }

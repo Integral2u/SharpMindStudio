@@ -364,7 +364,7 @@ public sealed class WorkSettingsStoreTests
     }
 
     [Fact]
-    public void Load_DefaultsCommandAccessToRestricted()
+    public void Load_DefaultsCommandAccessToInherit()
     {
         using var temp = new TempDirectory();
         var store = new WorkSettingsStore(temp.Path);
@@ -372,7 +372,7 @@ public sealed class WorkSettingsStoreTests
 
         WorkSettings loaded = store.Load();
 
-        Assert.Equal(CommandAccessMode.Restricted, loaded.CommandAccess);
+        Assert.Null(loaded.CommandAccess);
     }
 
     [Fact]

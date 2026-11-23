@@ -1,4 +1,4 @@
-﻿@using SharpMind.Studio.Services
+@using SharpMind.Studio.Services
 @using SharpMind.Studio.Core.Mcp
 @using SharpMind.Studio.Core.Work
 @implements IDisposable
@@ -237,148 +237,7 @@
                 <div class="small faint">Web access applies to the whole project and is separate from file contexts.</div>
             </div>
 
-            <div class="work-settings-section">
-                <div class="spread">
-                    <div>
-                        <div class="eyebrow">Execution</div>
-                        <h3>Command line</h3>
-                    </div>
-                    <span class="small faint">
-                        @(Unrestricted ? "allowlist off" : $"{_allowedCommands.Count} allowed")
-                    </span>
-                </div>
-
-                <div class="row" style="margin-top:.35rem;align-items:center;gap:.4rem;">
-                    <span class="small faint">Command access</span>
-                    <button type="button"
-                            class="button @(_commandAccess == CommandAccessMode.Restricted ? "primary" : "")"
-                            @onclick="() => SetCommandAccessAsync(CommandAccessMode.Restricted)">
-                        Restricted
-                    </button>
-                    <button type="button"
-                            class="button @(_commandAccess == CommandAccessMode.Unrestricted ? "primary" : "")"
-                            @onclick="() => SetCommandAccessAsync(CommandAccessMode.Unrestricted)">
-                        Unrestricted
-                    </button>
-                </div>
-
-                <p class="small faint">
-                    Restricted runs only the commands listed here. The softshell parses pipes,
-                    redirection and <span class="mono">&amp;&amp;</span>/<span class="mono">||</span>
-                    itself and never starts PowerShell or cmd. This is a guardrail, not a
-                    sandbox: an allowed program still has your account permissions. A command
-                    also needs <strong>Run</strong> permission on the context and
-                    <strong>Ask</strong> or <strong>Always</strong> on the command tool.
-                </p>
-
-                @if (_allowedCommands.Count > 0 && NoContextCanRun)
-                {
-                    <div class="note">
-                        <strong>No context has Run permission.</strong> Set Execute to Ask or
-                        Always on at least one context, or every allowlisted command will be refused.
-                    </div>
-                }
-                @if (_allowedCommands.Count > 0 && RunShellIsNever)
-                {
-                    <div class="note">
-                        <strong>RunShell is set to Never.</strong> Change it to Ask or Always under
-                        Enabled tools, or the softshell will refuse every command.
-                    </div>
-                }
-
-                @if (Unrestricted)
-                {
-                    <div class="note">
-                        <strong>Unrestricted.</strong> RunProcess may start any program with your
-                        account permissions, and the allowlist is ignored. The softshell is off
-                        because it requires an allowlist. CLI wrappers remain available when
-                        installed; turn individual wrappers off under Enabled tools.
-                    </div>
-                }
-
-                <div class="row" style="margin-top:.45rem;align-items:center;gap:.5rem;">
-                    <span class="small faint">Shell directory</span>
-                    <span class="mono small" style="flex:1;overflow-wrap:anywhere;">@ShellDirectory</span>
-                    <button type="button" class="button" @onclick="ResetShellDirectory"
-                            disabled="@(string.Equals(ShellDirectory, Workspace.Project.Root, StringComparison.OrdinalIgnoreCase))">
-                        Reset
-                    </button>
-                </div>
-                <div class="small faint">
-                    cd persists across RunShell calls in this session. A new session starts at the
-                    project root.
-                </div>
-
-                @if (_allowedCommands.Count == 0)
-                {
-                    <div class="small faint" style="margin-top:.45rem;">
-                        @(Unrestricted
-                            ? "No commands are listed. RunProcess is unrestricted anyway."
-                            : "No commands allowed. RunProcess and the softshell refuse external commands.")
-                    </div>
-                }
-                else
-                {
-                    <div class="work-contexts" style="margin-top:.45rem;@(Unrestricted ? "opacity:.55;" : "")">
-                        @foreach (AllowedCommand command in _allowedCommands)
-                        {
-                            <div class="work-context" style="align-items:flex-start;">
-                                <div style="flex:1;">
-                                    <strong class="mono">@command.Name</strong>
-                                    <span class="small faint mono">@command.Executable</span>
-                                    <div class="small faint">@ResolvedCommandPath(command)</div>
-                                    @if (!string.IsNullOrWhiteSpace(command.Description))
-                                    {
-                                        <div class="small faint">@command.Description</div>
-                                    }
-                                    <div class="small faint">@CapabilityLabel(command)</div>
-                                </div>
-                                <button type="button" class="button danger"
-                                        @onclick="() => RemoveCommandAsync(command)"
-                                        disabled="@Unrestricted">
-                                    Remove
-                                </button>
-                            </div>
-                        }
-                    </div>
-                }
-                <div class="row" style="margin-top:.5rem;align-items:center;gap:.4rem;">
-                    <input class="input" style="max-width:11rem;" placeholder="git"
-                           @bind="_newCommand" disabled="@Unrestricted" />
-                    <input class="input" style="max-width:9rem;" placeholder="alias (optional)"
-                           @bind="_newCommandAlias" disabled="@Unrestricted" />
-                    <input class="input" style="max-width:14rem;" placeholder="fixed arguments"
-                           @bind="_newCommandArgs" disabled="@Unrestricted" />
-                    <button type="button" class="button" @onclick="AddCommandAsync"
-                            disabled="@(Unrestricted || string.IsNullOrWhiteSpace(_newCommand))">
-                        Add command
-                    </button>
-                </div>
-                <div class="row" style="margin-top:.35rem;align-items:center;gap:.6rem;">
-                    <label class="small faint">
-                        <input type="checkbox" @bind="_newCommandNetwork" disabled="@Unrestricted" /> network
-                    </label>
-                    <label class="small faint">
-                        <input type="checkbox" @bind="_newCommandDestructive" disabled="@Unrestricted" /> destructive
-                    </label>
-                    <label class="small faint">
-                        <input type="checkbox" @bind="_newCommandInterpreter" disabled="@Unrestricted" /> interpreter
-                    </label>
-                </div>
-                <div class="row" style="margin-top:.35rem;align-items:center;gap:.5rem;">
-                    <label class="small faint" for="command-preset">Start from a preset</label>
-                    <select id="command-preset" class="input" style="max-width:12rem;"
-                            @bind="_selectedPreset" @bind:after="AddPresetAsync"
-                            disabled="@Unrestricted">
-                        <option value="">Choose...</option>
-                        @foreach (AllowedCommand preset in AllowedCommandPresets.All)
-                        {
-                            <option value="@preset.Name">@preset.Name</option>
-                        }
-                    </select>
-                    <span class="small faint">@_commandStatus</span>
-                </div>
-            </div>
+            <CommandAccessEditor Scope="project" ShowShellDirectory="true" />
 
             <div class="work-settings-section">
                 <div class="spread">
@@ -448,26 +307,6 @@
     private HashSet<string> _enabledSystemSkills = new(StringComparer.OrdinalIgnoreCase);
     private ToolPermissionSet _toolPermissions = new();
     private WorkPermission _web = WorkPermission.Never;
-    private CommandAccessMode _commandAccess = CommandAccessMode.Restricted;
-    private List<AllowedCommand> _allowedCommands = [];
-    private string _newCommand = "";
-    private string _newCommandAlias = "";
-    private string _newCommandArgs = "";
-    private bool _newCommandNetwork;
-    private bool _newCommandDestructive;
-    private bool _newCommandInterpreter;
-    private string _selectedPreset = "";
-    private string? _commandStatus;
-
-    private bool Unrestricted => _commandAccess == CommandAccessMode.Unrestricted;
-
-    private bool NoContextCanRun =>
-        _contexts.Count > 0 && _contexts.All(context => context.Execute == WorkPermission.Never);
-
-    private bool RunShellIsNever =>
-        Work.ProjectToolPermission("RunShell") == WorkToolPermission.Never;
-
-    private string ShellDirectory => Work.GetShellDirectory(ChatService.Document?.Id);
 
     protected override void OnInitialized()
     {
@@ -525,8 +364,6 @@
         _systemPrompt = Work.Settings.SystemPrompt ?? "";
         _memory = Work.Memory;
         _web = Work.Settings.Permissions.Web;
-        _commandAccess = Work.Settings.CommandAccess;
-        _allowedCommands = [.. Work.Settings.AllowedCommands];
         _disabledSystemSkills = new HashSet<string>(
             Work.Settings.DisabledSystemSkills, StringComparer.OrdinalIgnoreCase);
         _enabledSystemSkills = new HashSet<string>(
@@ -871,162 +708,6 @@
     /// control commits immediately. Free-text fields fire on blur, so a save
     /// never runs halfway through a word.
     /// </summary>
-    private string ResolvedCommandPath(AllowedCommand command)
-    {
-        string? resolved = McpCommandResolver.Resolve(command.Executable);
-        return resolved is null ? "not found in PATH" : resolved;
-    }
-
-    private static string CapabilityLabel(AllowedCommand command)
-    {
-        var parts = new List<string>();
-        if (command.UsesNetwork) parts.Add("network");
-        if (command.Destructive) parts.Add("destructive");
-        if (command.AllowInterpreter) parts.Add("interpreter");
-        return parts.Count == 0 ? "local only" : string.Join(" · ", parts);
-    }
-
-    private async Task SetCommandAccessAsync(CommandAccessMode mode)
-    {
-        if (_commandAccess == mode) return;
-
-        if (mode == CommandAccessMode.Unrestricted)
-        {
-            bool confirmed = await JS.InvokeAsync<bool>(
-                "confirm",
-                "Unrestricted lets RunProcess start any program with your account "
-                + "permissions. The softshell stays off. Continue?");
-            if (!confirmed) return;
-        }
-
-        _commandAccess = mode;
-        await SaveAsync();
-    }
-
-    private void ResetShellDirectory()
-    {
-        Work.ResetShellDirectory(ChatService.Document?.Id);
-        _status = "Shell directory reset to the project root.";
-        StateHasChanged();
-    }
-
-    private async Task AddCommandAsync()
-    {
-        string executable = _newCommand.Trim();
-        if (executable.Length == 0) return;
-
-        string? resolved = McpCommandResolver.Resolve(executable);
-        if (resolved is null)
-        {
-            _commandStatus = $"'{executable}' was not found in PATH.";
-            return;
-        }
-
-        if (Path.GetExtension(resolved).ToLowerInvariant() is ".cmd" or ".bat" or ".ps1")
-        {
-            _commandStatus = $"'{executable}' is a batch or PowerShell shim; allow its native executable instead.";
-            return;
-        }
-
-        string name = _newCommandAlias.Trim();
-        if (name.Length == 0) name = Path.GetFileNameWithoutExtension(executable);
-        if (name.Length == 0) name = executable;
-        if (HasCommand(name))
-        {
-            _commandStatus = $"{name} is already allowed.";
-            return;
-        }
-
-        _allowedCommands.Add(new AllowedCommand
-        {
-            Name = name,
-            Executable = executable,
-            ArgumentsPrefix = SplitArguments(_newCommandArgs),
-            UsesNetwork = _newCommandNetwork,
-            Destructive = _newCommandDestructive,
-            AllowInterpreter = _newCommandInterpreter,
-        });
-
-        _newCommand = "";
-        _newCommandAlias = "";
-        _newCommandArgs = "";
-        _newCommandNetwork = false;
-        _newCommandDestructive = false;
-        _newCommandInterpreter = false;
-        _commandStatus = $"Added {name}.";
-        await AutoSaveAsync();
-    }
-
-    private async Task AddPresetAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_selectedPreset)) return;
-        AllowedCommand? preset = AllowedCommandPresets.Find(_selectedPreset);
-        _selectedPreset = "";
-        if (preset is null) return;
-
-        string? resolved = McpCommandResolver.Resolve(preset.Executable);
-        if (HasCommand(preset.Name))
-        {
-            _commandStatus = $"{preset.Name} is already allowed.";
-            return;
-        }
-
-        _allowedCommands.Add(preset with
-        {
-            ArgumentsPrefix = [.. preset.ArgumentsPrefix],
-        });
-        _commandStatus = resolved is null
-            ? $"{preset.Name} added, but it is not installed yet."
-            : $"Added {preset.Name}.";
-        await AutoSaveAsync();
-    }
-
-    private async Task RemoveCommandAsync(AllowedCommand command)
-    {
-        _allowedCommands.Remove(command);
-        _commandStatus = $"{command.Name} removed.";
-        await AutoSaveAsync();
-    }
-
-    private bool HasCommand(string name)
-    {
-        foreach (AllowedCommand existing in _allowedCommands)
-        {
-            if (existing.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
-
-    private static List<string> SplitArguments(string text)
-    {
-        var values = new List<string>();
-        var current = new System.Text.StringBuilder();
-        bool quoted = false;
-
-        foreach (char character in text ?? "")
-        {
-            if (character == '"')
-            {
-                quoted = !quoted;
-                continue;
-            }
-
-            if (!quoted && char.IsWhiteSpace(character))
-            {
-                if (current.Length == 0) continue;
-                values.Add(current.ToString());
-                current.Clear();
-                continue;
-            }
-
-            current.Append(character);
-        }
-
-        if (current.Length > 0) values.Add(current.ToString());
-        return values;
-    }
-
     private async Task AutoSaveAsync()
     {
         if (_saving) return;
@@ -1111,8 +792,6 @@
                     Skills = [.. projectSkills],
                     DisabledProjectSkills = disabledProjectSkills,
                     Contexts = [.. contexts],
-                    CommandAccess = _commandAccess,
-                    AllowedCommands = [.. _allowedCommands],
                     ToolPermissions = _toolPermissions,
                     DisabledTools = [.. _toolPermissions.Tools
                         .Where(pair => pair.Value == WorkToolPermission.Off)

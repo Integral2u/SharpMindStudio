@@ -85,6 +85,32 @@ public sealed class InferenceSettingsService
     public ToolPermissionSet? ModelTools(string? modelPath) =>
         string.IsNullOrWhiteSpace(modelPath) ? null : _store.ModelToolPermissions(modelPath);
 
+    public CommandAccessLayer SystemCommands => _store.SystemCommands;
+
+    public CommandAccessLayer? FamilyCommands(string? familyId) =>
+        string.IsNullOrWhiteSpace(familyId) ? null : _store.FamilyCommands(familyId);
+
+    public CommandAccessLayer? ModelCommands(string? modelPath) =>
+        string.IsNullOrWhiteSpace(modelPath) ? null : _store.ModelCommands(modelPath);
+
+    public void SetSystemCommands(CommandAccessLayer layer)
+    {
+        _store.SetSystemCommands(layer);
+        Changed?.Invoke();
+    }
+
+    public void SetFamilyCommands(string familyId, CommandAccessLayer layer)
+    {
+        _store.SetFamilyCommands(familyId, layer);
+        Changed?.Invoke();
+    }
+
+    public void SetModelCommands(string modelPath, CommandAccessLayer layer)
+    {
+        _store.SetModelCommands(modelPath, layer);
+        Changed?.Invoke();
+    }
+
     /// <summary>
     /// The model, family and session tool layers. The project and system layers
     /// are added by <c>StudioWorkService</c>, which owns the project's tool list.

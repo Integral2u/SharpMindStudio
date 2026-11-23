@@ -61,15 +61,8 @@ public sealed record WorkContext
 }
 
 /// <summary>
-/// Whether the project's command allowlist is enforced. Unrestricted is an
-/// explicit escape hatch for RunProcess; the softshell still requires a list.
+/// Whether the project's command allowlist is enforced. Null inherits System.
 /// </summary>
-public enum CommandAccessMode
-{
-    Restricted,
-    Unrestricted,
-}
-
 public sealed record WorkSettings
 {
     public const string CurrentSchema = "studio-work/1";
@@ -77,7 +70,7 @@ public sealed record WorkSettings
     public string Schema { get; init; } = CurrentSchema;
     public string? SystemPrompt { get; init; }
     public WorkPermissions Permissions { get; init; } = new();
-    public CommandAccessMode CommandAccess { get; init; } = CommandAccessMode.Restricted;
+    public CommandAccessMode? CommandAccess { get; init; }
     public List<string> DisabledSystemSkills { get; init; } = [];
     public List<string> EnabledSystemSkills { get; init; } = [];
     public List<string> DisabledProjectSkills { get; init; } = [];
@@ -88,6 +81,9 @@ public sealed record WorkSettings
 
     /// <summary>Executables the softshell and CLI wrappers may run for this project.</summary>
     public List<AllowedCommand> AllowedCommands { get; init; } = [];
+
+    /// <summary>Inherited command names this project removes.</summary>
+    public List<string> DisabledCommands { get; init; } = [];
 
     /// <summary>
     /// Per-tool permissions for this project. An empty set inherits the Studio
