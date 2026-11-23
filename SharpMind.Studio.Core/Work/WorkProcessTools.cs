@@ -88,7 +88,8 @@ public sealed class WorkProcessTools(
                 : commandLine;
 
             if (!await AllowedAsync(nameof(RunProcess), WorkToolCategory.Execute, cwd, detail))
-                return $"Permission denied: RunProcess may not run a program in '{cwd}' with the current project permission.";
+                return $"Permission denied: set RunProcess to Ask or Always under Enabled tools; "
+                    + $"if it is already Ask, set the Run permission for '{cwd}' to Ask or Always.";
 
             var used = new List<SecretUse>();
             var expanded = new List<string>();

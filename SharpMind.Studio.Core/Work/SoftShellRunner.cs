@@ -150,8 +150,9 @@ public sealed class SoftShellRunner(
                         .ConfigureAwait(false))
                 {
                     return PipelineResult.Failed(
-                        $"Permission denied for '{executable}'. Set the context's Run permission to "
-                        + "Ask or Always, and keep RunShell on Ask or Always.");
+                        $"Permission denied for '{executable}'. Set RunShell to Ask or Always "
+                        + "under Enabled tools. If it is already Ask, set the context's Run "
+                        + "permission to Ask or Always.");
                 }
 
                 if (executable == "cd")

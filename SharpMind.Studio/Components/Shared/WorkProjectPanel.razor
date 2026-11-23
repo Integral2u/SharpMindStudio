@@ -257,6 +257,13 @@
                 </p>
                 <ToolPermissionEditor Value="_toolPermissions" ValueChanged="OnToolPermissionsChanged"
                                       AllowInherit="true" Effective="ProjectToolsEffective" />
+                @if (Work.ProjectToolPermission("RunShell") == WorkToolPermission.Never)
+                {
+                    <div class="note">
+                        <strong>RunShell is set to Never.</strong> Change it to Ask or Always here;
+                        the context's Run permission alone will not enable the softshell.
+                    </div>
+                }
                 <p class="small faint">
                     <strong>Internal</strong> tools ship with Studio and honour the project gate.
                     <strong>Plugin</strong> tools run their own code: Studio can hide them and can

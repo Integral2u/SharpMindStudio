@@ -225,6 +225,7 @@ public sealed class StudioWorkService : IDisposable
         if (embeddedDisabled is { Count: > 0 })
             builder.DisabledTools.UnionWith(embeddedDisabled);
         CommandPolicy? commandPolicy = null;
+        var availableWrappers = new List<string>();
         EffectiveCommandAccess commandAccess = ResolveCommandAccess(
             familyId, modelPath, sessionCommands);
         bool unrestricted = commandAccess.IsUnrestricted;
@@ -253,11 +254,20 @@ public sealed class StudioWorkService : IDisposable
             // available because they use fixed argv; the user can still turn
             // each one off under Enabled tools.
             if (Available("git"))
+            {
                 builder.WithTools(new GitCliTools(cliRunner));
+                availableWrappers.Add("git_*");
+            }
             if (Available("dotnet"))
+            {
                 builder.WithTools(new DotnetCliTools(cliRunner));
+                availableWrappers.Add("dotnet_*");
+            }
             if (Available("rg"))
+            {
                 builder.WithTools(new RipgrepCliTools(cliRunner));
+                availableWrappers.Add("rg_*");
+            }
 
             builder.WithTools(new WorkFileTools(
                 _workspace.Project.Root,
@@ -300,8 +310,12 @@ public sealed class StudioWorkService : IDisposable
                 "Never claim a file was read, created, changed or deleted unless the tool result says it succeeded.");
             if (commandPolicy is { IsEmpty: false })
             {
+                string wrapperHint = availableWrappers.Count > 0
+                    ? "Prefer an enabled CLI wrapper (" + string.Join(", ", availableWrappers)
+                        + ") over a generic shell or built-in tool when it fits. "
+                    : "";
                 builder.WithCustomRule(
-                    "Prefer an enabled CLI wrapper (git_*, dotnet_*, rg_*) over a generic shell or built-in tool when it fits. "
+                    wrapperHint
                     + "Use the file tools for reading and editing files. Allowed shell commands: "
                     + commandPolicy.AllowedNames + ".");
             }
@@ -735,12 +749,22 @@ public sealed class StudioWorkService : IDisposable
             : commandPolicy?.Contains(name) == true;
 
         var wrapperTools = new List<object>();
+        var availableWrappers = new List<string>();
         if (Available("git"))
+        {
             wrapperTools.Add(new GitCliTools(cliRunner));
+            availableWrappers.Add("git_*");
+        }
         if (Available("dotnet"))
+        {
             wrapperTools.Add(new DotnetCliTools(cliRunner));
+            availableWrappers.Add("dotnet_*");
+        }
         if (Available("rg"))
+        {
             wrapperTools.Add(new RipgrepCliTools(cliRunner));
+            availableWrappers.Add("rg_*");
+        }
         if (commandPolicy is { IsEmpty: false })
         {
             wrapperTools.Add(new SoftShellTools(new SoftShellRunner(
@@ -791,8 +815,12 @@ public sealed class StudioWorkService : IDisposable
         builder.WithCustomRule(rules);
         if (commandPolicy is { IsEmpty: false })
         {
+            string wrapperHint = availableWrappers.Count > 0
+                ? "Prefer an enabled CLI wrapper (" + string.Join(", ", availableWrappers)
+                    + ") over the generic shell or a built-in tool when it fits. "
+                : "";
             builder.WithCustomRule(
-                "Prefer an enabled CLI wrapper (git_*, dotnet_*, rg_*) over the generic shell or a built-in tool when it fits. "
+                wrapperHint
                 + "Use the file tools for reading and editing files. Allowed shell commands: "
                 + commandPolicy.AllowedNames + ".");
         }

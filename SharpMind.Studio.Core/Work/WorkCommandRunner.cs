@@ -150,8 +150,9 @@ public sealed class WorkCommandRunner(
         if (!await permission(access).ConfigureAwait(false))
         {
             return WorkCommandResult.Failed(
-                $"Permission denied for {toolName}. Set the context's Run permission to Ask or "
-                + $"Always, and keep {toolName} on Ask or Always.");
+                $"Permission denied for {toolName}. Set {toolName} to Ask or Always under "
+                + "Enabled tools. If it is already Ask, set the context's Run permission to "
+                + "Ask or Always.");
         }
 
         ProcessStartInfo startInfo;
