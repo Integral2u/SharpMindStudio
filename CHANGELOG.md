@@ -89,6 +89,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Stray folders under `runs` no longer break Home, Test or startup.** The run
+  catalog now lists only directories that contain `events.jsonl`; a folder made
+  by a shell test or by hand is ignored instead of throwing a missing event
+  stream. This was why the desktop shell could report that Studio did not become
+  ready while the server log showed a `/test` exception.
+- **New Work projects prompt for Run instead of silently refusing.** The default
+  context starts with Execute = Ask, so the first command shows the normal
+  Deny/Allow/Allow always prompt. Existing projects keep their saved Run setting,
+  and the Command line panel offers a one-click Ask setup when a tool or the
+  context is still blocked.
 - **Image attachments use a maintained decoder.** SixLabors.ImageSharp 3.1.7
   carried several high-severity decoder advisories, and the patched 3.x release
   requires a build-time Six Labors licence key. Image decoding and resizing now

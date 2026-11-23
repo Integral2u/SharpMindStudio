@@ -27,10 +27,10 @@ public sealed record WorkPermissions
     public WorkPermission Web { get; init; } = WorkPermission.Never;
 
     /// <summary>
-    /// Running a program. Never by default: nothing executes in a project until
-    /// someone turns it on for that folder.
+    /// Running a program. Ask by default: the first command prompts, and the
+    /// person can remember that choice for this folder.
     /// </summary>
-    public WorkPermission Execute { get; init; } = WorkPermission.Never;
+    public WorkPermission Execute { get; init; } = WorkPermission.Ask;
 
     public WorkPermission For(WorkToolCategory category) => category switch
     {

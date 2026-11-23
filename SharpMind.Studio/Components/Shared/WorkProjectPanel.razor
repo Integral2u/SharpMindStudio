@@ -293,7 +293,7 @@
         public WorkPermission Read { get; set; } = WorkPermission.Ask;
         public WorkPermission Write { get; set; } = WorkPermission.Ask;
         public WorkPermission Delete { get; set; } = WorkPermission.Never;
-        public WorkPermission Execute { get; set; } = WorkPermission.Never;
+        public WorkPermission Execute { get; set; } = WorkPermission.Ask;
     }
 
     private sealed class ProjectSkillDraft

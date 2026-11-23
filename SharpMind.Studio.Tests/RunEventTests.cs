@@ -152,5 +152,31 @@ public sealed class RunEventTests
         var store = new RunStore(temp.Combine("runs"));
         Assert.Throws<DirectoryNotFoundException>(() => store.Open("does-not-exist"));
     }
+
+    [Fact]
+    public async Task List_IgnoresDirectoriesWithoutAnEventStream()
+    {
+        using var temp = new TempDirectory();
+        var store = new RunStore(temp.Combine("runs"));
+        RunHandle run = store.Create("model-bench", "tiny");
+        await using (var writer = run.OpenWriter())
+        {
+            await writer.WriteAsync(new RunStarted
+            {
+                RunId = run.RunId,
+                Kind = "model-bench",
+                Subject = "tiny.gguf",
+                Device = "test",
+            });
+        }
+
+        Directory.CreateDirectory(Path.Combine(store.RunsRoot, "softshell-dir"));
+
+        RunHandle listed = Assert.Single(store.List());
+        Assert.Equal(run.RunId, listed.RunId);
+
+        IReadOnlyList<RunSummary> summaries = await RunCatalog.ListAsync(store);
+        Assert.Single(summaries);
+    }
 }
 

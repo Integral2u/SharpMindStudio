@@ -25,6 +25,9 @@ public sealed class RunStore
         string runId = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{slug}-{Guid.NewGuid().ToString("n")[..8]}";
         string directory = Path.Combine(RunsRoot, runId);
         Directory.CreateDirectory(directory);
+        // A run folder exists only when it has an event stream; create the empty
+        // file now so the catalog can distinguish a new run from a stray folder.
+        using (File.Create(Path.Combine(directory, EventsFileName))) { }
         return new RunHandle(runId, directory);
     }
 
@@ -62,6 +65,7 @@ public sealed class RunStore
         if (!Directory.Exists(RunsRoot)) return [];
 
         return [.. Directory.EnumerateDirectories(RunsRoot)
+            .Where(path => File.Exists(Path.Combine(path, EventsFileName)))
             .Select(path => new RunHandle(Path.GetFileName(path), path))
             .OrderByDescending(handle => handle.RunId, StringComparer.Ordinal)];
     }
