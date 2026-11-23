@@ -55,8 +55,9 @@
     {
         <div class="note">
             <strong>Unrestricted.</strong> RunProcess may start any program with your account
-            permissions for this scope, and the allowlist is ignored. The softshell is off because
-            it requires an allowlist.
+            permissions for this scope, and the allowlist is ignored. Unrestricted does not bypass
+            the RunProcess tool permission or the context's Run permission. The softshell is off
+            because it requires an allowlist.
         </div>
     }
 
@@ -73,6 +74,19 @@
             <strong>RunShell is set to Never.</strong> Change it to Ask or Always under Enabled
             tools; the context's Run permission alone is not enough.
         </div>
+    }
+    @if (Scope == "project" && Unrestricted && (NoContextCanRun || RunProcessIsNever))
+    {
+        <div class="note">
+            <strong>RunProcess is still blocked.</strong> Unrestricted removes the allowlist, but
+            the RunProcess tool permission and the context's Run permission still apply.
+        </div>
+    }
+    @if (Scope == "project" && (NoContextCanRun || (Unrestricted ? RunProcessIsNever : RunShellIsNever)))
+    {
+        <button type="button" class="button" @onclick="GrantRun">
+            Set command tools and Run to Ask
+        </button>
     }
 
     @if (ShowShellDirectory)
@@ -222,6 +236,10 @@
     private bool RunShellIsNever =>
         string.Equals(Scope, "project", StringComparison.OrdinalIgnoreCase) &&
         Work.ProjectToolPermission("RunShell") == WorkToolPermission.Never;
+
+    private bool RunProcessIsNever =>
+        string.Equals(Scope, "project", StringComparison.OrdinalIgnoreCase) &&
+        Work.ProjectToolPermission("RunProcess") == WorkToolPermission.Never;
 
     protected override void OnParametersSet()
     {
@@ -397,6 +415,13 @@
     private void ResetShellDirectory()
     {
         Work.ResetShellDirectory(Chat.Document?.Id);
+        StateHasChanged();
+    }
+
+    private void GrantRun()
+    {
+        Work.GrantCommandRunForProject();
+        _status = "Command tools and context Run permission set to Ask.";
         StateHasChanged();
     }
 

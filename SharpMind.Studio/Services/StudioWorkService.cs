@@ -191,6 +191,54 @@ public sealed class StudioWorkService : IDisposable
         Notify();
     }
 
+    /// <summary>
+    /// One explicit setup action for the command tools: keep explicit Off
+    /// choices, turn Never into Ask, and grant Ask on contexts that are Never.
+    /// </summary>
+    public void GrantCommandRunForProject()
+    {
+        string[] commandTools =
+        [
+            "RunShell", "RunProcess",
+            "git_status", "git_diff", "git_log",
+            "dotnet_build", "dotnet_test", "rg_search",
+        ];
+
+        var tools = new Dictionary<string, WorkToolPermission>(
+            _settings.ToolPermissions.Tools, StringComparer.OrdinalIgnoreCase);
+        foreach (string name in commandTools)
+        {
+            if (!tools.TryGetValue(name, out WorkToolPermission current))
+                tools[name] = WorkToolPermission.Ask;
+            else if (current == WorkToolPermission.Never)
+                tools[name] = WorkToolPermission.Ask;
+        }
+
+        var contexts = _settings.Contexts
+            .Select(context => context with
+            {
+                Permissions = context.Permissions with
+                {
+                    Execute = context.Permissions.Execute == WorkPermission.Never
+                        ? WorkPermission.Ask
+                        : context.Permissions.Execute,
+                },
+            })
+            .ToList();
+
+        Save(_settings with
+        {
+            Contexts = contexts,
+            ToolPermissions = new ToolPermissionSet
+            {
+                Tools = tools,
+                Groups = new Dictionary<string, WorkToolPermission>(
+                    _settings.ToolPermissions.Groups, StringComparer.OrdinalIgnoreCase),
+            },
+        }, _memory);
+        Notify();
+    }
+
     public IAgentBuilder? CreateAgent(
         string mode,
         float? temperature = null,

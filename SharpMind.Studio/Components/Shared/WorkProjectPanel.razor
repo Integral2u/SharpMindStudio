@@ -262,6 +262,12 @@
                     <div class="note">
                         <strong>RunShell is set to Never.</strong> Change it to Ask or Always here;
                         the context's Run permission alone will not enable the softshell.
+                        <div style="margin-top:.4rem;">
+                            <button type="button" class="button"
+                                    @onclick="() => Work.GrantCommandRunForProject()">
+                                Set command tools and Run to Ask
+                            </button>
+                        </div>
                     </div>
                 }
                 <p class="small faint">

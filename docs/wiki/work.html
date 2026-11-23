@@ -227,6 +227,8 @@
                 Unrestricted because its boundary is the allowlist; the CLI wrappers remain
                 available when installed, and each one can still be turned off under
                 <strong>Enabled tools</strong>. Switching to Unrestricted asks for confirmation.
+                Unrestricted removes the allowlist only: the RunProcess tool permission and the
+                context's <strong>Run</strong> permission still apply.
             </p>
             <p>
                 Allowlists inherit down the same chain. A lower layer can add commands for its own
@@ -240,8 +242,8 @@
                 wrappers also need the context's <strong>Run</strong> permission and a tool
                 permission of <strong>Ask</strong> or <strong>Always</strong>. If either is
                 <strong>Never</strong>, the call is refused before the program starts. The Project
-                Command line panel warns when no context can run or when
-                <span class="mono">RunShell</span> is set to Never.
+                Command line panel warns when a gate is blocking and offers
+                <strong>Set command tools and Run to Ask</strong>.
             </p>
             <p>
                 Curated wrappers take precedence over the generic shell when the matching
