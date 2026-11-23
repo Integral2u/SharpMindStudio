@@ -352,6 +352,30 @@ public sealed class WorkSettingsStoreTests
     }
 
     [Fact]
+    public void SaveAndLoad_RoundTripsCommandAccess()
+    {
+        using var temp = new TempDirectory();
+        var store = new WorkSettingsStore(temp.Path);
+        store.Save(new WorkSettings { CommandAccess = CommandAccessMode.Unrestricted });
+
+        WorkSettings loaded = store.Load();
+
+        Assert.Equal(CommandAccessMode.Unrestricted, loaded.CommandAccess);
+    }
+
+    [Fact]
+    public void Load_DefaultsCommandAccessToRestricted()
+    {
+        using var temp = new TempDirectory();
+        var store = new WorkSettingsStore(temp.Path);
+        store.Save(new WorkSettings());
+
+        WorkSettings loaded = store.Load();
+
+        Assert.Equal(CommandAccessMode.Restricted, loaded.CommandAccess);
+    }
+
+    [Fact]
     public void Load_AddsTheProjectRootContextWhenMissing()
     {
         using var temp = new TempDirectory();
@@ -600,5 +624,51 @@ public sealed class WorkProcessToolsTests
         string result = await tools.RunProcess("cmd", "/c echo hi", "../");
 
         Assert.Contains("outside the allowed project locations", result);
+    }
+
+    [Fact]
+    public async Task RestrictedEmptyPolicy_RefusesEveryProgram()
+    {
+        using var temp = new TempDirectory();
+        var policy = new CommandPolicy([], temp.Path);
+        var tools = new WorkProcessTools(
+            temp.Path, [temp.Path], _ => Task.FromResult(true), policy: policy);
+
+        string result = await tools.RunProcess("cmd", "/c echo hello");
+
+        Assert.Contains("No commands are allowed", result);
+        Assert.DoesNotContain("hello", result);
+    }
+
+    [Fact]
+    public async Task RestrictedPolicy_RefusesAnUnlistedProgram()
+    {
+        using var temp = new TempDirectory();
+        var policy = new CommandPolicy(
+            [new AllowedCommand { Name = "dotnet", Executable = "dotnet" }],
+            temp.Path);
+        var tools = new WorkProcessTools(
+            temp.Path, [temp.Path], _ => Task.FromResult(true), policy: policy);
+
+        string result = await tools.RunProcess("cmd", "/c echo hello");
+
+        Assert.Contains("not in the allowed list", result);
+    }
+
+    [Fact]
+    public async Task WorkingDirectory_DefaultsToTheSessionDirectory()
+    {
+        using var temp = new TempDirectory();
+        string sub = temp.Combine("sub");
+        Directory.CreateDirectory(sub);
+        var tools = new WorkProcessTools(
+            temp.Path,
+            [temp.Path],
+            _ => Task.FromResult(true),
+            currentDirectory: () => sub);
+
+        string result = await tools.RunProcess("cmd", "/c cd");
+
+        Assert.Contains(sub, result);
     }
 }

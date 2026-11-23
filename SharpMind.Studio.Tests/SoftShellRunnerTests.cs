@@ -202,16 +202,95 @@ public sealed class SoftShellRunnerTests
         Assert.Contains("Timed out", result);
     }
 
+    [Fact]
+    public async Task Run_CdPersistsForTheSessionAndStartsANewSessionAtTheRoot()
+    {
+        using var temp = new TempDirectory();
+        Directory.CreateDirectory(temp.Combine("sub"));
+        var store = new WorkShellDirectoryStore();
+        var paths = new WorkPathPolicy(temp.Path, [temp.Path]);
+        var session = new WorkShellDirectory(store, "session-a", paths);
+        SoftShellRunner runner = Runner(temp, directory: session);
+
+        await runner.RunAsync("cd sub");
+
+        string sameSession = await runner.RunAsync("pwd");
+        string subPath = Path.Combine(temp.Path, "sub");
+        Assert.Contains(subPath, sameSession);
+
+        var otherSession = new WorkShellDirectory(store, "session-b", paths);
+        string freshSession = await Runner(temp, directory: otherSession).RunAsync("pwd");
+        Assert.Contains(temp.Path, freshSession);
+        Assert.DoesNotContain(subPath, freshSession);
+    }
+
+    [Fact]
+    public async Task Run_ExplicitWorkingDirectoryIsOneOffWhileCdPersists()
+    {
+        using var temp = new TempDirectory();
+        Directory.CreateDirectory(temp.Combine("sub"));
+        var paths = new WorkPathPolicy(temp.Path, [temp.Path]);
+        var session = new WorkShellDirectory(new WorkShellDirectoryStore(), "session", paths);
+        SoftShellRunner runner = Runner(temp, directory: session);
+
+        await runner.RunAsync("cd sub");
+
+        string oneOff = await runner.RunAsync("pwd", workingDirectory: "..");
+        string subPath = Path.Combine(temp.Path, "sub");
+        Assert.DoesNotContain(subPath, oneOff);
+
+        string persisted = await runner.RunAsync("pwd");
+        Assert.Contains(subPath, persisted);
+    }
+
+    [Fact]
+    public async Task Run_CdPersistsWhenALaterCommandFails()
+    {
+        using var temp = new TempDirectory();
+        Directory.CreateDirectory(temp.Combine("sub"));
+        var paths = new WorkPathPolicy(temp.Path, [temp.Path]);
+        var session = new WorkShellDirectory(new WorkShellDirectoryStore(), "session", paths);
+        SoftShellRunner runner = Runner(temp, directory: session);
+
+        await runner.RunAsync("cd sub && helper exit 3");
+        string result = await runner.RunAsync("pwd");
+
+        Assert.Contains(Path.Combine(temp.Path, "sub"), result);
+    }
+
+    [Fact]
+    public async Task Run_DeletedSessionDirectoryFallsBackToTheRoot()
+    {
+        using var temp = new TempDirectory();
+        string sub = temp.Combine("sub");
+        Directory.CreateDirectory(sub);
+        var store = new WorkShellDirectoryStore();
+        var paths = new WorkPathPolicy(temp.Path, [temp.Path]);
+        var session = new WorkShellDirectory(store, "session", paths);
+        SoftShellRunner runner = Runner(temp, directory: session);
+
+        await runner.RunAsync("cd sub");
+        Directory.Delete(sub);
+
+        string result = await runner.RunAsync("pwd");
+
+        Assert.Contains(temp.Path, result);
+        Assert.DoesNotContain(sub, result);
+        Assert.Null(store.Get("session"));
+    }
+
     private static SoftShellRunner Runner(
         TempDirectory temp,
         ISecretResolver? secrets = null,
-        Func<WorkToolAccess, Task<bool>>? permission = null)
+        Func<WorkToolAccess, Task<bool>>? permission = null,
+        WorkShellDirectory? directory = null)
     {
         var policy = new CommandPolicy([ShellHelper.Command()], temp.Path);
         return new SoftShellRunner(
             new WorkPathPolicy(temp.Path, [temp.Path]),
             policy,
             permission ?? (_ => Task.FromResult(true)),
-            secrets);
+            secrets,
+            directory);
     }
 }

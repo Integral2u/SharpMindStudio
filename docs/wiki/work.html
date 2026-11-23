@@ -191,14 +191,34 @@
                 kills the process tree.
             </p>
             <p>
+                The working directory belongs to the Work session. <span class="mono">cd</span>
+                persists across <span class="mono">RunShell</span> calls, a new session or a new
+                project starts at the project root, and deleting the directory falls back to the
+                root. The Command line panel shows the shell directory and offers
+                <strong>Reset</strong>. Wrappers and <span class="mono">RunProcess</span> start in
+                that directory too, unless the call names another
+                <span class="mono">workingDirectory</span>; that override applies to one call and
+                does not replace the session directory.
+            </p>
+            <p>
+                <strong>Command access</strong> has two modes. <strong>Restricted</strong> is the
+                default: only allowlisted programs can run, and an empty allowlist refuses every
+                external command, including <span class="mono">RunProcess</span>.
+                <strong>Unrestricted</strong> ignores the allowlist and lets
+                <span class="mono">RunProcess</span> start any program. The softshell stays off in
+                Unrestricted because its boundary is the allowlist; the CLI wrappers remain
+                available when installed, and each one can still be turned off under
+                <strong>Enabled tools</strong>. Switching to Unrestricted asks for confirmation.
+            </p>
+            <p>
                 Curated wrappers take precedence over the generic shell when the matching
                 executable is allowed: <span class="mono">git_status</span>,
                 <span class="mono">git_diff</span>, <span class="mono">git_log</span>,
                 <span class="mono">dotnet_build</span>, <span class="mono">dotnet_test</span>
                 and <span class="mono">rg_search</span>. They use argv rather than the parser
                 and are the better choice for routine repository, build and search work.
-                <span class="mono">RunProcess</span> remains available, and when the
-                allowlist is not empty it must resolve through the same policy.
+                <span class="mono">RunProcess</span> follows the same mode: Restricted requires
+                an allowlist entry, while Unrestricted can start any program.
             </p>
 
             <h3 id="secrets">Secrets in commands</h3>
@@ -250,7 +270,8 @@
                 allowed folder once that folder's <strong>Run</strong> permission is Ask or Always;
                 it is Never by default, passes arguments without a shell, and kills the tree on
                 timeout. It runs real code with your account's permissions, so Studio gates the
-                command, not everything the program touches.
+                command, not everything the program touches. Keep Command access on
+                <strong>Restricted</strong> unless you deliberately need to run unlisted programs.
             </div>
 
             <h2 id="providers">Model providers</h2>
@@ -283,6 +304,7 @@
                 <li>Start with read-only context. Add write after the model has shown it understands the project.</li>
                 <li>Leave delete off for source trees, model folders and anything under version control.</li>
                 <li>Keep secrets out of context locations; the model can read every file it is given.</li>
+                <li>Keep Command access on <strong>Restricted</strong>. Unrestricted lets <span class="mono">RunProcess</span> start any program with your account permissions.</li>
                 <li>The send gate exists to stop a broken tool probe from becoming a silent failure. Fix the probe rather than bypassing it.</li>
                 <li>Review remote-model prompts: OpenRouter sees the conversation and any tool output you send.</li>
             </ul>

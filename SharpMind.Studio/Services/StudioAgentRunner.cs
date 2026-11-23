@@ -50,7 +50,8 @@ public sealed class StudioAgentRunner
         LoadedStudioModel? current,
         ResolvedInference? currentProfile,
         CancellationToken cancellationToken = default,
-        int depth = 0)
+        int depth = 0,
+        string? sessionId = null)
     {
         ArgumentNullException.ThrowIfNull(agent);
         ArgumentException.ThrowIfNullOrWhiteSpace(task);
@@ -85,7 +86,7 @@ public sealed class StudioAgentRunner
 
         try
         {
-            IAgentBuilder? tools = _work.CreateAgentTools(agent);
+            IAgentBuilder? tools = _work.CreateAgentTools(agent, sessionId: sessionId);
             if (tools is AgentBuilder builder)
             {
                 builder.WithAdditionalSystemPrompt(AgentPromptText.DelegatedTask);
@@ -96,7 +97,7 @@ public sealed class StudioAgentRunner
                     ?? _plugins.FindCompactor(_theme.PluginCompactor);
             }
 
-            AddNestedDelegate(tools, agent, loaded, profile, depth, cancellationToken);
+            AddNestedDelegate(tools, agent, loaded, profile, depth, cancellationToken, sessionId);
             IChatSession session = CreateSession(loaded, profile, agent, tools);
             try
             {
@@ -155,7 +156,8 @@ public sealed class StudioAgentRunner
         LoadedStudioModel loaded,
         ResolvedInference profile,
         int depth,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? sessionId)
     {
         if (tools is null || depth >= _agents.MaxDepth || !_work.IsToolEnabled("delegate"))
             return;
@@ -208,7 +210,13 @@ public sealed class StudioAgentRunner
                 if (string.IsNullOrWhiteSpace(task))
                     return "[delegate needs a task]";
                 return await RunAsync(
-                    child, task, loaded, profile, cancellationToken, depth + 1)
+                    child,
+                    task,
+                    loaded,
+                    profile,
+                    cancellationToken,
+                    depth + 1,
+                    sessionId)
                     .ConfigureAwait(false);
             });
     }

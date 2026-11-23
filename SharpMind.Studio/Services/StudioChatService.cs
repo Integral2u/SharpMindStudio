@@ -1143,7 +1143,8 @@ public sealed class StudioChatService : IAsyncDisposable
             ToolProfile(),
             BuildToolCallFilter(),
             embedded.Tools,
-            embedded.Disabled);
+            embedded.Disabled,
+            _document?.Id);
         ChatMessage userMessage = ChatMessage.User(text, "You");
         userMessage.Artifacts = artifacts?.ToArray();
         _document.Messages.Add(userMessage);
@@ -1775,7 +1776,8 @@ public sealed class StudioChatService : IAsyncDisposable
             ToolProfile(),
             BuildToolCallFilter(),
             embedded.Tools,
-            embedded.Disabled);
+            embedded.Disabled,
+            _document?.Id);
         if (agent is AgentBuilder builder)
         {
             builder.PluginCompactors = _plugins.Compactors;
@@ -1957,7 +1959,13 @@ public sealed class StudioChatService : IAsyncDisposable
         try
         {
             string result = await _agentRunner
-                .RunAsync(definition, task, _loaded, _resolved, cancellationToken)
+                .RunAsync(
+                    definition,
+                    task,
+                    _loaded,
+                    _resolved,
+                    cancellationToken,
+                    sessionId: _document?.Id)
                 .ConfigureAwait(false);
             return ToolRequestResult.Handled(result);
         }

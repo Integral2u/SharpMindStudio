@@ -47,8 +47,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   arguments; shells are never allowed and interpreters need an explicit flag.
   Typed wrappers (`git_status`, `git_diff`, `git_log`, `dotnet_build`,
   `dotnet_test`, `rg_search`) are registered ahead of the generic shell when the
-  matching executable is allowed. `RunProcess` uses the same policy once the
-  allowlist is non-empty.
+  matching executable is allowed. `cd` persists across calls in a Work session;
+  a new session or project starts at the root. Wrappers and `RunProcess` start
+  in that directory unless the call overrides it. Command access is
+  **Restricted** by default: an empty allowlist refuses every external command,
+  and `RunProcess` must resolve through the policy. **Unrestricted** is an
+  explicit project toggle that ignores the allowlist for `RunProcess`; the
+  softshell stays off, while installed wrappers remain available and can be
+  disabled individually under Enabled tools.
 - **Vault for named secrets.** Settings → Vault keeps API keys, host tokens,
   SSH passwords, passphrases and Docker Hub tokens under a name. Values are
   encrypted on this PC for your Windows account and are write-only after saving.

@@ -243,21 +243,66 @@
                         <div class="eyebrow">Execution</div>
                         <h3>Command line</h3>
                     </div>
-                    <span class="small faint">@_allowedCommands.Count allowed</span>
+                    <span class="small faint">
+                        @(Unrestricted ? "allowlist off" : $"{_allowedCommands.Count} allowed")
+                    </span>
                 </div>
+
+                <div class="row" style="margin-top:.35rem;align-items:center;gap:.4rem;">
+                    <span class="small faint">Command access</span>
+                    <button type="button"
+                            class="button @(_commandAccess == CommandAccessMode.Restricted ? "primary" : "")"
+                            @onclick="() => SetCommandAccessAsync(CommandAccessMode.Restricted)">
+                        Restricted
+                    </button>
+                    <button type="button"
+                            class="button @(_commandAccess == CommandAccessMode.Unrestricted ? "primary" : "")"
+                            @onclick="() => SetCommandAccessAsync(CommandAccessMode.Unrestricted)">
+                        Unrestricted
+                    </button>
+                </div>
+
                 <p class="small faint">
-                    The softshell runs only the commands listed here. It parses pipes,
+                    Restricted runs only the commands listed here. The softshell parses pipes,
                     redirection and <span class="mono">&amp;&amp;</span>/<span class="mono">||</span>
                     itself and never starts PowerShell or cmd. This is a guardrail, not a
                     sandbox: an allowed program still has your account permissions.
                 </p>
+
+                @if (Unrestricted)
+                {
+                    <div class="note">
+                        <strong>Unrestricted.</strong> RunProcess may start any program with your
+                        account permissions, and the allowlist is ignored. The softshell is off
+                        because it requires an allowlist. CLI wrappers remain available when
+                        installed; turn individual wrappers off under Enabled tools.
+                    </div>
+                }
+
+                <div class="row" style="margin-top:.45rem;align-items:center;gap:.5rem;">
+                    <span class="small faint">Shell directory</span>
+                    <span class="mono small" style="flex:1;overflow-wrap:anywhere;">@ShellDirectory</span>
+                    <button type="button" class="button" @onclick="ResetShellDirectory"
+                            disabled="@(string.Equals(ShellDirectory, Workspace.Project.Root, StringComparison.OrdinalIgnoreCase))">
+                        Reset
+                    </button>
+                </div>
+                <div class="small faint">
+                    cd persists across RunShell calls in this session. A new session starts at the
+                    project root.
+                </div>
+
                 @if (_allowedCommands.Count == 0)
                 {
-                    <div class="small faint">No commands allowed yet.</div>
+                    <div class="small faint" style="margin-top:.45rem;">
+                        @(Unrestricted
+                            ? "No commands are listed. RunProcess is unrestricted anyway."
+                            : "No commands allowed. RunProcess and the softshell refuse external commands.")
+                    </div>
                 }
                 else
                 {
-                    <div class="work-contexts">
+                    <div class="work-contexts" style="margin-top:.45rem;@(Unrestricted ? "opacity:.55;" : "")">
                         @foreach (AllowedCommand command in _allowedCommands)
                         {
                             <div class="work-context" style="align-items:flex-start;">
@@ -272,7 +317,8 @@
                                     <div class="small faint">@CapabilityLabel(command)</div>
                                 </div>
                                 <button type="button" class="button danger"
-                                        @onclick="() => RemoveCommandAsync(command)">
+                                        @onclick="() => RemoveCommandAsync(command)"
+                                        disabled="@Unrestricted">
                                     Remove
                                 </button>
                             </div>
@@ -281,31 +327,32 @@
                 }
                 <div class="row" style="margin-top:.5rem;align-items:center;gap:.4rem;">
                     <input class="input" style="max-width:11rem;" placeholder="git"
-                           @bind="_newCommand" />
+                           @bind="_newCommand" disabled="@Unrestricted" />
                     <input class="input" style="max-width:9rem;" placeholder="alias (optional)"
-                           @bind="_newCommandAlias" />
+                           @bind="_newCommandAlias" disabled="@Unrestricted" />
                     <input class="input" style="max-width:14rem;" placeholder="fixed arguments"
-                           @bind="_newCommandArgs" />
+                           @bind="_newCommandArgs" disabled="@Unrestricted" />
                     <button type="button" class="button" @onclick="AddCommandAsync"
-                            disabled="@string.IsNullOrWhiteSpace(_newCommand)">
+                            disabled="@(Unrestricted || string.IsNullOrWhiteSpace(_newCommand))">
                         Add command
                     </button>
                 </div>
                 <div class="row" style="margin-top:.35rem;align-items:center;gap:.6rem;">
                     <label class="small faint">
-                        <input type="checkbox" @bind="_newCommandNetwork" /> network
+                        <input type="checkbox" @bind="_newCommandNetwork" disabled="@Unrestricted" /> network
                     </label>
                     <label class="small faint">
-                        <input type="checkbox" @bind="_newCommandDestructive" /> destructive
+                        <input type="checkbox" @bind="_newCommandDestructive" disabled="@Unrestricted" /> destructive
                     </label>
                     <label class="small faint">
-                        <input type="checkbox" @bind="_newCommandInterpreter" /> interpreter
+                        <input type="checkbox" @bind="_newCommandInterpreter" disabled="@Unrestricted" /> interpreter
                     </label>
                 </div>
                 <div class="row" style="margin-top:.35rem;align-items:center;gap:.5rem;">
                     <label class="small faint" for="command-preset">Start from a preset</label>
                     <select id="command-preset" class="input" style="max-width:12rem;"
-                            @bind="_selectedPreset" @bind:after="AddPresetAsync">
+                            @bind="_selectedPreset" @bind:after="AddPresetAsync"
+                            disabled="@Unrestricted">
                         <option value="">Choose...</option>
                         @foreach (AllowedCommand preset in AllowedCommandPresets.All)
                         {
@@ -382,6 +429,7 @@
     private HashSet<string> _enabledSystemSkills = new(StringComparer.OrdinalIgnoreCase);
     private ToolPermissionSet _toolPermissions = new();
     private WorkPermission _web = WorkPermission.Never;
+    private CommandAccessMode _commandAccess = CommandAccessMode.Restricted;
     private List<AllowedCommand> _allowedCommands = [];
     private string _newCommand = "";
     private string _newCommandAlias = "";
@@ -391,6 +439,10 @@
     private bool _newCommandInterpreter;
     private string _selectedPreset = "";
     private string? _commandStatus;
+
+    private bool Unrestricted => _commandAccess == CommandAccessMode.Unrestricted;
+
+    private string ShellDirectory => Work.GetShellDirectory(ChatService.Document?.Id);
 
     protected override void OnInitialized()
     {
@@ -448,6 +500,7 @@
         _systemPrompt = Work.Settings.SystemPrompt ?? "";
         _memory = Work.Memory;
         _web = Work.Settings.Permissions.Web;
+        _commandAccess = Work.Settings.CommandAccess;
         _allowedCommands = [.. Work.Settings.AllowedCommands];
         _disabledSystemSkills = new HashSet<string>(
             Work.Settings.DisabledSystemSkills, StringComparer.OrdinalIgnoreCase);
@@ -805,6 +858,30 @@
         return parts.Count == 0 ? "local only" : string.Join(" · ", parts);
     }
 
+    private async Task SetCommandAccessAsync(CommandAccessMode mode)
+    {
+        if (_commandAccess == mode) return;
+
+        if (mode == CommandAccessMode.Unrestricted)
+        {
+            bool confirmed = await JS.InvokeAsync<bool>(
+                "confirm",
+                "Unrestricted lets RunProcess start any program with your account "
+                + "permissions. The softshell stays off. Continue?");
+            if (!confirmed) return;
+        }
+
+        _commandAccess = mode;
+        await SaveAsync();
+    }
+
+    private void ResetShellDirectory()
+    {
+        Work.ResetShellDirectory(ChatService.Document?.Id);
+        _status = "Shell directory reset to the project root.";
+        StateHasChanged();
+    }
+
     private async Task AddCommandAsync()
     {
         string executable = _newCommand.Trim();
@@ -1006,6 +1083,7 @@
                     Skills = [.. projectSkills],
                     DisabledProjectSkills = disabledProjectSkills,
                     Contexts = [.. contexts],
+                    CommandAccess = _commandAccess,
                     AllowedCommands = [.. _allowedCommands],
                     ToolPermissions = _toolPermissions,
                     DisabledTools = [.. _toolPermissions.Tools

@@ -13,7 +13,8 @@ public sealed class SoftShellRunner(
     WorkPathPolicy paths,
     CommandPolicy policy,
     Func<WorkToolAccess, Task<bool>> permission,
-    ISecretResolver? secrets = null)
+    ISecretResolver? secrets = null,
+    WorkShellDirectory? directory = null)
 {
     private const int MaxOutput = 20_000;
     private const int MaxStdin = 2 * 1024 * 1024;
@@ -28,12 +29,34 @@ public sealed class SoftShellRunner(
     ];
 
     private readonly ISecretResolver _secrets = secrets ?? NullSecretResolver.Instance;
+    private readonly WorkShellDirectory _directory = directory
+        ?? new WorkShellDirectory(new WorkShellDirectoryStore(), null, paths);
 
     public async Task<string> RunAsync(
         string command,
         string workingDirectory = ".",
         int timeoutSeconds = 60,
         CancellationToken cancellationToken = default)
+    {
+        SemaphoreSlim gate = _directory.Gate;
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await RunCoreAsync(
+                command, workingDirectory, timeoutSeconds, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<string> RunCoreAsync(
+        string command,
+        string workingDirectory,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
     {
         ShellScript script;
         try
@@ -48,7 +71,11 @@ public sealed class SoftShellRunner(
         string cwd;
         try
         {
-            cwd = paths.ResolveDirectory(workingDirectory);
+            string baseDirectory = _directory.Current;
+            string target = string.IsNullOrWhiteSpace(workingDirectory) || workingDirectory == "."
+                ? baseDirectory
+                : workingDirectory;
+            cwd = paths.ResolveDirectory(target, baseDirectory);
         }
         catch (Exception ex)
         {
@@ -140,6 +167,7 @@ public sealed class SoftShellRunner(
                     try
                     {
                         state.Cwd = paths.ResolveDirectory(target, state.Cwd);
+                        _directory.Set(state.Cwd);
                     }
                     catch (Exception ex)
                     {

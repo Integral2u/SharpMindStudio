@@ -18,7 +18,8 @@ public sealed class WorkProcessTools(
     IReadOnlyList<string> allowedRoots,
     Func<WorkToolAccess, Task<bool>>? permission = null,
     ISecretResolver? secrets = null,
-    CommandPolicy? policy = null)
+    CommandPolicy? policy = null,
+    Func<string>? currentDirectory = null)
 {
     private const int MaxOutput = 20_000;
 
@@ -27,12 +28,13 @@ public sealed class WorkProcessTools(
         [.. allowedRoots.Select(NormalizeRoot).Distinct(StringComparer.OrdinalIgnoreCase)];
     private readonly ISecretResolver _secrets = secrets ?? NullSecretResolver.Instance;
     private readonly CommandPolicy? _policy = policy;
+    private readonly Func<string>? _currentDirectory = currentDirectory;
 
-    [ToolDesc("Runs a program inside an allowed context folder and returns its output. Use it to build, test or inspect a project. This runs real code with the user's permissions: Studio gates the command, not everything the program touches. No shell is used, so pipes and redirection must be part of the program's own arguments.")]
+    [ToolDesc("Runs a program inside an allowed context folder and returns its output. Use it to build, test or inspect a project. This runs real code with the user's permissions: Studio gates the command, not everything the program touches. In Restricted mode the program must be in the project's command allowlist. No shell interprets the command line, so pipes and redirection must be part of the program's own arguments.")]
     public async Task<string> RunProcess(
-        [ToolDesc("Executable to run, for example dotnet, git or npm. A bare name is resolved from PATH.")] string fileName,
+        [ToolDesc("Executable to run, for example dotnet, git or rg. A bare name is resolved from PATH.")] string fileName,
         [ToolDesc("Arguments as one command-line string. Quotes group a value; no shell expansion happens.")] string arguments = "",
-        [ToolDesc("Working directory relative to the project root. Defaults to the project root.")] string workingDirectory = ".",
+        [ToolDesc("Working directory relative to the session directory. Defaults to the current session directory.")] string workingDirectory = ".",
         [ToolDesc("Seconds before the process tree is killed.")] int timeoutSeconds = 60)
     {
         try
@@ -40,15 +42,25 @@ public sealed class WorkProcessTools(
             if (string.IsNullOrWhiteSpace(fileName))
                 return "A program name is required.";
 
-            string cwd = ResolveDirectory(workingDirectory);
+            string baseDirectory = _currentDirectory?.Invoke() ?? _root;
+            string target = string.IsNullOrWhiteSpace(workingDirectory) || workingDirectory == "."
+                ? baseDirectory
+                : workingDirectory;
+            string cwd = ResolveDirectory(target, baseDirectory);
+
             AllowedCommandMatch? match = null;
-            if (_policy is { IsEmpty: false })
+            if (_policy is not null)
             {
+                if (_policy.IsEmpty)
+                {
+                    return "No commands are allowed for this project. Add a command to the "
+                        + "allowlist or switch Command access to Unrestricted.";
+                }
+
                 match = _policy.Resolve(fileName);
                 if (match is null)
                 {
-                    return $"Command '{fileName}' is not in the allowed list."
-                        + (_policy.IsEmpty ? "" : $" Allowed: {_policy.AllowedNames}.");
+                    return $"Command '{fileName}' is not in the allowed list. Allowed: {_policy.AllowedNames}.";
                 }
             }
 
@@ -70,7 +82,7 @@ public sealed class WorkProcessTools(
                 : commandLine;
 
             if (!await AllowedAsync(nameof(RunProcess), WorkToolCategory.Execute, cwd, detail))
-                return $"Permission denied: RunProcess may not run a program in '{workingDirectory}' with the current project permission.";
+                return $"Permission denied: RunProcess may not run a program in '{cwd}' with the current project permission.";
 
             var used = new List<SecretUse>();
             var expanded = new List<string>();
@@ -211,10 +223,10 @@ public sealed class WorkProcessTools(
         return await permission(new WorkToolAccess(tool, category, path) { Detail = detail });
     }
 
-    private string ResolveDirectory(string relativePath)
+    private string ResolveDirectory(string relativePath, string baseDirectory)
     {
         string candidate = string.IsNullOrWhiteSpace(relativePath) ? "." : relativePath.Trim();
-        string fullPath = Path.GetFullPath(Path.Combine(_root, candidate));
+        string fullPath = Path.GetFullPath(candidate, baseDirectory);
 
         bool inside = _roots.Any(root => IsUnderRoot(fullPath, root));
         if (!inside)
@@ -228,8 +240,10 @@ public sealed class WorkProcessTools(
     private static bool IsUnderRoot(string fullPath, string root)
     {
         if (string.Equals(fullPath, root, StringComparison.OrdinalIgnoreCase)) return true;
-        return fullPath.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            || fullPath.StartsWith(root + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        string prefix = Path.EndsInDirectorySeparator(root)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+        return fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeRoot(string root)

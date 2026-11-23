@@ -27,19 +27,21 @@ public sealed record WorkCommandResult(
 
 /// <summary>
 /// Runs one already-allowed executable with argv, maps the project permission
-/// and expands/redacts Vault references. It never uses a shell.
+/// and expands/redacts Vault references. A null policy is Unrestricted mode;
+/// a non-null empty policy refuses every external command. It never uses a shell.
 /// </summary>
 public sealed class WorkCommandRunner(
-    CommandPolicy policy,
+    CommandPolicy? policy,
     WorkPathPolicy paths,
     Func<WorkToolAccess, Task<bool>> permission,
-    ISecretResolver? secrets = null)
+    ISecretResolver? secrets = null,
+    Func<string>? currentDirectory = null)
 {
     private const int MaxCaptured = 2 * 1024 * 1024;
 
     private readonly ISecretResolver _secrets = secrets ?? NullSecretResolver.Instance;
 
-    public CommandPolicy Policy => policy;
+    public CommandPolicy? Policy => policy;
 
     public async Task<WorkCommandResult> RunAsync(
         string toolName,
@@ -51,18 +53,32 @@ public sealed class WorkCommandRunner(
         int timeoutSeconds = 60,
         CancellationToken cancellationToken = default)
     {
-        AllowedCommandMatch? match = policy.Resolve(executable);
-        if (match is null)
+        AllowedCommandMatch? match = null;
+        if (policy is not null)
         {
-            return WorkCommandResult.Failed(
-                $"Command '{executable}' is not in the allowed list."
-                + (policy.IsEmpty ? "" : $" Allowed: {policy.AllowedNames}."));
+            if (policy.IsEmpty)
+            {
+                return WorkCommandResult.Failed(
+                    "No commands are allowed for this project. Add a command to the allowlist "
+                    + "or switch Command access to Unrestricted.");
+            }
+
+            match = policy.Resolve(executable);
+            if (match is null)
+            {
+                return WorkCommandResult.Failed(
+                    $"Command '{executable}' is not in the allowed list. Allowed: {policy.AllowedNames}.");
+            }
         }
 
         string cwd;
         try
         {
-            cwd = paths.ResolveDirectory(workingDirectory);
+            string baseDirectory = currentDirectory?.Invoke() ?? paths.Root;
+            string target = string.IsNullOrWhiteSpace(workingDirectory) || workingDirectory == "."
+                ? baseDirectory
+                : workingDirectory;
+            cwd = paths.ResolveDirectory(target, baseDirectory);
         }
         catch (Exception ex)
         {
@@ -73,7 +89,7 @@ public sealed class WorkCommandRunner(
         var missing = new List<string>();
         var expandedArguments = new List<string>();
 
-        foreach (string prefix in match.PrefixArguments)
+        foreach (string prefix in match?.PrefixArguments ?? [])
         {
             SecretExpansion expansion = SecretTemplate.Expand(prefix, _secrets.Resolve);
             Collect(expansion, used, missing);
@@ -109,8 +125,11 @@ public sealed class WorkCommandRunner(
             .Where(value => value.Length > 0)
             .Distinct(StringComparer.Ordinal)];
 
-        string detail = $"{match.Command.Name} "
-            + string.Join(" ", match.PrefixArguments.Concat(arguments));
+        string displayName = match?.Command.Name
+            ?? Path.GetFileNameWithoutExtension(executable);
+        if (displayName.Length == 0) displayName = executable;
+        string detail = $"{displayName} "
+            + string.Join(" ", (match?.PrefixArguments ?? []).Concat(arguments));
         detail = detail.Trim();
         if (used.Count > 0)
         {
@@ -128,7 +147,7 @@ public sealed class WorkCommandRunner(
         try
         {
             startInfo = McpCommandResolver.CreateStartInfo(
-                match.Executable,
+                match?.Executable ?? executable,
                 expandedArguments,
                 childEnvironment);
             startInfo.WorkingDirectory = cwd;

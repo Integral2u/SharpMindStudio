@@ -72,6 +72,7 @@ public sealed class StudioWorkService : IDisposable
     private readonly SharpMind.Studio.Core.Mcp.McpServerHost _mcp;
     private readonly ISecretResolver _secrets;
     private readonly Lock _gate = new();
+    private readonly WorkShellDirectoryStore _shells = new();
     private WorkSettingsStore _store;
     private WorkSettings _settings;
     private string _memory = "";
@@ -118,6 +119,15 @@ public sealed class StudioWorkService : IDisposable
     public string ProjectRoot => _store.ProjectRoot;
     public string MemoryFile => _store.MemoryFile;
     public IReadOnlyList<WorkSkill> SystemSkills => _systemSkills.Skills;
+
+    /// <summary>The persisted softshell directory for one Work session.</summary>
+    public string GetShellDirectory(string? sessionId)
+    {
+        var paths = new WorkPathPolicy(_workspace.Project.Root, AllowedRoots());
+        return new WorkShellDirectory(_shells, sessionId, paths).Current;
+    }
+
+    public void ResetShellDirectory(string? sessionId) => _shells.Reset(sessionId);
 
     public WorkSettings Settings => _settings;
     public IReadOnlyList<WorkSkill> ProjectSkills => _settings.Skills;
@@ -174,7 +184,8 @@ public sealed class StudioWorkService : IDisposable
         ToolPermissionProfile? profile = null,
         IToolCallFilter? filter = null,
         IReadOnlyList<object>? embeddedTools = null,
-        IReadOnlyList<string>? embeddedDisabled = null)
+        IReadOnlyList<string>? embeddedDisabled = null,
+        string? sessionId = null)
     {
         bool work = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase);
         IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = _agents.EnabledAgents;
@@ -198,25 +209,36 @@ public sealed class StudioWorkService : IDisposable
         if (embeddedDisabled is { Count: > 0 })
             builder.DisabledTools.UnionWith(embeddedDisabled);
         CommandPolicy? commandPolicy = null;
+        bool unrestricted = _settings.CommandAccess == CommandAccessMode.Unrestricted;
         if (work && !_device.IsMobile)
         {
-            commandPolicy = new CommandPolicy(_settings.AllowedCommands, _workspace.Project.Root);
             var pathPolicy = new WorkPathPolicy(_workspace.Project.Root, AllowedRoots());
+            var shell = new WorkShellDirectory(_shells, sessionId, pathPolicy);
+            if (!unrestricted)
+                commandPolicy = new CommandPolicy(_settings.AllowedCommands, _workspace.Project.Root);
+
             var commandRunner = new WorkCommandRunner(
                 commandPolicy,
                 pathPolicy,
                 access => CheckAccessAsync(access, profile: effective),
-                _secrets);
+                _secrets,
+                () => shell.Current);
             var cliRunner = new CliToolRunner(commandRunner);
+
+            bool Available(string name) => unrestricted
+                ? SharpMind.Studio.Core.Mcp.McpCommandResolver.Resolve(name) is not null
+                : commandPolicy?.Contains(name) == true;
 
             // Wrappers first: the tool list is registration-ordered, and the
             // model should see the typed repository/build/search tools before
-            // the generic built-ins and the shell.
-            if (commandPolicy.Contains("git"))
+            // the generic built-ins and the shell. Unrestricted keeps them
+            // available because they use fixed argv; the user can still turn
+            // each one off under Enabled tools.
+            if (Available("git"))
                 builder.WithTools(new GitCliTools(cliRunner));
-            if (commandPolicy.Contains("dotnet"))
+            if (Available("dotnet"))
                 builder.WithTools(new DotnetCliTools(cliRunner));
-            if (commandPolicy.Contains("rg"))
+            if (Available("rg"))
                 builder.WithTools(new RipgrepCliTools(cliRunner));
 
             builder.WithTools(new WorkFileTools(
@@ -229,7 +251,8 @@ public sealed class StudioWorkService : IDisposable
                 AllowedRoots(),
                 access => CheckAccessAsync(access, profile: effective),
                 _secrets,
-                commandPolicy));
+                commandPolicy,
+                () => shell.Current));
             builder.WithTools(new WorkUiTools(RequestChoiceAsync));
             if (_tools.PluginTools.Count > 0)
                 builder.WithTools([.. _tools.PluginTools]);
@@ -241,13 +264,14 @@ public sealed class StudioWorkService : IDisposable
                 effective,
                 access => CheckAccessAsync(access, profile: effective));
 
-            if (!commandPolicy.IsEmpty)
+            if (commandPolicy is { IsEmpty: false })
             {
                 builder.WithTools(new SoftShellTools(new SoftShellRunner(
                     pathPolicy,
                     commandPolicy,
                     access => CheckAccessAsync(access, profile: effective),
-                    _secrets)));
+                    _secrets,
+                    shell)));
             }
         }
         if (work)
@@ -262,6 +286,20 @@ public sealed class StudioWorkService : IDisposable
                     "Prefer an enabled CLI wrapper (git_*, dotnet_*, rg_*) over a generic shell or built-in tool when it fits. "
                     + "Use the file tools for reading and editing files. Allowed shell commands: "
                     + commandPolicy.AllowedNames + ".");
+            }
+            else if (unrestricted)
+            {
+                builder.WithCustomRule(
+                    "Command access is Unrestricted: RunProcess may start any program with the user's permissions. "
+                    + "The softshell is off because it requires an allowlist. CLI wrappers remain available when their "
+                    + "executable is installed, and the user can turn each one off under Enabled tools. Prefer the "
+                    + "file tools and the typed wrappers for routine work.");
+            }
+            else
+            {
+                builder.WithCustomRule(
+                    "No external commands are allowed in this project. Use the file tools, and do not claim a "
+                    + "program ran unless a tool result says it did.");
             }
             foreach (WorkSkill skill in WorkSkillResolver.Resolve(
                          _systemSkills.Skills,
@@ -587,7 +625,8 @@ public sealed class StudioWorkService : IDisposable
     /// </summary>
     public IAgentBuilder? CreateAgentTools(
         SharpMind.Studio.Core.Agents.StudioAgentDefinition agent,
-        ToolPermissionProfile? profile = null)
+        ToolPermissionProfile? profile = null,
+        string? sessionId = null)
     {
         if (_device.IsMobile) return null;
         if (!agent.InheritTools && agent.AllowedTools.Count == 0) return null;
@@ -601,24 +640,32 @@ public sealed class StudioWorkService : IDisposable
         Task<bool> Permission(WorkToolAccess access) =>
             CheckAccessAsync(access, agent.Permissions, effective);
 
-        var commandPolicy = new CommandPolicy(
-            _settings.AllowedCommands, _workspace.Project.Root);
+        bool unrestricted = _settings.CommandAccess == CommandAccessMode.Unrestricted;
+        CommandPolicy? commandPolicy = null;
         var pathPolicy = new WorkPathPolicy(_workspace.Project.Root, AllowedRoots());
+        var shell = new WorkShellDirectory(_shells, sessionId, pathPolicy);
+        if (!unrestricted)
+            commandPolicy = new CommandPolicy(_settings.AllowedCommands, _workspace.Project.Root);
+
         var commandRunner = new WorkCommandRunner(
-            commandPolicy, pathPolicy, Permission, _secrets);
+            commandPolicy, pathPolicy, Permission, _secrets, () => shell.Current);
         var cliRunner = new CliToolRunner(commandRunner);
 
+        bool Available(string name) => unrestricted
+            ? SharpMind.Studio.Core.Mcp.McpCommandResolver.Resolve(name) is not null
+            : commandPolicy?.Contains(name) == true;
+
         var wrapperTools = new List<object>();
-        if (commandPolicy.Contains("git"))
+        if (Available("git"))
             wrapperTools.Add(new GitCliTools(cliRunner));
-        if (commandPolicy.Contains("dotnet"))
+        if (Available("dotnet"))
             wrapperTools.Add(new DotnetCliTools(cliRunner));
-        if (commandPolicy.Contains("rg"))
+        if (Available("rg"))
             wrapperTools.Add(new RipgrepCliTools(cliRunner));
-        if (!commandPolicy.IsEmpty)
+        if (commandPolicy is { IsEmpty: false })
         {
             wrapperTools.Add(new SoftShellTools(new SoftShellRunner(
-                pathPolicy, commandPolicy, Permission, _secrets)));
+                pathPolicy, commandPolicy, Permission, _secrets, shell)));
         }
 
         // AgentBuilder filters DisabledTools while it reflects the tool objects, so
@@ -629,7 +676,12 @@ public sealed class StudioWorkService : IDisposable
             new WorkFileTools(_workspace.Project.Root, AllowedRoots(), Permission),
             new WorkWebTools(Permission),
             new WorkProcessTools(
-                _workspace.Project.Root, AllowedRoots(), Permission, _secrets, commandPolicy),
+                _workspace.Project.Root,
+                AllowedRoots(),
+                Permission,
+                _secrets,
+                commandPolicy,
+                () => shell.Current),
             .. _tools.PluginTools,
         ];
         var probe = new AgentBuilder(agent.Name);
@@ -658,12 +710,24 @@ public sealed class StudioWorkService : IDisposable
             ? $"You are {agent.Name}. {agent.Description}".Trim()
             : agent.Rules.Trim();
         builder.WithCustomRule(rules);
-        if (!commandPolicy.IsEmpty)
+        if (commandPolicy is { IsEmpty: false })
         {
             builder.WithCustomRule(
                 "Prefer an enabled CLI wrapper (git_*, dotnet_*, rg_*) over the generic shell or a built-in tool when it fits. "
                 + "Use the file tools for reading and editing files. Allowed shell commands: "
                 + commandPolicy.AllowedNames + ".");
+        }
+        else if (unrestricted)
+        {
+            builder.WithCustomRule(
+                "Command access is Unrestricted: RunProcess may start any program with the user's permissions. "
+                + "The softshell is off because it requires an allowlist. CLI wrappers remain available when installed. "
+                + "Prefer the file tools and the typed wrappers for routine work.");
+        }
+        else
+        {
+            builder.WithCustomRule(
+                "No external commands are allowed in this project. Use the file tools.");
         }
         return builder;
     }
@@ -987,6 +1051,7 @@ public sealed class StudioWorkService : IDisposable
 
     private void OnProjectChanged()
     {
+        _shells.Clear();
         Reload();
         Notify();
     }
