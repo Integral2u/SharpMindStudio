@@ -376,9 +376,11 @@
                     <strong>Off</strong> hides a tool from the model, <strong>Never</strong> keeps it visible but
                     refuses every call, <strong>Ask</strong> prompts, and <strong>Always</strong> permits.
                     A context folder set to <strong>Never</strong> still refuses whatever the tool says.
+                    Unset tools inherit from System; choose <strong>Inherit</strong> to clear an override.
                     Changes save automatically.
                 </p>
-                <ToolPermissionEditor Value="_toolPermissions" ValueChanged="OnToolPermissionsChanged" />
+                <ToolPermissionEditor Value="_toolPermissions" ValueChanged="OnToolPermissionsChanged"
+                                      AllowInherit="true" Effective="ProjectToolsEffective" />
                 <p class="small faint">
                     <strong>Internal</strong> tools ship with Studio and honour the project gate.
                     <strong>Plugin</strong> tools run their own code: Studio can hide them and can
@@ -609,6 +611,9 @@
         _toolPermissions = permissions;
         _ = AutoSaveAsync();
     }
+
+    private ToolPermissionValue ProjectToolsEffective(string tool, string? group) =>
+        Work.SystemToolPermission(tool, group);
 
     private IReadOnlyList<WorkSkill> FilteredSkills
     {

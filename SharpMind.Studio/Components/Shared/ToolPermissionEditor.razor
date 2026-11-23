@@ -6,16 +6,28 @@
     @foreach (IGrouping<string, WorkToolInfo> group in Catalog.Tools.GroupBy(tool => tool.Group))
     {
         WorkToolInfo[] tools = [.. group];
+        string groupKey = group.Key;
+        bool groupOverridden = GroupOverridden(groupKey, tools);
+        bool showGroupValue = groupOverridden || !AllowInherit;
         <div class="work-tool-group">
             <div class="spread work-tool-group-head">
-                <div class="eyebrow">@group.Key</div>
-                <div class="segmented" role="group" aria-label="@group.Key permissions">
+                <div class="eyebrow">@groupKey</div>
+                <div class="segmented" role="group" aria-label="@groupKey permissions">
+                    @if (AllowInherit)
+                    {
+                        <button type="button"
+                                class="segmented-option @(!groupOverridden ? "active" : "")"
+                                title="Clear every override in this group"
+                                @onclick="() => ClearGroupAsync(groupKey, tools)">
+                            Inherit
+                        </button>
+                    }
                     @foreach (WorkToolPermission option in Options)
                     {
                         <button type="button"
-                                class="segmented-option @(GroupValue(tools) == option ? "active" : "")"
+                                class="segmented-option @(showGroupValue && GroupValue(tools, groupKey) == option ? "active" : "")"
                                 title="Apply @Label(option) to every tool in this group"
-                                @onclick="() => SetGroupAsync(tools, option)">
+                                @onclick="() => SetGroupAsync(groupKey, tools, option)">
                             @Label(option)
                         </button>
                     }
@@ -24,10 +36,15 @@
             <div class="work-tools">
                 @foreach (WorkToolInfo tool in tools)
                 {
-                    bool overridden = Value.TryTool(tool.Name, out WorkToolPermission current);
-                    WorkToolPermission shown = overridden
+                    bool toolOverridden = Value.TryTool(tool.Name, out WorkToolPermission current);
+                    bool groupOverride = Value.TryGroup(groupKey, out WorkToolPermission groupValue);
+                    bool overridden = toolOverridden || groupOverride;
+                    bool showToolValue = overridden || !AllowInherit;
+                    WorkToolPermission shown = toolOverridden
                         ? current
-                        : Effective?.Invoke(tool.Name, tool.Group).Permission ?? WorkToolPermission.Ask;
+                        : groupOverride
+                            ? groupValue
+                            : Effective?.Invoke(tool.Name, groupKey).Permission ?? WorkToolPermission.Ask;
                     <div class="work-tool-row" title="@tool.Source">
                         <span class="work-tool-name">
                             @tool.Name
@@ -44,22 +61,28 @@
                                     process
                                 </span>
                             }
-                            @if (AllowInherit && !overridden)
+                            @if (AllowInherit)
                             {
-                                <span class="small faint">inherits @SourceLabel(tool)</span>
+                                <span class="small faint">
+                                    @InheritLabel(tool, groupKey, toolOverridden, groupOverride)
+                                </span>
                             }
                         </span>
                         <div class="tool-row-actions">
-                            @if (AllowInherit && overridden)
-                            {
-                                <button type="button" class="segmented-reset" title="Inherit again"
-                                        @onclick="() => ClearAsync(tool.Name)">&#8630;</button>
-                            }
                             <div class="segmented" role="group" aria-label="@tool.Name permission">
+                                @if (AllowInherit && !groupOverride)
+                                {
+                                    <button type="button"
+                                            class="segmented-option @(!toolOverridden ? "active" : "")"
+                                            title="Clear this tool override"
+                                            @onclick="() => ClearAsync(tool.Name)">
+                                        Inherit
+                                    </button>
+                                }
                                 @foreach (WorkToolPermission option in Options)
                                 {
                                     <button type="button"
-                                            class="segmented-option @(shown == option ? "active" : "") @Class(option)"
+                                            class="segmented-option @(showToolValue && shown == option ? "active" : "") @Class(option)"
                                             title="@Label(option)"
                                             @onclick="() => SetToolAsync(tool.Name, option)">
                                         @Label(option)
@@ -94,59 +117,88 @@
     /// <summary>The resolved chain without this layer, used for the inherit label.</summary>
     [Parameter] public Func<string, string?, ToolPermissionValue>? Effective { get; set; }
 
-    private WorkToolPermission? GroupValue(IReadOnlyList<WorkToolInfo> tools)
+    private WorkToolPermission ValueOf(WorkToolInfo tool, string group)
+    {
+        if (Value.TryTool(tool.Name, out WorkToolPermission value)) return value;
+        if (Value.TryGroup(group, out value)) return value;
+        return Effective?.Invoke(tool.Name, group).Permission ?? WorkToolPermission.Ask;
+    }
+
+    private WorkToolPermission? GroupValue(IReadOnlyList<WorkToolInfo> tools, string group)
     {
         if (tools.Count == 0) return null;
-        WorkToolPermission first = ValueOf(tools[0]);
+        WorkToolPermission first = ValueOf(tools[0], group);
         for (int index = 1; index < tools.Count; index++)
         {
-            if (ValueOf(tools[index]) != first) return null;
+            if (ValueOf(tools[index], group) != first) return null;
         }
         return first;
     }
 
-    private WorkToolPermission ValueOf(WorkToolInfo tool) =>
-        Value.TryTool(tool.Name, out WorkToolPermission value)
-            ? value
-            : Effective?.Invoke(tool.Name, tool.Group).Permission ?? WorkToolPermission.Ask;
+    private bool GroupOverridden(string group, IReadOnlyList<WorkToolInfo> tools) =>
+        Value.TryGroup(group, out _) || tools.Any(tool => Value.TryTool(tool.Name, out _));
 
-    private string SourceLabel(WorkToolInfo tool) =>
-        Effective?.Invoke(tool.Name, tool.Group).Source ?? ToolPermissionResolver.DefaultSource;
+    private string InheritLabel(
+        WorkToolInfo tool,
+        string group,
+        bool toolOverridden,
+        bool groupOverride)
+    {
+        if (groupOverride)
+            return toolOverridden ? "overrides group" : "uses group";
+
+        string source = Effective?.Invoke(tool.Name, group).Source
+            ?? ToolPermissionResolver.DefaultSource;
+        return toolOverridden ? $"overrides {source}" : $"inherits {source}";
+    }
 
     private Task SetToolAsync(string name, WorkToolPermission value) =>
-        UpdateAsync(tools => tools[name] = value);
+        UpdateAsync((tools, _) => tools[name] = value);
 
     private Task ClearAsync(string name) =>
-        UpdateAsync(tools => tools.Remove(name));
+        UpdateAsync((tools, _) => tools.Remove(name));
 
-    private Task SetGroupAsync(IReadOnlyList<WorkToolInfo> group, WorkToolPermission value) =>
-        UpdateAsync(tools =>
+    private Task SetGroupAsync(
+        string group,
+        IReadOnlyList<WorkToolInfo> groupTools,
+        WorkToolPermission value) =>
+        UpdateAsync((tools, groups) =>
         {
-            foreach (WorkToolInfo tool in group)
-                tools[tool.Name] = value;
+            foreach (WorkToolInfo tool in groupTools)
+                tools.Remove(tool.Name);
+            groups[group] = value;
         });
 
-    private async Task UpdateAsync(Action<Dictionary<string, WorkToolPermission>> change)
+    private Task ClearGroupAsync(string group, IReadOnlyList<WorkToolInfo> groupTools) =>
+        UpdateAsync((tools, groups) =>
+        {
+            foreach (WorkToolInfo tool in groupTools)
+                tools.Remove(tool.Name);
+            groups.Remove(group);
+        });
+
+    private async Task UpdateAsync(
+        Action<Dictionary<string, WorkToolPermission>, Dictionary<string, WorkToolPermission>> change)
     {
         var tools = new Dictionary<string, WorkToolPermission>(
             Value.Tools, StringComparer.OrdinalIgnoreCase);
-        change(tools);
+        var groups = new Dictionary<string, WorkToolPermission>(
+            Value.Groups, StringComparer.OrdinalIgnoreCase);
+        change(tools, groups);
         await ValueChanged.InvokeAsync(new ToolPermissionSet
         {
             Tools = tools,
-            Groups = new Dictionary<string, WorkToolPermission>(
-                Value.Groups, StringComparer.OrdinalIgnoreCase),
+            Groups = groups,
         });
     }
 
-    private static string Label(WorkToolPermission value) => value switch
-    {
-        WorkToolPermission.Off => "Off",
-        WorkToolPermission.Never => "Never",
-        WorkToolPermission.Ask => "Ask",
-        _ => "Always",
-    };
+    private static string Label(WorkToolPermission value) => value.ToString();
 
-    private static string Class(WorkToolPermission value) =>
-        "is-" + Label(value).ToLowerInvariant();
+    private static string Class(WorkToolPermission value) => value switch
+    {
+        WorkToolPermission.Always => "is-always",
+        WorkToolPermission.Ask => "is-ask",
+        WorkToolPermission.Never => "is-never",
+        _ => "is-off",
+    };
 }

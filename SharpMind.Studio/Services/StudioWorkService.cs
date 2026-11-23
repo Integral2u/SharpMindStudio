@@ -586,12 +586,13 @@ public sealed class StudioWorkService : IDisposable
         return layer;
     }
 
-    /// <summary>
-    /// The project-and-system value for a tool, for the settings panel. Session,
-    /// model, family and agent overrides are deliberately not included.
-    /// </summary>
+    /// <summary>The project-and-system value for a tool, for the settings panel. Session, model, family and agent overrides are deliberately not included.</summary>
     public WorkToolPermission ProjectToolPermission(string name) =>
         ResolveProfile(null).For(name, _tools.GroupFor(name)).Permission;
+
+    /// <summary>What a project override would inherit from: the Studio system layer.</summary>
+    public ToolPermissionValue SystemToolPermission(string tool, string? group) =>
+        ToolPermissionResolver.Resolve(tool, group, system: _inference.SystemTools);
     public void SetToolEnabled(string name, bool enabled)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);

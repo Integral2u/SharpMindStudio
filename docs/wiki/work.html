@@ -138,7 +138,10 @@
             </p>
             <p>
                 A tool inherits from the model, family, project and Studio defaults, and each
-                layer can override the one above it. A folder set to
+                layer can override the one above it. Project, family, model and session also offer
+                <strong>Inherit</strong>, which clears that layer's override and lets the next
+                layer decide. Studio defaults have no layer above them, so they offer only the
+                four values. A folder set to
                 <span class="mono">Never</span> is a hard boundary and refuses the call whatever
                 the tool says; otherwise the tool's own state decides, so
                 <strong>Always</strong> is not silently downgraded by a folder that only asks.
