@@ -174,7 +174,9 @@
                 <span class="mono">2&gt;&amp;1</span>), <span class="mono">&amp;&amp;</span>,
                 <span class="mono">||</span>, <span class="mono">;</span>,
                 <span class="mono">cd</span>, <span class="mono">pwd</span>,
-                <span class="mono">echo</span>, inline <span class="mono">NAME=value</span>
+                <span class="mono">echo</span>, <span class="mono">mkdir</span>,
+                <span class="mono">rmdir</span>, <span class="mono">rename</span>, inline
+                <span class="mono">NAME=value</span>
                 and <span class="mono">$VAR</span>. It never starts PowerShell, cmd or bash.
                 Command substitution, backticks, here-docs, background jobs and globbing are
                 refused with a readable message rather than approximated; quote an argument
@@ -192,6 +194,16 @@
                 contexts and go through the Read or Write gate. A redirect outside those
                 locations is refused. The whole command shares one timeout, and a timeout
                 kills the process tree.
+            </p>
+            <p>
+                <span class="mono">mkdir</span> (with <span class="mono">-p</span>),
+                <span class="mono">rmdir</span> and <span class="mono">rename</span> manage
+                directories without starting a program. <span class="mono">mkdir</span> needs
+                <strong>Write</strong>; <span class="mono">rmdir</span> needs
+                <strong>Delete</strong>; <span class="mono">rename</span> needs
+                <strong>Delete</strong> on the source and <strong>Write</strong> on the
+                destination. <span class="mono">rmdir</span> only removes an empty directory,
+                and <span class="mono">rename</span> only moves directories.
             </p>
             <p>
                 The working directory belongs to the Work session. <span class="mono">cd</span>

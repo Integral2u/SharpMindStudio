@@ -216,6 +216,22 @@ public sealed class SoftShellRunner(
                 continue;
             }
 
+            if (executable is "mkdir" or "rmdir" or "rename")
+            {
+                if (pipeline.Commands.Count > 1)
+                    return PipelineResult.Failed($"'{executable}' cannot be part of a pipeline.");
+                if (command.Redirects.Count > 0)
+                    return PipelineResult.Failed($"'{executable}' does not take redirections.");
+
+                string? error = await RunDirectoryBuiltinAsync(executable, command, state)
+                    .ConfigureAwait(false);
+                if (error is not null) return PipelineResult.Failed(error);
+
+                exitCode = 0;
+                state.LastExit = 0;
+                continue;
+            }
+
             if (command.Words.Count == 0)
                 return PipelineResult.Failed("A command is required.");
 
@@ -309,6 +325,130 @@ public sealed class SoftShellRunner(
         }
 
         return new PipelineResult(exitCode, stdout, stderr.ToString(), false, null);
+    }
+
+    private async Task<string?> RunDirectoryBuiltinAsync(
+        string commandName,
+        ShellCommand command,
+        RunState state)
+    {
+        List<string> arguments = [];
+        foreach (ShellWord word in command.Words.Skip(1))
+        {
+            SecretExpansion expansion = RenderWord(word, state, includeSecrets: true);
+            if (expansion.Missing.Count > 0)
+                return new SecretMissingException(expansion.Missing).Message;
+            arguments.Add(expansion.Text);
+        }
+
+        if (arguments.Count == 0)
+            return $"'{commandName}' needs a path.";
+
+        try
+        {
+            return commandName switch
+            {
+                "mkdir" => await MakeDirectoryAsync(arguments, command, state).ConfigureAwait(false),
+                "rmdir" => await RemoveDirectoryAsync(arguments, command, state).ConfigureAwait(false),
+                "rename" => await RenameDirectoryAsync(arguments, command, state).ConfigureAwait(false),
+                _ => $"Unknown directory command '{commandName}'.",
+            };
+        }
+        catch (Exception ex)
+        {
+            return $"{commandName}: {ex.Message}";
+        }
+    }
+
+    private async Task<string?> MakeDirectoryAsync(
+        List<string> arguments,
+        ShellCommand command,
+        RunState state)
+    {
+        bool parents = arguments[0] == "-p";
+        if (parents) arguments.RemoveAt(0);
+        if (arguments.Count == 0) return "'mkdir' needs a path.";
+
+        foreach (string argument in arguments)
+        {
+            string path = paths.ResolveFile(argument, state.Cwd);
+            if (!await AllowedAsync("RunShell", WorkToolCategory.Write, path, command.Source)
+                    .ConfigureAwait(false))
+            {
+                return $"Permission denied writing '{argument}'. Set the context's Write permission "
+                    + "to Ask or Always, and keep RunShell on Ask or Always.";
+            }
+
+            if (!parents)
+            {
+                string? parent = Path.GetDirectoryName(path);
+                if (parent is not null && !Directory.Exists(parent))
+                    return $"'mkdir' could not find the parent directory of '{argument}'. Use -p to create it.";
+                if (Directory.Exists(path) || File.Exists(path))
+                    return $"'{argument}' already exists.";
+            }
+
+            Directory.CreateDirectory(path);
+        }
+
+        return null;
+    }
+
+    private async Task<string?> RemoveDirectoryAsync(
+        List<string> arguments,
+        ShellCommand command,
+        RunState state)
+    {
+        if (arguments.Count != 1) return "'rmdir' takes one directory.";
+
+        string path = paths.ResolveDirectory(arguments[0], state.Cwd);
+        if (!await AllowedAsync("RunShell", WorkToolCategory.Delete, path, command.Source)
+                .ConfigureAwait(false))
+        {
+            return $"Permission denied deleting '{arguments[0]}'. Set the context's Delete permission "
+                + "to Ask or Always, and keep RunShell on Ask or Always.";
+        }
+
+        if (Directory.EnumerateFileSystemEntries(path).Any())
+            return $"'rmdir' can only remove an empty directory: '{arguments[0]}'.";
+
+        Directory.Delete(path);
+        return null;
+    }
+
+    private async Task<string?> RenameDirectoryAsync(
+        List<string> arguments,
+        ShellCommand command,
+        RunState state)
+    {
+        if (arguments.Count != 2) return "'rename' takes a source and a destination.";
+
+        string source = paths.ResolveDirectory(arguments[0], state.Cwd);
+        string destination = paths.ResolveFile(arguments[1], state.Cwd);
+
+        if (!await AllowedAsync("RunShell", WorkToolCategory.Delete, source, command.Source)
+                .ConfigureAwait(false))
+        {
+            return $"Permission denied renaming '{arguments[0]}'. Set the context's Delete permission "
+                + "to Ask or Always, and keep RunShell on Ask or Always.";
+        }
+
+        if (!await AllowedAsync("RunShell", WorkToolCategory.Write, destination, command.Source)
+                .ConfigureAwait(false))
+        {
+            return $"Permission denied writing '{arguments[1]}'. Set the context's Write permission "
+                + "to Ask or Always, and keep RunShell on Ask or Always.";
+        }
+
+        if (Directory.Exists(destination) || File.Exists(destination))
+            return $"'{arguments[1]}' already exists.";
+
+        string? parent = Path.GetDirectoryName(destination);
+        if (parent is not null && !Directory.Exists(parent))
+            return $"'rename' could not find the parent directory of '{arguments[1]}'.";
+
+        Directory.Move(source, destination);
+        return null;
     }
 
     private async Task<PipelineResult> ApplyRedirectsAsync(

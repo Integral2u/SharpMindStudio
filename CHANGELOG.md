@@ -44,7 +44,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   says which runtime it needs; Studio never installs it or connects on its own.
 - **Softshell and a project command allowlist.** Work can now run CLI tools from a
   familiar shell command line. Studio parses the command itself, supports pipes,
-  `> >> < 2> 2>&1`, `&& || ;`, `cd`, `pwd`, `echo`, inline `NAME=value` and
+  `> >> < 2> 2>&1`, `&& || ;`, `cd`, `pwd`, `echo`, `mkdir`, `rmdir`,
+  `rename`, inline `NAME=value` and
   `%vault:NAME%`, and starts each program directly. It never launches PowerShell,
   cmd or bash; command substitution, backticks, here-docs, background jobs and
   globbing are refused. Commands and redirection targets stay inside the project

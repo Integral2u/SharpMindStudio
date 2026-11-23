@@ -10,12 +10,13 @@ public sealed class SoftShellTools(SoftShellRunner runner)
 {
     [ToolDesc(
         "Runs a POSIX-style command line inside the project. Supports pipes, "
-        + "> >> < 2> 2>&1, && || ;, cd, pwd, echo, inline NAME=value and "
-        + "%vault:NAME%. cd persists across RunShell calls in this session. "
-        + "No real shell is used: command substitution, backticks, here-docs, "
-        + "background jobs, globbing and shells are refused. Only commands "
-        + "allowed for this project can run, and the working directory needs Run "
-        + "permission. Prefer the CLI wrappers and the file tools when they fit.")]
+        + "> >> < 2> 2>&1, && || ;, cd, pwd, echo, mkdir, rmdir, rename, inline "
+        + "NAME=value and %vault:NAME%. cd persists across RunShell calls in this "
+        + "session. No real shell is used: command substitution, backticks, "
+        + "here-docs, background jobs, globbing and shells are refused. Only "
+        + "commands allowed for this project can run, and the working directory "
+        + "needs Run permission. Prefer the CLI wrappers and the file tools when "
+        + "they fit.")]
     public Task<string> RunShell(
         [ToolDesc("Command line, for example: git status && dotnet build")] string command,
         [ToolDesc(

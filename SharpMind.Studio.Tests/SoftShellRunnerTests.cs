@@ -203,6 +203,67 @@ public sealed class SoftShellRunnerTests
     }
 
     [Fact]
+    public async Task Run_MakesRenamesAndRemovesADirectory()
+    {
+        using var temp = new TempDirectory();
+        SoftShellRunner runner = Runner(temp);
+
+        string mkdir = await runner.RunAsync("mkdir sub");
+        Assert.Contains("Exit code 0", mkdir);
+        Assert.True(Directory.Exists(temp.Combine("sub")));
+
+        string rename = await runner.RunAsync("rename sub renamed");
+        Assert.Contains("Exit code 0", rename);
+        Assert.True(Directory.Exists(temp.Combine("renamed")));
+        Assert.False(Directory.Exists(temp.Combine("sub")));
+
+        string rmdir = await runner.RunAsync("rmdir renamed");
+        Assert.Contains("Exit code 0", rmdir);
+        Assert.False(Directory.Exists(temp.Combine("renamed")));
+    }
+
+    [Fact]
+    public async Task Run_MkdirWithParentsCreatesTheTree()
+    {
+        using var temp = new TempDirectory();
+        SoftShellRunner runner = Runner(temp);
+
+        string result = await runner.RunAsync("mkdir -p one/two/three");
+
+        Assert.Contains("Exit code 0", result);
+        Assert.True(Directory.Exists(temp.Combine("one", "two", "three")));
+    }
+
+    [Fact]
+    public async Task Run_MkdirRequiresWritePermission()
+    {
+        using var temp = new TempDirectory();
+        SoftShellRunner runner = Runner(
+            temp,
+            permission: access => Task.FromResult(access.Category == WorkToolCategory.Execute));
+
+        string result = await runner.RunAsync("mkdir sub");
+
+        Assert.Contains("Permission denied writing", result);
+        Assert.False(Directory.Exists(temp.Combine("sub")));
+    }
+
+    [Fact]
+    public async Task Run_RmdirRefusesANonEmptyDirectory()
+    {
+        using var temp = new TempDirectory();
+        string sub = temp.Combine("sub");
+        Directory.CreateDirectory(sub);
+        File.WriteAllText(Path.Combine(sub, "file.txt"), "x");
+        SoftShellRunner runner = Runner(temp);
+
+        string result = await runner.RunAsync("rmdir sub");
+
+        Assert.Contains("empty directory", result);
+        Assert.True(Directory.Exists(sub));
+    }
+
+    [Fact]
     public async Task Run_CdPersistsForTheSessionAndStartsANewSessionAtTheRoot()
     {
         using var temp = new TempDirectory();
