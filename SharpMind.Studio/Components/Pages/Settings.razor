@@ -39,7 +39,7 @@
 </div>
 
 <div class="settings-tabs">
-    <a class="settings-tab @(_tab == "appearance" ? "selected" : "")" href="/settings?tab=appearance" data-enhance-nav="false">Appearance</a>
+    <a class="settings-tab @(_tab == "appearance" ? "selected" : "")" href="/settings?tab=appearance" data-enhance-nav="false">UI &amp; Appearance</a>
     <a class="settings-tab @(_tab == "system" ? "selected" : "")" href="/settings?tab=system" data-enhance-nav="false">System</a>
     <a class="settings-tab @(_tab == "families" ? "selected" : "")" href="/settings?tab=families" data-enhance-nav="false">Families</a>
     <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/settings?tab=models" data-enhance-nav="false">Models</a>
@@ -207,29 +207,6 @@
                 <button type="button" class="button" @onclick="() => OpenFolder(StudioPaths.Projects)">Open settings folder</button>
             </div>
             <div class="small faint">Runs and chats live in the current project. The settings folder holds settings, inference profiles, Gateway data, and shared skills config.</div>
-        </div>
-    </details>
-
-    <details class="panel settings-collapsible">
-        <summary class="panel-head">
-            <div>
-                <div class="eyebrow">Desktop</div>
-                <h2>Window behaviour</h2>
-            </div>
-            <span class="faint small mono">desktop app only</span>
-        </summary>
-        <div class="panel-body stack">
-            <div class="field">
-                <label class="field-label" for="close-to-tray">When I close the window</label>
-                <select id="close-to-tray" class="input" @onchange="SetCloseToTray">
-                    <option value="true" selected="@_closeToTray">Minimize to tray (default)</option>
-                    <option value="false" selected="@(!_closeToTray)">Exit Studio</option>
-                </select>
-            </div>
-            <div class="small faint">
-                The desktop shell reads this when the close button is pressed. The browser UI is unaffected.
-            </div>
-            <div class="status-line">@_closeToTrayStatus</div>
         </div>
     </details>
 
@@ -1127,6 +1104,29 @@ else if (_tab == "models")
 else
 {
     <SettingsAppearancePanel />
+
+    <details class="panel settings-collapsible">
+        <summary class="panel-head">
+            <div>
+                <div class="eyebrow">Desktop</div>
+                <h2>Window behaviour</h2>
+            </div>
+            <span class="faint small mono">desktop app only</span>
+        </summary>
+        <div class="panel-body stack">
+            <div class="field">
+                <label class="field-label" for="close-to-tray">When I close the window</label>
+                <select id="close-to-tray" class="input" @onchange="SetCloseToTray">
+                    <option value="true" selected="@_closeToTray">Minimize to tray (default)</option>
+                    <option value="false" selected="@(!_closeToTray)">Exit Studio</option>
+                </select>
+            </div>
+            <div class="small faint">
+                The desktop shell reads this when the close button is pressed. The browser UI is unaffected.
+            </div>
+            <div class="status-line">@_closeToTrayStatus</div>
+        </div>
+    </details>
 }
 
 

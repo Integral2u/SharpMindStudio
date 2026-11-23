@@ -48,7 +48,7 @@
     <div class="wrap wiki-layout">
         <aside class="toc">
             <strong>On this page</strong>
-            <a href="#appearance">Appearance</a>
+            <a href="#appearance">UI &amp; Appearance</a>
             <a href="#system">System</a>
             <a href="#tools">System tools</a>
             <a href="#plugin-components">Plugin components</a>
@@ -67,10 +67,12 @@
                 and Labs runs. Each layer can override the one above it; an empty override inherits.
             </p>
 
-            <h2 id="appearance">Appearance</h2>
+            <h2 id="appearance">UI &amp; Appearance</h2>
             <p>
                 Themes and display density apply immediately. A custom theme is stored locally with
                 the project, so it does not change another machine or another browser profile.
+                <strong>Window behaviour</strong> also lives here: choose whether the desktop close
+                button minimises to the tray or exits Studio. The browser UI is unaffected.
             </p>
 
             <h2 id="system">System</h2>
@@ -93,6 +95,10 @@
                 <li><strong>Files · read</strong> — list, read and search inside a context location.</li>
                 <li><strong>Files · write</strong> — write, append and create files.</li>
                 <li><strong>Files · delete</strong> — remove files through the delete permission.</li>
+                <li><strong>Execution</strong> — <span class="mono">RunProcess</span> and the softshell <span class="mono">RunShell</span>.</li>
+                <li><strong>CLI · git</strong> — <span class="mono">git_status</span>, <span class="mono">git_diff</span> and <span class="mono">git_log</span>.</li>
+                <li><strong>CLI · .NET</strong> — <span class="mono">dotnet_build</span> and <span class="mono">dotnet_test</span>.</li>
+                <li><strong>CLI · search</strong> — <span class="mono">rg_search</span>.</li>
                 <li><strong>Web</strong> — fetch a URL when web access is allowed.</li>
                 <li><strong>Interface</strong> — ask the person a structured question.</li>
                 <li><strong>System</strong> — clocks and machine specifications.</li>
