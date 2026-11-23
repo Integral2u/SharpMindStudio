@@ -66,6 +66,13 @@ public sealed class WorkCommandRunner(
             match = policy.Resolve(executable);
             if (match is null)
             {
+                if (policy.HasUnresolvedEntry(executable))
+                {
+                    return WorkCommandResult.Failed(
+                        $"Command '{executable}' is allowed but could not be resolved to a native executable. "
+                        + "Install it, or update the allowlist entry with its full path.");
+                }
+
                 return WorkCommandResult.Failed(
                     $"Command '{executable}' is not in the allowed list. Allowed: {policy.AllowedNames}.");
             }
@@ -141,7 +148,11 @@ public sealed class WorkCommandRunner(
             Detail = detail,
         };
         if (!await permission(access).ConfigureAwait(false))
-            return WorkCommandResult.Failed("Permission denied for this command.");
+        {
+            return WorkCommandResult.Failed(
+                $"Permission denied for {toolName}. Set the context's Run permission to Ask or "
+                + $"Always, and keep {toolName} on Ask or Always.");
+        }
 
         ProcessStartInfo startInfo;
         try

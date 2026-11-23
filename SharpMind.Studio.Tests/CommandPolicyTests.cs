@@ -61,6 +61,27 @@ public sealed class CommandPolicyTests
         Assert.Null(policy.Resolve("batch"));
         Assert.Null(policy.Resolve(batch));
         Assert.Null(policy.Resolve("script"));
+        Assert.False(policy.HasUnresolvedEntry("batch"));
+    }
+
+    [Fact]
+    public void HasUnresolvedEntry_IsTrueOnlyForAMissingExecutable()
+    {
+        using var temp = new TempDirectory();
+        var policy = new CommandPolicy(
+            [
+                new AllowedCommand
+                {
+                    Name = "missing",
+                    Executable = "sharpmind-test-command-that-does-not-exist",
+                },
+                new AllowedCommand { Name = "git", Executable = "git" },
+            ],
+            temp.Path);
+
+        Assert.True(policy.HasUnresolvedEntry("missing"));
+        Assert.False(policy.HasUnresolvedEntry("git"));
+        Assert.False(policy.HasUnresolvedEntry("not-configured"));
     }
 
     [Fact]

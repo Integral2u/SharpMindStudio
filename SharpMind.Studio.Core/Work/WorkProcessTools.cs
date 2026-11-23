@@ -60,6 +60,12 @@ public sealed class WorkProcessTools(
                 match = _policy.Resolve(fileName);
                 if (match is null)
                 {
+                    if (_policy.HasUnresolvedEntry(fileName))
+                    {
+                        return $"Command '{fileName}' is allowed but could not be resolved to a "
+                            + "native executable. Install it, or update the allowlist entry with its full path.";
+                    }
+
                     return $"Command '{fileName}' is not in the allowed list. Allowed: {_policy.AllowedNames}.";
                 }
             }

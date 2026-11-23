@@ -106,6 +106,31 @@ public sealed class CommandPolicy
 
     public bool Contains(string executable) => Resolve(executable) is not null;
 
+    /// <summary>True when the allowlist names this command but it cannot be resolved
+    /// to a runnable native executable. A shell or shim is blocked rather than
+    /// unresolved, so it keeps the generic not-allowed message.</summary>
+    public bool HasUnresolvedEntry(string nameOrExecutable)
+    {
+        foreach (AllowedCommand command in _commands)
+        {
+            if (!command.Name.Equals(nameOrExecutable, StringComparison.OrdinalIgnoreCase) &&
+                !command.Executable.Equals(nameOrExecutable, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string executable = Path.GetFileName(command.Executable);
+            if (Shells.Contains(executable) || ShellShims.Contains(Path.GetExtension(executable)))
+                continue;
+            if (Interpreters.Contains(executable) && !command.AllowInterpreter)
+                continue;
+
+            if (ResolvePath(command.Executable).Length == 0) return true;
+        }
+
+        return false;
+    }
+
     private static bool IsShellShim(string path) =>
         ShellShims.Contains(Path.GetExtension(path));
 

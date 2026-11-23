@@ -149,7 +149,9 @@ public sealed class SoftShellRunner(
                 if (!await AllowedAsync("RunShell", WorkToolCategory.Execute, state.Cwd, command.Source)
                         .ConfigureAwait(false))
                 {
-                    return PipelineResult.Failed("Permission denied for this command.");
+                    return PipelineResult.Failed(
+                        $"Permission denied for '{executable}'. Set the context's Run permission to "
+                        + "Ask or Always, and keep RunShell on Ask or Always.");
                 }
 
                 if (executable == "cd")

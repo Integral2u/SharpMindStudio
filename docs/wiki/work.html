@@ -214,6 +214,14 @@
                 <strong>Enabled tools</strong>. Switching to Unrestricted asks for confirmation.
             </p>
             <p>
+                An allowlist entry alone is not enough: <span class="mono">RunShell</span> and the
+                wrappers also need the context's <strong>Run</strong> permission and a tool
+                permission of <strong>Ask</strong> or <strong>Always</strong>. If either is
+                <strong>Never</strong>, the call is refused before the program starts. The Project
+                Command line panel warns when no context can run or when
+                <span class="mono">RunShell</span> is set to Never.
+            </p>
+            <p>
                 Curated wrappers take precedence over the generic shell when the matching
                 executable is allowed: <span class="mono">git_status</span>,
                 <span class="mono">git_diff</span>, <span class="mono">git_log</span>,

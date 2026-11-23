@@ -266,8 +266,25 @@
                     Restricted runs only the commands listed here. The softshell parses pipes,
                     redirection and <span class="mono">&amp;&amp;</span>/<span class="mono">||</span>
                     itself and never starts PowerShell or cmd. This is a guardrail, not a
-                    sandbox: an allowed program still has your account permissions.
+                    sandbox: an allowed program still has your account permissions. A command
+                    also needs <strong>Run</strong> permission on the context and
+                    <strong>Ask</strong> or <strong>Always</strong> on the command tool.
                 </p>
+
+                @if (_allowedCommands.Count > 0 && NoContextCanRun)
+                {
+                    <div class="note">
+                        <strong>No context has Run permission.</strong> Set Execute to Ask or
+                        Always on at least one context, or every allowlisted command will be refused.
+                    </div>
+                }
+                @if (_allowedCommands.Count > 0 && RunShellIsNever)
+                {
+                    <div class="note">
+                        <strong>RunShell is set to Never.</strong> Change it to Ask or Always under
+                        Enabled tools, or the softshell will refuse every command.
+                    </div>
+                }
 
                 @if (Unrestricted)
                 {
@@ -443,6 +460,12 @@
     private string? _commandStatus;
 
     private bool Unrestricted => _commandAccess == CommandAccessMode.Unrestricted;
+
+    private bool NoContextCanRun =>
+        _contexts.Count > 0 && _contexts.All(context => context.Execute == WorkPermission.Never);
+
+    private bool RunShellIsNever =>
+        Work.ProjectToolPermission("RunShell") == WorkToolPermission.Never;
 
     private string ShellDirectory => Work.GetShellDirectory(ChatService.Document?.Id);
 
