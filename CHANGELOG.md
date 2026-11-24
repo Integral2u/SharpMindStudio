@@ -98,6 +98,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A missing Vault reference in a shell builtin is refused.** `echo
+  %vault:NAME%` now reports the missing secret instead of printing the literal
+  placeholder; the same check already guarded external commands.
 - **Process warnings stop following a finished process.** A process that starts
   under Studio while a tool runs no longer leaves a permanent banner: the
   warning closes itself when the process exits. It now offers
