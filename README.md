@@ -47,7 +47,9 @@ dotnet run --project SharpMind.Studio
 
 In Visual Studio, open **`SharpMind.Studio.slnx`**. This is the `release/1.1.3`
 branch, so it builds the sibling `SharpMind` projects: check that repository out
-on **its** `release/1.1.3` branch first.
+on **its** `release/1.1.3` branch first. This is the 1.1.3 development line; the
+Microsoft Store currently serves 1.1.2, and 1.1.3 will be submitted after the
+cycle is complete.
 
 ```powershell
 cd ..\SharpMind
@@ -74,11 +76,20 @@ or connect a remote provider or a SharpMind Compute host.
 | Mode | What it does |
 |---|---|
 | **Chat** | Local models, a remote provider or a Compute host; saved sessions, system prompt, tools drawer. |
-| **Work** | Project spaces with scoped file/web tools, skills, memory and explicit permissions. |
+| **Work** | Project spaces with scoped file/web tools, skills, memory, explicit permissions, a shell-shaped command line, typed git/dotnet/rg wrappers and Vault-backed secrets. |
 | **Training** | New model (pretrain), Improve (LoRA/SFT), Playbooks, Data, Runs and Models. |
 | **Data Factory** | Source → clean/filter → provider transform → review → chat or text JSONL. |
 | **Models** | HuggingFace GGUF browser, resume, `.gguf` → `.smm`, `.smlora` adapters. |
 | **Phone pairing** | A phone on your LAN can use Chat and a small Work scope after pairing. |
+
+Work is also a full code harness. The softshell parses familiar pipes, redirection,
+`&&`/`||`, `cd` persistence, `mkdir`/`rmdir`/`rename`, inline environment variables
+and `%vault:NAME%` references itself, then starts each allowed program directly. It
+never hands the command line to PowerShell, cmd or bash. Commands come from a
+layered allowlist (System → Project → Family → Model → Session), and the typed
+wrappers `git_status`, `git_diff`, `git_log`, `dotnet_build`, `dotnet_test` and
+`rg_search` sit ahead of the generic shell. Project archive/recovery, session
+moves and per-agent tool-call budgets are included.
 
 GPU training is **LoRA fine-tuning only** and needs a LLaMA/Qwen-style base
 (RMSNorm + RoPE/NoPE + gated FFN). From-scratch pretraining stays on the CPU. GPU
@@ -109,6 +120,8 @@ The wiki is the reference; this README is the short version.
 - [EuroRouter (beta)](docs/wiki/providers.html#partners)
 - [Training](docs/wiki/training.html)
 - [Work](docs/wiki/work.html)
+- [Softshell and command access](docs/wiki/work.html#command-line)
+- [Project archive and recovery](docs/wiki/work.html#project)
 - [Phone pairing](docs/wiki/pairing.html)
 - [Troubleshooting](docs/wiki/troubleshooting.html)
 - [Docker runbooks](docker/README.md)

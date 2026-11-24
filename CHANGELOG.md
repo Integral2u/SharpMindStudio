@@ -6,12 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+_Planned for 1.1.3._
+
 ### Added
 
 - **Microsoft Store availability.** SharpMind Studio is now listed in the
   Microsoft Store. The site, wiki and README point there for the primary
   download; the MSI and ZIP remain on GitHub Releases for direct and offline
   installs, and the in-app version link opens the Store listing.
+
+- **Settings layout for the new harness.** Window behaviour now lives under
+  **UI & Appearance**; the appearance and MCP panels are collapsible. System
+  tools uses the same four-state controls and badges as the project editor, and
+  the System command line is inside the System tools group.
 
 - **Archive and recover Work projects.** Work projects stay in the sidebar even
   with no sessions. The project actions dialog offers Archive and Delete
@@ -58,17 +65,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `%vault:NAME%`, and starts each program directly. It never launches PowerShell,
   cmd or bash; command substitution, backticks, here-docs, background jobs and
   globbing are refused. Commands and redirection targets stay inside the project
-  contexts, pipes are buffered, and one timeout bounds the whole command. A
-  project-level allowlist adds or removes executables and aliases with fixed
-  arguments; shells are never allowed and interpreters need an explicit flag.
-  Typed wrappers (`git_status`, `git_diff`, `git_log`, `dotnet_build`,
-  `dotnet_test`, `rg_search`) are registered ahead of the generic shell when the
-  matching executable is allowed. `cd` persists across calls in a Work session;
-  a new session or project starts at the root. Wrappers and `RunProcess` start
-  in that directory unless the call overrides it. Command access is
-  **Restricted** by default: an empty allowlist refuses every external command,
+  contexts, pipes are buffered, and one timeout bounds the whole command. A layer
+  allowlist adds or removes executables and aliases with fixed arguments; shells
+  are never allowed and interpreters need an explicit flag. Typed wrappers
+  (`git_status`, `git_diff`, `git_log`, `dotnet_build`, `dotnet_test`,
+  `rg_search`) are registered ahead of the generic shell when the matching
+  executable is allowed. `cd` persists across calls in a Work session; a new
+  session or project starts at the root. Wrappers and `RunProcess` start in that
+  directory unless the call overrides it. Command access is **Restricted** by
+  default at System: an empty effective allowlist refuses every external command,
   and `RunProcess` must resolve through the policy. **Unrestricted** is an
-  explicit project toggle that ignores the allowlist for `RunProcess`; the
+  explicit layer choice that ignores the allowlist for `RunProcess`; the
   softshell stays off, while installed wrappers remain available and can be
   disabled individually under Enabled tools.
 - **Layered command access.** Command mode and the allowlist now follow
