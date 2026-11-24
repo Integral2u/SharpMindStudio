@@ -141,6 +141,14 @@
                 Paths outside the declared context are not reachable through the project tools.
                 The project folder itself is not a substitute for an explicit context location.
             </p>
+            <p>
+                In the Work composer, <span class="mono">@file</span>,
+                <span class="mono">@folder</span> and <span class="mono">@memory</span> add
+                explicit context for the next turn. File and folder reads use the same
+                <strong>Read</strong> permission as the project tools; a folder is capped by
+                file count and size. Remote models receive the selected context with the
+                message, so remove a chip before sending if it should stay local.
+            </p>
 
             <h3 id="tools">Tool permissions</h3>
             <p>

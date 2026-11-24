@@ -10,6 +10,7 @@
 @using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Core.Work
 @using SharpMind.Studio.Services
+@using System.Text
 @inject StudioChatService ChatService
 @inject InferenceSettingsService Inference
 @inject OpenRouterSettingsService OpenRouter
@@ -23,6 +24,7 @@
 @inject ThemeService Theme
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject PathPickerService Picker
 
 <PageTitle>@(_workMode ? "Work" : "Chat") - SharpMind Studio</PageTitle>
 
@@ -892,6 +894,32 @@ else
                             }
                         </div>
                     }
+                    @if (_contextPaletteOpen)
+                    {
+                        <div class="command-palette context-palette" role="listbox" aria-label="Add context">
+                            @if (_contextCandidates.Count == 0)
+                            {
+                                <div class="command-palette-empty">No context option matches.</div>
+                            }
+                            else
+                            {
+                                @for (int contextIndex = 0; contextIndex < _contextCandidates.Count; contextIndex++)
+                                {
+                                    int itemIndex = contextIndex;
+                                    ContextChoice contextChoice = _contextCandidates[contextIndex];
+                                    <button type="button"
+                                            class="command-palette-item @(itemIndex == _contextIndex ? "selected" : "")"
+                                            role="option"
+                                            aria-selected="@(itemIndex == _contextIndex)"
+                                            @onmouseenter="() => _contextIndex = itemIndex"
+                                            @onclick="() => SelectContextAsync(contextChoice)">
+                                        <span class="command-palette-name">@contextChoice.Label</span>
+                                        <span class="command-palette-description">@contextChoice.Description</span>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
                     <textarea id="chat-input" class="textarea"
                               value="@_input"
                               @oninput="OnComposerInput"
@@ -901,6 +929,10 @@ else
                     <div class="composer-actions">
                         @if (!ChatService.IsStreaming && !ChatService.IsLoading && !ChatService.IsCompute)
                         {
+                            <button type="button" class="button" @onclick="OpenContextMenu"
+                                    title="Add a file, folder or project memory to this turn">
+                                @@ Context
+                            </button>
                             <label class="button chat-attach-button" title="Attach an image, audio file or document">
                                 Attach
                                 <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
@@ -927,7 +959,7 @@ else
                         }
                         <button id="chat-send" type="button" class="button primary composer-send" @onclick="SendCommandOrMessageAsync"
                                 disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
-                                            (string.IsNullOrWhiteSpace(_input) && !HasVisionImage && !HasAudioInput) ||
+                                            (string.IsNullOrWhiteSpace(_input) && !HasVisionImage && !HasAudioInput && _pendingArtifacts.Count == 0) ||
                                             (_workMode && !_remoteChat && _toolState.Capability == ToolCapability.Failed && !_allowFailedTools))">
                             Send
                         </button>
@@ -1016,6 +1048,11 @@ else
     private int _commandIndex;
     private string? _commandError;
     private string? _commandStatus;
+    private bool _contextPaletteOpen;
+    private IReadOnlyList<ContextChoice> _contextCandidates = [];
+    private int _contextIndex;
+    private bool _contextFromToken;
+    private readonly HashSet<string> _contextPaths = new(StringComparer.OrdinalIgnoreCase);
 
     private RemoteProviderPreset RemotePreset => RemoteProviders.Find(_remoteProviderId);
     private IReadOnlyList<string> RemoteActiveModels => OpenRouter.ActiveModelsFor(_remoteProviderId);
@@ -1078,6 +1115,32 @@ else
     private ToolPermissionSet _sessionToolsDraft = new();
     private IReadOnlyList<EmbeddedToolInfo> _embeddedTools = [];
     private ToolPermissionSet _embeddedPermissions = new();
+
+    private sealed record ContextChoice(string Kind, string Label, string Description);
+
+    private static readonly HashSet<string> ContextSkippedDirectories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".git", ".vs", ".idea", "bin", "obj", "node_modules", "dist", "build",
+    };
+
+    private static readonly HashSet<string> ContextTextExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".markdown", ".rst", ".cs", ".razor", ".cshtml", ".json", ".csv",
+        ".log", ".xml", ".xaml", ".html", ".htm", ".css", ".scss", ".js", ".mjs", ".ts",
+        ".tsx", ".jsx", ".py", ".sql", ".yaml", ".yml", ".toml", ".ini", ".csproj",
+        ".slnx", ".sln", ".props", ".targets", ".sh", ".ps1", ".bat", ".cmd", ".java",
+        ".go", ".rs", ".cpp", ".cc", ".c", ".h", ".hpp", ".fs", ".fsx", ".vb",
+    };
+
+    private const string ContextFilePattern =
+        "*.txt;*.md;*.markdown;*.rst;*.cs;*.razor;*.cshtml;*.json;*.csv;*.log;*.xml;" +
+        "*.xaml;*.html;*.htm;*.css;*.scss;*.js;*.mjs;*.ts;*.tsx;*.jsx;*.py;*.sql;*.yaml;" +
+        "*.yml;*.toml;*.ini;*.csproj;*.slnx;*.sln;*.props;*.targets;*.sh;*.ps1;*.bat;" +
+        "*.cmd;*.java;*.go;*.rs;*.cpp;*.cc;*.c;*.h;*.hpp;*.fs;*.fsx;*.vb;README;LICENSE";
+
+    private const int MaxContextFiles = 40;
+    private const long MaxContextFileBytes = 64 * 1024;
+    private const long MaxContextTotalBytes = 192 * 1024;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1397,10 +1460,14 @@ else
         _showOptions = false;
         _input = "";
         _pendingArtifacts.Clear();
+        _contextPaths.Clear();
         _commandPaletteOpen = false;
         _commandCandidates = [];
         _commandError = null;
         _commandStatus = null;
+        _contextPaletteOpen = false;
+        _contextCandidates = [];
+        _contextFromToken = false;
 
         if (ChatService.Document is { } current &&
             string.Equals(current.Provider, "openrouter", StringComparison.OrdinalIgnoreCase))
@@ -1656,6 +1723,7 @@ else
         _commandError = null;
         _commandStatus = null;
         UpdateCommandPalette();
+        UpdateContextPalette();
     }
 
     private void UpdateCommandPalette()
@@ -1680,10 +1748,357 @@ else
         _commandCandidates = ChatCommands.Match(query);
         _commandPaletteOpen = true;
         _commandIndex = 0;
+        _contextPaletteOpen = false;
+        _contextCandidates = [];
+        _contextFromToken = false;
+    }
+
+    private void UpdateContextPalette()
+    {
+        if (_commandPaletteOpen || !TryGetContextQuery(out string query))
+        {
+            _contextPaletteOpen = false;
+            _contextCandidates = [];
+            _contextFromToken = false;
+            return;
+        }
+
+        _contextCandidates =
+        [
+            .. BuildContextChoices().Where(choice =>
+                choice.Label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                choice.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+        ];
+        _contextPaletteOpen = true;
+        _contextFromToken = true;
+        _contextIndex = 0;
+    }
+
+    private bool TryGetContextQuery(out string query)
+        => ChatContextParser.TryGetToken(_input, out query);
+
+    private IReadOnlyList<ContextChoice> BuildContextChoices()
+    {
+        var choices = new List<ContextChoice>
+        {
+            new("file", "@file", "Attach a text file as context for this turn."),
+        };
+
+        if (_workMode)
+        {
+            choices.Add(new("folder", "@folder", "Attach a folder manifest and its text files."));
+            if (!string.IsNullOrWhiteSpace(Work.Memory))
+                choices.Add(new("memory", "@memory", "Attach the Work project memory."));
+        }
+
+        return choices;
+    }
+
+    private async Task OpenContextMenu()
+    {
+        _commandPaletteOpen = false;
+        _commandCandidates = [];
+        _contextCandidates = BuildContextChoices();
+        _contextIndex = 0;
+        _contextPaletteOpen = true;
+        _contextFromToken = false;
+        await FocusComposerAsync();
+    }
+
+    private async Task SelectContextAsync(ContextChoice choice)
+    {
+        _contextPaletteOpen = false;
+        _contextCandidates = [];
+        if (_contextFromToken) RemoveContextToken();
+        _contextFromToken = false;
+
+        switch (choice.Kind)
+        {
+            case "folder":
+                await AddFolderContextAsync();
+                break;
+            case "memory":
+                AddMemoryContext();
+                break;
+            default:
+                await AddFileContextAsync();
+                break;
+        }
+
+        await FocusComposerAsync();
+    }
+
+    private void RemoveContextToken()
+    {
+        int index = _input.LastIndexOf('@');
+        if (index >= 0) _input = _input[..index].TrimEnd();
+    }
+
+    private async Task AddFileContextAsync()
+    {
+        string? start = _workMode ? Workspace.Project.Root : null;
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File, start, "Add file context", ContextFilePattern);
+        if (selection?.Path is not { Length: > 0 } path) return;
+        if (!ValidateContextPath(path, out string? reason))
+        {
+            _commandError = reason;
+            return;
+        }
+
+        if (!_contextPaths.Add(path))
+        {
+            _commandStatus = $"{Path.GetFileName(path)} is already attached.";
+            return;
+        }
+
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Length > 1_000_000)
+            {
+                _contextPaths.Remove(path);
+                _commandError = $"{info.Name} is larger than 1 MB.";
+                return;
+            }
+
+            string text = await File.ReadAllTextAsync(path);
+            if (text.Contains('\0'))
+            {
+                _contextPaths.Remove(path);
+                _commandError = $"{info.Name} does not look like a text file.";
+                return;
+            }
+
+            AddContextArtifact(
+                info.Name,
+                $"File: {path}\n\n{text}",
+                path);
+        }
+        catch (Exception ex)
+        {
+            _contextPaths.Remove(path);
+            _commandError = $"Could not read {Path.GetFileName(path)}: {ex.Message}";
+        }
+    }
+
+    private async Task AddFolderContextAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.Folder, Workspace.Project.Root, "Add folder context");
+        if (selection?.Path is not { Length: > 0 } folder) return;
+        if (!ValidateContextPath(folder, out string? reason))
+        {
+            _commandError = reason;
+            return;
+        }
+
+        if (!_contextPaths.Add(folder))
+        {
+            _commandStatus = $"{Path.GetFileName(folder)} is already attached.";
+            return;
+        }
+
+        var contents = new StringBuilder();
+        int included = 0;
+        int skipped = 0;
+        long total = 0;
+        foreach (string file in EnumerateContextFiles(folder))
+        {
+            if (included >= MaxContextFiles || total >= MaxContextTotalBytes)
+            {
+                skipped++;
+                continue;
+            }
+
+            try
+            {
+                var info = new FileInfo(file);
+                if (info.Length == 0 || info.Length > MaxContextFileBytes)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                string text = await File.ReadAllTextAsync(file);
+                if (text.Contains('\0'))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                string relative = Path.GetRelativePath(folder, file);
+                contents.AppendLine($"### {relative}");
+                contents.AppendLine(text.TrimEnd());
+                contents.AppendLine();
+                included++;
+                total += Encoding.UTF8.GetByteCount(text);
+            }
+            catch
+            {
+                skipped++;
+            }
+        }
+
+        if (included == 0)
+        {
+            _contextPaths.Remove(folder);
+            _commandError = "No readable text files were found in that folder.";
+            return;
+        }
+
+        var header = new StringBuilder();
+        header.AppendLine($"Folder: {folder}");
+        header.AppendLine($"Files included: {included}" + (skipped > 0 ? $"; skipped: {skipped}" : ""));
+        header.AppendLine();
+        header.Append(contents);
+        AddContextArtifact(
+            $"{Path.GetFileName(folder)} (folder context)",
+            header.ToString(),
+            folder);
+    }
+
+    private void AddMemoryContext()
+    {
+        string memory = Work.Memory.Trim();
+        if (memory.Length == 0)
+        {
+            _commandStatus = "Project memory is empty.";
+            return;
+        }
+
+        if (!_contextPaths.Add("memory:project"))
+        {
+            _commandStatus = "Project memory is already attached.";
+            return;
+        }
+
+        AddContextArtifact("project-memory", memory, "memory:project");
+    }
+
+    private void AddContextArtifact(string name, string text, string? sourceKey)
+    {
+        _commandError = null;
+        _commandStatus = null;
+
+        byte[] content = Encoding.UTF8.GetBytes(text);
+        if (content.Length > 400_000)
+        {
+            if (sourceKey is not null) _contextPaths.Remove(sourceKey);
+            _commandError = $"The context for {name} is larger than the 400 KB limit.";
+            return;
+        }
+
+        if (_pendingArtifacts.Count >= 12)
+        {
+            if (sourceKey is not null) _contextPaths.Remove(sourceKey);
+            _commandError = "Remove an attachment before adding more context.";
+            return;
+        }
+
+        _pendingArtifacts.Add(new ChatArtifact
+        {
+            Type = "text",
+            MimeType = "text/plain",
+            Content = content,
+            FileName = name,
+            SourcePath = sourceKey,
+        });
+
+        _commandStatus = ChatService.IsRemote
+            ? $"Added {name}. It will be sent to the remote provider with the next message."
+            : $"Added {name}.";
+    }
+
+    private bool ValidateContextPath(string path, out string? reason)
+    {
+        if (!_workMode)
+        {
+            reason = null;
+            return true;
+        }
+
+        return Work.CanAttachContextPath(path, out reason);
+    }
+
+    private static IEnumerable<string> EnumerateContextFiles(string root)
+    {
+        var pending = new Stack<string>();
+        pending.Push(root);
+        int visited = 0;
+        while (pending.Count > 0 && visited < 2_000)
+        {
+            string directory = pending.Pop();
+            visited++;
+
+            string[] files;
+            string[] directories;
+            try
+            {
+                files = Directory.GetFiles(directory);
+                directories = Directory.GetDirectories(directory);
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (string file in files)
+            {
+                if (IsContextTextFile(file)) yield return file;
+            }
+
+            foreach (string child in directories)
+            {
+                if (!ContextSkippedDirectories.Contains(Path.GetFileName(child)))
+                    pending.Push(child);
+            }
+        }
+    }
+
+    private static bool IsContextTextFile(string path)
+    {
+        string extension = Path.GetExtension(path);
+        if (extension.Length == 0) return true;
+        return ContextTextExtensions.Contains(extension);
     }
 
     private async Task OnComposerKeyDown(KeyboardEventArgs args)
     {
+        if (_contextPaletteOpen)
+        {
+            if (args.Key == "ArrowDown")
+            {
+                if (_contextCandidates.Count > 0)
+                    _contextIndex = (_contextIndex + 1) % _contextCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "ArrowUp")
+            {
+                if (_contextCandidates.Count > 0)
+                    _contextIndex = (_contextIndex - 1 + _contextCandidates.Count) % _contextCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "Escape")
+            {
+                _contextPaletteOpen = false;
+                return;
+            }
+
+            if ((args.Key == "Enter" || args.Key == "Tab") && !args.ShiftKey)
+            {
+                if (_contextCandidates.Count > 0)
+                    await SelectContextAsync(_contextCandidates[_contextIndex]);
+                else
+                    _contextPaletteOpen = false;
+                return;
+            }
+
+            return;
+        }
+
         if (_commandPaletteOpen)
         {
             if (args.Key == "ArrowDown")
@@ -1729,6 +2144,19 @@ else
 
     private async Task SendCommandOrMessageAsync()
     {
+        if (_contextPaletteOpen)
+        {
+            if (_contextCandidates.Count > 0)
+            {
+                await SelectContextAsync(_contextCandidates[_contextIndex]);
+            }
+            else
+            {
+                _contextPaletteOpen = false;
+            }
+            return;
+        }
+
         if (_commandPaletteOpen && _commandCandidates.Count > 0)
         {
             // A partial command accepts the highlighted item; a fully typed
@@ -1963,12 +2391,19 @@ else
         _commandCandidates = [];
         _commandError = null;
         _commandStatus = null;
+        _contextPaletteOpen = false;
+        _contextCandidates = [];
+        _contextFromToken = false;
         string text = _input;
         if (string.IsNullOrWhiteSpace(text))
         {
             if (HasVisionImage)
             {
                 text = "Describe this image.";
+            }
+            else if (!HasAudioInput && _pendingArtifacts.Count > 0)
+            {
+                text = "Use the attached context.";
             }
             else if (!HasAudioInput)
             {
@@ -1978,6 +2413,7 @@ else
         _input = "";
         ChatArtifact[] artifacts = [.. _pendingArtifacts];
         _pendingArtifacts.Clear();
+        _contextPaths.Clear();
         await ChatService.SendAsync(text, artifacts);
         await FocusComposerAsync();
     }
@@ -2032,6 +2468,7 @@ else
     private void RemoveArtifact(ChatArtifact artifact)
     {
         _pendingArtifacts.Remove(artifact);
+        if (artifact.SourcePath is { Length: > 0 } source) _contextPaths.Remove(source);
         if (_pendingArtifacts.Count <= 3) _showOverflow = false;
     }
 

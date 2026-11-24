@@ -1106,6 +1106,45 @@ public sealed class StudioWorkService : IDisposable
     public string ResolveContextPath(WorkContext context)
         => WorkContextValidation.Resolve(context, _store.ProjectRoot);
 
+    /// <summary>
+    /// Whether an explicitly chosen path may be read as chat context. The
+    /// selection itself is the user's consent, so Ask is enough; Never still
+    /// refuses. Paths outside every context are refused.
+    /// </summary>
+    public bool CanAttachContextPath(string path, out string? reason)
+    {
+        try
+        {
+            string full = Path.GetFullPath(path);
+            WorkContext? context = FindContext(full);
+            if (context is null)
+            {
+                if (IsUnder(full, _store.ProjectRoot))
+                {
+                    reason = null;
+                    return true;
+                }
+
+                reason = "The path is outside the project contexts.";
+                return false;
+            }
+
+            if (context.Permissions.Read == WorkPermission.Never)
+            {
+                reason = $"Reading is disabled for {context.Path}.";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            reason = ex.Message;
+            return false;
+        }
+    }
+
     private List<string> AllowedRoots()
     {
         var roots = _settings.Contexts

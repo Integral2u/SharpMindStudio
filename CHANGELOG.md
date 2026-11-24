@@ -34,6 +34,13 @@ _Planned for 1.1.3._
   refused instead of becoming a prompt. Partial commands accept the highlighted
   item, while a fully typed command runs as written.
 
+- **Context references in chat.** Typing `@` or choosing **@ Context** adds a
+  readable file, and in Work a folder or the project memory, as a composer chip.
+  Work paths go through the same context read permission as its file tools;
+  folder context is capped by file count and size, and a remote chat says that
+  the context will leave the machine. Context can be removed before sending, and
+  a context-only turn sends a short default prompt.
+
 - **Archive and recover Work projects.** Work projects stay in the sidebar even
   with no sessions. The project actions dialog offers Archive and Delete
   permanently; Archive moves the whole folder to Settings → System → Archived
