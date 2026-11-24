@@ -48,13 +48,91 @@ public sealed class WorkCommandRunnerTests
         Assert.Contains(sub, result.Stdout);
     }
 
+    [Fact]
+    public async Task AllowAlways_SkipsThePermissionGate()
+    {
+        using var temp = new TempDirectory();
+        var policy = new CommandPolicy(
+            [
+                new AllowedCommand
+                {
+                    Name = "dotnet",
+                    Executable = "dotnet",
+                    Permission = CommandPermission.AllowAlways,
+                },
+            ],
+            temp.Path);
+        var runner = Runner(temp, policy, permission: _ => Task.FromResult(false));
+
+        WorkCommandResult result = await runner.RunAsync(
+            "test", "dotnet", ["--version"], ".");
+
+        Assert.Null(result.Error);
+        Assert.Equal(0, result.ExitCode);
+    }
+
+    [Fact]
+    public async Task Ask_StillUsesThePermissionGate()
+    {
+        using var temp = new TempDirectory();
+        var policy = new CommandPolicy(
+            [
+                new AllowedCommand
+                {
+                    Name = "dotnet",
+                    Executable = "dotnet",
+                    Permission = CommandPermission.Ask,
+                },
+            ],
+            temp.Path);
+        var runner = Runner(temp, policy, permission: _ => Task.FromResult(false));
+
+        WorkCommandResult result = await runner.RunAsync(
+            "test", "dotnet", ["--version"], ".");
+
+        Assert.NotNull(result.Error);
+        Assert.Contains("Permission denied", result.Error);
+    }
+
+    [Fact]
+    public async Task Allow_SkipsTheGateOnlyWhenTheSessionAllowsIt()
+    {
+        using var temp = new TempDirectory();
+        var policy = new CommandPolicy(
+            [
+                new AllowedCommand
+                {
+                    Name = "dotnet",
+                    Executable = "dotnet",
+                    Permission = CommandPermission.Allow,
+                },
+            ],
+            temp.Path);
+
+        WorkCommandResult denied = await Runner(
+            temp, policy, permission: _ => Task.FromResult(false),
+            sessionAllowed: _ => false)
+            .RunAsync("test", "dotnet", ["--version"], ".");
+        Assert.Contains("Permission denied", denied.Error);
+
+        WorkCommandResult allowed = await Runner(
+            temp, policy, permission: _ => Task.FromResult(false),
+            sessionAllowed: name => name.Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+            .RunAsync("test", "dotnet", ["--version"], ".");
+        Assert.Null(allowed.Error);
+        Assert.Equal(0, allowed.ExitCode);
+    }
+
     private static WorkCommandRunner Runner(
         TempDirectory temp,
         CommandPolicy? policy,
-        Func<string>? currentDirectory = null) =>
+        Func<string>? currentDirectory = null,
+        Func<WorkToolAccess, Task<bool>>? permission = null,
+        Func<string, bool>? sessionAllowed = null) =>
         new(
             policy,
             new WorkPathPolicy(temp.Path, [temp.Path]),
-            _ => Task.FromResult(true),
-            currentDirectory: currentDirectory);
+            permission ?? (_ => Task.FromResult(true)),
+            currentDirectory: currentDirectory,
+            sessionAllowed: sessionAllowed);
 }

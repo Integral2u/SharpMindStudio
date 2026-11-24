@@ -73,6 +73,7 @@ public sealed class StudioWorkService : IDisposable
     private readonly ISecretResolver _secrets;
     private readonly Lock _gate = new();
     private readonly WorkShellDirectoryStore _shells = new();
+    private readonly HashSet<string> _sessionAllowedCommands = new(StringComparer.OrdinalIgnoreCase);
     private WorkSettingsStore _store;
     private WorkSettings _settings;
     private string _memory = "";
@@ -128,6 +129,22 @@ public sealed class StudioWorkService : IDisposable
     }
 
     public void ResetShellDirectory(string? sessionId) => _shells.Reset(sessionId);
+
+    public void AllowCommandThisSession(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        lock (_gate) _sessionAllowedCommands.Add(name);
+    }
+
+    public bool IsCommandAllowedThisSession(string name)
+    {
+        lock (_gate) return _sessionAllowedCommands.Contains(name);
+    }
+
+    public void RevokeCommandThisSession(string name)
+    {
+        lock (_gate) _sessionAllowedCommands.Remove(name);
+    }
 
     public WorkSettings Settings => _settings;
     public IReadOnlyList<WorkSkill> ProjectSkills => _settings.Skills;
@@ -289,7 +306,8 @@ public sealed class StudioWorkService : IDisposable
                 pathPolicy,
                 access => CheckAccessAsync(access, profile: effective),
                 _secrets,
-                () => shell.Current);
+                () => shell.Current,
+                IsCommandAllowedThisSession);
             var cliRunner = new CliToolRunner(commandRunner);
 
             bool Available(string name) => unrestricted
@@ -347,7 +365,8 @@ public sealed class StudioWorkService : IDisposable
                     commandPolicy,
                     access => CheckAccessAsync(access, profile: effective),
                     _secrets,
-                    shell)));
+                    shell,
+                    IsCommandAllowedThisSession)));
             }
         }
         if (work)
@@ -789,7 +808,8 @@ public sealed class StudioWorkService : IDisposable
             commandPolicy = new CommandPolicy(commandAccess.Commands, _workspace.Project.Root);
 
         var commandRunner = new WorkCommandRunner(
-            commandPolicy, pathPolicy, Permission, _secrets, () => shell.Current);
+            commandPolicy, pathPolicy, Permission, _secrets, () => shell.Current,
+            IsCommandAllowedThisSession);
         var cliRunner = new CliToolRunner(commandRunner);
 
         bool Available(string name) => unrestricted
@@ -816,7 +836,8 @@ public sealed class StudioWorkService : IDisposable
         if (commandPolicy is { IsEmpty: false })
         {
             wrapperTools.Add(new SoftShellTools(new SoftShellRunner(
-                pathPolicy, commandPolicy, Permission, _secrets, shell)));
+                pathPolicy, commandPolicy, Permission, _secrets, shell,
+                IsCommandAllowedThisSession)));
         }
 
         // AgentBuilder filters DisabledTools while it reflects the tool objects, so
@@ -1207,6 +1228,7 @@ public sealed class StudioWorkService : IDisposable
     private void OnProjectChanged()
     {
         _shells.Clear();
+        lock (_gate) _sessionAllowedCommands.Clear();
         Reload();
         Notify();
     }

@@ -35,11 +35,13 @@ public sealed class WorkCommandRunner(
     WorkPathPolicy paths,
     Func<WorkToolAccess, Task<bool>> permission,
     ISecretResolver? secrets = null,
-    Func<string>? currentDirectory = null)
+    Func<string>? currentDirectory = null,
+    Func<string, bool>? sessionAllowed = null)
 {
     private const int MaxCaptured = 2 * 1024 * 1024;
 
     private readonly ISecretResolver _secrets = secrets ?? NullSecretResolver.Instance;
+    private readonly Func<string, bool>? _sessionAllowed = sessionAllowed;
 
     public CommandPolicy? Policy => policy;
 
@@ -147,7 +149,13 @@ public sealed class WorkCommandRunner(
         {
             Detail = detail,
         };
-        if (!await permission(access).ConfigureAwait(false))
+
+        bool skipPermission = match is not null &&
+            (match.Command.Permission == CommandPermission.AllowAlways ||
+             (match.Command.Permission == CommandPermission.Allow &&
+              _sessionAllowed?.Invoke(match.Command.Name) == true));
+
+        if (!skipPermission && !await permission(access).ConfigureAwait(false))
         {
             return WorkCommandResult.Failed(
                 $"Permission denied for {toolName}. Set {toolName} to Ask or Always under "

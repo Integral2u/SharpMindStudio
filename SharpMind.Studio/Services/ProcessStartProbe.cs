@@ -75,6 +75,19 @@ public sealed class ProcessStartProbe : IDisposable
         }
     }
 
+    public static bool IsAlive(int processId)
+    {
+        try
+        {
+            using Process process = Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task WatchAsync(CancellationToken cancellationToken)
     {
         var known = new HashSet<int>();

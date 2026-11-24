@@ -14,7 +14,8 @@ public sealed class SoftShellRunner(
     CommandPolicy policy,
     Func<WorkToolAccess, Task<bool>> permission,
     ISecretResolver? secrets = null,
-    WorkShellDirectory? directory = null)
+    WorkShellDirectory? directory = null,
+    Func<string, bool>? sessionAllowed = null)
 {
     private const int MaxOutput = 20_000;
     private const int MaxStdin = 2 * 1024 * 1024;
@@ -31,6 +32,7 @@ public sealed class SoftShellRunner(
     private readonly ISecretResolver _secrets = secrets ?? NullSecretResolver.Instance;
     private readonly WorkShellDirectory _directory = directory
         ?? new WorkShellDirectory(new WorkShellDirectoryStore(), null, paths);
+    private readonly Func<string, bool>? _sessionAllowed = sessionAllowed;
 
     public async Task<string> RunAsync(
         string command,
@@ -289,7 +291,8 @@ public sealed class SoftShellRunner(
                 }
             }
 
-            var runner = new WorkCommandRunner(policy, paths, permission, _secrets);
+            var runner = new WorkCommandRunner(
+                policy, paths, permission, _secrets, sessionAllowed: _sessionAllowed);
             WorkCommandResult result = await runner.RunAsync(
                 "RunShell",
                 executable,

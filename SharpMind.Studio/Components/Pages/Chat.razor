@@ -743,16 +743,27 @@ else
                                     : $" by the plugin tool {process.Plugin}")
                             </strong>
                             <span class="small faint">
-                                It started underneath Studio while a tool was running. Killing it stops
-                                what is still running; anything it already sent cannot be undone.
+                                It started underneath Studio while a tool was running. This warning
+                                closes automatically when the process exits. Allow always keeps this
+                                process name quiet for the rest of the session.
                             </span>
                         </div>
                         <div class="row">
-                            <button type="button" class="button danger" @onclick="KillProcessAsync">
-                                Kill process
+                            <button type="button" class="button danger"
+                                    @onclick="DisableProcessAsync">
+                                Disable
                             </button>
-                            <button type="button" class="button" @onclick="Safety.DismissPendingProcess">
-                                Dismiss
+                            <button type="button" class="button"
+                                    @onclick="() => Safety.AskAboutProcessAgain(process.Name)">
+                                Ask
+                            </button>
+                            <button type="button" class="button"
+                                    @onclick="Safety.DismissPendingProcess">
+                                Allow
+                            </button>
+                            <button type="button" class="button primary"
+                                    @onclick="() => Safety.AllowProcessForSession(process.Name)">
+                                Allow always
                             </button>
                         </div>
                     </div>
@@ -1137,11 +1148,11 @@ else
 
     private Task ResolveSafetyAsync(SafetyDecision decision) => Safety.ResolveAsync(decision);
 
-    private async Task KillProcessAsync()
+    private async Task DisableProcessAsync()
     {
-        Safety.KillPendingProcess(out string? error);
-        if (!string.IsNullOrWhiteSpace(error))
-            await JS.InvokeVoidAsync("alert", $"Could not kill the process: {error}");
+        (bool ok, string? error) = Safety.DisablePendingProcess();
+        if (!ok && !string.IsNullOrWhiteSpace(error))
+            await JS.InvokeVoidAsync("alert", $"Could not disable the process: {error}");
     }
 
     private void OnChatChanged() => _ = InvokeAsync(async () =>

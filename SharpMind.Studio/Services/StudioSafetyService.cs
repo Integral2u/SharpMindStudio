@@ -48,6 +48,8 @@ public sealed class StudioSafetyService : IDisposable
     private readonly Lock _gate = new();
     private readonly HashSet<string> _denied = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _allowed = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _deniedProcesses = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _allowedProcesses = new(StringComparer.OrdinalIgnoreCase);
     private readonly ProcessStartProbe _probe = new();
     private SafetyReviewRequest? _pending;
     private ProcessStartAlert? _pendingProcess;
@@ -102,10 +104,96 @@ public sealed class StudioSafetyService : IDisposable
         Changed?.Invoke();
     }
 
+    /// <summary>Kill the process and suppress further warnings for that name this session.</summary>
+    public (bool Ok, string? Error) DisablePendingProcess()
+    {
+        ProcessStartAlert? alert;
+        lock (_gate)
+        {
+            alert = _pendingProcess;
+            _pendingProcess = null;
+            if (alert is not null) _deniedProcesses.Add(alert.Name);
+        }
+
+        bool ok = true;
+        string? error = null;
+        if (alert is not null)
+            ok = ProcessStartProbe.TryKill(alert.ProcessId, out error);
+        Changed?.Invoke();
+        return (ok, error);
+    }
+
+    /// <summary>Stop suppressing this process name and ask again next time.</summary>
+    public void AskAboutProcessAgain(string? name)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            lock (_gate)
+            {
+                _allowedProcesses.Remove(name);
+                _deniedProcesses.Remove(name);
+            }
+        }
+        DismissPendingProcess();
+    }
+
+    /// <summary>Allow this process name for the rest of the app session.</summary>
+    public void AllowProcessForSession(string? name)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            lock (_gate)
+            {
+                _allowedProcesses.Add(name);
+                _deniedProcesses.Remove(name);
+                if (_pendingProcess is { } alert &&
+                    string.Equals(alert.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    _pendingProcess = null;
+                }
+            }
+        }
+        Changed?.Invoke();
+    }
+
     private void OnProcessStarted(ProcessStartAlert alert)
     {
+        lock (_gate)
+        {
+            if (_allowedProcesses.Contains(alert.Name) ||
+                _deniedProcesses.Contains(alert.Name))
+            {
+                return;
+            }
+        }
+
+        if (!ProcessStartProbe.IsAlive(alert.ProcessId)) return;
+
         lock (_gate) _pendingProcess = alert;
         Changed?.Invoke();
+        _ = DismissWhenExitedAsync(alert);
+    }
+
+    private async Task DismissWhenExitedAsync(ProcessStartAlert alert)
+    {
+        while (true)
+        {
+            await Task.Delay(500).ConfigureAwait(false);
+
+            lock (_gate)
+            {
+                if (!ReferenceEquals(_pendingProcess, alert)) return;
+            }
+
+            if (ProcessStartProbe.IsAlive(alert.ProcessId)) continue;
+
+            lock (_gate)
+            {
+                if (ReferenceEquals(_pendingProcess, alert)) _pendingProcess = null;
+            }
+            Changed?.Invoke();
+            return;
+        }
     }
 
     public void Dispose() => _probe.Dispose();
@@ -243,6 +331,8 @@ public sealed class StudioSafetyService : IDisposable
         {
             _denied.Clear();
             _allowed.Clear();
+            _deniedProcesses.Clear();
+            _allowedProcesses.Clear();
         }
         Changed?.Invoke();
     }

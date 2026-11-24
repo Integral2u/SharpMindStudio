@@ -1,5 +1,13 @@
 namespace SharpMind.Studio.Core.Work;
 
+/// <summary>How a command entry is gated when it runs.</summary>
+public enum CommandPermission
+{
+    Ask,
+    Allow,
+    AllowAlways,
+}
+
 /// <summary>
 /// One executable the softshell may run. The executable is resolved to a real
 /// path before matching, so a different binary with the same name cannot stand
@@ -11,6 +19,9 @@ public sealed record AllowedCommand
     public string Executable { get; init; } = "";
     public List<string> ArgumentsPrefix { get; init; } = [];
     public string Description { get; init; } = "";
+
+    /// <summary>Ask each run, allow for this app session, or allow always.</summary>
+    public CommandPermission Permission { get; init; } = CommandPermission.Ask;
 
     /// <summary>Display only. The Run permission is still the consent for what the child does.</summary>
     public bool UsesNetwork { get; init; }

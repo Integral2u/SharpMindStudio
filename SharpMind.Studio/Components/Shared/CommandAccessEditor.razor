@@ -105,7 +105,7 @@
         <div class="work-contexts">
             @foreach (AllowedCommand command in InheritedCommands)
             {
-                bool disabled = _layer.DisabledCommands.Contains(command.Name, StringComparer.OrdinalIgnoreCase);
+                bool disabled = CommandDisabled(command.Name);
                 <div class="work-context" style="align-items:flex-start;opacity:@(disabled ? "0.55" : "1");">
                     <div style="flex:1;">
                         <strong class="mono">@command.Name</strong>
@@ -113,11 +113,23 @@
                         <div class="small faint">@ResolvedCommandPath(command)</div>
                         <div class="small faint">@CapabilityLabel(command)</div>
                     </div>
-                    <button type="button" class="button"
-                            @onclick="() => ToggleInheritedAsync(command.Name)"
-                            disabled="@Unrestricted">
-                        @(disabled ? "Enable" : "Disable")
-                    </button>
+                    <div class="segmented" role="group" aria-label="@command.Name permission">
+                        <button type="button"
+                                class="segmented-option @(disabled ? "active" : "")"
+                                @onclick="() => SetCommandPermissionAsync(command, true, null)"
+                                disabled="@Unrestricted">
+                            Disable
+                        </button>
+                        @foreach (CommandPermission option in Permissions)
+                        {
+                            <button type="button"
+                                    class="segmented-option @(!disabled && CommandPermissionFor(command) == option ? "active" : "")"
+                                    @onclick="() => SetCommandPermissionAsync(command, true, option)"
+                                    disabled="@Unrestricted">
+                                @Label(option)
+                            </button>
+                        }
+                    </div>
                 </div>
             }
         </div>
@@ -140,11 +152,33 @@
                         }
                         <div class="small faint">@CapabilityLabel(command)</div>
                     </div>
-                    <button type="button" class="button danger"
-                            @onclick="() => RemoveCommandAsync(command)"
-                            disabled="@Unrestricted">
-                        Remove
-                    </button>
+                    <div class="segmented" role="group" aria-label="@command.Name permission">
+                        @if (_inherited.Find(command.Name) is not null)
+                        {
+                            <button type="button"
+                                    class="segmented-option"
+                                    title="Remove this override and use the inherited permission"
+                                    @onclick="() => ClearCommandOverrideAsync(command.Name)"
+                                    disabled="@Unrestricted">
+                                Inherit
+                            </button>
+                        }
+                        <button type="button"
+                                class="segmented-option"
+                                @onclick="() => SetCommandPermissionAsync(command, false, null)"
+                                disabled="@Unrestricted">
+                            Disable
+                        </button>
+                        @foreach (CommandPermission option in Permissions)
+                        {
+                            <button type="button"
+                                    class="segmented-option @(CommandPermissionFor(command) == option ? "active" : "")"
+                                    @onclick="() => SetCommandPermissionAsync(command, false, option)"
+                                    disabled="@Unrestricted">
+                                @Label(option)
+                            </button>
+                        }
+                    </div>
                 </div>
             }
         </div>
@@ -354,6 +388,8 @@
                     AllowInterpreter = _interpreter,
                 },
             ],
+            DisabledCommands = [.. _layer.DisabledCommands.Where(item =>
+                !item.Equals(name, StringComparison.OrdinalIgnoreCase))],
         };
 
         _newCommand = "";
@@ -387,6 +423,8 @@
                 .. _layer.Commands,
                 preset with { ArgumentsPrefix = [.. preset.ArgumentsPrefix] },
             ],
+            DisabledCommands = [.. _layer.DisabledCommands.Where(item =>
+                !item.Equals(preset.Name, StringComparison.OrdinalIgnoreCase))],
         };
         _status = McpCommandResolver.Resolve(preset.Executable) is null
             ? $"{preset.Name} added, but it is not installed yet."
@@ -394,29 +432,84 @@
         await SaveAsync();
     }
 
-    private async Task RemoveCommandAsync(AllowedCommand command)
+    private async Task ClearCommandOverrideAsync(string name)
     {
         _layer = _layer with
         {
             Commands = [.. _layer.Commands.Where(item =>
-                !item.Name.Equals(command.Name, StringComparison.OrdinalIgnoreCase))],
+                !item.Name.Equals(name, StringComparison.OrdinalIgnoreCase))],
+            DisabledCommands = [.. _layer.DisabledCommands.Where(item =>
+                !item.Equals(name, StringComparison.OrdinalIgnoreCase))],
         };
-        _status = $"{command.Name} removed.";
+        Work.RevokeCommandThisSession(name);
+        _status = $"{name} follows the inherited permission again.";
         await SaveAsync();
     }
 
-    private async Task ToggleInheritedAsync(string name)
-    {
-        bool disabled = _layer.DisabledCommands.Contains(name, StringComparer.OrdinalIgnoreCase);
+    private async Task SetCommandPermissionAsync(
+        AllowedCommand command,
+        bool inherited,
+        CommandPermission? permission)
+    {        _ = inherited;
+        string name = command.Name;
+        var commands = _layer.Commands
+            .Where(item => !item.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var disabled = _layer.DisabledCommands
+            .Where(item => !item.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (permission is null)
+        {
+            disabled.Add(name);
+            Work.RevokeCommandThisSession(name);
+            _status = $"{name} disabled.";
+        }
+        else
+        {
+            commands.Add(command with
+            {
+                Permission = permission.Value,
+                ArgumentsPrefix = [.. command.ArgumentsPrefix],
+            });
+            if (permission == CommandPermission.Allow)
+                Work.AllowCommandThisSession(name);
+            else
+                Work.RevokeCommandThisSession(name);
+            _status = $"{name}: {Label(permission.Value)}.";
+        }
+
         _layer = _layer with
         {
-            DisabledCommands = disabled
-                ? [.. _layer.DisabledCommands.Where(item =>
-                    !item.Equals(name, StringComparison.OrdinalIgnoreCase))]
-                : [.. _layer.DisabledCommands, name],
+            Commands = commands,
+            DisabledCommands = disabled,
         };
         await SaveAsync();
     }
+
+    private bool CommandDisabled(string name) =>
+        _layer.DisabledCommands.Contains(name, StringComparer.OrdinalIgnoreCase);
+
+    private CommandPermission CommandPermissionFor(AllowedCommand command)
+    {
+        AllowedCommand? local = _layer.Commands.FirstOrDefault(item =>
+            item.Name.Equals(command.Name, StringComparison.OrdinalIgnoreCase));
+        return local?.Permission ?? command.Permission;
+    }
+
+    private static string Label(CommandPermission permission) => permission switch
+    {
+        CommandPermission.Ask => "Ask",
+        CommandPermission.Allow => "Allow",
+        _ => "Allow Always",
+    };
+
+    private static readonly CommandPermission[] Permissions =
+    [
+        CommandPermission.Ask,
+        CommandPermission.Allow,
+        CommandPermission.AllowAlways,
+    ];
 
     private void ResetShellDirectory()
     {
