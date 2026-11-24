@@ -169,11 +169,26 @@
             </div>
             @if (Canary.IsRunning)
             {
-                <button type="button" class="button danger" @onclick="Canary.Interrupt">Interrupt</button>
+                <div class="row" style="gap:.4rem;">
+                    <button type="button" class="button" @onclick="Canary.SkipCurrent"
+                            disabled="@(!Canary.CanSkip)">
+                        Skip current
+                    </button>
+                    <button type="button" class="button danger" @onclick="Canary.Interrupt">Interrupt</button>
+                </div>
             }
-            else if (Canary.CanContinue)
+            else
             {
-                <button type="button" class="button primary" @onclick="Canary.ContinueAsync">Continue</button>
+                <div class="row" style="gap:.4rem;">
+                    @if (Canary.CanContinue)
+                    {
+                        <button type="button" class="button primary" @onclick="Canary.ContinueAsync">Continue</button>
+                    }
+                    @if (Items.Count > 0)
+                    {
+                        <button type="button" class="button" @onclick="Canary.Clear">Clear results</button>
+                    }
+                </div>
             }
         </div>
         <div class="panel-body">

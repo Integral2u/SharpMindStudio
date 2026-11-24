@@ -11,6 +11,7 @@ public sealed class StudioCanaryService
     private readonly object _gate = new();
     private List<CanaryItem> _items = [];
     private List<string> _modelPaths = [];
+    private readonly HashSet<string> _skipped = new(StringComparer.OrdinalIgnoreCase);
     private CanaryRequest? _request;
     private RunStore? _store;
     private CancellationTokenSource? _cts;
@@ -30,12 +31,16 @@ public sealed class StudioCanaryService
 
     public bool IsRunning => _running;
     public bool IsInterrupted => _interrupted;
+    public bool CanSkip => _running && !string.IsNullOrWhiteSpace(_currentModel);
+    public string? CurrentModel => _currentModel;
     public bool CanContinue
     {
         get
         {
             lock (_gate)
-                return !_running && _request is not null && _items.Any(item => item.Result is null);
+                return !_running && _request is not null &&
+                    _items.Any(item => item.Result is null &&
+                        !_skipped.Contains(item.ModelPath));
         }
     }
 
@@ -70,6 +75,7 @@ public sealed class StudioCanaryService
             _store = store;
             _modelPaths = [.. request.Models];
             _items = [.. request.Models.Select(path => new CanaryItem(path, "queued", null))];
+            _skipped.Clear();
             _interrupted = false;
             _currentModel = null;
         }
@@ -87,13 +93,16 @@ public sealed class StudioCanaryService
         {
             if (_request is null || _store is null) return Task.CompletedTask;
             string[] remaining = [.. _items
-                .Where(item => item.Result is null)
+                .Where(item => item.Result is null && !_skipped.Contains(item.ModelPath))
                 .Select(item => item.ModelPath)];
             if (remaining.Length == 0) return Task.CompletedTask;
 
-            _items = [.. _items.Select(item => item.Result is null
-                ? item with { Status = "queued" }
-                : item)];
+            _items = [.. _items.Select(item =>
+                _skipped.Contains(item.ModelPath)
+                    ? item with { Status = "skipped" }
+                    : item.Result is null
+                        ? item with { Status = "queued" }
+                        : item)];
             request = _request with { Models = remaining };
             store = _store;
             _interrupted = false;
@@ -108,6 +117,40 @@ public sealed class StudioCanaryService
         if (!_running) return;
         _status = "Interrupting...";
         _cts?.Cancel();
+        Notify();
+    }
+
+    /// <summary>Stop the current model and leave the rest for Continue.</summary>
+    public void SkipCurrent()
+    {
+        if (!_running) return;
+        string? current;
+        lock (_gate)
+        {
+            current = _currentModel;
+            if (string.IsNullOrWhiteSpace(current)) return;
+            _skipped.Add(current);
+            _status = $"Skipping {Path.GetFileName(current)}...";
+        }
+        _cts?.Cancel();
+        Notify();
+    }
+
+    /// <summary>Clear the current run's items without deleting saved run files.</summary>
+    public void Clear()
+    {
+        if (_running) return;
+        lock (_gate)
+        {
+            _items.Clear();
+            _modelPaths.Clear();
+            _skipped.Clear();
+            _request = null;
+            _store = null;
+            _interrupted = false;
+        }
+        _status = "Ready.";
+        _error = null;
         Notify();
     }
 
@@ -156,16 +199,17 @@ public sealed class StudioCanaryService
             {
                 if (_currentModel is { } current)
                 {
+                    bool skipped = _skipped.Contains(current);
                     _items = [.. _items.Select(item =>
                         item.ModelPath.Equals(current, StringComparison.OrdinalIgnoreCase) &&
                         item.Result is null
-                            ? item with { Status = "interrupted" }
+                            ? item with { Status = skipped ? "skipped" : "interrupted" }
                             : item)];
                 }
             }
 
             _interrupted = true;
-            _status = "Interrupted.";
+            _status = _skipped.Count > 0 ? "Skipped current model." : "Interrupted.";
         }
         catch (Exception ex)
         {
