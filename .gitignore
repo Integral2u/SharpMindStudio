@@ -19,3 +19,6 @@ UpgradeLog*.htm
 
 # Video production pack: scripts, raw captures and the promo build stay local.
 /video/
+
+# Store submission assets stay local; the release pipeline does not need them.
+/store/
