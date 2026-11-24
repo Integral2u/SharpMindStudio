@@ -151,6 +151,99 @@ public sealed class StudioWorkspaceService
         return StudioProject.Create(root, name.Trim());
     }
 
+    public IReadOnlyList<StudioProjectInfo> ArchivedProjects
+    {
+        get
+        {
+            if (!Directory.Exists(StudioPaths.WorkspaceArchives)) return [];
+            return [.. Directory.EnumerateDirectories(StudioPaths.WorkspaceArchives)
+                .Select(path => Describe(path, isDefault: false))
+                .Where(project => project is not null)
+                .Cast<StudioProjectInfo>()
+                .OrderBy(project => project.Name, StringComparer.OrdinalIgnoreCase)];
+        }
+    }
+
+    public StudioProjectInfo? FindArchivedProject(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        return ArchivedProjects.FirstOrDefault(project =>
+            project.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Move a Work project out of the active list; its files stay recoverable.</summary>
+    public void ArchiveProject(string path)
+    {
+        string full = ValidateWorkProject(path);
+        if (SamePath(full, Project.Root)) SwitchProject(_defaultProjectRoot);
+
+        Directory.CreateDirectory(StudioPaths.WorkspaceArchives);
+        string baseName = Path.GetFileName(full.TrimEnd(
+            Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
+        string destination = Path.Combine(
+            StudioPaths.WorkspaceArchives, $"{baseName}-{stamp}");
+        for (int suffix = 2; Directory.Exists(destination) || File.Exists(destination); suffix++)
+            destination = Path.Combine(
+                StudioPaths.WorkspaceArchives, $"{baseName}-{stamp}-{suffix}");
+
+        Directory.Move(full, destination);
+        NotifyProjectsChanged();
+    }
+
+    /// <summary>Permanently delete a Work project and every file under its root.</summary>
+    public void DeleteProject(string path)
+    {
+        string full = ValidateWorkProject(path);
+        if (SamePath(full, Project.Root)) SwitchProject(_defaultProjectRoot);
+        Directory.Delete(full, recursive: true);
+        NotifyProjectsChanged();
+    }
+
+    /// <summary>Move an archived project back under Workspaces and return it.</summary>
+    public StudioProject RestoreArchivedProject(string archivePath)
+    {
+        string full = ValidateArchive(archivePath);
+        StudioProject archived = StudioProject.Open(full);
+        string slug = Slug(archived.Document.Name);
+        string destination = Path.Combine(StudioPaths.Workspaces, slug);
+        for (int suffix = 2; Directory.Exists(destination) || File.Exists(destination); suffix++)
+            destination = Path.Combine(StudioPaths.Workspaces, $"{slug}-{suffix}");
+
+        Directory.CreateDirectory(StudioPaths.Workspaces);
+        Directory.Move(full, destination);
+        StudioProject restored = StudioProject.Open(destination);
+        NotifyProjectsChanged();
+        return restored;
+    }
+
+    public void DeleteArchivedProject(string archivePath)
+    {
+        string full = ValidateArchive(archivePath);
+        Directory.Delete(full, recursive: true);
+        NotifyProjectsChanged();
+    }
+
+    private string ValidateWorkProject(string path)
+    {
+        string full = Path.GetFullPath(path);
+        if (!IsUnder(full, StudioPaths.Workspaces) || !StudioProject.IsProject(full))
+            throw new InvalidOperationException("Only a Work project can be archived or deleted.");
+        if (SamePath(full, _defaultProjectRoot))
+            throw new InvalidOperationException("The default project cannot be archived or deleted.");
+        return full;
+    }
+
+    private static string ValidateArchive(string path)
+    {
+        string full = Path.GetFullPath(path);
+        if (!IsUnder(full, StudioPaths.WorkspaceArchives) || !StudioProject.IsProject(full))
+            throw new InvalidOperationException("Only an archived project can be restored or deleted.");
+        return full;
+    }
+
+    private void NotifyProjectsChanged() => ProjectChanged?.Invoke();
+
     public void SwitchProject(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);

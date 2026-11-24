@@ -464,6 +464,40 @@
 
         try
         {
+            StudioProjectInfo? archived = Workspace.FindArchivedProject(name);
+            if (archived is not null)
+            {
+                string? choice = await JS.InvokeAsync<string?>(
+                    "prompt",
+                    $"An archived project named '{archived.Name}' exists.\n\n"
+                    + "Type 'recover' to restore it, 'fresh' to create a new project and "
+                    + "permanently delete the archive, or cancel.",
+                    "recover");
+                if (string.IsNullOrWhiteSpace(choice)) return;
+
+                if (choice.Equals("recover", StringComparison.OrdinalIgnoreCase))
+                {
+                    await ChatService.CloseAsync();
+                    var restored = Workspace.RestoreArchivedProject(archived.Path);
+                    Workspace.SwitchProject(restored.Root);
+                    await ChatService.UseProjectAsync();
+                    Work.Reload();
+                    LoadFields();
+                    _showSettings = true;
+                    _status = $"Recovered {restored.Document.Name}.";
+                    Nav.NavigateTo("/work");
+                    return;
+                }
+
+                if (!choice.Equals("fresh", StringComparison.OrdinalIgnoreCase))
+                {
+                    _status = "Project creation canceled.";
+                    return;
+                }
+
+                Workspace.DeleteArchivedProject(archived.Path);
+            }
+
             await ChatService.CloseAsync();
             var project = Workspace.CreateProject(name);
             Workspace.SwitchProject(project.Root);

@@ -30,6 +30,7 @@ public static class StudioPaths
     public static string ChatSessions => Path.Combine(Root, "Chat Sessions");
     public static string Projects => Path.Combine(Root, "Studio");
     public static string Workspaces => Path.Combine(Root, "Workspaces");
+    public static string WorkspaceArchives => Path.Combine(Root, "Workspace Archives");
     public static string Skills => Path.Combine(Root, "Skills");
     public static string WorkspaceFile => Path.Combine(Projects, "workspace.json");
     public static string SettingsFile => Path.Combine(Projects, "settings.json");
@@ -60,6 +61,7 @@ public static class StudioPaths
         Directory.CreateDirectory(Gateway);
         Directory.CreateDirectory(DataFactory);
         Directory.CreateDirectory(Workspaces);
+        Directory.CreateDirectory(WorkspaceArchives);
         Directory.CreateDirectory(Skills);
         Directory.CreateDirectory(Compute);
     }

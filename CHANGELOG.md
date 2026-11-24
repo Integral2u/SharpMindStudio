@@ -13,6 +13,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   download; the MSI and ZIP remain on GitHub Releases for direct and offline
   installs, and the in-app version link opens the Store listing.
 
+- **Archive and recover Work projects.** Work projects stay in the sidebar even
+  with no sessions. The project actions button offers Archive or Delete
+  permanently; Archive moves the whole folder to Settings → System → Archived
+  projects, where it can be recovered or deleted. Creating a project with the
+  same name as an archive offers recovery, or a fresh project that removes the
+  archive.
+
 - **Multi-step tool work is no longer cut off at ten calls.** The main session
   and remote turns keep going until the model finishes. A saved agent has a
   **Max tool calls** setting (0 = unrestricted), and `spawn_agent` accepts an
