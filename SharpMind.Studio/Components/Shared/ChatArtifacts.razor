@@ -1,92 +1,253 @@
+@using System.Diagnostics
+@using System.Security.Cryptography
+@using System.Text
 @using SharpMind.Inference.Chat
-@inject IJSRuntime JS
+@using SharpMind.Studio.Core.Storage
+@using SharpMind.Studio.Services
+@inject PathPickerService Picker
 
 @if (Artifacts is { Length: > 0 })
 {
     ChatArtifact[] items = Artifacts;
-    ChatArtifact? image = items.FirstOrDefault(IsImage);
-    ChatArtifact? audio = items.FirstOrDefault(IsAudio);
-
-    <div class="reply-artifacts">
-        @if (image is not null)
-        {
-            <button type="button" class="reply-thumb" title="Open @Name(image)"
-                    @onclick="() => OpenAsync(image)">
-                <img src="@DataUrl(image)" alt="@Name(image)" />
-            </button>
-        }
-
-        <div class="reply-chip-row">
-            @foreach (ChatArtifact artifact in items.Take(3))
+    <div class="artifact-strip">
+        <div class="artifact-icons">
+            @foreach (ChatArtifact artifact in items.Take(4))
             {
-                <span class="reply-chip" title="@Name(artifact)">
-                    <span class="kind">@Kind(artifact)</span>
-                    <span class="name">@Name(artifact)</span>
-                    <span class="size">@Size(artifact)</span>
-                    @if (CanOpen(artifact))
-                    {
-                        <button type="button" class="reply-open" title="Open" @onclick="() => OpenAsync(artifact)">&#8599;</button>
-                    }
-                    <a href="@DataUrl(artifact)" download="@Name(artifact)" title="Download">&#8595;</a>
-                </span>
+                <button type="button" class="artifact-icon @IconClass(artifact)"
+                        title="@Name(artifact) — @KindLabel(artifact) — @Size(artifact)"
+                        aria-label="Actions for @Name(artifact)"
+                        @onclick="() => OpenMenu(artifact)">
+                    @Icon(artifact)
+                </button>
             }
-            @if (items.Length > 3)
+            @if (items.Length > 4)
             {
-                <button type="button" class="composer-overflow"
-                        title="More items" @onclick="() => _expanded = !_expanded">
-                    @(_expanded ? "−" : "…")
+                <button type="button" class="artifact-more" title="Show the other files"
+                        aria-label="Show the other files" @onclick="ToggleMore">
+                    &#9660;
                 </button>
             }
         </div>
 
-        @if (_expanded && items.Length > 3)
+        @if (_notice is not null)
         {
-            <div class="reply-chip-row reply-overflow-list">
-                @foreach (ChatArtifact artifact in items.Skip(3))
+            <span class="artifact-note">@_notice</span>
+        }
+
+        @if (_moreOpen && items.Length > 4)
+        {
+            <div class="artifact-popover artifact-more-list">
+                @foreach (ChatArtifact artifact in items.Skip(4))
                 {
-                    <span class="reply-chip" title="@Name(artifact)">
-                        <span class="kind">@Kind(artifact)</span>
-                        <span class="name">@Name(artifact)</span>
-                        <span class="size">@Size(artifact)</span>
-                        @if (CanOpen(artifact))
-                        {
-                            <button type="button" class="reply-open" title="Open" @onclick="() => OpenAsync(artifact)">&#8599;</button>
-                        }
-                        <a href="@DataUrl(artifact)" download="@Name(artifact)" title="Download">&#8595;</a>
-                    </span>
+                    <button type="button" class="artifact-list-item" @onclick="() => OpenMenuFromMore(artifact)">
+                        <span class="artifact-icon small @IconClass(artifact)">@Icon(artifact)</span>
+                        <span class="artifact-list-name">@Name(artifact)</span>
+                        <span class="artifact-list-size">@Size(artifact)</span>
+                    </button>
                 }
             </div>
         }
 
-        @if (audio is not null)
+        @if (_menu is { } menu)
         {
-            <audio class="chat-artifact-audio" controls src="@DataUrl(audio)"></audio>
+            <div class="artifact-popover artifact-menu">
+                <div class="artifact-menu-head">
+                    <span>@Name(menu)</span>
+                    <span class="faint">@Size(menu)</span>
+                </div>
+                <button type="button" class="artifact-action" @onclick="() => Preview(menu)">Preview</button>
+                <button type="button" class="artifact-action" @onclick="() => SaveAsAsync(menu)">Save as...</button>
+                <button type="button" class="artifact-action" @onclick="() => OpenAsync(menu)">Open</button>
+                <button type="button" class="artifact-action" @onclick="() => OpenFolderAsync(menu)">Open folder</button>
+                <button type="button" class="artifact-action close" @onclick="CloseMenus">Close</button>
+            </div>
         }
+    </div>
+}
+
+@if (_preview is { } preview)
+{
+    <div class="tune-modal-backdrop artifact-preview-backdrop" @onclick="ClosePreview">
+        <div class="tune-modal artifact-preview" @onclick:stopPropagation="true">
+            <div class="tune-modal-head">
+                <div>
+                    <span class="artifact-preview-title">@Name(preview)</span>
+                    <span class="small faint">@KindLabel(preview) · @Size(preview)</span>
+                </div>
+                <button type="button" class="button" @onclick="ClosePreview">Close</button>
+            </div>
+            <div class="artifact-preview-body">
+                @if (IsImage(preview))
+                {
+                    <img src="@DataUrl(preview)" alt="@Name(preview)" />
+                }
+                else if (IsAudio(preview))
+                {
+                    <audio controls src="@DataUrl(preview)"></audio>
+                }
+                else if (IsPdf(preview))
+                {
+                    <iframe src="@DataUrl(preview)" title="@Name(preview)"></iframe>
+                }
+                else if (IsText(preview))
+                {
+                    <pre>@PreviewText(preview)</pre>
+                }
+                else
+                {
+                    <div class="empty">Preview is not available for this file type. Use Open.</div>
+                }
+            </div>
+            <div class="artifact-preview-actions">
+                <button type="button" class="button" @onclick="() => SaveAsAsync(preview)">Save as...</button>
+                <button type="button" class="button primary" @onclick="() => OpenAsync(preview)">Open</button>
+                <button type="button" class="button" @onclick="() => OpenFolderAsync(preview)">Open folder</button>
+            </div>
+        </div>
     </div>
 }
 
 @code {
     [Parameter] public ChatArtifact[]? Artifacts { get; set; }
 
-    private bool _expanded;
+    private ChatArtifact? _menu;
+    private ChatArtifact? _preview;
+    private bool _moreOpen;
+    private string? _notice;
 
-    /// <summary>
-    /// A data: URL cannot be opened as a page in current browsers, so the bytes
-    /// go through a blob URL instead. Download still uses the data URL directly.
-    /// </summary>
+    private void OpenMenu(ChatArtifact artifact)
+    {
+        _menu = artifact;
+        _moreOpen = false;
+        _notice = null;
+    }
+
+    private void OpenMenuFromMore(ChatArtifact artifact)
+    {
+        _menu = artifact;
+        _moreOpen = false;
+        _notice = null;
+    }
+
+    private void ToggleMore()
+    {
+        _moreOpen = !_moreOpen;
+        _menu = null;
+        _notice = null;
+    }
+
+    private void CloseMenus()
+    {
+        _menu = null;
+        _moreOpen = false;
+    }
+
+    private void Preview(ChatArtifact artifact)
+    {
+        _preview = artifact;
+        _menu = null;
+        _notice = null;
+    }
+
+    private void ClosePreview()
+    {
+        _preview = null;
+    }
+
+    private async Task SaveAsAsync(ChatArtifact artifact)
+    {
+        _menu = null;
+        _preview = null;
+        _notice = null;
+
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.SaveFile,
+            Path.Combine(StudioPaths.Root, SafeName(artifact)),
+            "Save artifact");
+        if (selection?.Path is not { Length: > 0 } path) return;
+
+        try
+        {
+            await File.WriteAllBytesAsync(path, artifact.Content);
+            _notice = $"Saved {Path.GetFileName(path)}.";
+        }
+        catch (Exception ex)
+        {
+            _notice = $"Save failed: {ex.Message}";
+        }
+    }
+
     private async Task OpenAsync(ChatArtifact artifact)
+    {
+        _menu = null;
+        _preview = null;
+        string? path = await MaterializeAsync(artifact);
+        if (path is null) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            _notice = $"Opened {Path.GetFileName(path)}.";
+        }
+        catch (Exception ex)
+        {
+            _notice = $"Could not open the file: {ex.Message}";
+        }
+    }
+
+    private async Task OpenFolderAsync(ChatArtifact artifact)
+    {
+        _menu = null;
+        _preview = null;
+        string? path = await MaterializeAsync(artifact);
+        if (path is null) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"/select,\"{path}\"",
+                UseShellExecute = true,
+            });
+            _notice = $"Selected {Path.GetFileName(path)} in Explorer.";
+        }
+        catch (Exception ex)
+        {
+            _notice = $"Could not open the folder: {ex.Message}";
+        }
+    }
+
+    private async Task<string?> MaterializeAsync(ChatArtifact artifact)
     {
         try
         {
-            await JS.InvokeVoidAsync(
-                "studioArtifacts.open",
-                Convert.ToBase64String(artifact.Content),
-                Mime(artifact));
+            string folder = Path.Combine(StudioPaths.Root, "Artifacts");
+            Directory.CreateDirectory(folder);
+            string safe = SafeName(artifact);
+            string hash = Convert.ToHexString(SHA256.HashData(artifact.Content))[..8]
+                .ToLowerInvariant();
+            string stem = Path.GetFileNameWithoutExtension(safe);
+            string extension = Path.GetExtension(safe);
+            string path = Path.Combine(folder, $"{stem}-{hash}{extension}");
+            if (!File.Exists(path))
+                await File.WriteAllBytesAsync(path, artifact.Content);
+            return path;
         }
-        catch
+        catch (Exception ex)
         {
-            // A blocked popup or a missing script must not break the transcript.
+            _notice = $"Could not write the file: {ex.Message}";
+            return null;
         }
+    }
+
+    private static string SafeName(ChatArtifact artifact)
+    {
+        string name = Path.GetFileName(Name(artifact));
+        if (string.IsNullOrWhiteSpace(name)) name = "artifact";
+        foreach (char bad in Path.GetInvalidFileNameChars())
+            name = name.Replace(bad, '_');
+        return name;
     }
 
     private static bool IsImage(ChatArtifact artifact) =>
@@ -100,19 +261,46 @@
         || artifact.Type.Contains("code", StringComparison.OrdinalIgnoreCase)
         || artifact.Type.Contains("json", StringComparison.OrdinalIgnoreCase);
 
-    private static bool CanOpen(ChatArtifact artifact) =>
-        IsImage(artifact) || IsText(artifact)
-        || (artifact.MimeType ?? "").Contains("pdf", StringComparison.OrdinalIgnoreCase);
+    private static bool IsPdf(ChatArtifact artifact) =>
+        (artifact.MimeType ?? "").Contains("pdf", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(Path.GetExtension(Name(artifact)), ".pdf", StringComparison.OrdinalIgnoreCase);
 
-    private static string Kind(ChatArtifact artifact) =>
-        IsImage(artifact) ? "IMG"
-        : IsAudio(artifact) ? "AUD"
-        : artifact.Type.Contains("json", StringComparison.OrdinalIgnoreCase) ? "JSON"
-        : artifact.Type.Contains("code", StringComparison.OrdinalIgnoreCase) ? "CODE"
-        : IsText(artifact) ? "TXT"
-        : (artifact.MimeType ?? "").Contains("pdf", StringComparison.OrdinalIgnoreCase) ? "PDF"
-        : (artifact.MimeType ?? "").Contains("zip", StringComparison.OrdinalIgnoreCase) ? "ZIP"
-        : "FILE";
+    private static bool IsArchive(ChatArtifact artifact)
+    {
+        string mime = artifact.MimeType ?? "";
+        if (mime.Contains("zip", StringComparison.OrdinalIgnoreCase) ||
+            mime.Contains("compressed", StringComparison.OrdinalIgnoreCase) ||
+            mime.Contains("tar", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return Path.GetExtension(Name(artifact)).ToLowerInvariant() is
+            ".zip" or ".7z" or ".tar" or ".gz" or ".rar";
+    }
+
+    private static string IconClass(ChatArtifact artifact) =>
+        IsImage(artifact) ? "image"
+        : IsAudio(artifact) ? "audio"
+        : IsPdf(artifact) ? "pdf"
+        : IsArchive(artifact) ? "archive"
+        : artifact.Type.Contains("json", StringComparison.OrdinalIgnoreCase) ? "json"
+        : artifact.Type.Contains("code", StringComparison.OrdinalIgnoreCase) ? "code"
+        : IsText(artifact) ? "text"
+        : "file";
+
+    private static string KindLabel(ChatArtifact artifact) =>
+        IconClass(artifact) switch
+        {
+            "image" => "image",
+            "audio" => "audio",
+            "pdf" => "PDF",
+            "archive" => "archive",
+            "json" => "JSON",
+            "code" => "code",
+            "text" => "text",
+            _ => "file",
+        };
 
     private static string Name(ChatArtifact artifact) =>
         artifact.FileName ?? artifact.Type.ToLowerInvariant() switch
@@ -131,6 +319,12 @@
         return bytes < 1024 ? $"{bytes} B"
             : bytes < 1024 * 1024 ? $"{bytes / 1024.0:F0} KB"
             : $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+
+    private static string PreviewText(ChatArtifact artifact)
+    {
+        string text = Encoding.UTF8.GetString(artifact.Content);
+        return text.Length <= 200_000 ? text : text[..200_000] + "\n\n... preview truncated ...";
     }
 
     private static string DataUrl(ChatArtifact artifact) =>
@@ -164,4 +358,103 @@
             _ => "application/octet-stream",
         };
     }
+
+    private static RenderFragment Icon(ChatArtifact artifact) => builder =>
+    {
+        builder.OpenElement(0, "svg");
+        builder.AddAttribute(1, "class", "artifact-svg");
+        builder.AddAttribute(2, "viewBox", "0 0 16 16");
+        builder.AddAttribute(3, "width", "16");
+        builder.AddAttribute(4, "height", "16");
+        builder.AddAttribute(5, "fill", "none");
+        builder.AddAttribute(6, "stroke", "currentColor");
+        builder.AddAttribute(7, "stroke-width", "1.2");
+        builder.AddAttribute(8, "stroke-linecap", "round");
+        builder.AddAttribute(9, "stroke-linejoin", "round");
+        builder.AddAttribute(10, "aria-hidden", "true");
+
+        if (IsImage(artifact))
+        {
+            builder.OpenElement(11, "rect");
+            builder.AddAttribute(12, "x", "2");
+            builder.AddAttribute(13, "y", "3");
+            builder.AddAttribute(14, "width", "12");
+            builder.AddAttribute(15, "height", "10");
+            builder.AddAttribute(16, "rx", "1.5");
+            builder.CloseElement();
+            builder.OpenElement(17, "circle");
+            builder.AddAttribute(18, "cx", "5.5");
+            builder.AddAttribute(19, "cy", "6.5");
+            builder.AddAttribute(20, "r", "1");
+            builder.CloseElement();
+            builder.OpenElement(21, "path");
+            builder.AddAttribute(22, "d", "m2.5 12 3.5-3 2.2 2 1.6-1.5L14 12.5");
+            builder.CloseElement();
+        }
+        else if (IsAudio(artifact))
+        {
+            builder.OpenElement(11, "path");
+            builder.AddAttribute(12, "d", "M6 11.5V4l7-1.5v7.5");
+            builder.CloseElement();
+            builder.OpenElement(13, "circle");
+            builder.AddAttribute(14, "cx", "4.5");
+            builder.AddAttribute(15, "cy", "12");
+            builder.AddAttribute(16, "r", "1.5");
+            builder.CloseElement();
+            builder.OpenElement(17, "circle");
+            builder.AddAttribute(18, "cx", "11.5");
+            builder.AddAttribute(19, "cy", "10");
+            builder.AddAttribute(20, "r", "1.5");
+            builder.CloseElement();
+        }
+        else if (IsArchive(artifact))
+        {
+            builder.OpenElement(11, "rect");
+            builder.AddAttribute(12, "x", "2.5");
+            builder.AddAttribute(13, "y", "3");
+            builder.AddAttribute(14, "width", "11");
+            builder.AddAttribute(15, "height", "10");
+            builder.AddAttribute(16, "rx", "1.2");
+            builder.CloseElement();
+            builder.OpenElement(17, "path");
+            builder.AddAttribute(18, "d", "M8 3v10M5.5 6h5M5.5 8h5M5.5 10h5");
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.OpenElement(11, "path");
+            builder.AddAttribute(12, "d", "M4 1.8h4.6L12.5 5.7V14a.7.7 0 0 1-.7.7H4a.7.7 0 0 1-.7-.7V2.5A.7.7 0 0 1 4 1.8Z");
+            builder.CloseElement();
+            builder.OpenElement(13, "path");
+            builder.AddAttribute(14, "d", "M8.6 1.8v4h3.9");
+            builder.CloseElement();
+
+            if (artifact.Type.Contains("code", StringComparison.OrdinalIgnoreCase))
+            {
+                builder.OpenElement(15, "path");
+                builder.AddAttribute(16, "d", "m6.3 8.6-1.3 1.4 1.3 1.4M9.7 8.6l1.3 1.4-1.3 1.4");
+                builder.CloseElement();
+            }
+            else if (artifact.Type.Contains("json", StringComparison.OrdinalIgnoreCase))
+            {
+                builder.OpenElement(15, "path");
+                builder.AddAttribute(16, "d", "M6.4 8.5c-1 0-1 .8-1 1.5s0 1.5-1 1.5M9.6 8.5c1 0 1 .8 1 1.5s0 1.5 1 1.5");
+                builder.CloseElement();
+            }
+            else if (IsPdf(artifact))
+            {
+                builder.OpenElement(15, "path");
+                builder.AddAttribute(16, "d", "M5.5 9h1.6a1 1 0 0 1 0 2H5.5V8m0 3v1.5M9.2 12.5V8h1.3");
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.OpenElement(15, "path");
+                builder.AddAttribute(16, "d", "M5.5 9h5M5.5 11h3");
+                builder.CloseElement();
+            }
+        }
+
+        builder.CloseElement();
+    };
 }

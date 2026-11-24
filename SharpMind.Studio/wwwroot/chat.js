@@ -5,6 +5,56 @@
         const button = document.getElementById(buttonId);
         if (button && !button.disabled) button.click();
     },
+    copyText: function (text) {
+        const fallback = function () {
+            const area = document.createElement("textarea");
+            area.value = text;
+            area.setAttribute("readonly", "");
+            area.style.position = "fixed";
+            area.style.opacity = "0";
+            document.body.appendChild(area);
+            area.select();
+            document.execCommand("copy");
+            document.body.removeChild(area);
+            return true;
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(fallback);
+            return true;
+        }
+
+        return fallback();
+    },
+    copyFrom: function (button) {
+        const text = button.dataset.copy || "";
+        const done = function () {
+            button.classList.add("copied");
+            button.title = "Copied";
+            setTimeout(function () {
+                button.classList.remove("copied");
+                button.title = "Copy message";
+            }, 1200);
+        };
+        const fallback = function () {
+            const area = document.createElement("textarea");
+            area.value = text;
+            area.setAttribute("readonly", "");
+            area.style.position = "fixed";
+            area.style.opacity = "0";
+            document.body.appendChild(area);
+            area.select();
+            document.execCommand("copy");
+            document.body.removeChild(area);
+        };
+
+        done();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(fallback);
+        } else {
+            fallback();
+        }
+    },
     scrollToBottom: function (id) {
         const element = document.getElementById(id);
         if (element) element.scrollTop = element.scrollHeight;

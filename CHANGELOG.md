@@ -41,6 +41,12 @@ _Planned for 1.1.3._
   the context will leave the machine. Context can be removed before sending, and
   a context-only turn sends a short default prompt.
 
+- **Compact file controls in chat.** Every message bubble has a copy button that
+  appears on hover. Created files and generated artifacts appear as small themed
+  icons at the top left of the bubble; the first four are shown and a `▼` opens
+  the rest. Each file has a menu for **Preview**, **Save as**, **Open** and
+  **Open folder**, with a native save picker for the chosen path.
+
 - **Archive and recover Work projects.** Work projects stay in the sidebar even
   with no sessions. The project actions dialog offers Archive and Delete
   permanently; Archive moves the whole folder to Settings → System → Archived
