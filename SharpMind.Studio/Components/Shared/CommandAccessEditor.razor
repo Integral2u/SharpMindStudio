@@ -112,8 +112,19 @@
                         <span class="small faint mono">@command.Executable</span>
                         <div class="small faint">@ResolvedCommandPath(command)</div>
                         <div class="small faint">@CapabilityLabel(command)</div>
+                        <div class="small faint">inherits @Label(command.Permission)</div>
                     </div>
                     <div class="segmented" role="group" aria-label="@command.Name permission">
+                        @if (AllowInherit)
+                        {
+                            <button type="button"
+                                    class="segmented-option @(!disabled ? "active" : "")"
+                                    title="Follow the inherited permission"
+                                    @onclick="() => ClearCommandOverrideAsync(command.Name)"
+                                    disabled="@Unrestricted">
+                                Inherit
+                            </button>
+                        }
                         <button type="button"
                                 class="segmented-option @(disabled ? "active" : "")"
                                 @onclick="() => SetCommandPermissionAsync(command, true, null)"
@@ -123,7 +134,7 @@
                         @foreach (CommandPermission option in Permissions)
                         {
                             <button type="button"
-                                    class="segmented-option @(!disabled && CommandPermissionFor(command) == option ? "active" : "")"
+                                    class="segmented-option"
                                     @onclick="() => SetCommandPermissionAsync(command, true, option)"
                                     disabled="@Unrestricted">
                                 @Label(option)
@@ -151,6 +162,10 @@
                             <div class="small faint">@command.Description</div>
                         }
                         <div class="small faint">@CapabilityLabel(command)</div>
+                        @if (_inherited.Find(command.Name) is { } parent)
+                        {
+                            <div class="small faint">overrides inherited @Label(parent.Permission)</div>
+                        }
                     </div>
                     <div class="segmented" role="group" aria-label="@command.Name permission">
                         @if (_inherited.Find(command.Name) is not null)

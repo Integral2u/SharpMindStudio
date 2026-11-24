@@ -95,9 +95,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **Disable / Ask / Allow / Allow always**, and Allow always keeps that process
   name quiet for the rest of the app session.
 - **Command rows have the same permission choices.** An inherited or local
-  command can be set to **Disable / Ask / Allow / Allow always**. Ask prompts,
-  Allow skips prompts for the app session, Allow always persists, and Disable
-  removes the command. A local override can return to the inherited definition.
+  command can be set to **Inherit / Disable / Ask / Allow / Allow always**.
+  Inherit follows the parent definition, Ask prompts, Allow skips prompts for
+  the app session, Allow always persists, and Disable removes the command.
 - **Stray folders under `runs` no longer break Home, Test or startup.** The run
   catalog now lists only directories that contain `events.jsonl`; a folder made
   by a shell test or by hand is ignored instead of throwing a missing event
