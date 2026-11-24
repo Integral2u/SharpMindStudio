@@ -1,0 +1,98 @@
+@using SharpMind.Studio.Services
+@inject StudioWorkspaceService Workspace
+@inject StudioChatService ChatService
+@inject NavigationManager Nav
+
+<div class="studio-dialog-backdrop">
+    <div class="studio-dialog" role="dialog" aria-modal="true"
+         style="width:min(32rem, 100%);">
+        <div class="studio-dialog-title">Move session · @SessionName</div>
+        <div class="studio-dialog-message">
+            @if (SourceIsChat)
+            {
+                <p>
+                    Chat sessions can be promoted to a Work project. The session becomes a Work
+                    session in the target project.
+                </p>
+            }
+            else
+            {
+                <p>
+                    Move this Work session to another Work project. Chat has no project target,
+                    so sessions are never moved back to Chat.
+                </p>
+            }
+
+            @if (Targets.Count == 0)
+            {
+                <div class="small faint">Create another Work project first.</div>
+            }
+            else
+            {
+                <div class="field" style="margin-top:.6rem;">
+                    <label class="field-label">Target project</label>
+                    <select class="input" @bind="_targetPath">
+                        <option value="">Choose a project...</option>
+                        @foreach (StudioProjectInfo target in Targets)
+                        {
+                            <option value="@target.Path">@target.Name</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_status))
+            {
+                <div class="small faint" style="margin-top:.5rem;">@_status</div>
+            }
+        </div>
+        <div class="studio-dialog-actions">
+            <button type="button" class="studio-dialog-button" @onclick="CloseAsync">
+                Cancel
+            </button>
+            <button type="button" class="studio-dialog-button primary"
+                    @onclick="MoveAsync"
+                    disabled="@(Targets.Count == 0 || string.IsNullOrWhiteSpace(_targetPath))">
+                Move session
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string SessionId { get; set; } = "";
+    [Parameter, EditorRequired] public string SessionName { get; set; } = "";
+    [Parameter, EditorRequired] public string SourceRoot { get; set; } = "";
+    [Parameter] public bool SourceIsChat { get; set; }
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string _targetPath = "";
+    private string _status = "";
+
+    private IReadOnlyList<StudioProjectInfo> Targets => [.. Workspace.Projects
+        .Where(project => !project.IsDefault &&
+            !string.Equals(project.Path, SourceRoot, StringComparison.OrdinalIgnoreCase))];
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+
+    private async Task MoveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_targetPath)) return;
+        try
+        {
+            Workspace.MoveSession(SourceRoot, _targetPath, SessionId);
+            if (IsOpen)
+            {
+                Workspace.SwitchProject(_targetPath);
+                await ChatService.UseProjectAsync();
+                Nav.NavigateTo($"/work/{SessionId}");
+            }
+            await OnClose.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+}

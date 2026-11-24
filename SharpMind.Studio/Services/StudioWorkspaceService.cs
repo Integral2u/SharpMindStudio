@@ -1,5 +1,6 @@
 ﻿using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
+using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Inference;
 using SharpMind.Studio.Core.Projects;
 using SharpMind.Studio.Core.Runs;
@@ -228,80 +229,50 @@ public sealed class StudioWorkspaceService
     /// Move saved sessions from one project to another. A session file that
     /// already exists in the target is skipped; the caller reports the counts.
     /// </summary>
-    public (int Moved, int Skipped) MoveSessions(string sourcePath, string targetPath)
+    /// <summary>
+    /// Move one saved session to another Work project. A Chat session moved out
+    /// of the default project is promoted to a Work session. Existing session
+    /// folders in the target are refused rather than overwritten.
+    /// </summary>
+    public void MoveSession(string sourcePath, string targetPath, string sessionId)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         string source = ValidateProjectPath(sourcePath);
         string target = ValidateProjectPath(targetPath);
         if (SamePath(source, target))
             throw new InvalidOperationException("Choose a different target project.");
+        if (SamePath(target, _defaultProjectRoot))
+            throw new InvalidOperationException(
+                "Work sessions move between Work projects; Chat has no target project.");
 
         string sourceChats = Path.Combine(source, "chats");
-        if (!Directory.Exists(sourceChats)) return (0, 0);
+        string sourceSession = Path.GetFullPath(Path.Combine(sourceChats, sessionId));
+        if (!IsUnder(sourceSession, sourceChats) || !Directory.Exists(sourceSession))
+            throw new DirectoryNotFoundException($"Session '{sessionId}' was not found.");
 
         string targetChats = Path.Combine(target, "chats");
         Directory.CreateDirectory(targetChats);
+        string destination = Path.GetFullPath(Path.Combine(targetChats, sessionId));
+        if (!IsUnder(destination, targetChats))
+            throw new InvalidOperationException("Session id leaves the target chats folder.");
+        if (Directory.Exists(destination) || File.Exists(destination))
+            throw new InvalidOperationException(
+                $"A session with id '{sessionId}' already exists in {target}.");
 
-        int moved = 0;
-        int skipped = 0;
-        foreach (string file in Directory.EnumerateFiles(sourceChats, "*.json"))
+        Directory.Move(sourceSession, destination);
+
+        if (SamePath(source, _defaultProjectRoot))
         {
-            string destination = Path.Combine(targetChats, Path.GetFileName(file));
-            if (File.Exists(destination))
+            string chatFile = Path.Combine(destination, ChatSessionStore.ChatFileName);
+            if (File.Exists(chatFile))
             {
-                skipped++;
-                continue;
+                ChatSessionDocument document = JsonFile.Read<ChatSessionDocument>(chatFile);
+                document = document with { Mode = "work" };
+                JsonFile.Write(chatFile, document);
             }
-
-            File.Move(file, destination);
-            moved++;
         }
 
         NotifyProjectsChanged();
-        return (moved, skipped);
-    }
-
-    /// <summary>
-    /// Copy the project data folders into another project. Files that already
-    /// exist in the target are skipped, so a merge never overwrites target data.
-    /// </summary>
-    public (int Copied, int Skipped) MergeProjectData(string sourcePath, string targetPath)
-    {
-        string source = ValidateProjectPath(sourcePath);
-        string target = ValidateProjectPath(targetPath);
-        if (SamePath(source, target))
-            throw new InvalidOperationException("Choose a different target project.");
-
-        int copied = 0;
-        int skipped = 0;
-        foreach (string folder in new[] { "data", "runs", "models", "model-lists", "evals" })
-        {
-            string from = Path.Combine(source, folder);
-            if (!Directory.Exists(from)) continue;
-            CopyMissing(from, Path.Combine(target, folder), ref copied, ref skipped);
-        }
-
-        NotifyProjectsChanged();
-        return (copied, skipped);
-    }
-
-    private static void CopyMissing(string source, string target, ref int copied, ref int skipped)
-    {
-        Directory.CreateDirectory(target);
-        foreach (string file in Directory.EnumerateFiles(source))
-        {
-            string destination = Path.Combine(target, Path.GetFileName(file));
-            if (File.Exists(destination))
-            {
-                skipped++;
-                continue;
-            }
-
-            File.Copy(file, destination);
-            copied++;
-        }
-
-        foreach (string directory in Directory.EnumerateDirectories(source))
-            CopyMissing(directory, Path.Combine(target, Path.GetFileName(directory)), ref copied, ref skipped);
     }
 
     private string ValidateProjectPath(string path)

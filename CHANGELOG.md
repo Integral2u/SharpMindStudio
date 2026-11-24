@@ -14,13 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   installs, and the in-app version link opens the Store listing.
 
 - **Archive and recover Work projects.** Work projects stay in the sidebar even
-  with no sessions. The project actions dialog offers Archive, Delete
-  permanently and Move sessions; Archive moves the whole folder to
-  Settings → System → Archived projects, where it can be recovered or deleted.
-  Move sessions copies saved sessions to another project and skips conflicting
-  names. Merge data files copies data, runs, models, model-lists and evals,
-  skipping existing target files. Creating a project with the same name as an
-  archive offers recovery, or a fresh project that removes the archive.
+  with no sessions. The project actions dialog offers Archive and Delete
+  permanently; Archive moves the whole folder to Settings → System → Archived
+  projects, where it can be recovered or deleted. A session's move arrow sends it
+  to another Work project; Chat sessions are promoted to Work, Work sessions
+  cannot move to Chat, and an existing target session id is refused rather than
+  overwritten. Creating a project with the same name as an archive offers
+  recovery, or a fresh project that removes the archive.
 
 - **Multi-step tool work is no longer cut off at ten calls.** The main session
   and remote turns keep going until the model finishes. A saved agent has a

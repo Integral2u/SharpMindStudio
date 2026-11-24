@@ -1,6 +1,7 @@
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Projects;
 using SharpMind.Studio.Core.Storage;
 using SharpMind.Studio.Services;
@@ -73,45 +74,36 @@ public sealed class StudioWorkspaceArchiveTests : IDisposable
     }
 
     [Fact]
-    public void MoveSessions_MovesNewFilesAndSkipsConflicts()
+    public void MoveSession_MovesOneWorkSessionWithoutChangingItsMode()
     {
         StudioProject source = _workspace.CreateProject("Source");
         StudioProject target = _workspace.CreateProject("Target");
-        File.WriteAllText(Path.Combine(source.ChatsDirectory, "one.json"), "{}");
-        File.WriteAllText(Path.Combine(source.ChatsDirectory, "conflict.json"), "{}");
-        File.WriteAllText(Path.Combine(target.ChatsDirectory, "conflict.json"), "{}");
+        var sourceStore = new ChatSessionStore(source.ChatsDirectory);
+        ChatSessionDocument document = sourceStore.Create(
+            "model.smm", null, null, null, null, mode: "work");
 
-        (int moved, int skipped) = _workspace.MoveSessions(source.Root, target.Root);
+        _workspace.MoveSession(source.Root, target.Root, document.Id);
 
-        Assert.Equal(1, moved);
-        Assert.Equal(1, skipped);
-        Assert.True(File.Exists(Path.Combine(target.ChatsDirectory, "one.json")));
-        Assert.False(File.Exists(Path.Combine(source.ChatsDirectory, "one.json")));
-        Assert.True(File.Exists(Path.Combine(source.ChatsDirectory, "conflict.json")));
-        Assert.Equal(
-            "{}",
-            File.ReadAllText(Path.Combine(target.ChatsDirectory, "conflict.json")));
+        Assert.False(Directory.Exists(Path.Combine(source.ChatsDirectory, document.Id)));
+        var targetStore = new ChatSessionStore(target.ChatsDirectory);
+        ChatSessionDocument moved = targetStore.Open(document.Id);
+        Assert.Equal("work", moved.Mode);
     }
 
     [Fact]
-    public void MergeProjectData_CopiesMissingFilesAndKeepsTargetConflicts()
+    public void MoveSession_PromotesAChatSessionToWork()
     {
-        StudioProject source = _workspace.CreateProject("Source data");
-        StudioProject target = _workspace.CreateProject("Target data");
-        string sourceData = Path.Combine(source.DataDirectory, "notes");
-        string targetData = Path.Combine(target.DataDirectory, "notes");
-        Directory.CreateDirectory(sourceData);
-        Directory.CreateDirectory(targetData);
-        File.WriteAllText(Path.Combine(sourceData, "one.txt"), "source");
-        File.WriteAllText(Path.Combine(sourceData, "same.txt"), "source");
-        File.WriteAllText(Path.Combine(targetData, "same.txt"), "target");
+        StudioProject source = _workspace.Project;
+        StudioProject target = _workspace.CreateProject("Promotion target");
+        var sourceStore = new ChatSessionStore(source.ChatsDirectory);
+        ChatSessionDocument document = sourceStore.Create(
+            "model.smm", null, null, null, null, mode: "chat");
 
-        (int copied, int skipped) = _workspace.MergeProjectData(source.Root, target.Root);
+        _workspace.MoveSession(source.Root, target.Root, document.Id);
 
-        Assert.Equal(1, copied);
-        Assert.Equal(1, skipped);
-        Assert.Equal("source", File.ReadAllText(Path.Combine(targetData, "one.txt")));
-        Assert.Equal("target", File.ReadAllText(Path.Combine(targetData, "same.txt")));
+        var targetStore = new ChatSessionStore(target.ChatsDirectory);
+        ChatSessionDocument moved = targetStore.Open(document.Id);
+        Assert.Equal("work", moved.Mode);
     }
 
     private sealed class TestHostEnvironment : IHostEnvironment

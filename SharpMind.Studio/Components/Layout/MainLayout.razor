@@ -106,6 +106,8 @@
                                             </div>
                                             @if (group.IsCurrent)
                                             {
+                                                <button type="button" class="nav-chat-rename" @onclick="() => ShowMoveSession(group, chat)"
+                                                        title="Move session" aria-label="Move session">&#8594;</button>
                                                 <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
                                                         title="Rename chat" aria-label="Rename chat">&#9998;</button>
                                                 <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"
@@ -196,6 +198,8 @@
                                                 </div>
                                                 @if (group.IsCurrent)
                                                 {
+                                                    <button type="button" class="nav-chat-rename" @onclick="() => ShowMoveSession(group, chat)"
+                                                            title="Move session" aria-label="Move session">&#8594;</button>
                                                     <button type="button" class="nav-chat-rename" @onclick="() => RenameChatAsync(chat)"
                                                             title="Rename work session" aria-label="Rename work session">&#9998;</button>
                                                     <button type="button" class="nav-chat-delete" @onclick="() => DeleteChatAsync(chat)"
@@ -416,6 +420,15 @@
     {
         <ProjectActionsDialog Project="_projectAction" OnClose="CloseProjectActions" />
     }
+    @if (_moveGroup is not null && _moveChat is not null)
+    {
+        <MoveSessionDialog SessionId="@_moveChat.Id"
+                           SessionName="@_moveChat.Name"
+                           SourceRoot="@_moveGroup.Root"
+                           SourceIsChat="@MoveSourceIsChat"
+                           IsOpen="@(ChatService.Document?.Id == _moveChat.Id)"
+                           OnClose="CloseMoveSession" />
+    }
 </div>
 
 <div id="blazor-error-ui" data-nosnippet>
@@ -523,6 +536,8 @@
     private List<NavSessionGroup> _workGroups = [];
     private readonly Dictionary<string, bool> _groupOpen = new(StringComparer.OrdinalIgnoreCase);
     private StudioProjectInfo? _projectAction;
+    private NavSessionGroup? _moveGroup;
+    private ChatSessionSummary? _moveChat;
 
     /// <summary>One project's sessions in the sidebar, expandable as a group.</summary>
     private sealed record NavSessionGroup(
@@ -707,6 +722,22 @@
         _projectAction = new StudioProjectInfo(group.Name, group.Root, group.IsDefault);
         _groupOpen[group.Root] = true;
     }
+
+    private void ShowMoveSession(NavSessionGroup group, ChatSessionSummary chat)
+    {
+        _moveGroup = group;
+        _moveChat = chat;
+    }
+
+    private void CloseMoveSession()
+    {
+        _moveGroup = null;
+        _moveChat = null;
+        LoadChats();
+    }
+
+    private bool MoveSourceIsChat =>
+        string.Equals(_moveChat?.Mode, "chat", StringComparison.OrdinalIgnoreCase);
 
     private async Task OpenProjectAsync(NavSessionGroup group)
     {

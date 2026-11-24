@@ -91,15 +91,15 @@
             <p>
                 Work projects stay in the sidebar even when their last session is deleted.
                 The project actions button beside a Work group opens a dialog with
-                <strong>Archive</strong>, <strong>Delete permanently</strong> and
-                <strong>Move sessions</strong>. Archive moves the whole folder to
-                Settings → System → Archived projects, where it can be recovered or deleted.
-                Delete removes every file under the project root after a confirmation. Move
-                sessions copies saved sessions to another project and skips names that already
-                exist there. Merge data files copies the data, runs, models, model-lists and evals
-                folders and skips conflicts, leaving target settings and session files intact.
-                Creating a new project with the same name as an archive offers to recover it
-                instead; choosing a fresh project permanently deletes the archive.
+                <strong>Archive</strong> and <strong>Delete permanently</strong>. Archive moves
+                the whole folder to Settings → System → Archived projects, where it can be
+                recovered or deleted. Delete removes every file under the project root after a
+                confirmation. Session moves are separate: the arrow beside a saved session moves
+                it to another Work project. Chat sessions can be promoted to a Work project that
+                way; Work sessions cannot be moved back to Chat. A target that already has the
+                same session id is refused instead of overwritten. Creating a new project with the
+                same name as an archive offers to recover it instead; choosing a fresh project
+                permanently deletes the archive.
             </p>
 
             <h2 id="sessions">Sessions and names</h2>
