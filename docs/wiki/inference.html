@@ -51,6 +51,7 @@
             <a href="#formats">Model formats</a>
             <a href="#add">Add a model</a>
             <a href="#chat">Local chat</a>
+            <a href="#commands">Chat commands</a>
             <a href="#compaction">Context compaction</a>
             <a href="#tuning">Inference tuning</a>
             <a href="#gpu">GPU inference</a>
@@ -138,6 +139,28 @@
                 temperature picks <span class="mono">Alpha</span> to
                 <span class="mono">Epsilon</span>, with <span class="mono">Delta</span> when no
                 temperature is set.
+            </p>
+
+            <h3 id="commands">Chat commands</h3>
+            <p>
+                Type <span class="mono">/</span> at the start of the composer to open the command
+                list. Commands are handled locally and are never sent to the model. A partial
+                command accepts the highlighted item; a fully typed command runs as written.
+            </p>
+            <ul class="checklist">
+                <li><span class="mono">/help</span> — list every command.</li>
+                <li><span class="mono">/new</span> — start a new chat with the same model.</li>
+                <li><span class="mono">/model &lt;name&gt;</span> — switch model; with no name it shows the current one.</li>
+                <li><span class="mono">/system [text|clear]</span> — show, set or clear the system prompt.</li>
+                <li><span class="mono">/rename [name]</span> — rename the current chat.</li>
+                <li><span class="mono">/delete</span> — delete the current chat after confirmation.</li>
+                <li><span class="mono">/options</span> — open inference options for a local chat.</li>
+                <li><span class="mono">/stop</span> — stop the current reply.</li>
+            </ul>
+            <p>
+                An unknown command is refused instead of being sent as a prompt. Typing
+                <span class="mono">//</span> starts ordinary text, so paths such as
+                <span class="mono">//server/share</span> are unaffected.
             </p>
 
             <h2 id="compaction">Context compaction</h2>

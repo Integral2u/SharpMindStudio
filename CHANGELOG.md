@@ -28,6 +28,12 @@ _Planned for 1.1.3._
   its own **Clean up** button so one family is pruned without touching the
   others. Linked tool-probe runs are removed with their benchmark.
 
+- **Chat commands.** Typing `/` in the composer opens a command palette.
+  `/help`, `/new`, `/model`, `/system`, `/rename`, `/delete`, `/options` and
+  `/stop` run locally and are never sent to the model; an unknown command is
+  refused instead of becoming a prompt. Partial commands accept the highlighted
+  item, while a fully typed command runs as written.
+
 - **Archive and recover Work projects.** Work projects stay in the sidebar even
   with no sessions. The project actions dialog offers Archive and Delete
   permanently; Archive moves the whole folder to Settings → System → Archived

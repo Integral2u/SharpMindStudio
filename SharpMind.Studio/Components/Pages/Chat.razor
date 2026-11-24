@@ -866,8 +866,37 @@ else
                             </div>
                         }
                     }
-                    <textarea id="chat-input" class="textarea" data-enter-send="chat-send" onkeydown="studioChat.enterSend(event, 'chat-send')" @bind="_input" @bind:event="oninput"
-                              placeholder="Message the model. Enter sends; Shift+Enter adds a line."
+                    @if (_commandPaletteOpen)
+                    {
+                        <div class="command-palette" role="listbox" aria-label="Chat commands">
+                            @if (_commandCandidates.Count == 0)
+                            {
+                                <div class="command-palette-empty">No command matches. Type /help for the list.</div>
+                            }
+                            else
+                            {
+                                @for (int index = 0; index < _commandCandidates.Count; index++)
+                                {
+                                    int itemIndex = index;
+                                    ChatCommandDefinition command = _commandCandidates[index];
+                                    <button type="button"
+                                            class="command-palette-item @(itemIndex == _commandIndex ? "selected" : "")"
+                                            role="option"
+                                            aria-selected="@(itemIndex == _commandIndex)"
+                                            @onmouseenter="() => _commandIndex = itemIndex"
+                                            @onclick="() => SelectCommandAsync(command)">
+                                        <span class="command-palette-name">@command.Usage</span>
+                                        <span class="command-palette-description">@command.Description</span>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                    <textarea id="chat-input" class="textarea"
+                              value="@_input"
+                              @oninput="OnComposerInput"
+                              @onkeydown="OnComposerKeyDown"
+                              placeholder="Message the model. Enter sends; Shift+Enter adds a line. Type / for commands."
                               disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"></textarea>
                     <div class="composer-actions">
                         @if (!ChatService.IsStreaming && !ChatService.IsLoading && !ChatService.IsCompute)
@@ -896,7 +925,7 @@ else
                             <span class="spinner-ring"></span>
                             <button type="button" class="button danger" @onclick="Stop">Interrupt</button>
                         }
-                        <button id="chat-send" type="button" class="button primary composer-send" @onclick="SendAsync"
+                        <button id="chat-send" type="button" class="button primary composer-send" @onclick="SendCommandOrMessageAsync"
                                 disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
                                             (string.IsNullOrWhiteSpace(_input) && !HasVisionImage && !HasAudioInput) ||
                                             (_workMode && !_remoteChat && _toolState.Capability == ToolCapability.Failed && !_allowFailedTools))">
@@ -930,6 +959,14 @@ else
                 @if (ChatService.Error is not null)
                 {
                     <div class="error-line">@ChatService.Error</div>
+                }
+                @if (_commandError is not null)
+                {
+                    <div class="error-line command-result">@_commandError</div>
+                }
+                else if (_commandStatus is not null)
+                {
+                    <div class="small faint command-result">@_commandStatus</div>
                 }
                 @if (_voiceError is not null)
                 {
@@ -974,6 +1011,11 @@ else
     private string _input = "";
     private readonly List<ChatArtifact> _pendingArtifacts = [];
     private bool _showOverflow;
+    private bool _commandPaletteOpen;
+    private IReadOnlyList<ChatCommandDefinition> _commandCandidates = [];
+    private int _commandIndex;
+    private string? _commandError;
+    private string? _commandStatus;
 
     private RemoteProviderPreset RemotePreset => RemoteProviders.Find(_remoteProviderId);
     private IReadOnlyList<string> RemoteActiveModels => OpenRouter.ActiveModelsFor(_remoteProviderId);
@@ -1355,6 +1397,10 @@ else
         _showOptions = false;
         _input = "";
         _pendingArtifacts.Clear();
+        _commandPaletteOpen = false;
+        _commandCandidates = [];
+        _commandError = null;
+        _commandStatus = null;
 
         if (ChatService.Document is { } current &&
             string.Equals(current.Provider, "openrouter", StringComparison.OrdinalIgnoreCase))
@@ -1604,8 +1650,319 @@ else
         SelectedSupportsAudio &&
         _pendingArtifacts.Any(a => a.Type.Contains("audio", StringComparison.OrdinalIgnoreCase));
 
+    private void OnComposerInput(ChangeEventArgs args)
+    {
+        _input = args.Value?.ToString() ?? "";
+        _commandError = null;
+        _commandStatus = null;
+        UpdateCommandPalette();
+    }
+
+    private void UpdateCommandPalette()
+    {
+        if (!ChatCommandParser.IsCommandAttempt(_input))
+        {
+            _commandPaletteOpen = false;
+            _commandCandidates = [];
+            _commandIndex = 0;
+            return;
+        }
+
+        string trimmed = _input.TrimStart();
+        if (trimmed.Any(char.IsWhiteSpace))
+        {
+            _commandPaletteOpen = false;
+            _commandCandidates = [];
+            return;
+        }
+
+        string query = trimmed.Length <= 1 ? "" : trimmed[1..];
+        _commandCandidates = ChatCommands.Match(query);
+        _commandPaletteOpen = true;
+        _commandIndex = 0;
+    }
+
+    private async Task OnComposerKeyDown(KeyboardEventArgs args)
+    {
+        if (_commandPaletteOpen)
+        {
+            if (args.Key == "ArrowDown")
+            {
+                if (_commandCandidates.Count > 0)
+                    _commandIndex = (_commandIndex + 1) % _commandCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "ArrowUp")
+            {
+                if (_commandCandidates.Count > 0)
+                    _commandIndex = (_commandIndex - 1 + _commandCandidates.Count) % _commandCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "Escape")
+            {
+                _commandPaletteOpen = false;
+                return;
+            }
+
+            if ((args.Key == "Enter" || args.Key == "Tab") && !args.ShiftKey)
+            {
+                if (_commandCandidates.Count == 0)
+                {
+                    _commandPaletteOpen = false;
+                    return;
+                }
+
+                await SelectCommandAsync(_commandCandidates[_commandIndex], completeOnly: args.Key == "Tab");
+                return;
+            }
+
+            return;
+        }
+
+        if (args.Key == "Enter" && !args.ShiftKey)
+        {
+            await SendCommandOrMessageAsync();
+        }
+    }
+
+    private async Task SendCommandOrMessageAsync()
+    {
+        if (_commandPaletteOpen && _commandCandidates.Count > 0)
+        {
+            // A partial command accepts the highlighted item; a fully typed
+            // command runs as written.
+            ChatCommandLine? typed = ChatCommandParser.Parse(_input);
+            bool exact = typed is not null &&
+                string.Equals(
+                    typed.Name,
+                    _commandCandidates[_commandIndex].Name,
+                    StringComparison.OrdinalIgnoreCase);
+            if (!exact)
+            {
+                await SelectCommandAsync(_commandCandidates[_commandIndex]);
+                return;
+            }
+        }
+
+        if (ChatCommandParser.Parse(_input) is { } line)
+        {
+            _input = "";
+            _commandPaletteOpen = false;
+            _commandCandidates = [];
+            await ExecuteCommandAsync(line.Name, line.Argument);
+            return;
+        }
+
+        if (ChatCommandParser.IsCommandAttempt(_input))
+        {
+            // A bare slash is an incomplete command, not a prompt for the model.
+            UpdateCommandPalette();
+            return;
+        }
+
+        await SendAsync();
+    }
+
+    private async Task SelectCommandAsync(ChatCommandDefinition command, bool completeOnly = false)
+    {
+        _commandPaletteOpen = false;
+
+        if (completeOnly || command.ArgumentHint is not null)
+        {
+            _input = command.ArgumentHint is null
+                ? command.Invocation
+                : command.Invocation + " ";
+            _commandStatus = null;
+            await FocusComposerAsync();
+            return;
+        }
+
+        _input = "";
+        await ExecuteCommandAsync(command.Name, "");
+    }
+
+    private async Task ExecuteCommandAsync(string name, string argument)
+    {
+        _commandError = null;
+        _commandStatus = null;
+
+        ChatCommandDefinition? command = ChatCommands.Find(name);
+        if (command is null)
+        {
+            _commandError = $"Unknown command /{name}. Type /help.";
+            return;
+        }
+
+        switch (command.Name)
+        {
+            case "help":
+                _commandCandidates = ChatCommands.All;
+                _commandIndex = 0;
+                _commandPaletteOpen = true;
+                _commandStatus = "Chat commands. Enter runs, Esc closes.";
+                await FocusComposerAsync();
+                return;
+
+            case "new":
+                await BeginNewChatAsync();
+                return;
+
+            case "model":
+                await CommandModelAsync(argument);
+                break;
+
+            case "system":
+                await CommandSystemAsync(argument);
+                break;
+
+            case "rename":
+                await CommandRenameAsync(argument);
+                break;
+
+            case "delete":
+                await DeleteCurrentChatAsync();
+                return;
+
+            case "options":
+                if (ChatService.IsRemote)
+                {
+                    _commandStatus = "Inference options are available for local chats only.";
+                    break;
+                }
+
+                if (DeviceAccess.IsMobile)
+                {
+                    _commandStatus = "Inference options are hidden on this device.";
+                    break;
+                }
+
+                _showOptions = true;
+                SyncFromChat();
+                _commandStatus = "Options opened.";
+                break;
+
+            case "stop":
+                if (ChatService.IsStreaming || ChatService.IsLoading)
+                {
+                    ChatService.Interrupt();
+                    _commandStatus = "Stopping...";
+                }
+                else
+                {
+                    _commandStatus = "Nothing is running.";
+                }
+                break;
+        }
+
+        await FocusComposerAsync();
+    }
+
+    private async Task CommandModelAsync(string argument)
+    {
+        if (ChatService.Document is null)
+        {
+            _commandError = "Start or open a chat first.";
+            return;
+        }
+
+        IReadOnlyList<(string Value, string Label)> choices = ModelChoices();
+        if (string.IsNullOrWhiteSpace(argument))
+        {
+            string current = CurrentModelChoice;
+            string label = choices.FirstOrDefault(choice => choice.Value == current).Label ?? current;
+            _commandStatus = label.Length == 0 ? "No model is selected." : $"Current model: {label}";
+            return;
+        }
+
+        string needle = argument.Trim();
+        var matches = choices
+            .Where(choice =>
+                choice.Value.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+                choice.Label.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (matches.Count == 0)
+        {
+            _commandError = $"No model matches \"{needle}\".";
+            return;
+        }
+
+        if (matches.Count > 1)
+        {
+            string names = string.Join(", ", matches.Take(5).Select(match => match.Label));
+            _commandError = $"Several models match: {names}" +
+                (matches.Count > 5 ? " ..." : "") + ". Use a longer name.";
+            return;
+        }
+
+        if (ChatService.IsStreaming || ChatService.IsLoading)
+        {
+            _commandError = "Stop the current reply first.";
+            return;
+        }
+
+        await SwitchModelAsync(new ChangeEventArgs { Value = matches[0].Value });
+        _commandStatus = $"Switched to {matches[0].Label}.";
+    }
+
+    private async Task CommandSystemAsync(string argument)
+    {
+        if (ChatService.Document is null)
+        {
+            _commandError = "Start or open a chat first.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(argument))
+        {
+            string current = ChatService.Document.SystemPrompt ?? "";
+            _commandStatus = current.Length == 0
+                ? "No system prompt is set."
+                : $"System prompt: {current}";
+            return;
+        }
+
+        string value = argument.Trim();
+        bool clear = value.Equals("clear", StringComparison.OrdinalIgnoreCase) ||
+                     value.Equals("off", StringComparison.OrdinalIgnoreCase) ||
+                     value.Equals("none", StringComparison.OrdinalIgnoreCase);
+        bool applied = await ChatService.UpdateSystemPromptAsync(clear ? null : value);
+        if (!applied)
+        {
+            _commandError = "The system prompt could not be changed right now.";
+            return;
+        }
+
+        SyncFromChat();
+        _commandStatus = clear ? "System prompt cleared." : "System prompt updated.";
+    }
+
+    private async Task CommandRenameAsync(string argument)
+    {
+        if (ChatService.Document is null)
+        {
+            _commandError = "Start or open a chat first.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(argument))
+        {
+            await RenameCurrentChatAsync();
+            return;
+        }
+
+        await ChatService.RenameAsync(ChatService.Document.Id, argument.Trim());
+        SyncFromChat();
+        _commandStatus = "Chat renamed.";
+    }
+
     private async Task SendAsync()
     {
+        _commandPaletteOpen = false;
+        _commandCandidates = [];
+        _commandError = null;
+        _commandStatus = null;
         string text = _input;
         if (string.IsNullOrWhiteSpace(text))
         {
