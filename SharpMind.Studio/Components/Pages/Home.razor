@@ -245,6 +245,14 @@
                                     {
                                         <span class="spinner-ring" title="Running"></span>
                                     }
+                                    else if (item.Status == "skipped")
+                                    {
+                                        <span class="faint">skipped</span>
+                                    }
+                                    else if (item.Status == "interrupted")
+                                    {
+                                        <span class="faint">interrupted</span>
+                                    }
                                 </td>
                             </tr>
                         }
@@ -526,6 +534,7 @@
         if (item?.Result is { } result)
             return result.Succeeded ? "ok" : "failed";
         if (item?.Status == "running") return "running";
+        if (item?.Status == "skipped") return "skipped";
 
         RunSummary? run = _runs.FirstOrDefault(value =>
             string.Equals(value.Kind, "model-bench", StringComparison.OrdinalIgnoreCase) &&
@@ -544,6 +553,7 @@
         "ok" => "success",
         "failed" => "failed",
         "running" => "running",
+        "skipped" => "skipped",
         _ => "not run",
     };
 

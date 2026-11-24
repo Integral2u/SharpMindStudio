@@ -20,6 +20,13 @@ _Planned for 1.1.3._
   tools uses the same four-state controls and badges as the project editor, and
   the System command line is inside the System tools group.
 
+- **Canary runs are steerable, and the Tests list can be pruned.** While a
+  canary run is going, **Skip current** stops the active model, marks it skipped
+  and leaves the rest for **Continue**; **Clear results** empties the current
+  canary table without deleting saved runs. The Tests page can clean up model
+  runs with **Keep fastest (per model)** or **Keep last (per model)**, and linked
+  tool-probe runs are removed with their benchmark.
+
 - **Archive and recover Work projects.** Work projects stay in the sidebar even
   with no sessions. The project actions dialog offers Archive and Delete
   permanently; Archive moves the whole folder to Settings → System → Archived

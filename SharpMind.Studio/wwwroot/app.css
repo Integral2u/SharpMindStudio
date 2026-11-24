@@ -896,6 +896,11 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     box-shadow: 0 0 0 .15rem rgba(251, 191, 36, .16);
 }
 
+.canary-dot.skipped {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--muted);
+}
+
 .canary-dot.idle {
     background: var(--faint);
 }
