@@ -50,6 +50,8 @@ public sealed class StudioSafetyService : IDisposable
     private readonly HashSet<string> _allowed = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _deniedProcesses = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _allowedProcesses = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _allowedTools = new(StringComparer.OrdinalIgnoreCase);
+    private string? _activeTool;
     private readonly ProcessStartProbe _probe = new();
     private SafetyReviewRequest? _pending;
     private ProcessStartAlert? _pendingProcess;
@@ -70,15 +72,26 @@ public sealed class StudioSafetyService : IDisposable
     }
 
     /// <summary>Watches for processes started under Studio while tools run.</summary>
-    public void BeginToolWatch() => _probe.Start();
+    public void BeginToolWatch()
+    {
+        lock (_gate) _activeTool = null;
+        _probe.Start();
+    }
 
     public void EndToolWatch()
     {
         _probe.Stop();
         _probe.SetPlugin(null);
+        lock (_gate) _activeTool = null;
     }
 
     public void SetActivePlugin(string? plugin) => _probe.SetPlugin(plugin);
+
+    /// <summary>The tool whose permission check just ran; used to group process warnings.</summary>
+    public void SetActiveTool(string? tool)
+    {
+        lock (_gate) _activeTool = string.IsNullOrWhiteSpace(tool) ? null : tool;
+    }
 
     public bool KillPendingProcess(out string? error)
     {
@@ -123,41 +136,45 @@ public sealed class StudioSafetyService : IDisposable
         return (ok, error);
     }
 
-    /// <summary>Stop suppressing this process name and ask again next time.</summary>
-    public void AskAboutProcessAgain(string? name)
+    /// <summary>Stop suppressing this process/tool and ask again next time.</summary>
+    public void AskAboutProcessAgain(ProcessStartAlert alert)
     {
-        if (!string.IsNullOrWhiteSpace(name))
+        lock (_gate)
         {
-            lock (_gate)
-            {
-                _allowedProcesses.Remove(name);
-                _deniedProcesses.Remove(name);
-            }
+            _allowedProcesses.Remove(alert.Name);
+            _deniedProcesses.Remove(alert.Name);
+            if (!string.IsNullOrWhiteSpace(alert.Tool)) _allowedTools.Remove(alert.Tool);
         }
         DismissPendingProcess();
     }
 
-    /// <summary>Allow this process name for the rest of the app session.</summary>
-    public void AllowProcessForSession(string? name)
+    /// <summary>
+    /// Allow the tool that started this process for the rest of the app session.
+    /// Falls back to the process name when the originating tool is unknown.
+    /// </summary>
+    public void AllowProcessForSession(ProcessStartAlert alert)
     {
-        if (!string.IsNullOrWhiteSpace(name))
+        lock (_gate)
         {
-            lock (_gate)
+            if (!string.IsNullOrWhiteSpace(alert.Tool))
             {
-                _allowedProcesses.Add(name);
-                _deniedProcesses.Remove(name);
-                if (_pendingProcess is { } alert &&
-                    string.Equals(alert.Name, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    _pendingProcess = null;
-                }
+                _allowedTools.Add(alert.Tool);
             }
+            else if (!string.IsNullOrWhiteSpace(alert.Name))
+            {
+                _allowedProcesses.Add(alert.Name);
+                _deniedProcesses.Remove(alert.Name);
+            }
+
+            if (_pendingProcess is { } pending && pending.ProcessId == alert.ProcessId)
+                _pendingProcess = null;
         }
         Changed?.Invoke();
     }
 
     private void OnProcessStarted(ProcessStartAlert alert)
     {
+        string? tool;
         lock (_gate)
         {
             if (_allowedProcesses.Contains(alert.Name) ||
@@ -165,9 +182,14 @@ public sealed class StudioSafetyService : IDisposable
             {
                 return;
             }
+
+            tool = _activeTool;
+            if (!string.IsNullOrWhiteSpace(tool) && _allowedTools.Contains(tool))
+                return;
         }
 
         if (!ProcessStartProbe.IsAlive(alert.ProcessId)) return;
+        alert = alert with { Tool = tool };
 
         lock (_gate) _pendingProcess = alert;
         Changed?.Invoke();
@@ -333,6 +355,7 @@ public sealed class StudioSafetyService : IDisposable
             _allowed.Clear();
             _deniedProcesses.Clear();
             _allowedProcesses.Clear();
+            _allowedTools.Clear();
         }
         Changed?.Invoke();
     }

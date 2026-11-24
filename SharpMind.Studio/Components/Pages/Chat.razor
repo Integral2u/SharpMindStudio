@@ -740,12 +740,14 @@ else
                             <strong>
                                 @process.Name (PID @process.ProcessId)@(process.Plugin is null
                                     ? ""
-                                    : $" by the plugin tool {process.Plugin}")
+                                    : $" by the plugin tool {process.Plugin}")@(process.Tool is null
+                                    ? ""
+                                    : $" · tool {process.Tool}")
                             </strong>
                             <span class="small faint">
                                 It started underneath Studio while a tool was running. This warning
                                 closes automatically when the process exits. Allow always keeps this
-                                process name quiet for the rest of the session.
+                                tool quiet for the rest of the session.
                             </span>
                         </div>
                         <div class="row">
@@ -754,7 +756,7 @@ else
                                 Disable
                             </button>
                             <button type="button" class="button"
-                                    @onclick="() => Safety.AskAboutProcessAgain(process.Name)">
+                                    @onclick="() => Safety.AskAboutProcessAgain(process)">
                                 Ask
                             </button>
                             <button type="button" class="button"
@@ -762,8 +764,8 @@ else
                                 Allow
                             </button>
                             <button type="button" class="button primary"
-                                    @onclick="() => Safety.AllowProcessForSession(process.Name)">
-                                Allow always
+                                    @onclick="() => Safety.AllowProcessForSession(process)">
+                                Allow always@(process.Tool is null ? "" : $" ({process.Tool})")
                             </button>
                         </div>
                     </div>

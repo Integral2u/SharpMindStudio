@@ -14,11 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   installs, and the in-app version link opens the Store listing.
 
 - **Archive and recover Work projects.** Work projects stay in the sidebar even
-  with no sessions. The project actions button offers Archive or Delete
-  permanently; Archive moves the whole folder to Settings → System → Archived
-  projects, where it can be recovered or deleted. Creating a project with the
-  same name as an archive offers recovery, or a fresh project that removes the
-  archive.
+  with no sessions. The project actions dialog offers Archive, Delete
+  permanently and Move sessions; Archive moves the whole folder to
+  Settings → System → Archived projects, where it can be recovered or deleted.
+  Move sessions copies saved sessions to another project and skips conflicting
+  names. Merge data files copies data, runs, models, model-lists and evals,
+  skipping existing target files. Creating a project with the same name as an
+  archive offers recovery, or a fresh project that removes the archive.
 
 - **Multi-step tool work is no longer cut off at ten calls.** The main session
   and remote turns keep going until the model finishes. A saved agent has a
@@ -99,8 +101,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Process warnings stop following a finished process.** A process that starts
   under Studio while a tool runs no longer leaves a permanent banner: the
   warning closes itself when the process exits. It now offers
-  **Disable / Ask / Allow / Allow always**, and Allow always keeps that process
-  name quiet for the rest of the app session.
+  **Disable / Ask / Allow / Allow always**, and Allow always keeps the originating
+  tool quiet for the rest of the app session.
 - **Command rows have the same permission choices.** An inherited or local
   command can be set to **Inherit / Disable / Ask / Allow / Allow always**.
   Inherit follows the parent definition, Ask prompts, Allow skips prompts for

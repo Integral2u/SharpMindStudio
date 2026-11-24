@@ -3,7 +3,12 @@ using System.Runtime.InteropServices;
 
 namespace SharpMind.Studio.Services;
 
-public sealed record ProcessStartAlert(int ProcessId, string Name, string? Plugin, DateTimeOffset At);
+public sealed record ProcessStartAlert(
+    int ProcessId,
+    string Name,
+    string? Plugin,
+    DateTimeOffset At,
+    string? Tool = null);
 
 /// <summary>
 /// Watches for processes started underneath Studio while a tool runs. It polls

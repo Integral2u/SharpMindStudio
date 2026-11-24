@@ -71,6 +71,7 @@ public sealed class StudioWorkService : IDisposable
     private readonly InferenceSettingsService _inference;
     private readonly SharpMind.Studio.Core.Mcp.McpServerHost _mcp;
     private readonly ISecretResolver _secrets;
+    private readonly StudioSafetyService? _safety;
     private readonly Lock _gate = new();
     private readonly WorkShellDirectoryStore _shells = new();
     private readonly HashSet<string> _sessionAllowedCommands = new(StringComparer.OrdinalIgnoreCase);
@@ -90,7 +91,7 @@ public sealed class StudioWorkService : IDisposable
     /// <summary>The tool-call gate for the running turn, inherited by delegated agents.</summary>
     private IToolCallFilter? _activeFilter;
 
-    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents, InferenceSettingsService inference, SharpMind.Studio.Core.Mcp.McpServerHost mcp, ISecretResolver secrets)
+    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents, InferenceSettingsService inference, SharpMind.Studio.Core.Mcp.McpServerHost mcp, ISecretResolver secrets, StudioSafetyService? safety = null)
     {
         _workspace = workspace;
         _systemSkills = systemSkills;
@@ -100,6 +101,7 @@ public sealed class StudioWorkService : IDisposable
         _inference = inference;
         _mcp = mcp;
         _secrets = secrets ?? NullSecretResolver.Instance;
+        _safety = safety;
         _store = new WorkSettingsStore(workspace.Project.Root);
         _settings = _store.Load();
         _memory = _store.ReadMemory();
@@ -935,6 +937,7 @@ public sealed class StudioWorkService : IDisposable
         ToolPermissionProfile? profile = null,
         ToolPermissionSet? agentTools = null)
     {
+        _safety?.SetActiveTool(access.Tool);
         if (agentTools is not null)
             profile = (profile ?? new ToolPermissionProfile()) with { Agent = agentTools };
 

@@ -1,0 +1,161 @@
+@using SharpMind.Studio.Services
+@inject StudioWorkspaceService Workspace
+@inject StudioChatService ChatService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<div class="studio-dialog-backdrop">
+    <div class="studio-dialog" role="dialog" aria-modal="true"
+         style="width:min(34rem, 100%);">
+        <div class="studio-dialog-title">Project options · @Project.Name</div>
+        <div class="studio-dialog-message">
+            <div class="small faint mono">@Project.Path</div>
+            <p>
+                <strong>Archive</strong> keeps every file and moves the project to
+                Settings → System → Archived projects. <strong>Delete permanently</strong>
+                removes the whole project root.
+            </p>
+            @if (Targets.Count > 0)
+            {
+                <div class="field" style="margin-top:.6rem;">
+                    <label class="field-label">Move saved sessions to</label>
+                    <select class="input" @bind="_targetPath">
+                        <option value="">Choose a project...</option>
+                        @foreach (StudioProjectInfo target in Targets)
+                        {
+                            <option value="@target.Path">@target.Name</option>
+                        }
+                    </select>
+                </div>
+                <button type="button" class="studio-dialog-button"
+                        @onclick="MoveSessionsAsync"
+                        disabled="@string.IsNullOrWhiteSpace(_targetPath)">
+                    Move sessions
+                </button>
+                <button type="button" class="studio-dialog-button"
+                        @onclick="MergeDataAsync"
+                        disabled="@string.IsNullOrWhiteSpace(_targetPath)">
+                    Merge data files
+                </button>
+                <div class="small faint" style="margin-top:.35rem;">
+                    Existing session or data files in the target are skipped. Project settings
+                    stay with the target.
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_status))
+            {
+                <div class="small faint" style="margin-top:.5rem;">@_status</div>
+            }
+        </div>
+        <div class="studio-dialog-actions">
+            <button type="button" class="studio-dialog-button" @onclick="CloseAsync">
+                Cancel
+            </button>
+            <button type="button" class="studio-dialog-button" @onclick="ArchiveAsync">
+                Archive
+            </button>
+            <button type="button" class="studio-dialog-button primary" @onclick="DeleteAsync">
+                Delete permanently
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public StudioProjectInfo Project { get; set; } = null!;
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string _targetPath = "";
+    private string _status = "";
+
+    private IReadOnlyList<StudioProjectInfo> Targets => [.. Workspace.Projects
+        .Where(project => !string.Equals(
+            project.Path, Project.Path, StringComparison.OrdinalIgnoreCase))];
+
+    private bool IsCurrent => string.Equals(
+        Project.Path, Workspace.Project.Root, StringComparison.OrdinalIgnoreCase);
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+
+    private async Task ArchiveAsync()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Archive '{Project.Name}'? Its files move to Workspace Archives and can be "
+            + "recovered from Settings > System.");
+        if (!confirmed) return;
+
+        try
+        {
+            Workspace.ArchiveProject(Project.Path);
+            if (IsCurrent)
+            {
+                await ChatService.UseProjectAsync();
+                Nav.NavigateTo("/work");
+            }
+            await OnClose.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Permanently delete '{Project.Name}' and every file under:\n\n{Project.Path}\n\n"
+            + "This cannot be undone. Use Archive if you may want it back.");
+        if (!confirmed) return;
+
+        try
+        {
+            Workspace.DeleteProject(Project.Path);
+            if (IsCurrent)
+            {
+                await ChatService.UseProjectAsync();
+                Nav.NavigateTo("/work");
+            }
+            await OnClose.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private async Task MoveSessionsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_targetPath)) return;
+        try
+        {
+            (int moved, int skipped) = Workspace.MoveSessions(Project.Path, _targetPath);
+            _status = skipped == 0
+                ? $"Moved {moved} session(s)."
+                : $"Moved {moved} session(s); skipped {skipped} existing file(s).";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+
+    private async Task MergeDataAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_targetPath)) return;
+        try
+        {
+            (int copied, int skipped) = Workspace.MergeProjectData(Project.Path, _targetPath);
+            _status = skipped == 0
+                ? $"Merged {copied} data file(s)."
+                : $"Merged {copied} data file(s); skipped {skipped} existing file(s).";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+        }
+    }
+}

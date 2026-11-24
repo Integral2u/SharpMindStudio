@@ -72,6 +72,48 @@ public sealed class StudioWorkspaceArchiveTests : IDisposable
         Assert.DoesNotContain(_workspace.Projects, item => item.Name == "Disposable");
     }
 
+    [Fact]
+    public void MoveSessions_MovesNewFilesAndSkipsConflicts()
+    {
+        StudioProject source = _workspace.CreateProject("Source");
+        StudioProject target = _workspace.CreateProject("Target");
+        File.WriteAllText(Path.Combine(source.ChatsDirectory, "one.json"), "{}");
+        File.WriteAllText(Path.Combine(source.ChatsDirectory, "conflict.json"), "{}");
+        File.WriteAllText(Path.Combine(target.ChatsDirectory, "conflict.json"), "{}");
+
+        (int moved, int skipped) = _workspace.MoveSessions(source.Root, target.Root);
+
+        Assert.Equal(1, moved);
+        Assert.Equal(1, skipped);
+        Assert.True(File.Exists(Path.Combine(target.ChatsDirectory, "one.json")));
+        Assert.False(File.Exists(Path.Combine(source.ChatsDirectory, "one.json")));
+        Assert.True(File.Exists(Path.Combine(source.ChatsDirectory, "conflict.json")));
+        Assert.Equal(
+            "{}",
+            File.ReadAllText(Path.Combine(target.ChatsDirectory, "conflict.json")));
+    }
+
+    [Fact]
+    public void MergeProjectData_CopiesMissingFilesAndKeepsTargetConflicts()
+    {
+        StudioProject source = _workspace.CreateProject("Source data");
+        StudioProject target = _workspace.CreateProject("Target data");
+        string sourceData = Path.Combine(source.DataDirectory, "notes");
+        string targetData = Path.Combine(target.DataDirectory, "notes");
+        Directory.CreateDirectory(sourceData);
+        Directory.CreateDirectory(targetData);
+        File.WriteAllText(Path.Combine(sourceData, "one.txt"), "source");
+        File.WriteAllText(Path.Combine(sourceData, "same.txt"), "source");
+        File.WriteAllText(Path.Combine(targetData, "same.txt"), "target");
+
+        (int copied, int skipped) = _workspace.MergeProjectData(source.Root, target.Root);
+
+        Assert.Equal(1, copied);
+        Assert.Equal(1, skipped);
+        Assert.Equal("source", File.ReadAllText(Path.Combine(targetData, "one.txt")));
+        Assert.Equal("target", File.ReadAllText(Path.Combine(targetData, "same.txt")));
+    }
+
     private sealed class TestHostEnvironment : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = "Development";
