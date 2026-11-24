@@ -671,7 +671,7 @@
 
             List<ChatSessionSummary> filtered = [.. sessions.Where(session =>
                 string.Equals(session.Mode, "work", StringComparison.OrdinalIgnoreCase) == work)];
-            if (filtered.Count == 0 && !work) continue;
+            if (filtered.Count == 0 && (!work || project.IsDefault)) continue;
 
             groups.Add(new NavSessionGroup(
                 project.Name,
