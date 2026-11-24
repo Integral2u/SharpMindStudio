@@ -612,6 +612,11 @@ details.panel.settings-collapsible > summary.panel-head:hover {
         min-width: 8rem;
     }
 
+    .runs-filters .input {
+        height: 2.65rem;
+        box-sizing: border-box;
+    }
+
 .runs-group .table td {
     vertical-align: middle;
 }
