@@ -70,6 +70,19 @@ public sealed class SoftShellRunnerTests
     }
 
     [Fact]
+    public async Task Run_RefusesAMissingVaultValueInEcho()
+    {
+        using var temp = new TempDirectory();
+        SoftShellRunner runner = Runner(temp, new TestSecretResolver());
+
+        string result = await runner.RunAsync("echo %vault:MISSING%");
+
+        Assert.Contains("MISSING", result);
+        Assert.Contains("not in the Vault", result);
+        Assert.DoesNotContain("%vault:MISSING%", result);
+    }
+
+    [Fact]
     public async Task Run_RedactsVaultValuesAndShowsTheReferenceInThePrompt()
     {
         using var temp = new TempDirectory();

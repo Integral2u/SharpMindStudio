@@ -195,8 +195,12 @@ public sealed class SoftShellRunner(
                     for (int word = 1; word < command.Words.Count; word++)
                     {
                         if (word > 1) builtin.Append(' ');
-                        builtin.Append(RenderWord(
-                            command.Words[word], state, includeSecrets: true).Text);
+                        SecretExpansion expansion = RenderWord(
+                            command.Words[word], state, includeSecrets: true);
+                        if (expansion.Missing.Count > 0)
+                            return PipelineResult.Failed(
+                                new SecretMissingException(expansion.Missing).Message);
+                        builtin.Append(expansion.Text);
                     }
                     if (builtin.Length > 0) builtin.Append('\n');
                 }
