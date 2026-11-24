@@ -2087,7 +2087,13 @@ else
                 return;
             }
 
-            if ((args.Key == "Enter" || args.Key == "Tab") && !args.ShiftKey)
+            if (args.Key == "Enter" && !args.ShiftKey)
+            {
+                await SendCommandOrMessageAsync();
+                return;
+            }
+
+            if (args.Key == "Tab" && !args.ShiftKey)
             {
                 if (_contextCandidates.Count > 0)
                     await SelectContextAsync(_contextCandidates[_contextIndex]);
@@ -2121,7 +2127,13 @@ else
                 return;
             }
 
-            if ((args.Key == "Enter" || args.Key == "Tab") && !args.ShiftKey)
+            if (args.Key == "Enter" && !args.ShiftKey)
+            {
+                await SendCommandOrMessageAsync();
+                return;
+            }
+
+            if (args.Key == "Tab" && !args.ShiftKey)
             {
                 if (_commandCandidates.Count == 0)
                 {
@@ -2129,7 +2141,7 @@ else
                     return;
                 }
 
-                await SelectCommandAsync(_commandCandidates[_commandIndex], completeOnly: args.Key == "Tab");
+                await SelectCommandAsync(_commandCandidates[_commandIndex], completeOnly: true);
                 return;
             }
 
