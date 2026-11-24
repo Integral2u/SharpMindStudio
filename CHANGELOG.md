@@ -42,7 +42,7 @@ _Planned for 1.1.3._
   a context-only turn sends a short default prompt.
 
 - **Compact file controls in chat.** Every message bubble has a copy button that
-  appears on hover. Created files and generated artifacts appear as small themed
+  appears on hover. Created files and generated artifacts appear as 24 px themed
   icons at the top left of the bubble; the first four are shown and a `▼` opens
   the rest. Each file has a menu for **Preview**, **Save as**, **Open** and
   **Open folder**, with a native save picker for the chosen path.

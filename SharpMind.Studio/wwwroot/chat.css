@@ -923,58 +923,52 @@
 .artifact-icons {
     display: flex;
     align-items: center;
-    gap: .25rem;
+    gap: .3rem;
 }
 
 .artifact-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    width: 24px;
+    height: 24px;
     padding: 0;
-    border: 1px solid var(--line);
-    border-radius: .3rem;
-    background: var(--panel-soft);
-    color: var(--muted);
+    border: 1px solid rgba(var(--accent-rgb), .32);
+    border-radius: .375rem;
+    background: rgba(var(--accent-rgb), .09);
+    color: var(--accent);
     cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, transform .15s ease;
 }
 
 .artifact-icon.small {
-    flex: 0 0 16px;
+    flex: 0 0 24px;
 }
 
 .artifact-svg {
     display: block;
-    width: 12px;
-    height: 12px;
+    width: 17px;
+    height: 17px;
 }
 
-.artifact-icon.code { color: #7dd3fc; border-color: rgba(125, 211, 252, .3); }
-.artifact-icon.json { color: #fbbf24; border-color: rgba(251, 191, 36, .3); }
-.artifact-icon.image { color: #86efac; border-color: rgba(134, 239, 172, .3); }
-.artifact-icon.audio { color: #c084fc; border-color: rgba(192, 132, 252, .3); }
-.artifact-icon.pdf { color: #f87171; border-color: rgba(248, 113, 113, .3); }
-.artifact-icon.archive { color: #fbbf24; border-color: rgba(251, 191, 36, .3); }
-.artifact-icon.text { color: var(--accent); border-color: rgba(var(--accent-rgb), .3); }
-
 .artifact-more {
-    width: 16px;
-    height: 16px;
+    width: 24px;
+    height: 24px;
     padding: 0;
-    border: 1px solid var(--line);
-    border-radius: .3rem;
+    border: 1px solid rgba(var(--accent-rgb), .22);
+    border-radius: .375rem;
     background: transparent;
-    color: var(--muted);
-    font-size: .48rem;
+    color: var(--accent);
+    font-size: .55rem;
     line-height: 1;
     cursor: pointer;
 }
 
 .artifact-more:hover,
 .artifact-icon:hover {
-    border-color: var(--line-strong);
-    background: var(--bg-raised);
+    border-color: rgba(var(--accent-rgb), .6);
+    background: rgba(var(--accent-rgb), .17);
+    transform: translateY(-1px);
 }
 
 .artifact-note {
