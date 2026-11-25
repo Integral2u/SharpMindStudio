@@ -7,6 +7,7 @@
 @using SharpMind.Studio.Core.Inference
 @using SharpMind.Studio.Core.OpenRouter
 @using SharpMind.Studio.Core.Runs
+@using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Core.Training
 @using SharpMind.Studio.Core.Work
 @using SharpMind.Studio.Services
@@ -170,6 +171,11 @@
                                         <span class="command-palette-description">@skillChoice.Source</span>
                                     </button>
                                 }
+                                <button type="button" class="command-palette-item"
+                                        @onclick="AddSkillFromFileAsync">
+                                    <span class="command-palette-name">From file...</span>
+                                    <span class="command-palette-description">Choose a markdown skill file.</span>
+                                </button>
                             }
                         </div>
                     }
@@ -1072,6 +1078,11 @@ else
                                         <span class="command-palette-description">@skillChoice.Source</span>
                                     </button>
                                 }
+                                <button type="button" class="command-palette-item"
+                                        @onclick="AddSkillFromFileAsync">
+                                    <span class="command-palette-name">From file...</span>
+                                    <span class="command-palette-description">Choose a markdown skill file.</span>
+                                </button>
                             }
                         </div>
                     }
@@ -1990,7 +2001,7 @@ else
                 AddMemoryContext();
                 break;
             case "skill":
-                OpenSkillPalette();
+                await OpenSkillPaletteAsync();
                 return;
             default:
                 await AddFileContextAsync();
@@ -2000,18 +2011,73 @@ else
         await FocusComposerAsync();
     }
 
-    private void OpenSkillPalette()
+    private async Task OpenSkillPaletteAsync()
     {
         _contextPaletteOpen = false;
         _contextCandidates = [];
         _skillCandidates = EnabledSkills();
         _skillIndex = 0;
-        _skillPaletteOpen = true;
+
         if (_skillCandidates.Count == 0)
         {
             _skillPaletteOpen = false;
-            _commandStatus = "No enabled skills are available for this project.";
+            await AddSkillFromFileAsync();
+            return;
         }
+
+        _skillPaletteOpen = true;
+    }
+
+    private async Task AddSkillFromFileAsync()
+    {
+        _skillPaletteOpen = false;
+        _contextPaletteOpen = false;
+
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StudioPaths.Skills,
+            "Add a skill from file",
+            "*.md;*.markdown;*.txt");
+        if (selection?.Path is not { Length: > 0 } path) return;
+
+        string key = $"skill-file:{path}";
+        if (!_contextPaths.Add(key))
+        {
+            _commandStatus = $"{Path.GetFileName(path)} is already attached.";
+            await FocusComposerAsync();
+            return;
+        }
+
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Length > 400_000)
+            {
+                _contextPaths.Remove(key);
+                _commandError = $"{info.Name} is larger than 400 KB.";
+                return;
+            }
+
+            string text = await File.ReadAllTextAsync(path);
+            if (text.Contains('\0'))
+            {
+                _contextPaths.Remove(key);
+                _commandError = $"{info.Name} does not look like a text skill file.";
+                return;
+            }
+
+            AddContextArtifact(
+                info.Name,
+                $"Skill: {Path.GetFileNameWithoutExtension(info.Name)}\n\n{text.Trim()}",
+                key);
+        }
+        catch (Exception ex)
+        {
+            _contextPaths.Remove(key);
+            _commandError = $"Could not read {Path.GetFileName(path)}: {ex.Message}";
+        }
+
+        await FocusComposerAsync();
     }
 
     private async Task SelectSkillAsync(SkillChoice choice)
@@ -2277,6 +2343,18 @@ else
         return ContextTextExtensions.Contains(extension);
     }
 
+    private async Task<bool> AcceptPaletteSelectionAsync()
+    {
+        try
+        {
+            return await JS.InvokeAsync<bool>("studioChat.clickSelected");
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task OnComposerKeyDown(KeyboardEventArgs args)
     {
         if (_skillPaletteOpen)
@@ -2303,6 +2381,7 @@ else
 
             if (args.Key == "Enter" && !args.ShiftKey)
             {
+                if (await AcceptPaletteSelectionAsync()) return;
                 await SendCommandOrMessageAsync();
                 return;
             }
@@ -2343,6 +2422,7 @@ else
 
             if (args.Key == "Enter" && !args.ShiftKey)
             {
+                if (await AcceptPaletteSelectionAsync()) return;
                 await SendCommandOrMessageAsync();
                 return;
             }
@@ -2384,6 +2464,7 @@ else
 
             if (args.Key == "Enter" && !args.ShiftKey)
             {
+                if (await AcceptPaletteSelectionAsync()) return;
                 await SendCommandOrMessageAsync();
                 return;
             }
@@ -2436,6 +2517,11 @@ else
     private async Task SendCommandOrMessageAsync()
     {
         await SyncComposerFromDomAsync();
+
+        if (_skillPaletteOpen || _contextPaletteOpen || _commandPaletteOpen)
+        {
+            if (await AcceptPaletteSelectionAsync()) return;
+        }
 
         if (_skillPaletteOpen)
         {

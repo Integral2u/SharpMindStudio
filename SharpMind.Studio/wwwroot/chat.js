@@ -67,6 +67,13 @@
         const element = document.getElementById(id);
         return element && typeof element.value === "string" ? element.value : "";
     },
+    clickSelected: function () {
+        const item = document.querySelector('.command-palette-item.selected')
+            || document.querySelector('.command-palette-item');
+        if (!item) return false;
+        item.click();
+        return true;
+    },
     focusAndScroll: function (id) {
         const element = document.getElementById(id);
         if (!element) return;

@@ -142,6 +142,11 @@
                             <span class="command-palette-description">@skillChoice.Source</span>
                         </button>
                     }
+                    <button type="button" class="command-palette-item"
+                            @onclick="AddSkillFromFileAsync">
+                        <span class="command-palette-name">From file...</span>
+                        <span class="command-palette-description">Choose a markdown skill file.</span>
+                    </button>
                 }
             </div>
         }
@@ -521,6 +526,7 @@
         new("work", "/work", "Switch to Work mode."),
         new("model", "/model <name>", "Choose the model for the new session.",
             ArgumentHint: "<name>"),
+        new("options", "/options", "Session options, available after a chat starts."),
         new("new", "/new", "Clear the prompt and attached context."),
         new("clear", "/clear", "Clear the prompt and attached context."),
     ];
@@ -649,19 +655,21 @@
         }
 
         string query = trimmed.Length <= 1 ? "" : trimmed[1..];
-        _commandCandidates =
-        [
-            .. LandingCommands
-                .Where(command =>
-                    command.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                    command.Usage.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                    command.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(command =>
-                    command.Name.Equals(query, StringComparison.OrdinalIgnoreCase))
-                .ThenByDescending(command =>
-                    command.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
-                .ThenBy(command => command.Name, StringComparer.OrdinalIgnoreCase)
-        ];
+        _commandCandidates = query.Length == 0
+            ? LandingCommands
+            :
+            [
+                .. LandingCommands
+                    .Where(command =>
+                        command.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                        command.Usage.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                        command.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(command =>
+                        command.Name.Equals(query, StringComparison.OrdinalIgnoreCase))
+                    .ThenByDescending(command =>
+                        command.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+                    .ThenBy(command => command.Name, StringComparer.OrdinalIgnoreCase)
+            ];
         _commandPaletteOpen = true;
         _commandIndex = 0;
         _contextPaletteOpen = false;
@@ -730,6 +738,18 @@
         return choices;
     }
 
+    private async Task<bool> AcceptPaletteSelectionAsync()
+    {
+        try
+        {
+            return await JS.InvokeAsync<bool>("studioChat.clickSelected");
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task OnPromptKeyDown(KeyboardEventArgs args)
     {
         if (_skillPaletteOpen)
@@ -756,6 +776,7 @@
 
             if (args.Key == "Enter" && !args.ShiftKey)
             {
+                if (await AcceptPaletteSelectionAsync()) return;
                 await SendPromptAsync();
                 return;
             }
@@ -796,6 +817,7 @@
 
             if (args.Key == "Enter" && !args.ShiftKey)
             {
+                if (await AcceptPaletteSelectionAsync()) return;
                 await SendPromptAsync();
                 return;
             }
@@ -837,6 +859,7 @@
 
             if (args.Key == "Enter" && !args.ShiftKey)
             {
+                if (await AcceptPaletteSelectionAsync()) return;
                 await SendPromptAsync();
                 return;
             }
@@ -885,6 +908,11 @@
     private async Task SendPromptAsync()
     {
         await SyncPromptFromDomAsync();
+
+        if (_skillPaletteOpen || _contextPaletteOpen || _commandPaletteOpen)
+        {
+            if (await AcceptPaletteSelectionAsync()) return;
+        }
 
         if (_skillPaletteOpen)
         {
@@ -1002,6 +1030,10 @@
                 await CommandModelAsync(argument);
                 break;
 
+            case "options":
+                _commandStatus = "Session options are available after you start a chat.";
+                break;
+
             case "new":
             case "clear":
                 _prompt = "";
@@ -1095,7 +1127,7 @@
                 AddMemoryContext();
                 break;
             case "skill":
-                OpenSkillPalette();
+                await OpenSkillPaletteAsync();
                 return;
             default:
                 await AddFileContextAsync();
@@ -1105,18 +1137,73 @@
         await FocusPromptAsync();
     }
 
-    private void OpenSkillPalette()
+    private async Task OpenSkillPaletteAsync()
     {
         _contextPaletteOpen = false;
         _contextCandidates = [];
         _skillCandidates = EnabledSkills();
         _skillIndex = 0;
-        _skillPaletteOpen = true;
+
         if (_skillCandidates.Count == 0)
         {
             _skillPaletteOpen = false;
-            _commandStatus = "No enabled skills are available for this project.";
+            await AddSkillFromFileAsync();
+            return;
         }
+
+        _skillPaletteOpen = true;
+    }
+
+    private async Task AddSkillFromFileAsync()
+    {
+        _skillPaletteOpen = false;
+        _contextPaletteOpen = false;
+
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File,
+            StudioPaths.Skills,
+            "Add a skill from file",
+            "*.md;*.markdown;*.txt");
+        if (selection?.Path is not { Length: > 0 } path) return;
+
+        string key = $"skill-file:{path}";
+        if (!_contextPaths.Add(key))
+        {
+            _commandStatus = $"{Path.GetFileName(path)} is already attached.";
+            await FocusPromptAsync();
+            return;
+        }
+
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Length > 400_000)
+            {
+                _contextPaths.Remove(key);
+                _commandError = $"{info.Name} is larger than 400 KB.";
+                return;
+            }
+
+            string text = await File.ReadAllTextAsync(path);
+            if (text.Contains('\0'))
+            {
+                _contextPaths.Remove(key);
+                _commandError = $"{info.Name} does not look like a text skill file.";
+                return;
+            }
+
+            AddContextArtifact(
+                info.Name,
+                $"Skill: {Path.GetFileNameWithoutExtension(info.Name)}\n\n{text.Trim()}",
+                key);
+        }
+        catch (Exception ex)
+        {
+            _contextPaths.Remove(key);
+            _commandError = $"Could not read {Path.GetFileName(path)}: {ex.Message}";
+        }
+
+        await FocusPromptAsync();
     }
 
     private async Task SelectSkillAsync(SkillChoice choice)

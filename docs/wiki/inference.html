@@ -148,10 +148,11 @@
                 command accepts the highlighted item; a fully typed command runs as written.
                 The landing page understands <span class="mono">/help</span>,
                 <span class="mono">/chat</span>, <span class="mono">/work</span>,
-                <span class="mono">/model</span>, <span class="mono">/new</span> and
-                <span class="mono">/clear</span>; the active chat adds the full set below.
-                The same landing and new-conversation composer is used by the Work route,
-                so typing <span class="mono">/</span> there opens the same palette.
+                <span class="mono">/model</span>, <span class="mono">/options</span>,
+                <span class="mono">/new</span> and <span class="mono">/clear</span>; the
+                active chat adds the full set below. The same landing and
+                new-conversation composer is used by the Work route, so typing
+                <span class="mono">/</span> there opens the same palette.
             </p>
             <ul class="checklist">
                 <li><span class="mono">/help</span> — list every command.</li>
@@ -174,7 +175,9 @@
                 <span class="mono">@folder</span>, <span class="mono">@memory</span> or
                 <span class="mono">@skill</span> in Work. The landing page and an open chat use
                 the same choices, and switching between Chat and Work swaps them and removes
-                context that does not belong to the new mode. Context is attached as a normal
+                context that does not belong to the new mode. <span class="mono">@skill</span>
+                lists enabled skills; with none configured it opens a markdown file picker and
+                attaches the chosen file as skill context. Context is attached as a normal
                 composer chip, so it can be removed before sending. Work reads through the same
                 context permissions as its file tools, and folder context is capped so a large
                 tree cannot flood the prompt. When the chat uses a remote provider, Studio says

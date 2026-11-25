@@ -33,8 +33,8 @@ _Planned for 1.1.3._
   `/stop` run locally and are never sent to the model; an unknown command is
   refused instead of becoming a prompt. Partial commands accept the highlighted
   item, while a fully typed command runs as written. The landing composer and a
-  new Chat/Work conversation support `/help`, `/chat`, `/work`, `/model`, `/new`
-  and `/clear`.
+  new Chat/Work conversation support `/help`, `/chat`, `/work`, `/model`,
+  `/options`, `/new` and `/clear`.
 
 - **Context references in chat.** Typing `@` adds a readable file, and in Work a
   folder, the project memory or an enabled skill, as a composer chip. Work paths
@@ -44,8 +44,9 @@ _Planned for 1.1.3._
   turn sends a short default prompt. The landing page and the new-conversation
   composer use the same `@` choices, swap them when Chat/Work changes, and drop
   context that no longer belongs to the selected mode. `@skill` is always visible
-  in Work and explains when no skills are enabled. The separate **@ Context**
-  button was removed.
+  in Work; with no configured skills it opens a markdown file picker and attaches
+  the chosen file as skill context, while a configured skill can be picked from
+  the list or added from a file. The separate **@ Context** button was removed.
 
 - **Compact file controls in chat.** Every message bubble has a copy button that
   appears on hover. Created files and generated artifacts appear as 24 px themed
