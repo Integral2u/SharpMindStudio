@@ -704,8 +704,7 @@
             choices.Add(new("folder", "@folder", "Attach a folder manifest and its text files."));
             if (!string.IsNullOrWhiteSpace(Work.Memory))
                 choices.Add(new("memory", "@memory", "Attach the Work project memory."));
-            if (EnabledSkills().Count > 0)
-                choices.Add(new("skill", "@skill", "Attach an enabled system or project skill."));
+            choices.Add(new("skill", "@skill", "Attach an enabled system or project skill."));
         }
 
         return choices;

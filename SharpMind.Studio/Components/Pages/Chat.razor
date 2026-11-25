@@ -95,10 +95,89 @@
                             </div>
                         }
                     }
-                    <textarea id="chat-new-input" class="welcome-prompt chat-new-prompt" data-enter-send="chat-start"
-                              onkeydown="studioChat.enterSend(event, 'chat-start')"
-                              @bind="_input" @bind:event="oninput"
-                              placeholder="@(_workMode ? "Describe the task, or leave this empty to start a blank Work chat." : "Ask something, or leave this empty to start a blank chat.")"></textarea>
+                    @if (_commandPaletteOpen)
+                    {
+                        <div class="command-palette" role="listbox" aria-label="Chat commands">
+                            @if (_commandCandidates.Count == 0)
+                            {
+                                <div class="command-palette-empty">No command matches. Type /help for the list.</div>
+                            }
+                            else
+                            {
+                                @for (int index = 0; index < _commandCandidates.Count; index++)
+                                {
+                                    int itemIndex = index;
+                                    ChatCommandDefinition command = _commandCandidates[index];
+                                    <button type="button"
+                                            class="command-palette-item @(itemIndex == _commandIndex ? "selected" : "")"
+                                            role="option"
+                                            aria-selected="@(itemIndex == _commandIndex)"
+                                            @onmouseenter="() => _commandIndex = itemIndex"
+                                            @onclick="() => SelectCommandAsync(command)">
+                                        <span class="command-palette-name">@command.Usage</span>
+                                        <span class="command-palette-description">@command.Description</span>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                    @if (_contextPaletteOpen)
+                    {
+                        <div class="command-palette context-palette" role="listbox" aria-label="Add context">
+                            @if (_contextCandidates.Count == 0)
+                            {
+                                <div class="command-palette-empty">No context option matches.</div>
+                            }
+                            else
+                            {
+                                @for (int contextIndex = 0; contextIndex < _contextCandidates.Count; contextIndex++)
+                                {
+                                    int itemIndex = contextIndex;
+                                    ContextChoice contextChoice = _contextCandidates[contextIndex];
+                                    <button type="button"
+                                            class="command-palette-item @(itemIndex == _contextIndex ? "selected" : "")"
+                                            role="option"
+                                            aria-selected="@(itemIndex == _contextIndex)"
+                                            @onmouseenter="() => _contextIndex = itemIndex"
+                                            @onclick="() => SelectContextAsync(contextChoice)">
+                                        <span class="command-palette-name">@contextChoice.Label</span>
+                                        <span class="command-palette-description">@contextChoice.Description</span>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                    @if (_skillPaletteOpen)
+                    {
+                        <div class="command-palette context-palette" role="listbox" aria-label="Add a skill">
+                            @if (_skillCandidates.Count == 0)
+                            {
+                                <div class="command-palette-empty">No enabled skills are available.</div>
+                            }
+                            else
+                            {
+                                @for (int skillIndex = 0; skillIndex < _skillCandidates.Count; skillIndex++)
+                                {
+                                    int itemIndex = skillIndex;
+                                    SkillChoice skillChoice = _skillCandidates[skillIndex];
+                                    <button type="button"
+                                            class="command-palette-item @(itemIndex == _skillIndex ? "selected" : "")"
+                                            role="option"
+                                            aria-selected="@(itemIndex == _skillIndex)"
+                                            @onmouseenter="() => _skillIndex = itemIndex"
+                                            @onclick="() => SelectSkillAsync(skillChoice)">
+                                        <span class="command-palette-name">@skillChoice.Skill.Name</span>
+                                        <span class="command-palette-description">@skillChoice.Source</span>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                    <textarea id="chat-new-input" class="welcome-prompt chat-new-prompt"
+                              value="@_input"
+                              @oninput="OnComposerInput"
+                              @onkeydown="OnComposerKeyDown"
+                              placeholder="@(_workMode ? "Describe the task, or leave this empty to start a blank Work chat. Type / for commands or @ for context." : "Ask something, or leave this empty to start a blank chat. Type / for commands or @ for context.")"></textarea>
                     <div class="composer-actions">
                         @if (_computeProviderId is null && !ChatService.IsStreaming && !ChatService.IsLoading)
                         {
@@ -108,14 +187,22 @@
                             </label>
                         }
                         <button id="chat-start" type="button" class="button primary composer-send"
-                                @onclick="StartNewChatAsync"
+                                @onclick="SendCommandOrMessageAsync"
                                 disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
-                                            (_remoteChat ? !RemoteReady : string.IsNullOrWhiteSpace(_selectedModelPath)) ||
                                             (_workMode && !_remoteChat && _toolState.Capability != ToolCapability.Passed && !_allowUnverifiedTools))">
                             Send
                         </button>
                     </div>
                 </div>
+
+                @if (_commandError is not null)
+                {
+                    <div class="error-line command-result">@_commandError</div>
+                }
+                else if (_commandStatus is not null)
+                {
+                    <div class="small faint command-result">@_commandStatus</div>
+                }
 
                 <div class="welcome-controls chat-welcome-controls">
                     <div class="field">
@@ -1402,6 +1489,8 @@ else
             if (ChatService.Document is not null)
             {
                 ChatService.PendingPrompt = remotePrompt.Length > 0 ? remotePrompt : null;
+                ChatService.PendingArtifacts = [.. _pendingArtifacts];
+                _pendingArtifacts.Clear();
                 _startingNew = false;
                 _focusPending = true;
                 Nav.NavigateTo(_workMode ? $"/work/{ChatService.Document.Id}" : $"/chat/{ChatService.Document.Id}");
@@ -1859,8 +1948,7 @@ else
             choices.Add(new("folder", "@folder", "Attach a folder manifest and its text files."));
             if (!string.IsNullOrWhiteSpace(Work.Memory))
                 choices.Add(new("memory", "@memory", "Attach the Work project memory."));
-            if (EnabledSkills().Count > 0)
-                choices.Add(new("skill", "@skill", "Attach an enabled system or project skill."));
+            choices.Add(new("skill", "@skill", "Attach an enabled system or project skill."));
         }
 
         return choices;
@@ -2322,11 +2410,15 @@ else
         }
     }
 
+    private string ComposerId => ChatService.Document is null || _startingNew
+        ? "chat-new-input"
+        : "chat-input";
+
     private async Task SyncComposerFromDomAsync()
     {
         try
         {
-            string value = await JS.InvokeAsync<string>("studioChat.value", "chat-input") ?? "";
+            string value = await JS.InvokeAsync<string>("studioChat.value", ComposerId) ?? "";
             if (string.Equals(value, _input, StringComparison.Ordinal)) return;
 
             _input = value;
@@ -2400,7 +2492,10 @@ else
             return;
         }
 
-        await SendAsync();
+        if (ChatService.Document is null || _startingNew)
+            await StartNewChatAsync();
+        else
+            await SendAsync();
     }
 
     private async Task SelectCommandAsync(ChatCommandDefinition command, bool completeOnly = false)
@@ -2729,7 +2824,7 @@ else
 
     private async Task FocusComposerAsync()
     {
-        try { await JS.InvokeVoidAsync("studioChat.focus", "chat-input"); }
+        try { await JS.InvokeVoidAsync("studioChat.focus", ComposerId); }
         catch { }
     }
     private void Stop() => ChatService.Stop();
