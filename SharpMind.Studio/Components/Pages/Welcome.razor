@@ -525,7 +525,6 @@
         new("work", "/work", "Switch to Work mode."),
         new("model", "/model <name>", "Choose the model for the new session.",
             ArgumentHint: "<name>"),
-        new("options", "/options", "Session options, available after a chat starts."),
         new("new", "/new", "Clear the prompt and attached context."),
         new("clear", "/clear", "Clear the prompt and attached context."),
     ];
@@ -995,7 +994,7 @@
         {
             _commandError = ChatCommands.Find(name) is null
                 ? $"Unknown command /{name}. Type / to see the commands."
-                : $"Start a chat to use /{name}. Landing commands: /chat /work /model /options /new /clear.";
+                : $"Start a chat to use /{name}. Landing commands: /chat /work /model /new /clear.";
             return;
         }
 
@@ -1019,10 +1018,6 @@
 
             case "model":
                 await CommandModelAsync(argument);
-                break;
-
-            case "options":
-                _commandStatus = "Session options are available after you start a chat.";
                 break;
 
             case "new":

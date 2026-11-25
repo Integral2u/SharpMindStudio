@@ -2636,30 +2636,6 @@ else
                 await DeleteCurrentChatAsync();
                 return;
 
-            case "options":
-                if (ChatService.Document is null || _startingNew)
-                {
-                    _commandStatus = "Start a chat to open session options.";
-                    break;
-                }
-
-                if (ChatService.IsRemote)
-                {
-                    _commandStatus = "Inference options are available for local chats only.";
-                    break;
-                }
-
-                if (DeviceAccess.IsMobile)
-                {
-                    _commandStatus = "Inference options are hidden on this device.";
-                    break;
-                }
-
-                _showOptions = true;
-                SyncFromChat();
-                _commandStatus = "Options opened.";
-                break;
-
             case "stop":
                 if (ChatService.IsStreaming || ChatService.IsLoading)
                 {

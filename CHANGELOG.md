@@ -29,12 +29,13 @@ _Planned for 1.1.3._
   others. Linked tool-probe runs are removed with their benchmark.
 
 - **Chat commands.** Typing `/` in the composer opens the command list.
-  `/new`, `/model`, `/system`, `/rename`, `/delete`, `/options` and `/stop` run
-  locally and are never sent to the model; an unknown command is refused instead
-  of becoming a prompt. Partial commands accept the highlighted item, while a
-  fully typed command runs as written. The landing composer and a new Chat/Work
-  conversation support `/chat`, `/work`, `/model`, `/options`, `/new` and `/clear`.
-  `/help` was removed because `/` already shows the list.
+  `/new`, `/model`, `/system`, `/rename`, `/delete` and `/stop` run locally and
+  are never sent to the model; an unknown command is refused instead of becoming
+  a prompt. Partial commands accept the highlighted item, while a fully typed
+  command runs as written. The landing composer and a new Chat/Work conversation
+  support `/chat`, `/work`, `/model`, `/new` and `/clear`. `/help` and `/options`
+  were removed: `/` shows the list, and the Options button opens the panel where
+  it exists.
 
 - **Context references in chat.** Typing `@` adds a readable file, and in Work a
   folder, the project memory or an enabled skill, as a composer chip. Work paths

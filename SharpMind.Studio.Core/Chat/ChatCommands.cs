@@ -28,7 +28,6 @@ public static class ChatCommands
         new("rename", "/rename [name]", "Rename this chat.",
             ArgumentHint: "[name]"),
         new("delete", "/delete", "Delete this chat."),
-        new("options", "/options", "Open inference and tool options."),
         new("stop", "/stop", "Stop the current reply.", AvailableWhileStreaming: true),
     ];
 
