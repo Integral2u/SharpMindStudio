@@ -85,6 +85,12 @@ public sealed record StudioAgentDefinition
 
     public bool Enabled { get; init; } = true;
 
+    /// <summary>Whether the specialist appears in Chat sessions.</summary>
+    public bool AvailableInChat { get; init; } = true;
+
+    /// <summary>Whether the specialist appears in Work sessions.</summary>
+    public bool AvailableInWork { get; init; } = true;
+
     /// <summary>The effective ordered chain, with legacy fields mapped in.</summary>
     public IReadOnlyList<AgentModelChoice> EffectiveModelChain()
     {

@@ -117,7 +117,7 @@
         {
             <table class="table">
                 <thead>
-                    <tr><th>Name</th><th>Purpose</th><th>Model chain</th><th>TTL</th><th>Enabled</th><th></th></tr>
+                    <tr><th>Name</th><th>Purpose</th><th>Model chain</th><th>Available</th><th>TTL</th><th>Enabled</th><th></th></tr>
                 </thead>
                 <tbody>
                     @foreach (StudioAgentDefinition agent in Agents.Agents)
@@ -126,6 +126,7 @@
                             <td class="mono">@agent.Name</td>
                             <td>@agent.Description</td>
                             <td class="mono small">@ChainLabel(agent)</td>
+                            <td class="mono small">@AvailabilityLabel(agent)</td>
                             <td class="mono">@(agent.TtlMinutes == 0 ? "default" : $"{agent.TtlMinutes}m")</td>
                             <td>@(agent.Enabled ? "yes" : "no")</td>
                             <td class="row">
@@ -292,14 +293,19 @@
                            @onchange="e => _editing = editing with { MaxToolCalls = int.TryParse(e.Value?.ToString(), out int value) ? Math.Clamp(value, 0, 1000) : 10 }" />
                 </div>
                 <label class="field grow">
-                    <span class="field-label">Inherit enabled tools</span>
-                    <input type="checkbox" checked="@editing.InheritTools"
-                           @onchange="e => _editing = editing with { InheritTools = e.Value is bool inherit && inherit }" />
-                </label>
-                <label class="field grow">
                     <span class="field-label">Enabled</span>
                     <input type="checkbox" checked="@editing.Enabled"
                            @onchange="e => _editing = editing with { Enabled = e.Value is bool enabled && enabled }" />
+                </label>
+                <label class="field grow">
+                    <span class="field-label">Available in Chat</span>
+                    <input type="checkbox" checked="@editing.AvailableInChat"
+                           @onchange="e => _editing = editing with { AvailableInChat = e.Value is bool chat && chat }" />
+                </label>
+                <label class="field grow">
+                    <span class="field-label">Available in Work</span>
+                    <input type="checkbox" checked="@editing.AvailableInWork"
+                           @onchange="e => _editing = editing with { AvailableInWork = e.Value is bool work && work }" />
                 </label>
             </div>
             <div class="row">
@@ -345,33 +351,26 @@
                 </div>
             </div>
             <div class="field">
-                <span class="field-label">Allowed tools</span>
-                <span class="faint small">
-                    With inheritance on and nothing checked the agent receives every enabled
-                    project tool. Checking tools restricts it to that set; clearing inheritance
-                    with nothing checked gives it no project tools.
-                </span>
-                @foreach (IGrouping<string, WorkToolInfo> group in Work.Tools
-                    .Where(tool => tool.Group != "Agents")
-                    .GroupBy(tool => tool.Group))
+                <div class="spread">
+                    <label class="field-label">Tool permissions</label>
+                    <span class="small faint">unset tools inherit from the session, model, family, project and system layers</span>
+                </div>
+                @if (editing.AllowedTools.Count > 0 || !editing.InheritTools)
                 {
-                    <details class="settings-subgroup" open>
-                        <summary class="settings-subgroup-head">
-                            <span class="eyebrow">@group.Key</span>
-                        </summary>
-                        <div class="settings-subgroup-body work-tools">
-                            @foreach (WorkToolInfo tool in group)
-                            {
-                                string toolName = tool.Name;
-                                <label class="work-tool" title="@tool.Source">
-                                    <input type="checkbox" checked="@IsToolAllowed(editing, toolName)"
-                                           @onchange="e => _editing = SetToolAllowed(editing, toolName, e.Value)" />
-                                    <span class="mono">@toolName</span>
-                                </label>
-                            }
-                        </div>
-                    </details>
+                    <div class="note">
+                        <strong>Legacy tool list.</strong>
+                        This agent still carries the older allowed-tools list. The four-state
+                        controls below are the current model; clear the legacy list to use them
+                        without the old filter.
+                        <button type="button" class="button"
+                                @onclick="() => _editing = editing with { AllowedTools = [], InheritTools = true }">
+                            Clear legacy list
+                        </button>
+                    </div>
                 }
+                <ToolPermissionEditor Value="editing.ToolPermissions"
+                                      ValueChanged="p => _editing = editing with { ToolPermissions = p }"
+                                      AllowInherit="true" />
             </div>
             <div class="row">
                 <button type="button" class="button primary" @onclick="SaveAgent"
@@ -666,6 +665,15 @@
     private string ChainLabel(StudioAgentDefinition agent) =>
         string.Join(" -> ", Chain(agent).Select(ChoiceLabel));
 
+    private static string AvailabilityLabel(StudioAgentDefinition agent) =>
+        (agent.AvailableInChat, agent.AvailableInWork) switch
+        {
+            (true, true) => "chat + work",
+            (true, false) => "chat",
+            (false, true) => "work",
+            _ => "off",
+        };
+
     private string ChoiceLabel(AgentModelChoice choice) => choice.Kind switch
     {
         AgentModelKind.Inherit => "inherit",
@@ -734,25 +742,6 @@
             _ => permissions,
         };
         return agent with { Permissions = next };
-    }
-
-    private static bool IsToolAllowed(StudioAgentDefinition agent, string name) =>
-        agent.AllowedTools.Contains(name, StringComparer.OrdinalIgnoreCase);
-
-    private static StudioAgentDefinition SetToolAllowed(
-        StudioAgentDefinition agent, string name, object? value)
-    {
-        List<string> tools = [.. agent.AllowedTools];
-        if (value is bool allowed && allowed)
-        {
-            if (!tools.Contains(name, StringComparer.OrdinalIgnoreCase))
-                tools.Add(name);
-        }
-        else
-        {
-            tools.RemoveAll(tool => string.Equals(tool, name, StringComparison.OrdinalIgnoreCase));
-        }
-        return agent with { AllowedTools = tools };
     }
 
     private static string Preview(string content)

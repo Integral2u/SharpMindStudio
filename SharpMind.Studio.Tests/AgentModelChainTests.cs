@@ -62,6 +62,46 @@ public sealed class AgentModelChainTests
     }
 
     [Fact]
+    public void Availability_DefaultsToBothModes()
+    {
+        var agent = new StudioAgentDefinition { Name = "both" };
+
+        Assert.True(agent.AvailableInChat);
+        Assert.True(agent.AvailableInWork);
+    }
+
+    [Fact]
+    public void Store_PreservesAvailabilityFlags()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(), $"sharp-mind-agents-modes-{Guid.NewGuid():n}");
+        try
+        {
+            var store = new StudioAgentStore(root);
+            store.Save(new StudioAgentsDocument
+            {
+                Agents =
+                [
+                    new StudioAgentDefinition
+                    {
+                        Name = "chat-only",
+                        AvailableInChat = true,
+                        AvailableInWork = false,
+                    },
+                ],
+            });
+
+            StudioAgentDefinition loaded = Assert.Single(store.Load().Agents);
+            Assert.True(loaded.AvailableInChat);
+            Assert.False(loaded.AvailableInWork);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Store_NormalizesLegacyPathAndPreservesChainOrder()
     {
         string root = Path.Combine(

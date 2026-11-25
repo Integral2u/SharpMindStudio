@@ -271,7 +271,8 @@ public sealed class StudioWorkService : IDisposable
         CommandAccessLayer? sessionCommands = null)
     {
         bool work = string.Equals(mode, "work", StringComparison.OrdinalIgnoreCase);
-        IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = _agents.EnabledAgents;
+        IReadOnlyList<SharpMind.Studio.Core.Agents.StudioAgentDefinition> agents = [.. _agents.EnabledAgents
+            .Where(agent => work ? agent.AvailableInWork : agent.AvailableInChat)];
 
         // Remember the profile so a delegated agent created by the runner picks
         // up the same session and model layers.

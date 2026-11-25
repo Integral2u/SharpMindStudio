@@ -53,7 +53,8 @@ public sealed class StudioAgentRunner
         CancellationToken cancellationToken = default,
         int depth = 0,
         string? sessionId = null,
-        CommandAccessLayer? sessionCommands = null)
+        CommandAccessLayer? sessionCommands = null,
+        bool workMode = true)
     {
         ArgumentNullException.ThrowIfNull(agent);
         ArgumentException.ThrowIfNullOrWhiteSpace(task);
@@ -82,7 +83,7 @@ public sealed class StudioAgentRunner
 
             AddNestedDelegate(
                 tools, agent, loaded, profile, depth, cancellationToken,
-                sessionId, sessionCommands);
+                sessionId, sessionCommands, workMode);
             IChatSession session = CreateSession(loaded, profile, agent, tools);
             try
             {
@@ -143,12 +144,14 @@ public sealed class StudioAgentRunner
         int depth,
         CancellationToken cancellationToken,
         string? sessionId,
-        CommandAccessLayer? sessionCommands)
+        CommandAccessLayer? sessionCommands,
+        bool workMode)
     {
         if (tools is null || depth >= _agents.MaxDepth || !_work.IsToolEnabled("delegate"))
             return;
 
         List<StudioAgentDefinition> candidates = [.. _agents.EnabledAgents.Where(agent =>
+            (workMode ? agent.AvailableInWork : agent.AvailableInChat) &&
             !string.Equals(agent.Id, parent.Id, StringComparison.Ordinal) &&
             !string.Equals(agent.Name, parent.Name, StringComparison.OrdinalIgnoreCase))];
         if (candidates.Count == 0) return;
@@ -203,7 +206,8 @@ public sealed class StudioAgentRunner
                     cancellationToken,
                     depth + 1,
                     sessionId,
-                    sessionCommands)
+                    sessionCommands,
+                    workMode)
                     .ConfigureAwait(false);
             });
     }

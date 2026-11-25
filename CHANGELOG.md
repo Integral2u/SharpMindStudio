@@ -59,8 +59,11 @@ _Planned for 1.1.3._
   an ordered chain of **Inherit**, **Local**, **Remote** and **Compute** targets.
   New agents start with Inherit; missing local files fall through to the next
   target instead of making the agent unavailable. The Labs → Agents editor can
-  add, remove and reorder targets, and the table shows the effective chain. The
-  page now frames the work agent as the delegate between you and the specialists.
+  add, remove and reorder targets, and the table shows the effective chain. Each
+  agent also chooses whether it is available in Chat, Work or both, and its tool
+  permissions use the same Inherit/Off/Never/Ask/Always editor as Settings →
+  Family and Settings → Model. The page now frames the work agent as the delegate
+  between you and the specialists.
 
 - **Archive and recover Work projects.** Work projects stay in the sidebar even
   with no sessions. The project actions dialog offers Archive and Delete

@@ -2070,7 +2070,8 @@ public sealed class StudioChatService : IAsyncDisposable
                     _resolved,
                     cancellationToken,
                     sessionId: _document?.Id,
-                    sessionCommands: _document?.CommandLine).ConfigureAwait(false);
+                    sessionCommands: _document?.CommandLine,
+                    workMode: IsWorkMode).ConfigureAwait(false);
 
             case AgentModelKind.Local:
             {
@@ -2100,7 +2101,8 @@ public sealed class StudioChatService : IAsyncDisposable
                     _resolved,
                     cancellationToken,
                     sessionId: _document?.Id,
-                    sessionCommands: _document?.CommandLine).ConfigureAwait(false);
+                    sessionCommands: _document?.CommandLine,
+                    workMode: IsWorkMode).ConfigureAwait(false);
             }
 
             case AgentModelKind.Remote:
