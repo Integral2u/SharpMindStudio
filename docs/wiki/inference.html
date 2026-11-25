@@ -146,6 +146,10 @@
                 Type <span class="mono">/</span> at the start of the composer to open the command
                 list. Commands are handled locally and are never sent to the model. A partial
                 command accepts the highlighted item; a fully typed command runs as written.
+                The landing page understands <span class="mono">/help</span>,
+                <span class="mono">/chat</span>, <span class="mono">/work</span>,
+                <span class="mono">/model</span>, <span class="mono">/new</span> and
+                <span class="mono">/clear</span>; the active chat adds the full set below.
             </p>
             <ul class="checklist">
                 <li><span class="mono">/help</span> — list every command.</li>
@@ -163,14 +167,16 @@
                 <span class="mono">//server/share</span> are unaffected.
             </p>
             <p>
-                Type <span class="mono">@</span> or choose <strong>@ Context</strong> to add
-                readable project context: <span class="mono">@file</span> in Chat, and
-                <span class="mono">@file</span>, <span class="mono">@folder</span> or
-                <span class="mono">@memory</span> in Work. Context is attached as a normal
-                composer chip, so it can be removed before sending. Work reads through the
-                same context permissions as its file tools, and folder context is capped so a
-                large tree cannot flood the prompt. When the chat uses a remote provider,
-                Studio says that the context will leave the machine.
+                Type <span class="mono">@</span> to add readable project context:
+                <span class="mono">@file</span> in Chat, and <span class="mono">@file</span>,
+                <span class="mono">@folder</span>, <span class="mono">@memory</span> or
+                <span class="mono">@skill</span> in Work. The landing page and an open chat use
+                the same choices, and switching between Chat and Work swaps them and removes
+                context that does not belong to the new mode. Context is attached as a normal
+                composer chip, so it can be removed before sending. Work reads through the same
+                context permissions as its file tools, and folder context is capped so a large
+                tree cannot flood the prompt. When the chat uses a remote provider, Studio says
+                that the context will leave the machine.
             </p>
             <p>
                 Message bubbles carry a copy button on hover. Files and generated artifacts

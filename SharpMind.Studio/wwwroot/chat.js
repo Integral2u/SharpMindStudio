@@ -63,6 +63,10 @@
         const element = document.getElementById(id);
         if (element) element.focus();
     },
+    value: function (id) {
+        const element = document.getElementById(id);
+        return element && typeof element.value === "string" ? element.value : "";
+    },
     focusAndScroll: function (id) {
         const element = document.getElementById(id);
         if (!element) return;

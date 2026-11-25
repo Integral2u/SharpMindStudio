@@ -32,14 +32,17 @@ _Planned for 1.1.3._
   `/help`, `/new`, `/model`, `/system`, `/rename`, `/delete`, `/options` and
   `/stop` run locally and are never sent to the model; an unknown command is
   refused instead of becoming a prompt. Partial commands accept the highlighted
-  item, while a fully typed command runs as written.
+  item, while a fully typed command runs as written. The landing composer also
+  supports `/help`, `/chat`, `/work`, `/model`, `/new` and `/clear`.
 
-- **Context references in chat.** Typing `@` or choosing **@ Context** adds a
-  readable file, and in Work a folder or the project memory, as a composer chip.
-  Work paths go through the same context read permission as its file tools;
-  folder context is capped by file count and size, and a remote chat says that
-  the context will leave the machine. Context can be removed before sending, and
-  a context-only turn sends a short default prompt.
+- **Context references in chat.** Typing `@` adds a readable file, and in Work a
+  folder, the project memory or an enabled skill, as a composer chip. Work paths
+  go through the same context read permission as its file tools; folder context is
+  capped by file count and size, and a remote chat says that the context will
+  leave the machine. Context can be removed before sending, and a context-only
+  turn sends a short default prompt. The landing page uses the same `@` choices,
+  swaps them when Chat/Work changes, and drops context that no longer belongs to
+  the selected mode. The separate **@ Context** button was removed.
 
 - **Compact file controls in chat.** Every message bubble has a copy button that
   appears on hover. Created files and generated artifacts appear as 24 px themed

@@ -1,7 +1,11 @@
 @page "/"
 @implements IDisposable
+@using System.Text
+@using SharpMind.Studio.Core.Chat
 @using SharpMind.Studio.Core.Runs
 @using SharpMind.Studio.Core.Inference
+@using SharpMind.Studio.Core.Storage
+@using SharpMind.Studio.Core.Work
 @using SharpMind.Inference.Chat
 @using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.OpenRouter
@@ -13,8 +17,10 @@
 @inject ComputeProviderService Compute
 @inject StudioChatService ChatService
 @inject StudioWorkspaceService Workspace
+@inject StudioWorkService Work
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject PathPickerService Picker
 
 <PageTitle>SharpMind Studio</PageTitle>
 
@@ -61,8 +67,89 @@
                 </div>
             }
         }
-        <textarea class="welcome-prompt" data-enter-send="welcome-send" onkeydown="studioChat.enterSend(event, 'welcome-send')" @bind="_prompt" @bind:event="oninput"
-                  placeholder="@(_mode == "work" ? "Describe the task, or leave this empty and press Send to start a new Work session." : "Ask something, or leave this empty and press Send to start a new chat.")"></textarea>
+        @if (_commandPaletteOpen)
+        {
+            <div class="command-palette" role="listbox" aria-label="Commands">
+                @if (_commandCandidates.Count == 0)
+                {
+                    <div class="command-palette-empty">No command matches. Type /help for the list.</div>
+                }
+                else
+                {
+                    @for (int commandIndex = 0; commandIndex < _commandCandidates.Count; commandIndex++)
+                    {
+                        int itemIndex = commandIndex;
+                        ChatCommandDefinition command = _commandCandidates[commandIndex];
+                        <button type="button"
+                                class="command-palette-item @(itemIndex == _commandIndex ? "selected" : "")"
+                                role="option"
+                                aria-selected="@(itemIndex == _commandIndex)"
+                                @onmouseenter="() => _commandIndex = itemIndex"
+                                @onclick="() => SelectCommandAsync(command)">
+                            <span class="command-palette-name">@command.Usage</span>
+                            <span class="command-palette-description">@command.Description</span>
+                        </button>
+                    }
+                }
+            </div>
+        }
+        @if (_contextPaletteOpen)
+        {
+            <div class="command-palette context-palette" role="listbox" aria-label="Add context">
+                @if (_contextCandidates.Count == 0)
+                {
+                    <div class="command-palette-empty">No context option matches.</div>
+                }
+                else
+                {
+                    @for (int contextIndex = 0; contextIndex < _contextCandidates.Count; contextIndex++)
+                    {
+                        int itemIndex = contextIndex;
+                        ContextChoice contextChoice = _contextCandidates[contextIndex];
+                        <button type="button"
+                                class="command-palette-item @(itemIndex == _contextIndex ? "selected" : "")"
+                                role="option"
+                                aria-selected="@(itemIndex == _contextIndex)"
+                                @onmouseenter="() => _contextIndex = itemIndex"
+                                @onclick="() => SelectContextAsync(contextChoice)">
+                            <span class="command-palette-name">@contextChoice.Label</span>
+                            <span class="command-palette-description">@contextChoice.Description</span>
+                        </button>
+                    }
+                }
+            </div>
+        }
+        @if (_skillPaletteOpen)
+        {
+            <div class="command-palette context-palette" role="listbox" aria-label="Add a skill">
+                @if (_skillCandidates.Count == 0)
+                {
+                    <div class="command-palette-empty">No enabled skills are available.</div>
+                }
+                else
+                {
+                    @for (int skillIndex = 0; skillIndex < _skillCandidates.Count; skillIndex++)
+                    {
+                        int itemIndex = skillIndex;
+                        SkillChoice skillChoice = _skillCandidates[skillIndex];
+                        <button type="button"
+                                class="command-palette-item @(itemIndex == _skillIndex ? "selected" : "")"
+                                role="option"
+                                aria-selected="@(itemIndex == _skillIndex)"
+                                @onmouseenter="() => _skillIndex = itemIndex"
+                                @onclick="() => SelectSkillAsync(skillChoice)">
+                            <span class="command-palette-name">@skillChoice.Skill.Name</span>
+                            <span class="command-palette-description">@skillChoice.Source</span>
+                        </button>
+                    }
+                }
+            </div>
+        }
+        <textarea id="welcome-prompt-input" class="welcome-prompt"
+                  value="@_prompt"
+                  @oninput="OnPromptInput"
+                  @onkeydown="OnPromptKeyDown"
+                  placeholder="@(_mode == "work" ? "Describe the task, or leave this empty and press Send to start a new Work session. Type / for commands or @ for context." : "Ask something, or leave this empty and press Send to start a new chat. Type / for commands or @ for context.")"></textarea>
         <div class="composer-actions">
             @if (_computeProviderId is null && !_busy)
             {
@@ -71,14 +158,22 @@
                     <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
                 </label>
             }
-            <button id="welcome-send" type="button" class="button primary composer-send" @onclick="SendAsync"
+            <button id="welcome-send" type="button" class="button primary composer-send" @onclick="SendPromptAsync"
                     disabled="@(_busy || ChatService.IsLoading ||
-                                (_remoteChat ? !RemoteReady : string.IsNullOrWhiteSpace(_selectedModelPath)) ||
                                 (_mode == "work" && !_remoteChat && _toolState.Capability != ToolCapability.Passed && !_allowUnverifiedTools))">
                 @(_busy ? "Starting..." : "Send")
             </button>
         </div>
     </div>
+
+    @if (_commandError is not null)
+    {
+        <div class="error-line command-result">@_commandError</div>
+    }
+    else if (_commandStatus is not null)
+    {
+        <div class="small faint command-result">@_commandStatus</div>
+    }
 
     <div class="welcome-modes">
         <button type="button" class="welcome-mode @(_mode == "chat" ? "selected" : "")" @onclick='() => SetMode("chat")'>
@@ -401,6 +496,58 @@
     private string? _error;
     private IReadOnlyList<StudioProjectInfo> _projects = [];
     private string _projectPath = "";
+    private bool _commandPaletteOpen;
+    private IReadOnlyList<ChatCommandDefinition> _commandCandidates = [];
+    private int _commandIndex;
+    private string? _commandError;
+    private string? _commandStatus;
+    private bool _contextPaletteOpen;
+    private IReadOnlyList<ContextChoice> _contextCandidates = [];
+    private int _contextIndex;
+    private bool _contextFromToken;
+    private bool _skillPaletteOpen;
+    private IReadOnlyList<SkillChoice> _skillCandidates = [];
+    private int _skillIndex;
+    private readonly HashSet<string> _contextPaths = new(StringComparer.OrdinalIgnoreCase);
+
+    private sealed record ContextChoice(string Kind, string Label, string Description);
+
+    private sealed record SkillChoice(WorkSkill Skill, string Source);
+
+    private static readonly ChatCommandDefinition[] LandingCommands =
+    [
+        new("help", "/help", "List landing-page commands."),
+        new("chat", "/chat", "Switch to Chat mode."),
+        new("work", "/work", "Switch to Work mode."),
+        new("model", "/model <name>", "Choose the model for the new session.",
+            ArgumentHint: "<name>"),
+        new("new", "/new", "Clear the prompt and attached context."),
+        new("clear", "/clear", "Clear the prompt and attached context."),
+    ];
+
+    private static readonly HashSet<string> ContextSkippedDirectories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".git", ".vs", ".idea", "bin", "obj", "node_modules", "dist", "build",
+    };
+
+    private static readonly HashSet<string> ContextTextExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".txt", ".md", ".markdown", ".rst", ".cs", ".razor", ".cshtml", ".json", ".csv",
+        ".log", ".xml", ".xaml", ".html", ".htm", ".css", ".scss", ".js", ".mjs", ".ts",
+        ".tsx", ".jsx", ".py", ".sql", ".yaml", ".yml", ".toml", ".ini", ".csproj",
+        ".slnx", ".sln", ".props", ".targets", ".sh", ".ps1", ".bat", ".cmd", ".java",
+        ".go", ".rs", ".cpp", ".cc", ".c", ".h", ".hpp", ".fs", ".fsx", ".vb",
+    };
+
+    private const string ContextFilePattern =
+        "*.txt;*.md;*.markdown;*.rst;*.cs;*.razor;*.cshtml;*.json;*.csv;*.log;*.xml;" +
+        "*.xaml;*.html;*.htm;*.css;*.scss;*.js;*.mjs;*.ts;*.tsx;*.jsx;*.py;*.sql;*.yaml;" +
+        "*.yml;*.toml;*.ini;*.csproj;*.slnx;*.sln;*.props;*.targets;*.sh;*.ps1;*.bat;" +
+        "*.cmd;*.java;*.go;*.rs;*.cpp;*.cc;*.c;*.h;*.hpp;*.fs;*.fsx;*.vb;README;LICENSE";
+
+    private const int MaxContextFiles = 40;
+    private const long MaxContextFileBytes = 64 * 1024;
+    private const long MaxContextTotalBytes = 192 * 1024;
 
     private RemoteProviderPreset RemotePreset => RemoteProviders.Find(_remoteProviderId);
     private IReadOnlyList<string> RemoteActiveModels => OpenRouter.ActiveModelsFor(_remoteProviderId);
@@ -449,6 +596,13 @@
 
     private void SetMode(string mode)
     {
+        if (!string.Equals(_mode, mode, StringComparison.OrdinalIgnoreCase))
+        {
+            ClearContextArtifacts();
+            _commandError = null;
+            _commandStatus = null;
+        }
+
         _mode = mode;
         _error = null;
         _allowUnverifiedTools = false;
@@ -456,6 +610,789 @@
         _projectPath = Workspace.Project.Root;
         RefreshTuneSelection();
         UpdateLatestRun();
+
+        if (_contextPaletteOpen)
+        {
+            _contextCandidates = BuildContextChoices();
+            _contextIndex = 0;
+            _contextPaletteOpen = _contextCandidates.Count > 0;
+        }
+    }
+
+    private void OnPromptInput(ChangeEventArgs args)
+    {
+        _prompt = args.Value?.ToString() ?? "";
+        _commandError = null;
+        _commandStatus = null;
+        _skillPaletteOpen = false;
+        _skillCandidates = [];
+        UpdateCommandPalette();
+        UpdateContextPalette();
+    }
+
+    private void UpdateCommandPalette()
+    {
+        if (!ChatCommandParser.IsCommandAttempt(_prompt))
+        {
+            _commandPaletteOpen = false;
+            _commandCandidates = [];
+            _commandIndex = 0;
+            return;
+        }
+
+        string trimmed = _prompt.TrimStart();
+        if (trimmed.Any(char.IsWhiteSpace))
+        {
+            _commandPaletteOpen = false;
+            _commandCandidates = [];
+            return;
+        }
+
+        string query = trimmed.Length <= 1 ? "" : trimmed[1..];
+        _commandCandidates =
+        [
+            .. LandingCommands
+                .Where(command =>
+                    command.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    command.Usage.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    command.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(command =>
+                    command.Name.Equals(query, StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(command =>
+                    command.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+                .ThenBy(command => command.Name, StringComparer.OrdinalIgnoreCase)
+        ];
+        _commandPaletteOpen = true;
+        _commandIndex = 0;
+        _contextPaletteOpen = false;
+        _contextCandidates = [];
+        _contextFromToken = false;
+        _skillPaletteOpen = false;
+        _skillCandidates = [];
+    }
+
+    private void UpdateContextPalette()
+    {
+        if (_commandPaletteOpen || !ChatContextParser.TryGetToken(_prompt, out string query))
+        {
+            _contextPaletteOpen = false;
+            _contextCandidates = [];
+            _contextFromToken = false;
+            return;
+        }
+
+        _contextCandidates =
+        [
+            .. BuildContextChoices().Where(choice =>
+                choice.Label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                choice.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+        ];
+        _contextPaletteOpen = true;
+        _contextFromToken = true;
+        _contextIndex = 0;
+    }
+
+    private IReadOnlyList<ContextChoice> BuildContextChoices()
+    {
+        var choices = new List<ContextChoice>
+        {
+            new("file", "@file", "Attach a text file as context for the new session."),
+        };
+
+        if (_mode == "work")
+        {
+            choices.Add(new("folder", "@folder", "Attach a folder manifest and its text files."));
+            if (!string.IsNullOrWhiteSpace(Work.Memory))
+                choices.Add(new("memory", "@memory", "Attach the Work project memory."));
+            if (EnabledSkills().Count > 0)
+                choices.Add(new("skill", "@skill", "Attach an enabled system or project skill."));
+        }
+
+        return choices;
+    }
+
+    private IReadOnlyList<SkillChoice> EnabledSkills()
+    {
+        var choices = new List<SkillChoice>();
+        foreach (WorkSkill skill in Work.SystemSkills
+                     .Where(Work.IsSystemSkillEnabled)
+                     .OrderBy(skill => skill.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            choices.Add(new SkillChoice(skill, "System skill"));
+        }
+
+        foreach (WorkSkill skill in Work.ProjectSkills
+                     .Where(Work.IsProjectSkillEnabled)
+                     .OrderBy(skill => skill.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            choices.Add(new SkillChoice(skill, "Project skill"));
+        }
+
+        return choices;
+    }
+
+    private async Task OnPromptKeyDown(KeyboardEventArgs args)
+    {
+        if (_skillPaletteOpen)
+        {
+            if (args.Key == "ArrowDown")
+            {
+                if (_skillCandidates.Count > 0)
+                    _skillIndex = (_skillIndex + 1) % _skillCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "ArrowUp")
+            {
+                if (_skillCandidates.Count > 0)
+                    _skillIndex = (_skillIndex - 1 + _skillCandidates.Count) % _skillCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "Escape")
+            {
+                _skillPaletteOpen = false;
+                return;
+            }
+
+            if (args.Key == "Enter" && !args.ShiftKey)
+            {
+                await SendPromptAsync();
+                return;
+            }
+
+            if (args.Key == "Tab" && !args.ShiftKey)
+            {
+                if (_skillCandidates.Count > 0)
+                    await SelectSkillAsync(_skillCandidates[_skillIndex]);
+                else
+                    _skillPaletteOpen = false;
+                return;
+            }
+
+            return;
+        }
+
+        if (_contextPaletteOpen)
+        {
+            if (args.Key == "ArrowDown")
+            {
+                if (_contextCandidates.Count > 0)
+                    _contextIndex = (_contextIndex + 1) % _contextCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "ArrowUp")
+            {
+                if (_contextCandidates.Count > 0)
+                    _contextIndex = (_contextIndex - 1 + _contextCandidates.Count) % _contextCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "Escape")
+            {
+                _contextPaletteOpen = false;
+                return;
+            }
+
+            if (args.Key == "Enter" && !args.ShiftKey)
+            {
+                await SendPromptAsync();
+                return;
+            }
+
+            if (args.Key == "Tab" && !args.ShiftKey)
+            {
+                await SyncPromptFromDomAsync();
+                if (_contextCandidates.Count > 0)
+                    await SelectContextAsync(_contextCandidates[_contextIndex]);
+                else
+                    _contextPaletteOpen = false;
+                return;
+            }
+
+            return;
+        }
+
+        if (_commandPaletteOpen)
+        {
+            if (args.Key == "ArrowDown")
+            {
+                if (_commandCandidates.Count > 0)
+                    _commandIndex = (_commandIndex + 1) % _commandCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "ArrowUp")
+            {
+                if (_commandCandidates.Count > 0)
+                    _commandIndex = (_commandIndex - 1 + _commandCandidates.Count) % _commandCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "Escape")
+            {
+                _commandPaletteOpen = false;
+                return;
+            }
+
+            if (args.Key == "Enter" && !args.ShiftKey)
+            {
+                await SendPromptAsync();
+                return;
+            }
+
+            if (args.Key == "Tab" && !args.ShiftKey)
+            {
+                await SyncPromptFromDomAsync();
+                if (_commandCandidates.Count == 0)
+                {
+                    _commandPaletteOpen = false;
+                    return;
+                }
+
+                await SelectCommandAsync(_commandCandidates[_commandIndex], completeOnly: true);
+                return;
+            }
+
+            return;
+        }
+
+        if (args.Key == "Enter" && !args.ShiftKey)
+        {
+            await SendPromptAsync();
+        }
+    }
+
+    private async Task SyncPromptFromDomAsync()
+    {
+        try
+        {
+            string value = await JS.InvokeAsync<string>("studioChat.value", "welcome-prompt-input") ?? "";
+            if (string.Equals(value, _prompt, StringComparison.Ordinal)) return;
+
+            _prompt = value;
+            _commandError = null;
+            _commandStatus = null;
+            UpdateCommandPalette();
+            UpdateContextPalette();
+        }
+        catch
+        {
+            // Keep the last synced value if the DOM is not readable.
+        }
+    }
+
+    private async Task SendPromptAsync()
+    {
+        await SyncPromptFromDomAsync();
+
+        if (_skillPaletteOpen)
+        {
+            if (_skillCandidates.Count > 0)
+                await SelectSkillAsync(_skillCandidates[_skillIndex]);
+            else
+                _skillPaletteOpen = false;
+            return;
+        }
+
+        if (_contextPaletteOpen)
+        {
+            if (_contextCandidates.Count > 0)
+                await SelectContextAsync(_contextCandidates[_contextIndex]);
+            else
+                _contextPaletteOpen = false;
+            return;
+        }
+
+        if (_commandPaletteOpen && _commandCandidates.Count > 0)
+        {
+            ChatCommandLine? typed = ChatCommandParser.Parse(_prompt);
+            bool exact = typed is not null &&
+                string.Equals(
+                    typed.Name,
+                    _commandCandidates[_commandIndex].Name,
+                    StringComparison.OrdinalIgnoreCase);
+            if (!exact)
+            {
+                await SelectCommandAsync(_commandCandidates[_commandIndex]);
+                return;
+            }
+        }
+
+        if (ChatCommandParser.Parse(_prompt) is { } line)
+        {
+            _prompt = "";
+            _commandPaletteOpen = false;
+            _commandCandidates = [];
+            await ExecuteCommandAsync(line.Name, line.Argument);
+            return;
+        }
+
+        if (ChatCommandParser.IsCommandAttempt(_prompt))
+        {
+            UpdateCommandPalette();
+            return;
+        }
+
+        await SendAsync();
+    }
+
+    private async Task SelectCommandAsync(ChatCommandDefinition command, bool completeOnly = false)
+    {
+        _commandPaletteOpen = false;
+        _contextPaletteOpen = false;
+        _skillPaletteOpen = false;
+
+        if (completeOnly || command.ArgumentHint is not null)
+        {
+            _prompt = command.ArgumentHint is null
+                ? command.Invocation
+                : command.Invocation + " ";
+            _commandStatus = null;
+            await FocusPromptAsync();
+            return;
+        }
+
+        _prompt = "";
+        await ExecuteCommandAsync(command.Name, "");
+    }
+
+    private async Task ExecuteCommandAsync(string name, string argument)
+    {
+        _commandError = null;
+        _commandStatus = null;
+
+        ChatCommandDefinition? command = LandingCommands.FirstOrDefault(item =>
+            string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (command is null)
+        {
+            _commandError = ChatCommands.Find(name) is null
+                ? $"Unknown command /{name}. Type /help."
+                : $"Start a chat to use /{name}. Landing commands: /help /chat /work /model /new /clear.";
+            return;
+        }
+
+        switch (command.Name)
+        {
+            case "help":
+                _commandCandidates = LandingCommands;
+                _commandIndex = 0;
+                _commandPaletteOpen = true;
+                _commandStatus = "Landing commands. Enter runs, Esc closes.";
+                await FocusPromptAsync();
+                return;
+
+            case "chat":
+                SetMode("chat");
+                _commandStatus = "Chat mode.";
+                break;
+
+            case "work":
+                if (_computeProviderId is not null)
+                {
+                    _commandError = "Work mode needs a local model or a remote provider; Compute is inference-only.";
+                    break;
+                }
+
+                SetMode("work");
+                _commandStatus = "Work mode.";
+                break;
+
+            case "model":
+                await CommandModelAsync(argument);
+                break;
+
+            case "new":
+            case "clear":
+                _prompt = "";
+                _pendingArtifacts.Clear();
+                _contextPaths.Clear();
+                _commandPaletteOpen = false;
+                _contextPaletteOpen = false;
+                _skillPaletteOpen = false;
+                _commandStatus = "Prompt cleared.";
+                break;
+        }
+
+        await FocusPromptAsync();
+    }
+
+    private async Task CommandModelAsync(string argument)
+    {
+        if (string.IsNullOrWhiteSpace(argument))
+        {
+            string current = _remoteChat
+                ? _remoteModel
+                : _models.FirstOrDefault(model => model.Path == _selectedModelPath)?.DisplayName
+                    ?? _selectedModelPath
+                    ?? "";
+            _commandStatus = current.Length == 0 ? "No model is selected." : $"Current model: {current}";
+            return;
+        }
+
+        string needle = argument.Trim();
+        if (_remoteChat)
+        {
+            IReadOnlyList<string> models = _computeProviderId is { } hostId
+                ? Compute.Resolve(hostId)?.Models ?? []
+                : RemoteActiveModels;
+            var matches = models
+                .Where(model => model.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (matches.Count == 1)
+            {
+                _remoteModel = matches[0];
+                if (_computeProviderId is { } id) Compute.RememberModel(id, _remoteModel);
+                else OpenRouter.SetDefaultModelFor(_remoteProviderId, _remoteModel);
+                _commandStatus = $"Selected {_remoteModel}.";
+            }
+            else
+            {
+                _commandError = matches.Count == 0
+                    ? $"No model matches \"{needle}\"."
+                    : "Several models match: " + string.Join(", ", matches.Take(5));
+            }
+            return;
+        }
+
+        var localMatches = _models
+            .Where(model =>
+                model.FileName.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+                model.DisplayName.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+                model.Path.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (localMatches.Count == 0)
+        {
+            _commandError = $"No model matches \"{needle}\".";
+            return;
+        }
+
+        if (localMatches.Count > 1)
+        {
+            _commandError = "Several models match: " +
+                string.Join(", ", localMatches.Take(5).Select(model => model.FileName));
+            return;
+        }
+
+        _selectedModelPath = localMatches[0].Path;
+        await SaveDefaultModelAsync();
+        _commandStatus = $"Selected {localMatches[0].FileName}.";
+    }
+
+    private async Task SelectContextAsync(ContextChoice choice)
+    {
+        _contextPaletteOpen = false;
+        _contextCandidates = [];
+        if (_contextFromToken) RemoveContextToken();
+        _contextFromToken = false;
+
+        switch (choice.Kind)
+        {
+            case "folder":
+                await AddFolderContextAsync();
+                break;
+            case "memory":
+                AddMemoryContext();
+                break;
+            case "skill":
+                OpenSkillPalette();
+                return;
+            default:
+                await AddFileContextAsync();
+                break;
+        }
+
+        await FocusPromptAsync();
+    }
+
+    private void OpenSkillPalette()
+    {
+        _contextPaletteOpen = false;
+        _contextCandidates = [];
+        _skillCandidates = EnabledSkills();
+        _skillIndex = 0;
+        _skillPaletteOpen = true;
+        if (_skillCandidates.Count == 0)
+        {
+            _skillPaletteOpen = false;
+            _commandStatus = "No enabled skills are available for this project.";
+        }
+    }
+
+    private async Task SelectSkillAsync(SkillChoice choice)
+    {
+        _skillPaletteOpen = false;
+        _skillCandidates = [];
+
+        string key = $"skill:{choice.Skill.Id}";
+        if (!_contextPaths.Add(key))
+        {
+            _commandStatus = $"{choice.Skill.Name} is already attached.";
+            await FocusPromptAsync();
+            return;
+        }
+
+        AddContextArtifact(
+            $"{SafeContextName(choice.Skill.Name)}.md",
+            $"Skill: {choice.Skill.Name}\n\n{choice.Skill.Content.Trim()}",
+            key);
+        await FocusPromptAsync();
+    }
+
+    private void RemoveContextToken()
+    {
+        int index = _prompt.LastIndexOf('@');
+        if (index >= 0) _prompt = _prompt[..index].TrimEnd();
+    }
+
+    private async Task AddFileContextAsync()
+    {
+        string? start = _mode == "work" ? Workspace.Project.Root : null;
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.File, start, "Add file context", ContextFilePattern);
+        if (selection?.Path is not { Length: > 0 } path) return;
+        if (!ValidateContextPath(path, out string? reason))
+        {
+            _commandError = reason;
+            return;
+        }
+
+        if (!_contextPaths.Add(path))
+        {
+            _commandStatus = $"{Path.GetFileName(path)} is already attached.";
+            return;
+        }
+
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Length > 1_000_000)
+            {
+                _contextPaths.Remove(path);
+                _commandError = $"{info.Name} is larger than 1 MB.";
+                return;
+            }
+
+            string text = await File.ReadAllTextAsync(path);
+            if (text.Contains('\0'))
+            {
+                _contextPaths.Remove(path);
+                _commandError = $"{info.Name} does not look like a text file.";
+                return;
+            }
+
+            AddContextArtifact(info.Name, $"File: {path}\n\n{text}", path);
+        }
+        catch (Exception ex)
+        {
+            _contextPaths.Remove(path);
+            _commandError = $"Could not read {Path.GetFileName(path)}: {ex.Message}";
+        }
+    }
+
+    private async Task AddFolderContextAsync()
+    {
+        PathPickerSelection? selection = await Picker.PickAsync(
+            PathPickerMode.Folder, Workspace.Project.Root, "Add folder context");
+        if (selection?.Path is not { Length: > 0 } folder) return;
+        if (!ValidateContextPath(folder, out string? reason))
+        {
+            _commandError = reason;
+            return;
+        }
+
+        if (!_contextPaths.Add(folder))
+        {
+            _commandStatus = $"{Path.GetFileName(folder)} is already attached.";
+            return;
+        }
+
+        var contents = new StringBuilder();
+        int included = 0;
+        int skipped = 0;
+        long total = 0;
+        foreach (string file in EnumerateContextFiles(folder))
+        {
+            if (included >= MaxContextFiles || total >= MaxContextTotalBytes)
+            {
+                skipped++;
+                continue;
+            }
+
+            try
+            {
+                var info = new FileInfo(file);
+                if (info.Length == 0 || info.Length > MaxContextFileBytes)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                string text = await File.ReadAllTextAsync(file);
+                if (text.Contains('\0'))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                contents.AppendLine($"### {Path.GetRelativePath(folder, file)}");
+                contents.AppendLine(text.TrimEnd());
+                contents.AppendLine();
+                included++;
+                total += Encoding.UTF8.GetByteCount(text);
+            }
+            catch
+            {
+                skipped++;
+            }
+        }
+
+        if (included == 0)
+        {
+            _contextPaths.Remove(folder);
+            _commandError = "No readable text files were found in that folder.";
+            return;
+        }
+
+        var header = new StringBuilder();
+        header.AppendLine($"Folder: {folder}");
+        header.AppendLine($"Files included: {included}" + (skipped > 0 ? $"; skipped: {skipped}" : ""));
+        header.AppendLine();
+        header.Append(contents);
+        AddContextArtifact($"{Path.GetFileName(folder)} (folder context)", header.ToString(), folder);
+    }
+
+    private void AddMemoryContext()
+    {
+        string memory = Work.Memory.Trim();
+        if (memory.Length == 0)
+        {
+            _commandStatus = "Project memory is empty.";
+            return;
+        }
+
+        if (!_contextPaths.Add("memory:project"))
+        {
+            _commandStatus = "Project memory is already attached.";
+            return;
+        }
+
+        AddContextArtifact("project-memory", memory, "memory:project");
+    }
+
+    private void AddContextArtifact(string name, string text, string? sourceKey)
+    {
+        _commandError = null;
+        _commandStatus = null;
+
+        byte[] content = Encoding.UTF8.GetBytes(text);
+        if (content.Length > 400_000)
+        {
+            if (sourceKey is not null) _contextPaths.Remove(sourceKey);
+            _commandError = $"The context for {name} is larger than the 400 KB limit.";
+            return;
+        }
+
+        if (_pendingArtifacts.Count >= 12)
+        {
+            if (sourceKey is not null) _contextPaths.Remove(sourceKey);
+            _commandError = "Remove an attachment before adding more context.";
+            return;
+        }
+
+        _pendingArtifacts.Add(new ChatArtifact
+        {
+            Type = "text",
+            MimeType = "text/plain",
+            Content = content,
+            FileName = name,
+            SourcePath = sourceKey,
+        });
+
+        _commandStatus = _remoteChat
+            ? $"Added {name}. It will be sent to the remote provider with the first message."
+            : $"Added {name}.";
+    }
+
+    private bool ValidateContextPath(string path, out string? reason)
+    {
+        if (_mode != "work")
+        {
+            reason = null;
+            return true;
+        }
+
+        return Work.CanAttachContextPath(path, out reason);
+    }
+
+    private void ClearContextArtifacts()
+    {
+        if (_contextPaths.Count == 0) return;
+        _pendingArtifacts.RemoveAll(artifact =>
+            artifact.SourcePath is { Length: > 0 } key && _contextPaths.Contains(key));
+        _contextPaths.Clear();
+    }
+
+    private static string SafeContextName(string name)
+    {
+        string safe = string.IsNullOrWhiteSpace(name) ? "skill" : name.Trim();
+        foreach (char bad in Path.GetInvalidFileNameChars())
+            safe = safe.Replace(bad, '_');
+        return safe;
+    }
+
+    private static IEnumerable<string> EnumerateContextFiles(string root)
+    {
+        var pending = new Stack<string>();
+        pending.Push(root);
+        int visited = 0;
+        while (pending.Count > 0 && visited < 2_000)
+        {
+            string directory = pending.Pop();
+            visited++;
+
+            string[] files;
+            string[] directories;
+            try
+            {
+                files = Directory.GetFiles(directory);
+                directories = Directory.GetDirectories(directory);
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (string file in files)
+            {
+                if (IsContextTextFile(file)) yield return file;
+            }
+
+            foreach (string child in directories)
+            {
+                if (!ContextSkippedDirectories.Contains(Path.GetFileName(child)))
+                    pending.Push(child);
+            }
+        }
+    }
+
+    private static bool IsContextTextFile(string path)
+    {
+        string extension = Path.GetExtension(path);
+        if (extension.Length == 0) return true;
+        return ContextTextExtensions.Contains(extension);
+    }
+
+    private async Task FocusPromptAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("studioChat.focus", "welcome-prompt-input");
+        }
+        catch
+        {
+        }
     }
 
     /// <summary>
@@ -483,6 +1420,7 @@
         {
             Workspace.SwitchProject(value);
             await ChatService.UseProjectAsync();
+            ClearContextArtifacts();
             _error = null;
         }
         catch (Exception ex)
@@ -526,6 +1464,7 @@
                     var restored = Workspace.RestoreArchivedProject(archived.Path);
                     Workspace.SwitchProject(restored.Root);
                     await ChatService.UseProjectAsync();
+                    ClearContextArtifacts();
                     _error = null;
                     _projects = Workspace.Projects;
                     _projectPath = Workspace.Project.Root;
@@ -546,6 +1485,7 @@
             SharpMind.Studio.Core.Projects.StudioProject project = Workspace.CreateProject(name);
             Workspace.SwitchProject(project.Root);
             await ChatService.UseProjectAsync();
+            ClearContextArtifacts();
             _error = null;
         }
         catch (Exception ex)
@@ -855,6 +1795,7 @@
     private void RemoveArtifact(ChatArtifact artifact)
     {
         _pendingArtifacts.Remove(artifact);
+        if (artifact.SourcePath is { Length: > 0 } source) _contextPaths.Remove(source);
         if (_pendingArtifacts.Count <= 3) _showOverflow = false;
     }
 

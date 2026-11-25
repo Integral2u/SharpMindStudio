@@ -962,6 +962,32 @@ else
                             }
                         </div>
                     }
+                    @if (_skillPaletteOpen)
+                    {
+                        <div class="command-palette context-palette" role="listbox" aria-label="Add a skill">
+                            @if (_skillCandidates.Count == 0)
+                            {
+                                <div class="command-palette-empty">No enabled skills are available.</div>
+                            }
+                            else
+                            {
+                                @for (int skillIndex = 0; skillIndex < _skillCandidates.Count; skillIndex++)
+                                {
+                                    int itemIndex = skillIndex;
+                                    SkillChoice skillChoice = _skillCandidates[skillIndex];
+                                    <button type="button"
+                                            class="command-palette-item @(itemIndex == _skillIndex ? "selected" : "")"
+                                            role="option"
+                                            aria-selected="@(itemIndex == _skillIndex)"
+                                            @onmouseenter="() => _skillIndex = itemIndex"
+                                            @onclick="() => SelectSkillAsync(skillChoice)">
+                                        <span class="command-palette-name">@skillChoice.Skill.Name</span>
+                                        <span class="command-palette-description">@skillChoice.Source</span>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
                     <textarea id="chat-input" class="textarea"
                               value="@_input"
                               @oninput="OnComposerInput"
@@ -971,10 +997,6 @@ else
                     <div class="composer-actions">
                         @if (!ChatService.IsStreaming && !ChatService.IsLoading && !ChatService.IsCompute)
                         {
-                            <button type="button" class="button" @onclick="OpenContextMenu"
-                                    title="Add a file, folder or project memory to this turn">
-                                @@ Context
-                            </button>
                             <label class="button chat-attach-button" title="Attach an image, audio file or document">
                                 Attach
                                 <InputFile OnChange="OnFilesSelected" multiple class="chat-attach-input" />
@@ -1001,7 +1023,6 @@ else
                         }
                         <button id="chat-send" type="button" class="button primary composer-send" @onclick="SendCommandOrMessageAsync"
                                 disabled="@(ChatService.IsStreaming || ChatService.IsLoading ||
-                                            (string.IsNullOrWhiteSpace(_input) && !HasVisionImage && !HasAudioInput && _pendingArtifacts.Count == 0) ||
                                             (_workMode && !_remoteChat && _toolState.Capability == ToolCapability.Failed && !_allowFailedTools))">
                             Send
                         </button>
@@ -1094,6 +1115,9 @@ else
     private IReadOnlyList<ContextChoice> _contextCandidates = [];
     private int _contextIndex;
     private bool _contextFromToken;
+    private bool _skillPaletteOpen;
+    private IReadOnlyList<SkillChoice> _skillCandidates = [];
+    private int _skillIndex;
     private readonly HashSet<string> _contextPaths = new(StringComparer.OrdinalIgnoreCase);
 
     private RemoteProviderPreset RemotePreset => RemoteProviders.Find(_remoteProviderId);
@@ -1159,6 +1183,8 @@ else
     private ToolPermissionSet _embeddedPermissions = new();
 
     private sealed record ContextChoice(string Kind, string Label, string Description);
+
+    private sealed record SkillChoice(WorkSkill Skill, string Source);
 
     private static readonly HashSet<string> ContextSkippedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1764,6 +1790,8 @@ else
         _input = args.Value?.ToString() ?? "";
         _commandError = null;
         _commandStatus = null;
+        _skillPaletteOpen = false;
+        _skillCandidates = [];
         UpdateCommandPalette();
         UpdateContextPalette();
     }
@@ -1831,20 +1859,31 @@ else
             choices.Add(new("folder", "@folder", "Attach a folder manifest and its text files."));
             if (!string.IsNullOrWhiteSpace(Work.Memory))
                 choices.Add(new("memory", "@memory", "Attach the Work project memory."));
+            if (EnabledSkills().Count > 0)
+                choices.Add(new("skill", "@skill", "Attach an enabled system or project skill."));
         }
 
         return choices;
     }
 
-    private async Task OpenContextMenu()
+    private IReadOnlyList<SkillChoice> EnabledSkills()
     {
-        _commandPaletteOpen = false;
-        _commandCandidates = [];
-        _contextCandidates = BuildContextChoices();
-        _contextIndex = 0;
-        _contextPaletteOpen = true;
-        _contextFromToken = false;
-        await FocusComposerAsync();
+        var choices = new List<SkillChoice>();
+        foreach (WorkSkill skill in Work.SystemSkills
+                     .Where(Work.IsSystemSkillEnabled)
+                     .OrderBy(skill => skill.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            choices.Add(new SkillChoice(skill, "System skill"));
+        }
+
+        foreach (WorkSkill skill in Work.ProjectSkills
+                     .Where(Work.IsProjectSkillEnabled)
+                     .OrderBy(skill => skill.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            choices.Add(new SkillChoice(skill, "Project skill"));
+        }
+
+        return choices;
     }
 
     private async Task SelectContextAsync(ContextChoice choice)
@@ -1862,12 +1901,57 @@ else
             case "memory":
                 AddMemoryContext();
                 break;
+            case "skill":
+                OpenSkillPalette();
+                return;
             default:
                 await AddFileContextAsync();
                 break;
         }
 
         await FocusComposerAsync();
+    }
+
+    private void OpenSkillPalette()
+    {
+        _contextPaletteOpen = false;
+        _contextCandidates = [];
+        _skillCandidates = EnabledSkills();
+        _skillIndex = 0;
+        _skillPaletteOpen = true;
+        if (_skillCandidates.Count == 0)
+        {
+            _skillPaletteOpen = false;
+            _commandStatus = "No enabled skills are available for this project.";
+        }
+    }
+
+    private async Task SelectSkillAsync(SkillChoice choice)
+    {
+        _skillPaletteOpen = false;
+        _skillCandidates = [];
+
+        string key = $"skill:{choice.Skill.Id}";
+        if (!_contextPaths.Add(key))
+        {
+            _commandStatus = $"{choice.Skill.Name} is already attached.";
+            await FocusComposerAsync();
+            return;
+        }
+
+        AddContextArtifact(
+            $"{SafeContextName(choice.Skill.Name)}.md",
+            $"Skill: {choice.Skill.Name}\n\n{choice.Skill.Content.Trim()}",
+            key);
+        await FocusComposerAsync();
+    }
+
+    private static string SafeContextName(string name)
+    {
+        string safe = string.IsNullOrWhiteSpace(name) ? "skill" : name.Trim();
+        foreach (char bad in Path.GetInvalidFileNameChars())
+            safe = safe.Replace(bad, '_');
+        return safe;
     }
 
     private void RemoveContextToken()
@@ -2107,6 +2191,46 @@ else
 
     private async Task OnComposerKeyDown(KeyboardEventArgs args)
     {
+        if (_skillPaletteOpen)
+        {
+            if (args.Key == "ArrowDown")
+            {
+                if (_skillCandidates.Count > 0)
+                    _skillIndex = (_skillIndex + 1) % _skillCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "ArrowUp")
+            {
+                if (_skillCandidates.Count > 0)
+                    _skillIndex = (_skillIndex - 1 + _skillCandidates.Count) % _skillCandidates.Count;
+                return;
+            }
+
+            if (args.Key == "Escape")
+            {
+                _skillPaletteOpen = false;
+                return;
+            }
+
+            if (args.Key == "Enter" && !args.ShiftKey)
+            {
+                await SendCommandOrMessageAsync();
+                return;
+            }
+
+            if (args.Key == "Tab" && !args.ShiftKey)
+            {
+                if (_skillCandidates.Count > 0)
+                    await SelectSkillAsync(_skillCandidates[_skillIndex]);
+                else
+                    _skillPaletteOpen = false;
+                return;
+            }
+
+            return;
+        }
+
         if (_contextPaletteOpen)
         {
             if (args.Key == "ArrowDown")
@@ -2137,6 +2261,7 @@ else
 
             if (args.Key == "Tab" && !args.ShiftKey)
             {
+                await SyncComposerFromDomAsync();
                 if (_contextCandidates.Count > 0)
                     await SelectContextAsync(_contextCandidates[_contextIndex]);
                 else
@@ -2177,6 +2302,7 @@ else
 
             if (args.Key == "Tab" && !args.ShiftKey)
             {
+                await SyncComposerFromDomAsync();
                 if (_commandCandidates.Count == 0)
                 {
                     _commandPaletteOpen = false;
@@ -2196,8 +2322,38 @@ else
         }
     }
 
+    private async Task SyncComposerFromDomAsync()
+    {
+        try
+        {
+            string value = await JS.InvokeAsync<string>("studioChat.value", "chat-input") ?? "";
+            if (string.Equals(value, _input, StringComparison.Ordinal)) return;
+
+            _input = value;
+            _commandError = null;
+            _commandStatus = null;
+            UpdateCommandPalette();
+            UpdateContextPalette();
+        }
+        catch
+        {
+            // If the DOM cannot be read, the last synced state is still usable.
+        }
+    }
+
     private async Task SendCommandOrMessageAsync()
     {
+        await SyncComposerFromDomAsync();
+
+        if (_skillPaletteOpen)
+        {
+            if (_skillCandidates.Count > 0)
+                await SelectSkillAsync(_skillCandidates[_skillIndex]);
+            else
+                _skillPaletteOpen = false;
+            return;
+        }
+
         if (_contextPaletteOpen)
         {
             if (_contextCandidates.Count > 0)

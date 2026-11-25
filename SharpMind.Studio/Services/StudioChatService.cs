@@ -830,6 +830,10 @@ public sealed class StudioChatService : IAsyncDisposable
             item.Type.Contains("audio", StringComparison.OrdinalIgnoreCase)) == true;
         bool audioOnly = string.IsNullOrWhiteSpace(text) &&
             audioAttached && !IsRemote && SupportsAudio;
+        bool textContext = artifacts?.Any(item =>
+            item.Type is "text" or "code" or "json") == true;
+        if (string.IsNullOrWhiteSpace(text) && textContext)
+            text = "Use the attached context.";
         if ((string.IsNullOrWhiteSpace(text) && !audioOnly) || _document is null || _streaming)
             return;
 
