@@ -20,7 +20,6 @@ public static class ChatCommands
 {
     public static IReadOnlyList<ChatCommandDefinition> All { get; } =
     [
-        new("help", "/help", "List the commands available in this chat."),
         new("new", "/new", "Start a new chat with the same model."),
         new("model", "/model <name>", "Switch model by name; /model shows the current one.",
             ArgumentHint: "<name>"),

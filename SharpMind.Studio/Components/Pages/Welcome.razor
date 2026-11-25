@@ -72,7 +72,7 @@
             <div class="command-palette" role="listbox" aria-label="Commands">
                 @if (_commandCandidates.Count == 0)
                 {
-                    <div class="command-palette-empty">No command matches. Type /help for the list.</div>
+                    <div class="command-palette-empty">No command matches. Type / to see the list.</div>
                 }
                 else
                 {
@@ -521,7 +521,6 @@
 
     private static readonly ChatCommandDefinition[] LandingCommands =
     [
-        new("help", "/help", "List landing-page commands."),
         new("chat", "/chat", "Switch to Chat mode."),
         new("work", "/work", "Switch to Work mode."),
         new("model", "/model <name>", "Choose the model for the new session.",
@@ -995,21 +994,13 @@
         if (command is null)
         {
             _commandError = ChatCommands.Find(name) is null
-                ? $"Unknown command /{name}. Type /help."
-                : $"Start a chat to use /{name}. Landing commands: /help /chat /work /model /new /clear.";
+                ? $"Unknown command /{name}. Type / to see the commands."
+                : $"Start a chat to use /{name}. Landing commands: /chat /work /model /options /new /clear.";
             return;
         }
 
         switch (command.Name)
         {
-            case "help":
-                _commandCandidates = LandingCommands;
-                _commandIndex = 0;
-                _commandPaletteOpen = true;
-                _commandStatus = "Landing commands. Enter runs, Esc closes.";
-                await FocusPromptAsync();
-                return;
-
             case "chat":
                 SetMode("chat");
                 _commandStatus = "Chat mode.";

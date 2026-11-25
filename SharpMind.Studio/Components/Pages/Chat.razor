@@ -101,7 +101,7 @@
                         <div class="command-palette" role="listbox" aria-label="Chat commands">
                             @if (_commandCandidates.Count == 0)
                             {
-                                <div class="command-palette-empty">No command matches. Type /help for the list.</div>
+                                <div class="command-palette-empty">No command matches. Type / to see the list.</div>
                             }
                             else
                             {
@@ -1008,7 +1008,7 @@ else
                         <div class="command-palette" role="listbox" aria-label="Chat commands">
                             @if (_commandCandidates.Count == 0)
                             {
-                                <div class="command-palette-empty">No command matches. Type /help for the list.</div>
+                                <div class="command-palette-empty">No command matches. Type / to see the list.</div>
                             }
                             else
                             {
@@ -2610,20 +2610,12 @@ else
         ChatCommandDefinition? command = ChatCommands.Find(name);
         if (command is null)
         {
-            _commandError = $"Unknown command /{name}. Type /help.";
+            _commandError = $"Unknown command /{name}. Type / to see the commands.";
             return;
         }
 
         switch (command.Name)
         {
-            case "help":
-                _commandCandidates = ChatCommands.All;
-                _commandIndex = 0;
-                _commandPaletteOpen = true;
-                _commandStatus = "Chat commands. Enter runs, Esc closes.";
-                await FocusComposerAsync();
-                return;
-
             case "new":
                 await BeginNewChatAsync();
                 return;
@@ -2645,6 +2637,12 @@ else
                 return;
 
             case "options":
+                if (ChatService.Document is null || _startingNew)
+                {
+                    _commandStatus = "Start a chat to open session options.";
+                    break;
+                }
+
                 if (ChatService.IsRemote)
                 {
                     _commandStatus = "Inference options are available for local chats only.";
