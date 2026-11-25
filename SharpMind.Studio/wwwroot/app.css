@@ -259,6 +259,35 @@ details.panel.settings-collapsible > summary.panel-head:hover {
     padding: .35rem .6rem;
 }
 
+.agent-chain {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+}
+
+.agent-chain-row {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    flex-wrap: wrap;
+}
+
+.agent-chain-row > .input {
+    flex: 1 1 9rem;
+    min-width: 7rem;
+    padding: .35rem .5rem;
+}
+
+.agent-chain-row .button {
+    padding: .35rem .55rem;
+}
+
+.agent-chain-order {
+    flex: 0 0 1.4rem;
+    color: var(--faint);
+    text-align: center;
+}
+
 .settings-subgroup {
     border: 1px solid var(--line);
     border-radius: .7rem;

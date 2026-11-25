@@ -1,6 +1,8 @@
 ﻿@using SharpMind.Inference.Chat
 @using SharpMind.Studio.Core.Agents
 @using SharpMind.Studio.Core.Chat
+@using SharpMind.Studio.Core.Compute
+@using SharpMind.Studio.Core.OpenRouter
 @using SharpMind.Studio.Core.Work
 @using SharpMind.Studio.Services
 @inject StudioWorkService Work
@@ -8,15 +10,18 @@
 @inject StudioWorkspaceService Workspace
 @inject StudioAgentService Agents
 @inject ModelCatalogService Catalog
+@inject OpenRouterSettingsService OpenRouter
+@inject ComputeProviderService Compute
 @implements IDisposable
 
 <div class="page-head">
     <div>
-        <div class="eyebrow">Run analysis</div>
+        <div class="eyebrow">Orchestration</div>
         <h1>Agents</h1>
         <p class="faint">
-            The work agent's tools and skills, and the current chat as a turn-by-turn trace:
-            who spoke, which tool result came back, and which artifacts were produced.
+            You are the CEO. The work agent delegates one self-contained task at a time to the
+            specialists below, following the project's system prompt and memory. Define each
+            specialist's purpose, rules, model fallback chain, tools and permissions.
         </p>
     </div>
 </div>
@@ -73,8 +78,8 @@
                 <strong class="mono">delegate</strong>
                 <span class="faint small">
                     The model picks one of the saved agents below by name. That agent's own rules,
-                    model, allowed tools and permissions are used, and it disappears when the task
-                    finishes. Nothing is added to the project.
+                    model chain, allowed tools and permissions are used, and it disappears when
+                    the task finishes. Nothing is added to the project.
                 </span>
             </div>
             <div>
@@ -83,6 +88,15 @@
                     The model creates a temporary specialist from parameters in the call: name,
                     rules, optional model and optional tool list. It is not saved, uses the same
                     Ask permission defaults, and is discarded after the task.
+                </span>
+            </div>
+            <div>
+                <strong class="mono">model chain</strong>
+                <span class="faint small">
+                    Targets are tried in order. Inherit uses the parent model; Local uses a
+                    catalog model that still exists; Remote and Compute use the selected host and
+                    model. A missing local file falls through to the next target instead of making
+                    the agent unavailable.
                 </span>
             </div>
         </div>
@@ -103,7 +117,7 @@
         {
             <table class="table">
                 <thead>
-                    <tr><th>Name</th><th>Purpose</th><th>Model</th><th>TTL</th><th>Enabled</th><th></th></tr>
+                    <tr><th>Name</th><th>Purpose</th><th>Model chain</th><th>TTL</th><th>Enabled</th><th></th></tr>
                 </thead>
                 <tbody>
                     @foreach (StudioAgentDefinition agent in Agents.Agents)
@@ -111,7 +125,7 @@
                         <tr>
                             <td class="mono">@agent.Name</td>
                             <td>@agent.Description</td>
-                            <td class="mono">@(string.IsNullOrWhiteSpace(agent.ModelPath) ? "current" : Path.GetFileName(agent.ModelPath))</td>
+                            <td class="mono small">@ChainLabel(agent)</td>
                             <td class="mono">@(agent.TtlMinutes == 0 ? "default" : $"{agent.TtlMinutes}m")</td>
                             <td>@(agent.Enabled ? "yes" : "no")</td>
                             <td class="row">
@@ -149,18 +163,111 @@
                 <textarea class="input" rows="4" value="@editing.Rules"
                           @onchange="e => _editing = editing with { Rules = e.Value?.ToString() ?? string.Empty }"></textarea>
             </div>
-            <div class="row">
-                <div class="field grow">
-                    <label class="field-label">Model</label>
-                    <select class="input" value="@(editing.ModelPath ?? string.Empty)"
-                            @onchange="e => _editing = editing with { ModelPath = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString() }">
-                        <option value="">Inherit current model (same weights, no reload)</option>
-                        @foreach (ModelDescriptor model in _models)
-                        {
-                            <option value="@model.Path">@model.DisplayName (@model.FileName)</option>
-                        }
-                    </select>
+            <div class="field">
+                <div class="spread">
+                    <label class="field-label">Model chain (first available target wins)</label>
+                    <span class="small faint">missing local models fall through</span>
                 </div>
+                @{
+                    IReadOnlyList<AgentModelChoice> chain = Chain(editing);
+                }
+                <div class="agent-chain">
+                    @for (int chainIndex = 0; chainIndex < chain.Count; chainIndex++)
+                    {
+                        int index = chainIndex;
+                        AgentModelChoice choice = chain[chainIndex];
+                        <div class="agent-chain-row">
+                            <span class="agent-chain-order mono">@(index + 1)</span>
+                            <select class="input" value="@choice.Kind"
+                                    @onchange="e => _editing = SetChainKind(editing, index, ParseKind(e.Value))">
+                                <option value="Inherit">Inherit</option>
+                                <option value="Local">Local</option>
+                                <option value="Remote">Remote</option>
+                                <option value="Compute">Compute</option>
+                            </select>
+
+                            @if (choice.Kind == AgentModelKind.Local)
+                            {
+                                <select class="input" value="@(choice.Model ?? string.Empty)"
+                                        @onchange="e => _editing = SetChainModel(editing, index, e.Value?.ToString())">
+                                    @foreach (ModelDescriptor model in _models)
+                                    {
+                                        <option value="@model.Path">@model.FileName</option>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(choice.Model) &&
+                                         !_models.Any(model => string.Equals(model.Path, choice.Model, StringComparison.OrdinalIgnoreCase)))
+                                    {
+                                        <option value="@choice.Model">@Path.GetFileName(choice.Model) (missing)</option>
+                                    }
+                                </select>
+                            }
+                            else if (choice.Kind == AgentModelKind.Remote)
+                            {
+                                <select class="input" value="@(choice.ProviderId ?? RemoteProviders.OpenRouter)"
+                                        @onchange="e => _editing = SetChainProvider(editing, index, e.Value?.ToString())">
+                                    @foreach (RemoteProviderPreset provider in RemoteProviders.All)
+                                    {
+                                        <option value="@provider.Id">@provider.Name</option>
+                                    }
+                                </select>
+                                <select class="input" value="@(choice.Model ?? string.Empty)"
+                                        @onchange="e => _editing = SetChainModel(editing, index, e.Value?.ToString())">
+                                    @foreach (string model in OpenRouter.ActiveModelsFor(choice.ProviderId))
+                                    {
+                                        <option value="@model">@model</option>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(choice.Model) &&
+                                         !OpenRouter.ActiveModelsFor(choice.ProviderId).Contains(choice.Model, StringComparer.OrdinalIgnoreCase))
+                                    {
+                                        <option value="@choice.Model">@choice.Model</option>
+                                    }
+                                </select>
+                            }
+                            else if (choice.Kind == AgentModelKind.Compute)
+                            {
+                                <select class="input" value="@(choice.ProviderId ?? string.Empty)"
+                                        @onchange="e => _editing = SetChainProvider(editing, index, e.Value?.ToString())">
+                                    @foreach (ComputeProviderSettings host in Compute.Providers)
+                                    {
+                                        <option value="@host.Id">@host.Name</option>
+                                    }
+                                </select>
+                                <select class="input" value="@(choice.Model ?? string.Empty)"
+                                        @onchange="e => _editing = SetChainModel(editing, index, e.Value?.ToString())">
+                                    @foreach (string model in ComputeModels(choice.ProviderId))
+                                    {
+                                        <option value="@model">@model</option>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(choice.Model) &&
+                                         !ComputeModels(choice.ProviderId).Contains(choice.Model, StringComparer.OrdinalIgnoreCase))
+                                    {
+                                        <option value="@choice.Model">@choice.Model</option>
+                                    }
+                                </select>
+                            }
+                            else
+                            {
+                                <span class="small faint">Use the chat's current model</span>
+                            }
+
+                            <div class="row" style="gap:.25rem; flex-wrap:nowrap;">
+                                <button type="button" class="button" title="Move up" @onclick="() => _editing = MoveChain(editing, index, -1)"
+                                        disabled="@(index == 0)">&#9650;</button>
+                                <button type="button" class="button" title="Move down" @onclick="() => _editing = MoveChain(editing, index, 1)"
+                                        disabled="@(index == chain.Count - 1)">&#9660;</button>
+                                <button type="button" class="button danger" title="Remove" @onclick="() => _editing = RemoveChain(editing, index)">Remove</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="row" style="margin-top:.35rem;">
+                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Inherit)">Add inherit</button>
+                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Local)">Add local</button>
+                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Remote)">Add remote</button>
+                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Compute)">Add compute</button>
+                </div>
+            </div>
+            <div class="row">
                 <div class="field">
                     <label class="field-label">Temperature (blank = inherited)</label>
                     <input class="input" type="number" min="0" max="3" step="0.05"
@@ -426,9 +533,161 @@
 
     private void Refresh() => StateHasChanged();
 
-    private void NewAgent() => _editing = new StudioAgentDefinition();
+    private void NewAgent() => _editing = new StudioAgentDefinition
+    {
+        ModelChain = [new AgentModelChoice { Kind = AgentModelKind.Inherit }],
+    };
 
-    private void EditAgent(StudioAgentDefinition agent) => _editing = agent;
+    private void EditAgent(StudioAgentDefinition agent) => _editing = agent with
+    {
+        ModelChain = [.. Chain(agent)],
+    };
+
+    private static IReadOnlyList<AgentModelChoice> Chain(StudioAgentDefinition agent) =>
+        agent.ModelChain.Count > 0 ? agent.ModelChain : [.. agent.EffectiveModelChain()];
+
+    private static AgentModelKind ParseKind(object? value) =>
+        Enum.TryParse(value?.ToString(), out AgentModelKind kind)
+            ? kind
+            : AgentModelKind.Inherit;
+
+    private StudioAgentDefinition AddChain(StudioAgentDefinition agent, AgentModelKind kind)
+    {
+        var chain = new List<AgentModelChoice>(Chain(agent));
+        chain.Add(NewChoice(kind));
+        return agent with { ModelChain = chain };
+    }
+
+    private StudioAgentDefinition SetChainKind(
+        StudioAgentDefinition agent, int index, AgentModelKind kind)
+    {
+        var chain = new List<AgentModelChoice>(Chain(agent));
+        if (index < 0 || index >= chain.Count) return agent;
+        if (chain[index].Kind == kind) return agent;
+        chain[index] = NewChoice(kind);
+        return agent with { ModelChain = chain };
+    }
+
+    private StudioAgentDefinition SetChainProvider(
+        StudioAgentDefinition agent, int index, string? providerId)
+    {
+        var chain = new List<AgentModelChoice>(Chain(agent));
+        if (index < 0 || index >= chain.Count) return agent;
+        AgentModelChoice choice = chain[index];
+        string? provider = string.IsNullOrWhiteSpace(providerId) ? null : providerId.Trim();
+        string? model = choice.Kind switch
+        {
+            AgentModelKind.Remote => OpenRouter.ActiveModelsFor(provider).FirstOrDefault(),
+            AgentModelKind.Compute => ComputeModels(provider).FirstOrDefault(),
+            _ => null,
+        };
+        chain[index] = choice with { ProviderId = provider, Model = model };
+        return agent with { ModelChain = chain };
+    }
+
+    private StudioAgentDefinition SetChainModel(
+        StudioAgentDefinition agent, int index, string? model)
+    {
+        var chain = new List<AgentModelChoice>(Chain(agent));
+        if (index < 0 || index >= chain.Count) return agent;
+        chain[index] = chain[index] with
+        {
+            Model = string.IsNullOrWhiteSpace(model) ? null : model.Trim(),
+        };
+        return agent with { ModelChain = chain };
+    }
+
+    private StudioAgentDefinition MoveChain(
+        StudioAgentDefinition agent, int index, int offset)
+    {
+        var chain = new List<AgentModelChoice>(Chain(agent));
+        int target = index + offset;
+        if (index < 0 || index >= chain.Count || target < 0 || target >= chain.Count)
+            return agent;
+        (chain[index], chain[target]) = (chain[target], chain[index]);
+        return agent with { ModelChain = chain };
+    }
+
+    private StudioAgentDefinition RemoveChain(StudioAgentDefinition agent, int index)
+    {
+        var chain = new List<AgentModelChoice>(Chain(agent));
+        if (index < 0 || index >= chain.Count || chain.Count == 1) return agent;
+        chain.RemoveAt(index);
+        return agent with { ModelChain = chain };
+    }
+
+    private AgentModelChoice NewChoice(AgentModelKind kind)
+    {
+        switch (kind)
+        {
+            case AgentModelKind.Local:
+                return new AgentModelChoice
+                {
+                    Kind = AgentModelKind.Local,
+                    Model = _models.FirstOrDefault()?.Path,
+                };
+
+            case AgentModelKind.Remote:
+            {
+                string provider = RemoteProviders.All
+                    .FirstOrDefault(item => OpenRouter.HasApiKeyFor(item.Id))?.Id
+                    ?? RemoteProviders.OpenRouter;
+                return new AgentModelChoice
+                {
+                    Kind = AgentModelKind.Remote,
+                    ProviderId = provider,
+                    Model = OpenRouter.ActiveModelsFor(provider).FirstOrDefault(),
+                };
+            }
+
+            case AgentModelKind.Compute:
+            {
+                ComputeProviderSettings? host = Compute.Providers
+                    .FirstOrDefault(item => item.Models.Count > 0)
+                    ?? Compute.Providers.FirstOrDefault();
+                return new AgentModelChoice
+                {
+                    Kind = AgentModelKind.Compute,
+                    ProviderId = host?.Id,
+                    Model = host?.Models.FirstOrDefault(),
+                };
+            }
+
+            default:
+                return new AgentModelChoice { Kind = AgentModelKind.Inherit };
+        }
+    }
+
+    private IReadOnlyList<string> ComputeModels(string? providerId) =>
+        Compute.Providers.FirstOrDefault(provider =>
+            string.Equals(provider.Id, providerId, StringComparison.OrdinalIgnoreCase))?
+            .Models ?? [];
+
+    private string ChainLabel(StudioAgentDefinition agent) =>
+        string.Join(" -> ", Chain(agent).Select(ChoiceLabel));
+
+    private string ChoiceLabel(AgentModelChoice choice) => choice.Kind switch
+    {
+        AgentModelKind.Inherit => "inherit",
+        AgentModelKind.Local => LocalLabel(choice.Model),
+        AgentModelKind.Remote =>
+            $"{RemoteProviders.Find(choice.ProviderId).Name}/{choice.Model}",
+        AgentModelKind.Compute =>
+            $"{Compute.Providers.FirstOrDefault(provider =>
+                string.Equals(provider.Id, choice.ProviderId, StringComparison.OrdinalIgnoreCase))?.Name
+                ?? choice.ProviderId}/{choice.Model}",
+        _ => choice.Kind.ToString(),
+    };
+
+    private string LocalLabel(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "local (missing)";
+        ModelDescriptor? model = _models.FirstOrDefault(item =>
+            string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(item.FileName, path, StringComparison.OrdinalIgnoreCase));
+        if (model is not null && File.Exists(model.Path)) return model.FileName;
+        return $"{Path.GetFileName(path)} (missing)";
+    }
 
     private void SetMaxDepth(ChangeEventArgs args)
     {

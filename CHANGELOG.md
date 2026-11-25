@@ -55,6 +55,13 @@ _Planned for 1.1.3._
   the rest. Each file has a menu for **Preview**, **Save as**, **Open** and
   **Open folder**, with a native save picker for the chosen path.
 
+- **Model fallback chains for specialist agents.** A custom agent's model is now
+  an ordered chain of **Inherit**, **Local**, **Remote** and **Compute** targets.
+  New agents start with Inherit; missing local files fall through to the next
+  target instead of making the agent unavailable. The Labs → Agents editor can
+  add, remove and reorder targets, and the table shows the effective chain. The
+  page now frames the work agent as the delegate between you and the specialists.
+
 - **Archive and recover Work projects.** Work projects stay in the sidebar even
   with no sessions. The project actions dialog offers Archive and Delete
   permanently; Archive moves the whole folder to Settings → System → Archived

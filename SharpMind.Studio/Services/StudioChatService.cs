@@ -1994,26 +1994,273 @@ public sealed class StudioChatService : IAsyncDisposable
         string task,
         CancellationToken cancellationToken)
     {
-        try
+        var failures = new List<string>();
+        foreach (AgentModelChoice choice in definition.EffectiveModelChain())
         {
-            string result = await _agentRunner
-                .RunAsync(
-                    definition,
+            try
+            {
+                string? result = await TryRunAgentChoiceAsync(
+                    definition, choice, task, cancellationToken).ConfigureAwait(false);
+                if (result is not null)
+                    return ToolRequestResult.Handled(result);
+
+                failures.Add($"{ChoiceLabel(choice)} (unavailable)");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{ChoiceLabel(choice)} ({ex.GetType().Name}: {ex.Message})");
+            }
+        }
+
+        return ToolRequestResult.Handled(
+            $"[agent {definition.Name} unavailable] No model target could run. Tried: " +
+            (failures.Count == 0 ? "no targets" : string.Join(", ", failures)) + ".");
+    }
+
+    private async Task<string?> TryRunAgentChoiceAsync(
+        StudioAgentDefinition definition,
+        AgentModelChoice choice,
+        string task,
+        CancellationToken cancellationToken)
+    {
+        switch (choice.Kind)
+        {
+            case AgentModelKind.Inherit:
+                if (string.Equals(_document?.Provider, "openrouter", StringComparison.OrdinalIgnoreCase))
+                {
+                    return await RunRemoteAgentAsync(
+                        definition,
+                        new AgentModelChoice
+                        {
+                            Kind = AgentModelKind.Remote,
+                            ProviderId = _document.RemoteProvider,
+                            Model = _document.RemoteModel,
+                        },
+                        task,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                if (string.Equals(_document?.Provider, "compute", StringComparison.OrdinalIgnoreCase))
+                {
+                    return await RunComputeAgentAsync(
+                        definition,
+                        new AgentModelChoice
+                        {
+                            Kind = AgentModelKind.Compute,
+                            ProviderId = _document.RemoteProvider,
+                            Model = _document.RemoteModel,
+                        },
+                        task,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                if (_loaded is null) return null;
+                return await _agentRunner.RunAsync(
+                    definition with
+                    {
+                        ModelPath = null,
+                        ModelChain = [new AgentModelChoice { Kind = AgentModelKind.Inherit }],
+                    },
                     task,
                     _loaded,
                     _resolved,
                     cancellationToken,
                     sessionId: _document?.Id,
-                    sessionCommands: _document?.CommandLine)
-                .ConfigureAwait(false);
-            return ToolRequestResult.Handled(result);
-        }
-        catch (Exception ex)
-        {
-            return ToolRequestResult.Handled(
-                $"[agent {definition.Name} failed] {ex.GetType().Name}: {ex.Message}");
+                    sessionCommands: _document?.CommandLine).ConfigureAwait(false);
+
+            case AgentModelKind.Local:
+            {
+                if (string.IsNullOrWhiteSpace(choice.Model)) return null;
+                IReadOnlyList<ModelDescriptor> models = await _catalog.RefreshAsync(
+                    force: false, cancellationToken).ConfigureAwait(false);
+                ModelDescriptor? descriptor = models.FirstOrDefault(model =>
+                    string.Equals(model.Path, choice.Model, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(model.FileName, choice.Model, StringComparison.OrdinalIgnoreCase));
+                if (descriptor is null || !File.Exists(descriptor.Path)) return null;
+
+                return await _agentRunner.RunAsync(
+                    definition with
+                    {
+                        ModelPath = descriptor.Path,
+                        ModelChain =
+                        [
+                            new AgentModelChoice
+                            {
+                                Kind = AgentModelKind.Local,
+                                Model = descriptor.Path,
+                            },
+                        ],
+                    },
+                    task,
+                    _loaded,
+                    _resolved,
+                    cancellationToken,
+                    sessionId: _document?.Id,
+                    sessionCommands: _document?.CommandLine).ConfigureAwait(false);
+            }
+
+            case AgentModelKind.Remote:
+                return await RunRemoteAgentAsync(definition, choice, task, cancellationToken)
+                    .ConfigureAwait(false);
+
+            case AgentModelKind.Compute:
+                return await RunComputeAgentAsync(definition, choice, task, cancellationToken)
+                    .ConfigureAwait(false);
+
+            default:
+                return null;
         }
     }
+
+    private async Task<string?> RunRemoteAgentAsync(
+        StudioAgentDefinition agent,
+        AgentModelChoice target,
+        string task,
+        CancellationToken cancellationToken)
+    {
+        string providerId = RemoteProviders.NormalizeId(target.ProviderId);
+        RemoteProviderPreset preset = RemoteProviders.Find(providerId);
+        if (!_openRouter.ConnectionFor(providerId).IsUsable)
+            return null;
+
+        string model = target.Model?.Trim() ?? "";
+        if (model.Length == 0) return null;
+
+        var document = new ChatSessionDocument
+        {
+            Id = $"agent-{Guid.NewGuid():n}",
+            Name = agent.Name,
+            ModelPath = "openrouter",
+            Provider = "openrouter",
+            RemoteProvider = providerId,
+            RemoteModel = model,
+            FamilyId = providerId,
+            FamilyName = preset.Name,
+            Mode = _document?.Mode ?? "chat",
+            SystemPrompt = AgentRules(agent),
+            Messages =
+            [
+                ChatMessage.User(task, "You"),
+                ChatMessage.Agent("", agent.Name),
+            ],
+            Overrides = new InferenceOverrides
+            {
+                Temperature = agent.Temperature,
+                Seed = agent.Seed,
+            },
+        };
+        ChatMessage assistant = document.Messages[^1];
+
+        IAgentBuilder? tools = _work.CreateAgentTools(
+            agent,
+            sessionId: _document?.Id,
+            familyId: providerId,
+            modelPath: model,
+            sessionCommands: _document?.CommandLine);
+        if (tools is AgentBuilder builder)
+        {
+            builder.WithAdditionalSystemPrompt(AgentPromptText.DelegatedTask);
+            builder.PluginCompactors = _plugins.Compactors;
+            builder.PluginPreProcessors = _plugins.PreProcessors;
+            builder.PluginPostProcessors = _plugins.PostProcessors;
+        }
+
+        string? validation = _openRouterBackend.Validate(document);
+        if (validation is not null)
+            throw new InvalidOperationException(validation);
+
+        await _openRouterBackend.RunTurnAsync(
+            new ChatBackendContext
+            {
+                Document = document,
+                Assistant = assistant,
+                UserText = task,
+                Agent = tools,
+                SetStatus = _ => { },
+                Notify = () => { },
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        string answer = assistant.Content.Trim();
+        return answer.Length == 0 ? $"Agent '{agent.Name}' produced no text." : answer;
+    }
+
+    private async Task<string?> RunComputeAgentAsync(
+        StudioAgentDefinition agent,
+        AgentModelChoice target,
+        string task,
+        CancellationToken cancellationToken)
+    {
+        string providerId = target.ProviderId?.Trim() ?? "";
+        if (providerId.Length == 0) return null;
+        ComputeProvider? host = _compute.Resolve(providerId);
+        if (host is null || !host.IsUsable) return null;
+
+        string model = target.Model?.Trim() ?? host.DefaultModel ?? host.Models.FirstOrDefault() ?? "";
+        if (model.Length == 0) return null;
+
+        var document = new ChatSessionDocument
+        {
+            Id = $"agent-{Guid.NewGuid():n}",
+            Name = agent.Name,
+            ModelPath = "compute",
+            Provider = "compute",
+            RemoteProvider = providerId,
+            RemoteModel = model,
+            FamilyId = "compute",
+            FamilyName = host.Name,
+            Mode = _document?.Mode ?? "chat",
+            SystemPrompt = AgentRules(agent),
+            Messages =
+            [
+                ChatMessage.User(task, "You"),
+                ChatMessage.Agent("", agent.Name),
+            ],
+            Overrides = new InferenceOverrides
+            {
+                Temperature = agent.Temperature,
+                Seed = agent.Seed,
+            },
+        };
+        ChatMessage assistant = document.Messages[^1];
+
+        string? validation = _computeBackend.Validate(document);
+        if (validation is not null)
+            throw new InvalidOperationException(validation);
+
+        await _computeBackend.RunTurnAsync(
+            new ChatBackendContext
+            {
+                Document = document,
+                Assistant = assistant,
+                UserText = task,
+                Agent = null,
+                SetStatus = _ => { },
+                Notify = () => { },
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        string answer = assistant.Content.Trim();
+        return answer.Length == 0 ? $"Agent '{agent.Name}' produced no text." : answer;
+    }
+
+    private static string AgentRules(StudioAgentDefinition agent) =>
+        string.IsNullOrWhiteSpace(agent.Rules)
+            ? $"You are {agent.Name}. {agent.Description}".Trim()
+            : agent.Rules.Trim();
+
+    private static string ChoiceLabel(AgentModelChoice choice) => choice.Kind switch
+    {
+        AgentModelKind.Inherit => "inherit",
+        AgentModelKind.Local => $"local {choice.Model ?? "?"}",
+        AgentModelKind.Remote => $"remote {choice.ProviderId ?? "?"}/{choice.Model ?? "?"}",
+        AgentModelKind.Compute => $"compute {choice.ProviderId ?? "?"}/{choice.Model ?? "?"}",
+        _ => choice.Kind.ToString(),
+    };
 
     private ResolvedInference ResolveInference(
         string? familyId,

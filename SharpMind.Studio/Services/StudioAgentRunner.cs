@@ -58,33 +58,9 @@ public sealed class StudioAgentRunner
         ArgumentNullException.ThrowIfNull(agent);
         ArgumentException.ThrowIfNullOrWhiteSpace(task);
 
-        bool useCurrent = string.IsNullOrWhiteSpace(agent.ModelPath) ||
-            string.Equals(agent.ModelPath, current?.Descriptor.Path, StringComparison.OrdinalIgnoreCase);
-        LoadedStudioModel loaded;
-        ResolvedInference profile;
-        bool borrowed;
-        if (useCurrent)
-        {
-            loaded = current ?? throw new InvalidOperationException(
-                $"Agent '{agent.Name}' uses the current model, but no model is loaded.");
-            profile = currentProfile ?? _inference.Resolve(
-                loaded.Descriptor.Family.Id, loaded.Descriptor.Path, session: null);
-            borrowed = true;
-        }
-        else
-        {
-            IReadOnlyList<ModelDescriptor> models = await _catalog.RefreshAsync(
-                force: false, cancellationToken).ConfigureAwait(false);
-            ModelDescriptor descriptor = models.FirstOrDefault(model =>
-                string.Equals(model.Path, agent.ModelPath, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(model.FileName, agent.ModelPath, StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException(
-                    $"Agent '{agent.Name}' targets a model that is no longer in the catalog: {agent.ModelPath}");
-            profile = _inference.Resolve(descriptor.Family.Id, descriptor.Path, session: null);
-            loaded = await _host.LoadAsync(
-                descriptor, profile, progress: null, cancellationToken).ConfigureAwait(false);
-            borrowed = false;
-        }
+        (LoadedStudioModel loaded, ResolvedInference profile, bool borrowed) =
+            await ResolveModelAsync(agent, current, currentProfile, cancellationToken)
+                .ConfigureAwait(false);
 
         try
         {
@@ -230,6 +206,82 @@ public sealed class StudioAgentRunner
                     sessionCommands)
                     .ConfigureAwait(false);
             });
+    }
+
+    /// <summary>
+    /// Picks the first usable model in the agent chain. Local targets that are
+    /// missing from the catalog are skipped so the next target (often Inherit)
+    /// can run instead of making the agent unavailable.
+    /// </summary>
+    private async Task<(LoadedStudioModel Loaded, ResolvedInference Profile, bool Borrowed)>
+        ResolveModelAsync(
+            StudioAgentDefinition agent,
+            LoadedStudioModel? current,
+            ResolvedInference? currentProfile,
+            CancellationToken cancellationToken)
+    {
+        var failures = new List<string>();
+        IReadOnlyList<ModelDescriptor>? models = null;
+
+        foreach (AgentModelChoice choice in agent.EffectiveModelChain())
+        {
+            if (choice.Kind == AgentModelKind.Inherit)
+            {
+                if (current is null)
+                {
+                    failures.Add("inherit (no current model)");
+                    continue;
+                }
+
+                ResolvedInference inheritProfile = currentProfile ?? _inference.Resolve(
+                    current.Descriptor.Family.Id, current.Descriptor.Path, session: null);
+                return (current, inheritProfile, true);
+            }
+
+            if (choice.Kind != AgentModelKind.Local || string.IsNullOrWhiteSpace(choice.Model))
+            {
+                failures.Add($"{choice.Kind.ToString().ToLowerInvariant()} " +
+                    $"{choice.Model ?? choice.ProviderId ?? "?"} (not available here)");
+                continue;
+            }
+
+            models ??= await _catalog.RefreshAsync(force: false, cancellationToken)
+                .ConfigureAwait(false);
+            string needle = choice.Model.Trim();
+            ModelDescriptor? descriptor = models.FirstOrDefault(model =>
+                string.Equals(model.Path, needle, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(model.FileName, needle, StringComparison.OrdinalIgnoreCase));
+            if (descriptor is null || !File.Exists(descriptor.Path))
+            {
+                failures.Add($"local {needle} (missing)");
+                continue;
+            }
+
+            if (current is not null &&
+                string.Equals(current.Descriptor.Path, descriptor.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                ResolvedInference currentResolved = currentProfile ?? _inference.Resolve(
+                    current.Descriptor.Family.Id, current.Descriptor.Path, session: null);
+                return (current, currentResolved, true);
+            }
+
+            try
+            {
+                ResolvedInference profile = _inference.Resolve(
+                    descriptor.Family.Id, descriptor.Path, session: null);
+                LoadedStudioModel loaded = await _host.LoadAsync(
+                    descriptor, profile, progress: null, cancellationToken).ConfigureAwait(false);
+                return (loaded, profile, false);
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"local {needle} ({ex.GetType().Name}: {ex.Message})");
+            }
+        }
+
+        string tried = failures.Count == 0 ? "no targets" : string.Join(", ", failures);
+        throw new InvalidOperationException(
+            $"Agent '{agent.Name}' has no available model target. Tried: {tried}.");
     }
 
     private IChatSession CreateSession(

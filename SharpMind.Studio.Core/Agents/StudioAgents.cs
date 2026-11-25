@@ -1,12 +1,34 @@
+using System.Text.Json.Serialization;
 using SharpMind.Studio.Core.Serialization;
 using SharpMind.Studio.Core.Work;
 
 namespace SharpMind.Studio.Core.Agents;
 
+[JsonConverter(typeof(JsonStringEnumConverter<AgentModelKind>))]
+public enum AgentModelKind
+{
+    Inherit,
+    Local,
+    Remote,
+    Compute,
+}
+
+/// <summary>One fallback target in an agent's ordered model chain.</summary>
+public sealed record AgentModelChoice
+{
+    public AgentModelKind Kind { get; init; } = AgentModelKind.Inherit;
+
+    /// <summary>Local model path, remote model id or Compute model id.</summary>
+    public string? Model { get; init; }
+
+    /// <summary>Remote provider id or Compute host id. Null for inherit and local.</summary>
+    public string? ProviderId { get; init; }
+}
+
 /// <summary>
 /// A user-defined specialist the chat/work model can hand a self-contained task to.
-/// <see cref="ModelPath"/> null or empty means "run on the current model"; otherwise
-/// the Studio loads that model for the delegation and evicts it when idle.
+/// <see cref="ModelChain"/> is ordered: the first available target is used, and a
+/// missing local model falls through to the next entry. An empty chain means inherit.
 /// </summary>
 public sealed record StudioAgentDefinition
 {
@@ -24,8 +46,14 @@ public sealed record StudioAgentDefinition
     public string Description { get; init; } = "";
     public string Rules { get; init; } = "";
 
-    /// <summary>Full model path, or null/empty to use the chat's current model.</summary>
+    /// <summary>Legacy single local model path. Kept for spawn_agent and older files.</summary>
     public string? ModelPath { get; init; }
+
+    /// <summary>
+    /// Ordered fallback targets. Empty means inherit; a legacy <see cref="ModelPath"/>
+    /// is normalized to Local then Inherit when loaded.
+    /// </summary>
+    public List<AgentModelChoice> ModelChain { get; init; } = [];
 
     public float? Temperature { get; init; }
     public int? Seed { get; init; }
@@ -56,6 +84,28 @@ public sealed record StudioAgentDefinition
     public int MaxToolCalls { get; init; } = 10;
 
     public bool Enabled { get; init; } = true;
+
+    /// <summary>The effective ordered chain, with legacy fields mapped in.</summary>
+    public IReadOnlyList<AgentModelChoice> EffectiveModelChain()
+    {
+        if (ModelChain.Count > 0)
+            return [.. ModelChain.Where(IsUsableChoice)];
+
+        if (!string.IsNullOrWhiteSpace(ModelPath))
+        {
+            return
+            [
+                new AgentModelChoice { Kind = AgentModelKind.Local, Model = ModelPath.Trim() },
+                new AgentModelChoice { Kind = AgentModelKind.Inherit },
+            ];
+        }
+
+        return [new AgentModelChoice { Kind = AgentModelKind.Inherit }];
+    }
+
+    private static bool IsUsableChoice(AgentModelChoice choice) =>
+        choice.Kind == AgentModelKind.Inherit ||
+        !string.IsNullOrWhiteSpace(choice.Model);
 }
 
 public sealed record StudioAgentsDocument
@@ -98,6 +148,8 @@ public sealed class StudioAgentStore
                         AllowedTools = [.. (agent.AllowedTools ?? [])],
                         Permissions = agent.Permissions ?? StudioAgentDefinition.AskPermissions,
                         ToolPermissions = agent.ToolPermissions ?? new(),
+                        ModelChain = NormalizeChain(agent),
+                        ModelPath = FirstLocal(agent) ?? agent.ModelPath,
                     })],
             };
         }
@@ -117,13 +169,15 @@ public sealed class StudioAgentStore
         {
             string name = agent.Name.Trim();
             if (name.Length == 0 || !names.Add(name)) continue;
+            List<AgentModelChoice> chain = NormalizeChain(agent);
             agents.Add(agent with
             {
                 Id = string.IsNullOrWhiteSpace(agent.Id) ? Guid.NewGuid().ToString("n") : agent.Id.Trim(),
                 Name = name,
                 Description = agent.Description.Trim(),
                 Rules = agent.Rules.Trim(),
-                ModelPath = string.IsNullOrWhiteSpace(agent.ModelPath) ? null : agent.ModelPath.Trim(),
+                ModelPath = FirstLocal(agent with { ModelChain = chain }),
+                ModelChain = chain,
                 AllowedTools = [.. (agent.AllowedTools ?? []).Where(tool => !string.IsNullOrWhiteSpace(tool))],
                 Permissions = agent.Permissions ?? StudioAgentDefinition.AskPermissions,
                 TtlMinutes = Math.Clamp(agent.TtlMinutes, 0, 24 * 60),
@@ -136,4 +190,55 @@ public sealed class StudioAgentStore
             Agents = agents,
         });
     }
+
+    private static List<AgentModelChoice> NormalizeChain(StudioAgentDefinition agent)
+    {
+        var chain = new List<AgentModelChoice>();
+        foreach (AgentModelChoice choice in agent.ModelChain ?? [])
+        {
+            AgentModelKind kind = choice.Kind;
+            string? model = string.IsNullOrWhiteSpace(choice.Model) ? null : choice.Model.Trim();
+            string? provider = string.IsNullOrWhiteSpace(choice.ProviderId)
+                ? null
+                : choice.ProviderId.Trim();
+
+            if (kind != AgentModelKind.Inherit && model is null) continue;
+            if (kind is AgentModelKind.Remote or AgentModelKind.Compute && provider is null) continue;
+            if (chain.Any(existing => existing.Kind == kind &&
+                    string.Equals(existing.Model, model, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(existing.ProviderId, provider, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            chain.Add(new AgentModelChoice
+            {
+                Kind = kind,
+                Model = model,
+                ProviderId = provider,
+            });
+        }
+
+        if (chain.Count == 0)
+        {
+            if (!string.IsNullOrWhiteSpace(agent.ModelPath))
+            {
+                chain.Add(new AgentModelChoice
+                {
+                    Kind = AgentModelKind.Local,
+                    Model = agent.ModelPath.Trim(),
+                });
+            }
+
+            chain.Add(new AgentModelChoice { Kind = AgentModelKind.Inherit });
+        }
+
+        return chain;
+    }
+
+    private static string? FirstLocal(StudioAgentDefinition agent) =>
+        agent.ModelChain?
+            .FirstOrDefault(choice => choice.Kind == AgentModelKind.Local &&
+                !string.IsNullOrWhiteSpace(choice.Model))?
+            .Model;
 }
