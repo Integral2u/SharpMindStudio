@@ -391,45 +391,21 @@
     </summary>
     <div class="panel-body stack">
         <p class="small faint">
-            This is the same tool registry as <strong>Settings &gt; System</strong>. System tools
-            sets the defaults for new projects; the checkboxes here enable or disable a tool for
-            this project, and the grouped rows match the System tools groups. The model can only
-            call tools that are enabled for the project.
+            The same tool registry and four-state permissions as
+            <strong>Settings &gt; System</strong> and <strong>Settings &gt; Project</strong>.
+            System tools sets the defaults; the controls here override a tool for this project.
+            <strong>Off</strong> hides a tool from the model, <strong>Never</strong> keeps it            visible but refuses every call, <strong>Ask</strong> prompts, and
+            <strong>Always</strong> permits. Choose <strong>Inherit</strong> to clear an override
+            and follow the System default. Changes save automatically.
         </p>
-        @foreach (IGrouping<string, WorkToolInfo> group in Work.Tools.GroupBy(tool => tool.Group))
-        {
-            <details class="settings-subgroup" open>
-                <summary class="settings-subgroup-head">
-                    <div>
-                        <span class="eyebrow">@group.Key</span>
-                        <span class="faint small">@group.Count() tool(s)</span>
-                    </div>
-                </summary>
-                <div class="settings-subgroup-body stack">
-                    <div class="row">
-                        <button type="button" class="button"
-                                @onclick="() => SetGroupEnabled(group, true)">All</button>
-                        <button type="button" class="button"
-                                @onclick="() => SetGroupEnabled(group, false)">None</button>
-                    </div>
-                    <div class="work-tools">
-                        @foreach (WorkToolInfo tool in group)
-                        {
-                            string toolName = tool.Name;
-                            <label class="work-tool" title="@tool.Source">
-                                <input type="checkbox" checked="@Work.IsToolEnabled(toolName)"
-                                       @onchange="e => Work.SetToolEnabled(toolName, e.Value is bool enabled && enabled)" />
-                                <span class="mono">@tool.Name</span>
-                                @if (tool.IsPlugin)
-                                {
-                                    <span class="small faint">plugin</span>
-                                }
-                            </label>
-                        }
-                    </div>
-                </div>
-            </details>
-        }
+        <ToolPermissionEditor Value="_projectTools" ValueChanged="SaveProjectTools"
+                              AllowInherit="true" Effective="ProjectToolsEffective" />
+        <p class="small faint">
+            <strong>Internal</strong> tools ship with Studio and honour the project gate.
+            <strong>Plugin</strong> tools run their own code: Studio can hide them and can block
+            the file and web calls they route through the gate, but it cannot sandbox a process a
+            plugin starts itself.
+        </p>
     </div>
 </details>
 
@@ -512,23 +488,64 @@
 @code {
     private StudioAgentDefinition? _editing;
     private IReadOnlyList<ModelDescriptor> _models = [];
+    private ToolPermissionSet _projectTools = new();
 
     protected override async Task OnInitializedAsync()
     {
         Chat.Changed += OnChanged;
-        Work.Changed += OnChanged;
+        Work.Changed += OnWorkChanged;
         Agents.Changed += OnChanged;
+        LoadProjectTools();
         _models = await Catalog.RefreshAsync();
     }
 
     public void Dispose()
     {
         Chat.Changed -= OnChanged;
-        Work.Changed -= OnChanged;
+        Work.Changed -= OnWorkChanged;
         Agents.Changed -= OnChanged;
     }
 
     private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// Another panel can raise a project tool, for example when a permission prompt
+    /// chooses "Always allow". Mirror that in the editor.
+    /// </summary>
+    private void OnWorkChanged() => _ = InvokeAsync(() =>
+    {
+        LoadProjectTools();
+        StateHasChanged();
+    });
+
+    private void LoadProjectTools() => _projectTools = new ToolPermissionSet
+    {
+        Tools = new Dictionary<string, WorkToolPermission>(
+            Work.Settings.ToolPermissions.Tools, StringComparer.OrdinalIgnoreCase),
+        Groups = new Dictionary<string, WorkToolPermission>(
+            Work.Settings.ToolPermissions.Groups, StringComparer.OrdinalIgnoreCase),
+    };
+
+    private ToolPermissionValue ProjectToolsEffective(string tool, string? group) =>
+        Work.SystemToolPermission(tool, group);
+
+    private void SaveProjectTools(ToolPermissionSet permissions)
+    {
+        _projectTools = permissions;
+        Work.Save(
+            Work.Settings with
+            {
+                ToolPermissions = permissions,
+                DisabledTools = [.. permissions.Tools
+                    .Where(pair => pair.Value == WorkToolPermission.Off)
+                    .Select(pair => pair.Key)],
+                EnabledTools = [.. permissions.Tools
+                    .Where(pair => pair.Value != WorkToolPermission.Off)
+                    .Select(pair => pair.Key)],
+            },
+            Work.Memory);
+        _ = Chat.ReloadWorkContextAsync();
+    }
 
     private void Refresh() => StateHasChanged();
 
@@ -701,12 +718,6 @@
     {
         if (int.TryParse(args.Value?.ToString(), out int value))
             Agents.SetMaxDepth(value);
-    }
-
-    private void SetGroupEnabled(IEnumerable<WorkToolInfo> group, bool enabled)
-    {
-        foreach (WorkToolInfo tool in group)
-            Work.SetToolEnabled(tool.Name, enabled);
     }
 
     private void SaveAgent()

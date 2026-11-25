@@ -208,7 +208,8 @@
                 <li><strong>Availability</strong> chooses whether an agent is offered in Chat, Work, or both. Agents that are not available in the current mode are left out of the delegate list.</li>
                 <li><strong>Tool permissions</strong> use the same Inherit, Off, Never, Ask and Always controls as Settings → Family and Settings → Model. Unset tools inherit from the session, model, family, project and system layers; Off hides a tool entirely.</li>
                 <li><strong>Rules</strong> are the agent's system prompt. <strong>Purpose</strong> is the one-line description the parent sees.</li>
-                <li><strong>Allowed tools</strong> can inherit the enabled project tools or be narrowed to a checked set. The toolbox toggles which tools the project offers.</li>
+                <li><strong>Allowed tools</strong> are replaced by the four-state tool permission editor. Legacy allowed-tool lists still work but the editor offers a <em>Clear legacy list</em> button so the old filter does not disagree with the new controls.</li>
+                <li><strong>Project tools</strong> uses the same editor as Settings → System and Settings → Project. Choose Inherit to follow the System default, Off to hide a tool, Never to refuse it, Ask to prompt, and Always to permit. Changes save to the project immediately.</li>
                 <li><strong>File and web access</strong> is Ask, Allow or Deny per category. A new agent starts at Ask for read, write, delete and web, and an agent's answer never changes the project policy.</li>
                 <li><strong>spawn_agent</strong> lets the model create a temporary specialist from task-supplied name, rules, model and tools. The temporary agent uses the same Ask defaults.</li>
                 <li><strong>Max delegation depth</strong> bounds nested agent calls; a delegated agent can call the other enabled specialists until that depth is reached.</li>

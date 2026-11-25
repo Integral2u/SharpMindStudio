@@ -62,8 +62,10 @@ _Planned for 1.1.3._
   add, remove and reorder targets, and the table shows the effective chain. Each
   agent also chooses whether it is available in Chat, Work or both, and its tool
   permissions use the same Inherit/Off/Never/Ask/Always editor as Settings →
-  Family and Settings → Model. The page now frames the work agent as the delegate
-  between you and the specialists.
+  Family and Settings → Model. The Project tools panel uses that same editor for
+  the project layer, so a tool can be inherited, hidden, refused, prompted or
+  allowed without the old enable/disable checkboxes. The page now frames the work
+  agent as the delegate between you and the specialists.
 
 - **Archive and recover Work projects.** Work projects stay in the sidebar even
   with no sessions. The project actions dialog offers Archive and Delete
