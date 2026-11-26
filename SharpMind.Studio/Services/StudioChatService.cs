@@ -53,7 +53,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private LoadedStudioModel? _loaded;
 #if SHARPMIND_AUDIO
     private Lfm3AudioRuntime? _audioRuntime;
-    private Lfm3TtsRuntime? _ttsRuntime;
+    private ITtsRuntime? _ttsRuntime;
     private bool? _supportsAudio;
     private bool? _supportsTts;
     private bool? _isTtsModel;
@@ -193,8 +193,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private bool ComputeSupportsTts()
     {
         if (IsRemote || _model is null) return false;
-        string? projector = Lfm3AudioRuntime.FindProjector(_model.Path);
-        return projector is not null && Lfm3TtsRuntime.IsTtsProjector(projector);
+        return TtsProjector.Find(_model.Path) is not null;
     }
 
     /// <summary>
@@ -217,8 +216,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private bool ComputeIsTtsModel()
     {
         if (IsRemote || _model is null) return false;
-        string? projector = Lfm3AudioRuntime.FindProjector(_model.Path);
-        return projector is not null && Lfm3TtsRuntime.IsTtsProjector(projector);
+        return TtsProjector.Find(_model.Path) is not null;
     }
 
     /// <summary>True when the model has an audio encoder/projector, so attached audio can be transcribed.</summary>
@@ -329,16 +327,20 @@ public sealed class StudioChatService : IAsyncDisposable
 #if SHARPMIND_AUDIO
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         if (IsRemote || _loaded is null || _model is null)
-            throw new InvalidOperationException("Load a local LFM3-Audio model before synthesizing speech.");
-        if (!_loaded.Config.Architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase))
-            throw new NotSupportedException("This model is not an LFM3 text backbone.");
-        string projector = Lfm3AudioRuntime.FindProjector(_model.Path)
+            throw new InvalidOperationException("Load a local speech model before synthesizing speech.");
+
+        string architecture = _loaded.Config.Architecture ?? string.Empty;
+        bool zonos3 = architecture.StartsWith("zonos3", StringComparison.OrdinalIgnoreCase);
+        bool lfm3 = architecture.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase);
+        if (!zonos3 && !lfm3)
+            throw new NotSupportedException("This model has no native speech-output path.");
+
+        string projector = TtsProjector.Find(
+                _model.Path,
+                zonos3 ? Zonos3TtsRuntime.IsTtsProjector : Lfm3TtsRuntime.IsTtsProjector)
             ?? throw new NotSupportedException(
-                "No LFM3-Audio projector (mmproj) was found next to this model. " +
-                "Put mmproj-*.gguf in the model folder or its LFM3-Audio sibling folder.");
-        if (!Lfm3TtsRuntime.IsTtsProjector(projector))
-            throw new NotSupportedException(
-                "This projector has no speech-output weights (the depth decoder and LiquidCodec).");
+                "No speech-output projector (mmproj) was found next to this model. " +
+                "Put mmproj-*.gguf in the model folder or its sibling folder.");
 
         await _audioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -346,15 +348,31 @@ public sealed class StudioChatService : IAsyncDisposable
             // Each runtime dequantizes the projector; keep only one alive at a time.
             _audioRuntime?.Dispose();
             _audioRuntime = null;
-            _ttsRuntime ??= new Lfm3TtsRuntime(
-                _loaded.Model, _loaded.Tokenizer, _loaded.Config, projector);
-            ApplyTtsOptions(_ttsRuntime);
-            _ttsRuntime.FrameSampled = (index, _) =>
+            if (zonos3)
+            {
+                if (_ttsRuntime is not Zonos3TtsRuntime)
+                {
+                    _ttsRuntime?.Dispose();
+                    _ttsRuntime = new Zonos3TtsRuntime(
+                        _loaded.Model, _loaded.Tokenizer, _loaded.Config, projector);
+                }
+            }
+            else if (_ttsRuntime is not Lfm3TtsRuntime)
+            {
+                _ttsRuntime?.Dispose();
+                _ttsRuntime = new Lfm3TtsRuntime(
+                    _loaded.Model, _loaded.Tokenizer, _loaded.Config, projector);
+            }
+
+            ITtsRuntime runtime = _ttsRuntime
+                ?? throw new InvalidOperationException("The speech runtime was not created.");
+            ApplyTtsOptions(runtime);
+            runtime.FrameSampled = (index, _) =>
             {
                 _status = $"Synthesizing speech... frame {index}";
                 Notify();
             };
-            _ttsRuntime.EndOfSpeech = (index, _) =>
+            runtime.EndOfSpeech = (index, _) =>
             {
                 _status = $"Synthesizing speech... {index} frames";
                 Notify();
@@ -364,12 +382,12 @@ public sealed class StudioChatService : IAsyncDisposable
             Notify();
 
             float[] audio = await Task.Run(
-                () => _ttsRuntime.Synthesize(text, cancellationToken), cancellationToken).ConfigureAwait(false);
+                () => runtime.Synthesize(text, cancellationToken), cancellationToken).ConfigureAwait(false);
             if (audio.Length == 0)
                 throw new InvalidOperationException("The model produced no speech for this text.");
 
             using var buffer = new MemoryStream();
-            WavFile.Write(buffer, audio, Lfm3TtsRuntime.SampleRate);
+            WavFile.Write(buffer, audio, runtime.SampleRate);
             _status = "Speech ready.";
             return new ChatArtifact
             {
@@ -398,21 +416,31 @@ public sealed class StudioChatService : IAsyncDisposable
 
 #if SHARPMIND_AUDIO
     /// <summary>Applies the chat's speech overrides to the cached TTS runtime.</summary>
-    private void ApplyTtsOptions(Lfm3TtsRuntime runtime)
+    private void ApplyTtsOptions(ITtsRuntime runtime)
     {
         InferenceOverrides overrides = _document?.Overrides ?? new InferenceOverrides();
+        bool zonos3 = runtime is Zonos3TtsRuntime;
         runtime.Voice = string.IsNullOrWhiteSpace(overrides.TtsVoice)
-            ? "female"
+            ? (zonos3 ? Zonos3TtsRuntime.DefaultVoice : "female")
             : overrides.TtsVoice!;
-        runtime.Language = string.IsNullOrWhiteSpace(overrides.TtsLanguage)
-            ? "American English"
-            : overrides.TtsLanguage!;
-        runtime.MaxFrames = Math.Clamp(overrides.TtsMaxFrames ?? 128, 1, 512);
+        runtime.MaxFrames = Math.Clamp(
+            overrides.TtsMaxFrames ?? (zonos3 ? 256 : 128), 1, zonos3 ? 1024 : 512);
         runtime.Temperature = overrides.TtsTemperature is { } temperature
             ? Math.Clamp(temperature, 0.1f, 3f)
-            : 1.0f;
-        runtime.TopK = Math.Clamp(overrides.TtsTopK ?? 128, 1, 1024);
-        runtime.Seed = overrides.TtsSeed;
+            : (zonos3 ? 0.75f : 1.0f);
+
+        if (runtime is Lfm3TtsRuntime lfm)
+        {
+            lfm.Language = string.IsNullOrWhiteSpace(overrides.TtsLanguage)
+                ? "American English"
+                : overrides.TtsLanguage!;
+            lfm.TopK = Math.Clamp(overrides.TtsTopK ?? 128, 1, 1024);
+            lfm.Seed = overrides.TtsSeed;
+        }
+        else if (runtime is Zonos3TtsRuntime z3)
+        {
+            z3.Seed = overrides.TtsSeed;
+        }
     }
 #endif
 
