@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json.Nodes;
 using SharpMind.Inference.Chat;
@@ -15,7 +16,8 @@ public sealed class StudioA2uiService : IDisposable
     private readonly ThemeService _theme;
     private readonly McpServerHost _mcp;
     private readonly List<A2uiDocument> _pending = [];
-    private readonly Dictionary<string, A2uiDocument> _templates = new(StringComparer.Ordinal);
+    private readonly object _pendingGate = new();
+    private readonly ConcurrentDictionary<string, A2uiDocument> _templates = new(StringComparer.Ordinal);
 
     public StudioA2uiService(ThemeService theme, McpServerHost mcp)
     {
@@ -33,7 +35,7 @@ public sealed class StudioA2uiService : IDisposable
 
     public void Reset()
     {
-        _pending.Clear();
+        lock (_pendingGate) _pending.Clear();
         Store.Reset();
         Changed?.Invoke();
     }
@@ -41,15 +43,18 @@ public sealed class StudioA2uiService : IDisposable
     public void Enqueue(A2uiDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        _pending.Add(document);
+        lock (_pendingGate) _pending.Add(document);
     }
 
     public IReadOnlyList<A2uiDocument> DrainPending()
     {
-        if (_pending.Count == 0) return [];
-        A2uiDocument[] pending = [.. _pending];
-        _pending.Clear();
-        return pending;
+        lock (_pendingGate)
+        {
+            if (_pending.Count == 0) return [];
+            A2uiDocument[] pending = [.. _pending];
+            _pending.Clear();
+            return pending;
+        }
     }
 
     /// <summary>
@@ -365,7 +370,7 @@ public sealed class StudioA2uiService : IDisposable
                      .Where(key => key.StartsWith(serverId + "\u001f", StringComparison.Ordinal))
                      .ToList())
         {
-            _templates.Remove(key);
+            _templates.TryRemove(key, out _);
         }
     }
 }
