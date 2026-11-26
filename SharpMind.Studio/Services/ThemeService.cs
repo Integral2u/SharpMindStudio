@@ -18,7 +18,7 @@ public sealed class StudioSettings
     public string StudioHost { get; set; } = ThemeService.DefaultHost;
     public int StudioPort { get; set; } = ThemeService.DefaultPort;
     public bool CloseToTray { get; set; } = true;
-    public bool A2uiEnabled { get; set; }
+    public bool A2uiEnabled { get; set; } = true;
 }
 
 /// <summary>

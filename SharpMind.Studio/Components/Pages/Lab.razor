@@ -26,7 +26,6 @@
     <a class="settings-tab @(_tab == "visualizer" ? "selected" : "")" href="/lab?tab=visualizer" data-enhance-nav="false">Model visualizer</a>
     <a class="settings-tab @(_tab == "latent" ? "selected" : "")" href="/lab?tab=latent" data-enhance-nav="false">Latent space</a>
     <a class="settings-tab @(_tab == "agents" ? "selected" : "")" href="/lab?tab=agents" data-enhance-nav="false">Agents</a>
-    <a class="settings-tab @(_tab == "a2ui" ? "selected" : "")" href="/lab?tab=a2ui" data-enhance-nav="false">A2UI</a>
     <a class="settings-tab" style="margin-left:auto"
        href="https://integral2u.github.io/SharpMindStudio/wiki/labs.html"
        target="_blank" rel="noopener">Wiki guide</a>
@@ -48,10 +47,6 @@ else if (_tab == "latent")
 {
     <LatentSpaceLab />
 }
-else if (_tab == "a2ui")
-{
-    <A2uiLab />
-}
 else
 {
     <AgentsLab />
@@ -65,7 +60,7 @@ else
 
     protected override void OnParametersSet()
     {
-        _tab = TabQuery is "quantization" or "visualizer" or "latent" or "agents" or "a2ui" ? TabQuery : "layers";
+        _tab = TabQuery is "quantization" or "visualizer" or "latent" or "agents" ? TabQuery : "layers";
     }
 
     public void Dispose()

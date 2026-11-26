@@ -69,6 +69,28 @@
     </div>
 </details>
 
+<details class="panel settings-collapsible" open>
+    <summary class="panel-head">
+        <div>
+            <div class="eyebrow">UI &amp; Appearance</div>
+            <h2>Agent interfaces</h2>
+        </div>
+        <span class="faint small mono">@(Theme.A2uiEnabled ? "On" : "Off")</span>
+    </summary>
+    <div class="panel-body stack">
+        <label class="field grow">
+            <span class="field-label">A2UI interfaces in Chat and Work</span>
+            <input type="checkbox" checked="@Theme.A2uiEnabled" @onchange="SetA2uiAsync" />
+        </label>
+        <span class="small faint">
+            Agents can render small forms, choice cards and structured results with
+            native widgets. The payload is declarative and cannot execute code; a
+            button only sends an event back to the agent. Turn this off to keep every
+            reply text-only. Existing surfaces remain readable.
+        </span>
+    </div>
+</details>
+
 @code {
     protected override void OnInitialized() => Theme.Changed += OnThemeChanged;
 
@@ -78,6 +100,9 @@
 
     private Task SetAppearanceAsync(string appearance) =>
         Theme.SetThemeAsync(Theme.Theme, Theme.CustomColor, appearance);
+
+    private Task SetA2uiAsync(ChangeEventArgs args) =>
+        Theme.SetA2uiEnabledAsync(args.Value is bool enabled && enabled);
 
     private async Task ApplyCustomColorAsync(ChangeEventArgs args)
     {

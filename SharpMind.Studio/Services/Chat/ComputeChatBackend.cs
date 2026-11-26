@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using SharpMind.Inference.Chat;
+using SharpMind.Studio.Core.A2ui;
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Compute;
 
@@ -9,7 +10,9 @@ namespace SharpMind.Studio.Services.Chat;
 /// SharpMind Compute hosts expose plain OpenAI chat completions and are
 /// inference-only, so there is no tool loop here.
 /// </summary>
-public sealed class ComputeChatBackend(ComputeProviderService compute) : IChatBackend
+public sealed class ComputeChatBackend(
+    ComputeProviderService compute,
+    ThemeService theme) : IChatBackend
 {
     public string Provider => "compute";
 
@@ -35,12 +38,20 @@ public sealed class ComputeChatBackend(ComputeProviderService compute) : IChatBa
             ?? throw new InvalidOperationException("The Compute host has no model.");
 
         var messages = new List<JsonObject>();
-        if (!string.IsNullOrWhiteSpace(document.SystemPrompt))
+        string? systemPrompt = document.SystemPrompt;
+        if (theme.A2uiEnabled)
+        {
+            systemPrompt = string.IsNullOrWhiteSpace(systemPrompt)
+                ? A2uiPrompt.Text
+                : systemPrompt + "\n\n" + A2uiPrompt.Text;
+        }
+
+        if (!string.IsNullOrWhiteSpace(systemPrompt))
         {
             messages.Add(new JsonObject
             {
                 ["role"] = "system",
-                ["content"] = document.SystemPrompt,
+                ["content"] = systemPrompt,
             });
         }
 

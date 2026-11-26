@@ -1208,12 +1208,12 @@ public sealed class StudioChatService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Turns fenced A2UI blocks into surface artifacts. Work only in 1.1.3;
-    /// Chat keeps the plain transcript. Pending surfaces come from MCP tools.
+    /// Turns fenced A2UI blocks into surface artifacts. Pending surfaces come
+    /// from MCP tools. Runs in both Chat and Work.
     /// </summary>
     private void ApplyA2ui(IReadOnlyList<ChatMessage> messages, ChatMessage? assistant = null)
     {
-        if (!IsWorkMode || !_a2ui.Enabled) return;
+        if (!_a2ui.Enabled) return;
         _a2ui.ApplyToMessages(messages);
         ChatMessage? target = assistant
             ?? messages.LastOrDefault(message => message.Role == ChatRole.Agent);

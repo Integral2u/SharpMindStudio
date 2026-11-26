@@ -425,7 +425,7 @@ public sealed class StudioWorkService : IDisposable
         // the model needs to know when to hand off and what the specialist sees.
         builder.WithAdditionalSystemPrompt(AgentPromptText.Parent(agents));
 
-        if (work && _a2ui?.Enabled == true)
+        if (_a2ui?.Enabled == true)
             builder.WithAdditionalSystemPrompt(A2uiPrompt.Text);
 
         if (agents.Count > 0)
