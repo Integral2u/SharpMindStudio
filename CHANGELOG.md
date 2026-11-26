@@ -10,6 +10,16 @@ _Planned for 1.1.3._
 
 ### Added
 
+- **CPU repack controls and faster first token.** Full local loads now prebuild the
+  wide kernel repacks before the first token and show `Repacking weights x%` in the
+  load progress; Streaming loads skip the prebuild. The inference editor adds
+  **Prebuild wide repacks** (on by default), **Evict raw after repack** (off; full
+  loads only, one transformer per weights), and on the System profile the
+  process-wide **Byte Q4_K kernel** (off) and **Repack budget** (4 GiB default,
+  shared by cached models). The model cache key includes the new layout options.
+  The engine also moved top-p threshold selection to quickselect and releases
+  repack budget when a transformer is disposed.
+
 - **A2UI interfaces.** Google's declarative agent-to-UI protocol is on by default
   in Chat and Work. A model can emit a fenced `a2ui` block; Studio validates it,
   keeps the JSON in a chat artifact and renders native Text, Column, Row, Card,

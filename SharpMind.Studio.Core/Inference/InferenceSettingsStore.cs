@@ -55,6 +55,38 @@ public sealed class InferenceSettingsStore
         _document = Load();
         if (MigrateLegacyThroughputDefaults())
             SaveLocked();
+        if (MigrateKernelRepackDefaults())
+            SaveLocked();
+    }
+
+    private bool MigrateKernelRepackDefaults()
+    {
+        InferenceOverrides system = _document.System;
+        bool changed = false;
+
+        if (system.PrebuildWideRepacks is null)
+        {
+            system = system with { PrebuildWideRepacks = true };
+            changed = true;
+        }
+        if (system.EvictRawAfterRepack is null)
+        {
+            system = system with { EvictRawAfterRepack = false };
+            changed = true;
+        }
+        if (system.UseByteQ4K is null)
+        {
+            system = system with { UseByteQ4K = false };
+            changed = true;
+        }
+        if (system.MaxRepackBytes is null)
+        {
+            system = system with { MaxRepackBytes = 4L << 30 };
+            changed = true;
+        }
+
+        if (changed) _document.System = system;
+        return changed;
     }
 
     private bool MigrateLegacyThroughputDefaults()

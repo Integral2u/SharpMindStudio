@@ -212,6 +212,38 @@
                 always wins over inherited values.
             </p>
 
+            <h3>Kernel and load tuning</h3>
+            <p>
+                These options shape the local CPU layout. They do not affect remote or Compute
+                chats. Changing any of the per-load values makes the next open build a new cached
+                layout instead of reusing the old one.
+            </p>
+            <ul>
+                <li><strong>Prebuild wide repacks</strong> is on by default. A full load builds
+                    every block and head repack before the first token, moving the cost into the
+                    load phase and lowering time to first token. The load dialog shows
+                    <span class="mono">Repacking weights x%</span>. Streaming skips it, and the MTP
+                    draft head is still built lazily.</li>
+                <li><strong>Evict raw after repack</strong> is off by default. On a full load it
+                    drops block raw bytes once a complete repack exists, lowering resident memory.
+                    It is irreversible for that weights instance, so it needs one transformer per
+                    load and must not be used with a GPU engine, exporter or calibration path that
+                    reads block raw bytes. The LM head and tied embedding stay raw.</li>
+                <li><strong>Byte Q4_K kernel</strong> is off by default and process-wide. It routes
+                    Q4_K/Q4_K_S/Q4_K_M through the generic byte kernel. The repack is larger, so
+                    the shared budget can refuse it and the layer falls back to packed. Measure on
+                    this machine; Qwen3.5-2B improves, some 0.5B/3B models are neutral.</li>
+                <li><strong>Repack budget</strong> is process-wide, 4 GiB by default, and shared
+                    by every cached model's wide repacks. A large Gemma-4 Q4_0 byte repack can want
+                    about 10 GB; raise the budget only when RAM can hold the repack plus KV cache.
+                    Disposing idle models releases their share.</li>
+            </ul>
+            <p>
+                The wide kernels still require <strong>Parallel kernels</strong> and an FMA-class
+                CPU tier. The budget check is a fallback, not a failure: a refused layer keeps the
+                packed kernel instead of running out of memory.
+            </p>
+
             <h2 id="providers">Providers</h2>
             <p>
                 Providers holds local weights, OpenRouter, EuroRouter (beta), OpenCode Go,

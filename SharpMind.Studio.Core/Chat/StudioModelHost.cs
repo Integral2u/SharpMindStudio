@@ -235,8 +235,31 @@ public sealed class StudioModelHost : IDisposable
                 : new Progress<float>(value => progress.Report(
                     new ModelLoadProgress($"Loading weights {value:P0}", 0.1 + value * 0.75)));
             weights.InitializeWeights(weightProgress, cancellationToken);
+
+            // These two knobs are process-wide in the engine. Apply them under
+            // the host gate before the transformer builds any wide copies.
+            WideRepackBudget.MaxBytes = Math.Max(0, profile.MaxRepackBytes);
+            WideByteWeights.UseForQ4K = profile.UseByteQ4K;
+
+            bool full = loadMode == LoadMode.Full;
+            if (full && profile.EvictRawAfterRepack)
+                weights.ReleaseRawAfterRepack = true;
+
             progress?.Report(new ModelLoadProgress("Building transformer", 0.9));
             Transformer model = ModelFactory.CreateTransformer(weights, sharpConfig, mapping);
+
+            if (full && profile.PrebuildWideRepacks)
+            {
+                progress?.Report(new ModelLoadProgress("Repacking weights 0%", 0.90));
+                var repackProgress = progress is null
+                    ? null
+                    : new Progress<float>(value => progress.Report(
+                        new ModelLoadProgress(
+                            $"Repacking weights {value:P0}",
+                            0.90 + value * 0.08)));
+                model.PrebuildWideRepacks(repackProgress);
+            }
+
             progress?.Report(new ModelLoadProgress("Model ready", 1));
             return new LoadedStudioModel
             {
@@ -258,7 +281,10 @@ public sealed class StudioModelHost : IDisposable
     }
 
     private static string KeyFor(string path, ResolvedInference profile) =>
-        $"{Path.GetFullPath(path)}|{profile.LoadMode}|{profile.HardwareTier}|{profile.UseParallelKernels}|{profile.MaxParallelLoadDegree}";
+        $"{Path.GetFullPath(path)}|{profile.LoadMode}|{profile.HardwareTier}|" +
+        $"{profile.UseParallelKernels}|{profile.MaxParallelLoadDegree}|" +
+        $"{profile.EvictRawAfterRepack}|{profile.PrebuildWideRepacks}|" +
+        $"{profile.UseByteQ4K}|{profile.MaxRepackBytes}";
 }
 
 

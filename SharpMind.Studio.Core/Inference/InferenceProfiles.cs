@@ -12,6 +12,20 @@ public sealed record InferenceOverrides
     public string? HardwareTier { get; init; }
     public int? MaxParallelLoadDegree { get; init; }
     public bool? UseParallelKernels { get; init; }
+
+    /// <summary>Build every wide repack before the first token on full loads.</summary>
+    public bool? PrebuildWideRepacks { get; init; }
+
+    /// <summary>Drop block raw bytes after a complete repack on full loads.
+    /// Irreversible for the weights instance; keep the default off.</summary>
+    public bool? EvictRawAfterRepack { get; init; }
+
+    /// <summary>Process-wide opt-in: route Q4_K through the generic byte kernel.</summary>
+    public bool? UseByteQ4K { get; init; }
+
+    /// <summary>Process-wide repack budget in bytes; default 4 GiB.</summary>
+    public long? MaxRepackBytes { get; init; }
+
     public string? InferenceAccelerator { get; init; }
     public float? Temperature { get; init; }
     public int? TopK { get; init; }
@@ -89,6 +103,10 @@ public sealed record InferenceOverrides
         HardwareTier = "Auto",
         MaxParallelLoadDegree = 0,
         UseParallelKernels = true,
+        PrebuildWideRepacks = true,
+        EvictRawAfterRepack = false,
+        UseByteQ4K = false,
+        MaxRepackBytes = 4L << 30,
         Temperature = 0.6f,
         TopK = 0,
         TopP = 0.9f,
@@ -116,6 +134,10 @@ public sealed record ResolvedInference
     public required string HardwareTier { get; init; }
     public required int MaxParallelLoadDegree { get; init; }
     public required bool UseParallelKernels { get; init; }
+    public required bool PrebuildWideRepacks { get; init; }
+    public required bool EvictRawAfterRepack { get; init; }
+    public required bool UseByteQ4K { get; init; }
+    public required long MaxRepackBytes { get; init; }
     public string? InferenceAccelerator { get; init; }
     public required float Temperature { get; init; }
     public required int TopK { get; init; }
@@ -213,6 +235,10 @@ public static class InferenceResolver
             HardwareTier = String("HardwareTier", session?.HardwareTier, model?.HardwareTier, family?.HardwareTier, system.HardwareTier, "Auto"),
             MaxParallelLoadDegree = Value("MaxParallelLoadDegree", session?.MaxParallelLoadDegree, model?.MaxParallelLoadDegree, family?.MaxParallelLoadDegree, system.MaxParallelLoadDegree, 0),
             UseParallelKernels = Value("UseParallelKernels", session?.UseParallelKernels, model?.UseParallelKernels, family?.UseParallelKernels, system.UseParallelKernels, true),
+            PrebuildWideRepacks = Value("PrebuildWideRepacks", session?.PrebuildWideRepacks, model?.PrebuildWideRepacks, family?.PrebuildWideRepacks, system.PrebuildWideRepacks, true),
+            EvictRawAfterRepack = Value("EvictRawAfterRepack", session?.EvictRawAfterRepack, model?.EvictRawAfterRepack, family?.EvictRawAfterRepack, system.EvictRawAfterRepack, false),
+            UseByteQ4K = Value("UseByteQ4K", session?.UseByteQ4K, model?.UseByteQ4K, family?.UseByteQ4K, system.UseByteQ4K, false),
+            MaxRepackBytes = Value("MaxRepackBytes", session?.MaxRepackBytes, model?.MaxRepackBytes, family?.MaxRepackBytes, system.MaxRepackBytes, 4L << 30),
             InferenceAccelerator = String("InferenceAccelerator", session?.InferenceAccelerator, model?.InferenceAccelerator, family?.InferenceAccelerator, system.InferenceAccelerator, ""),
             Temperature = Value("Temperature", session?.Temperature, model?.Temperature, family?.Temperature, system.Temperature, 0.6f),
             TopK = Value("TopK", session?.TopK, model?.TopK, family?.TopK, system.TopK, 0),

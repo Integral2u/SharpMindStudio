@@ -7,6 +7,35 @@ namespace SharpMind.Studio.Tests;
 public sealed class InferenceProfileTests
 {
     [Fact]
+    public void Resolver_DefaultsKernelRepackOptions()
+    {
+        ResolvedInference value = InferenceResolver.Resolve(
+            InferenceOverrides.SystemDefaults(), null, null, null);
+
+        Assert.True(value.PrebuildWideRepacks);
+        Assert.False(value.EvictRawAfterRepack);
+        Assert.False(value.UseByteQ4K);
+        Assert.Equal(4L << 30, value.MaxRepackBytes);
+        Assert.Equal("System", value.Sources["PrebuildWideRepacks"]);
+        Assert.Equal("System", value.Sources["MaxRepackBytes"]);
+    }
+
+    [Fact]
+    public void Resolver_WalksKernelRepackLayers()
+    {
+        var system = InferenceOverrides.SystemDefaults();
+        var family = new InferenceOverrides { PrebuildWideRepacks = false };
+        var model = new InferenceOverrides { EvictRawAfterRepack = true };
+
+        ResolvedInference value = InferenceResolver.Resolve(system, family, model, null);
+
+        Assert.False(value.PrebuildWideRepacks);
+        Assert.Equal("Family", value.Sources["PrebuildWideRepacks"]);
+        Assert.True(value.EvictRawAfterRepack);
+        Assert.Equal("Model", value.Sources["EvictRawAfterRepack"]);
+    }
+
+    [Fact]
     public void Resolver_WalksSessionModelFamilyThenSystem()
     {
         var system = InferenceOverrides.SystemDefaults();
