@@ -10,6 +10,19 @@ _Planned for 1.1.3._
 
 ### Added
 
+- **A2UI interfaces (experimental).** Labs has an A2UI tab that previews Google's
+  declarative agent-to-UI protocol and controls the Work integration. In Work, a
+  model can emit a fenced `a2ui` block; Studio validates it, keeps the JSON in a
+  chat artifact and renders native Text, Column, Row, Card, Divider, List, Button,
+  TextField, CheckBox and ChoicePicker components. Fields bind with JSON Pointer,
+  buttons produce events rather than executing tools, and reopening a chat restores
+  the surface. MCP tools can also return `application/a2ui+json` resources with
+  `_meta.ui.resourceUri`; Studio caches the template, applies `updateDataModel` and
+  routes button events to the server's `a2ui_action` tool. Payload size, nesting,
+  component count and data model size are capped. Custom catalogs, scripts, HTML,
+  external media and direct `callMcpTool` actions are not accepted. The feature is
+  off until enabled in Labs > A2UI.
+
 - **Microsoft Store availability.** SharpMind Studio is now listed in the
   Microsoft Store. The site, wiki and README point there for the primary
   download; the MSI and ZIP remain on GitHub Releases for direct and offline

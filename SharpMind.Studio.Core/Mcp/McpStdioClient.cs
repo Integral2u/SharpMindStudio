@@ -55,5 +55,14 @@ public sealed class McpStdioClient : IAsyncDisposable
         CancellationToken cancellationToken = default) =>
         _client.CallToolAsync(tool, arguments, cancellationToken);
 
+    public Task<IReadOnlyList<McpResourceInfo>> ListResourcesAsync(
+        CancellationToken cancellationToken = default) =>
+        _client.ListResourcesAsync(cancellationToken);
+
+    public Task<IReadOnlyList<McpResourceContent>> ReadResourceAsync(
+        string uri,
+        CancellationToken cancellationToken = default) =>
+        _client.ReadResourceAsync(uri, cancellationToken);
+
     public ValueTask DisposeAsync() => _client.DisposeAsync();
 }

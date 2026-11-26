@@ -11,6 +11,7 @@ using SharpMind.Model.Audio;
 using SharpMind.Model.Vision;
 #endif
 using SharpMind.Studio.Core.Agents;
+using SharpMind.Studio.Core.A2ui;
 using SharpMind.Studio.Core.Chat;
 using SharpMind.Studio.Core.Compute;
 using SharpMind.Studio.Core.Inference;
@@ -39,6 +40,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private readonly StudioDeviceAccess _device;
     private readonly StudioPluginService _plugins;
     private readonly ThemeService _theme;
+    private readonly StudioA2uiService _a2ui;
     private readonly StudioSafetyService _safety;
     private readonly EmbeddedPluginHost _embedded;
     private readonly ModelToolPermissionStore _modelTools;
@@ -70,6 +72,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private string? _cacheWarning;
     private bool _streaming;
     private bool _loading;
+    private bool _a2uiActionInFlight;
     private double? _loadProgress;
     private string? _loadDetail;
     private CancellationTokenSource? _loadCts;
@@ -90,6 +93,7 @@ public sealed class StudioChatService : IAsyncDisposable
         StudioDeviceAccess device,
         StudioPluginService plugins,
         ThemeService theme,
+        StudioA2uiService a2ui,
         StudioSafetyService safety,
         EmbeddedPluginHost embedded,
         ModelToolPermissionStore modelTools,
@@ -110,6 +114,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _device = device;
         _plugins = plugins;
         _theme = theme;
+        _a2ui = a2ui;
         _safety = safety;
         _embedded = embedded;
         _modelTools = modelTools;
@@ -131,6 +136,7 @@ public sealed class StudioChatService : IAsyncDisposable
     public ResolvedInference? Resolved => _resolved;
     public bool IsStreaming => _streaming;
     public bool IsLoading => _loading;
+    public bool IsA2uiActionInFlight => _a2uiActionInFlight;
     public bool IsOpenRouter => string.Equals(_document?.Provider, "openrouter", StringComparison.OrdinalIgnoreCase);
     public bool IsCompute => string.Equals(_document?.Provider, "compute", StringComparison.OrdinalIgnoreCase);
     public bool IsRemote => IsOpenRouter || IsCompute;
@@ -1019,6 +1025,7 @@ public sealed class StudioChatService : IAsyncDisposable
                 _streamCts?.Dispose();
                 _streamCts = null;
                 _streaming = false;
+                ApplyA2ui(_document.Messages);
                 await SaveSnapshotAsync().ConfigureAwait(false);
                 Notify();
             }
@@ -1106,6 +1113,7 @@ public sealed class StudioChatService : IAsyncDisposable
             _streaming = false;
             DisposeSession(_session);
             _session = null;
+            ApplyA2ui(_document.Messages);
             await SaveSnapshotAsync().ConfigureAwait(false);
             Notify();
         }
@@ -1192,10 +1200,24 @@ public sealed class StudioChatService : IAsyncDisposable
             _streamCts?.Dispose();
             _streamCts = null;
             _streaming = false;
+            ApplyA2ui(_document.Messages, assistant);
             _store.Save(_document);
             if (computeTurn) _activity.EndChat(computeProvider);
             Notify();
         }
+    }
+
+    /// <summary>
+    /// Turns fenced A2UI blocks into surface artifacts. Work only in 1.1.3;
+    /// Chat keeps the plain transcript. Pending surfaces come from MCP tools.
+    /// </summary>
+    private void ApplyA2ui(IReadOnlyList<ChatMessage> messages, ChatMessage? assistant = null)
+    {
+        if (!IsWorkMode || !_a2ui.Enabled) return;
+        _a2ui.ApplyToMessages(messages);
+        ChatMessage? target = assistant
+            ?? messages.LastOrDefault(message => message.Role == ChatRole.Agent);
+        if (target is not null) _a2ui.AttachPending(target);
     }
 
     /// <summary>
@@ -1208,6 +1230,90 @@ public sealed class StudioChatService : IAsyncDisposable
         if (_document is null) return;
         if (string.IsNullOrWhiteSpace(assistant.Content) && assistant.Metadata is null)
             _document.Messages.Remove(assistant);
+    }
+
+    /// <summary>
+    /// Sends a rendered-interface action back to the agent as a normal user
+    /// turn. The action never executes a tool directly; the usual permission
+    /// gate still applies to anything the agent decides to do next.
+    /// </summary>
+    public async Task SubmitA2uiActionAsync(A2uiActionRequest action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        if (_document is null || _streaming || _loading || _a2uiActionInFlight) return;
+
+        string text = FormatA2uiAction(action);
+        if (action.Origin.Equals("mcp", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(action.ServerId) &&
+            !string.IsNullOrWhiteSpace(action.ActionTool))
+        {
+            await SubmitMcpActionAsync(action, text).ConfigureAwait(false);
+            return;
+        }
+
+        await SendAsync(text).ConfigureAwait(false);
+    }
+
+    private async Task SubmitMcpActionAsync(A2uiActionRequest action, string text)
+    {
+        if (_document is null) return;
+        _a2uiActionInFlight = true;
+        _status = "Applying interface action...";
+        Notify();
+        try
+        {
+            string summary = await _a2ui
+                .ExecuteMcpActionAsync(action)
+                .ConfigureAwait(false);
+
+            ChatMessage user = ChatMessage.User(text, "You");
+            ChatMessage assistant = ChatMessage.Agent(
+                string.IsNullOrWhiteSpace(summary) ? "Action sent." : summary,
+                "A2UI");
+            _a2ui.AttachPending(assistant);
+            _document.Messages.Add(user);
+            _document.Messages.Add(assistant);
+            _store.Save(_document);
+            _status = "Interface action applied.";
+        }
+        catch (InvalidOperationException)
+        {
+            // The server may have gone idle; let the agent reconnect and call it.
+            _a2uiActionInFlight = false;
+            await SendAsync(text).ConfigureAwait(false);
+            return;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _status = "Interface action failed.";
+        }
+        finally
+        {
+            _a2uiActionInFlight = false;
+            Notify();
+        }
+    }
+
+    private static string FormatA2uiAction(A2uiActionRequest action)
+    {
+        var payload = new JsonObject
+        {
+            ["name"] = action.Name,
+            ["surfaceId"] = action.SurfaceId,
+            ["sourceComponentId"] = action.SourceComponentId,
+            ["context"] = action.Context.DeepClone(),
+        };
+        if (action.DataModel is not null)
+            payload["dataModel"] = action.DataModel.DeepClone();
+
+        string json = payload.ToJsonString();
+        if (json.Length > 64_000)
+        {
+            payload.Remove("dataModel");
+            json = payload.ToJsonString();
+        }
+        return $"UI action: {action.Name}\n{json}";
     }
 
     public void Stop()

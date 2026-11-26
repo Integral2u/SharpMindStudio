@@ -18,6 +18,7 @@ public sealed class StudioSettings
     public string StudioHost { get; set; } = ThemeService.DefaultHost;
     public int StudioPort { get; set; } = ThemeService.DefaultPort;
     public bool CloseToTray { get; set; } = true;
+    public bool A2uiEnabled { get; set; }
 }
 
 /// <summary>
@@ -63,6 +64,7 @@ public sealed class ThemeService
         StudioHost = settings.StudioHost;
         StudioPort = settings.StudioPort;
         CloseToTray = settings.CloseToTray;
+        A2uiEnabled = settings.A2uiEnabled;
 
         // A custom colour saved for one appearance may be unusable in the other
         // (near-white on a white surface, near-black on a dark one). Move it to
@@ -87,6 +89,7 @@ public sealed class ThemeService
     public string StudioHost { get; private set; }
     public int StudioPort { get; private set; }
     public bool CloseToTray { get; private set; }
+    public bool A2uiEnabled { get; private set; }
 
     // --accent is declared on :root in app.css, so overriding only
     // --accent-rgb on the themed element would leave the inherited, already-computed
@@ -204,6 +207,13 @@ public sealed class ThemeService
         Changed?.Invoke();
     }
 
+    public async Task SetA2uiEnabledAsync(bool enabled, CancellationToken cancellationToken = default)
+    {
+        A2uiEnabled = enabled;
+        await SaveSettingsAsync(cancellationToken);
+        Changed?.Invoke();
+    }
+
     private StudioSettings Snapshot() => new()
     {
         Theme = Theme,
@@ -217,6 +227,7 @@ public sealed class ThemeService
         StudioHost = StudioHost,
         StudioPort = StudioPort,
         CloseToTray = CloseToTray,
+        A2uiEnabled = A2uiEnabled,
     };
 
     private async Task SaveSettingsAsync(CancellationToken cancellationToken)

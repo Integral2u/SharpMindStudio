@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using SharpMind.Inference.Agent;
 using SharpMind.Studio.Core.Agents;
+using SharpMind.Studio.Core.A2ui;
 using SharpMind.Studio.Core.Mcp;
 using SharpMind.Studio.Core.Vault;
 using SharpMind.Studio.Core.Work;
@@ -70,6 +71,7 @@ public sealed class StudioWorkService : IDisposable
     private readonly StudioAgentService _agents;
     private readonly InferenceSettingsService _inference;
     private readonly SharpMind.Studio.Core.Mcp.McpServerHost _mcp;
+    private readonly StudioA2uiService? _a2ui;
     private readonly ISecretResolver _secrets;
     private readonly StudioSafetyService? _safety;
     private readonly Lock _gate = new();
@@ -91,7 +93,7 @@ public sealed class StudioWorkService : IDisposable
     /// <summary>The tool-call gate for the running turn, inherited by delegated agents.</summary>
     private IToolCallFilter? _activeFilter;
 
-    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents, InferenceSettingsService inference, SharpMind.Studio.Core.Mcp.McpServerHost mcp, ISecretResolver secrets, StudioSafetyService? safety = null)
+    public StudioWorkService(StudioWorkspaceService workspace, SystemWorkSkillsService systemSkills, WorkToolService tools, StudioDeviceAccess device, StudioAgentService agents, InferenceSettingsService inference, SharpMind.Studio.Core.Mcp.McpServerHost mcp, ISecretResolver secrets, StudioSafetyService? safety = null, StudioA2uiService? a2ui = null)
     {
         _workspace = workspace;
         _systemSkills = systemSkills;
@@ -100,6 +102,7 @@ public sealed class StudioWorkService : IDisposable
         _agents = agents;
         _inference = inference;
         _mcp = mcp;
+        _a2ui = a2ui;
         _secrets = secrets ?? NullSecretResolver.Instance;
         _safety = safety;
         _store = new WorkSettingsStore(workspace.Project.Root);
@@ -422,6 +425,9 @@ public sealed class StudioWorkService : IDisposable
         // the model needs to know when to hand off and what the specialist sees.
         builder.WithAdditionalSystemPrompt(AgentPromptText.Parent(agents));
 
+        if (work && _a2ui?.Enabled == true)
+            builder.WithAdditionalSystemPrompt(A2uiPrompt.Text);
+
         if (agents.Count > 0)
         {
             // Studio runs every delegated agent itself so it can apply the agent's
@@ -572,7 +578,7 @@ public sealed class StudioWorkService : IDisposable
                 info.Description,
                 schema,
                 arguments => CallMcpToolAsync(
-                    serverId, mcpTool, tool.Name, arguments, permission));
+                    serverId, mcpTool, tool.Name, info.Meta, arguments, permission));
         }
     }
 
@@ -591,6 +597,7 @@ public sealed class StudioWorkService : IDisposable
         string serverId,
         string tool,
         string toolName,
+        JsonNode? toolMeta,
         JsonObject arguments,
         Func<WorkToolAccess, Task<bool>> permission)
     {
@@ -616,7 +623,26 @@ public sealed class StudioWorkService : IDisposable
                 .CallAsync(serverId, tool, arguments)
                 .ConfigureAwait(false);
 
-            return result.IsError ? $"MCP error: {result.Text}" : result.Text;
+            if (result.IsError)
+                return $"MCP error: {result.Text}";
+
+            if (_a2ui is not null && _a2ui.Enabled)
+            {
+                try
+                {
+                    string? summary = await _a2ui
+                        .AcceptMcpResultAsync(serverId, result, toolMeta)
+                        .ConfigureAwait(false);
+                    if (summary is not null) return summary;
+                }
+                catch (Exception)
+                {
+                    // A malformed surface must not break the tool call; fall back
+                    // to the server's text.
+                }
+            }
+
+            return result.Text;
         }
         catch (SecretMissingException ex)
         {

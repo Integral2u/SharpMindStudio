@@ -37,7 +37,11 @@ while (Console.ReadLine() is { } line)
             Reply(id, new JsonObject
             {
                 ["protocolVersion"] = "2024-11-05",
-                ["capabilities"] = new JsonObject { ["tools"] = new JsonObject() },
+                ["capabilities"] = new JsonObject
+                {
+                    ["tools"] = new JsonObject(),
+                    ["resources"] = new JsonObject(),
+                },
                 ["serverInfo"] = new JsonObject
                 {
                     ["name"] = "fake-mcp",
@@ -68,6 +72,38 @@ while (Console.ReadLine() is { } line)
                     Tool("fail", "Returns an isError result", null),
                     Tool("error", "Returns a JSON-RPC error", null),
                     Tool("crash", "Writes to stderr and exits", null),
+                    A2uiTool("a2ui", "Returns an A2UI surface", "prompt"),
+                    Tool("a2ui_action", "Handles an A2UI action", "name"),
+                },
+            });
+            break;
+
+        case "resources/list":
+            Reply(id, new JsonObject
+            {
+                ["resources"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["uri"] = "a2ui://card",
+                        ["name"] = "A2UI card template",
+                        ["mimeType"] = "application/a2ui+json",
+                    },
+                },
+            });
+            break;
+
+        case "resources/read":
+            Reply(id, new JsonObject
+            {
+                ["contents"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["uri"] = "a2ui://card",
+                        ["mimeType"] = "application/a2ui+json",
+                        ["text"] = A2uiTemplate(),
+                    },
                 },
             });
             break;
@@ -154,6 +190,44 @@ static void CallTool(JsonNode? id, JsonObject? parameters)
             Environment.Exit(3);
             break;
 
+        case "a2ui":
+            Reply(id, new JsonObject
+            {
+                ["content"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["type"] = "text",
+                        ["text"] = "Rendered an A2UI card.",
+                    },
+                    new JsonObject
+                    {
+                        ["type"] = "resource",
+                        ["resource"] = new JsonObject
+                        {
+                            ["uri"] = "a2ui://card/data",
+                            ["mimeType"] = "application/a2ui+json",
+                            ["text"] = A2uiUpdate(),
+                        },
+                    },
+                },
+                ["_meta"] = new JsonObject
+                {
+                    ["ui"] = new JsonObject
+                    {
+                        ["resourceUri"] = "a2ui://card",
+                        ["mimeType"] = "application/a2ui+json",
+                    },
+                },
+            });
+            break;
+
+        case "a2ui_action":
+            Reply(id, Text(
+                $"action {arguments["name"]?.GetValue<string>() ?? ""} on "
+                + $"{arguments["surfaceId"]?.GetValue<string>() ?? ""}"));
+            break;
+
         default:
             Respond(new JsonObject
             {
@@ -193,6 +267,64 @@ static JsonObject Tool(string name, string description, string? argument) => new
             ["required"] = new JsonArray(argument),
         },
 };
+
+static JsonObject A2uiTool(string name, string description, string argument)
+{
+    JsonObject tool = Tool(name, description, argument);
+    tool["_meta"] = new JsonObject
+    {
+        ["ui"] = new JsonObject
+        {
+            ["resourceUri"] = "a2ui://card",
+            ["mimeType"] = "application/a2ui+json",
+        },
+    };
+    return tool;
+}
+
+static string A2uiTemplate() => """
+    [
+      {
+        "version": "1.0",
+        "createSurface": {
+          "surfaceId": "fake_card",
+          "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+          "sendDataModel": true
+        }
+      },
+      {
+        "version": "1.0",
+        "updateComponents": {
+          "surfaceId": "fake_card",
+          "components": [
+            { "id": "root", "component": "Card", "child": "column" },
+            { "id": "column", "component": "Column", "children": [ "title", "confirm" ] },
+            { "id": "title", "component": "Text", "text": { "@path": "/title" } },
+            {
+              "id": "confirm",
+              "component": "Button",
+              "child": "confirm_text",
+              "action": { "event": { "name": "confirm", "context": { "title": { "@path": "/title" } } } }
+            },
+            { "id": "confirm_text", "component": "Text", "text": "Confirm" }
+          ]
+        }
+      }
+    ]
+    """;
+
+static string A2uiUpdate() => """
+    [
+      {
+        "version": "1.0",
+        "updateDataModel": {
+          "surfaceId": "fake_card",
+          "path": "/",
+          "value": { "title": "Fake card" }
+        }
+      }
+    ]
+    """;
 
 static void Reply(JsonNode? id, JsonNode result) =>
     Respond(new JsonObject

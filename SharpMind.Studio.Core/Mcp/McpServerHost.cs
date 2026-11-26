@@ -28,6 +28,12 @@ public sealed class McpServerHost : IAsyncDisposable
     private readonly IMcpAccessTokenProvider? _tokens;
     private readonly TimeProvider _time;
 
+    /// <summary>Capabilities advertised to every MCP server, e.g. A2UI catalogs.</summary>
+    public JsonObject? ClientCapabilities { get; set; }
+
+    /// <summary>Per-call <c>_meta</c> for stateless HTTP servers.</summary>
+    public JsonObject? CallMeta { get; set; }
+
     public McpServerHost()
         : this(NullSecretResolver.Instance, null, TimeProvider.System)
     {
@@ -96,6 +102,8 @@ public sealed class McpServerHost : IAsyncDisposable
                 $"Running MCP server '{server.Name}' needs the Run permission for this project.");
 
         McpServerClient client = McpClientFactory.Create(server, _secrets, _tokens);
+        client.Capabilities = ClientCapabilities;
+        client.CallMeta = CallMeta;
         try
         {
             await client.InitializeAsync(cancellationToken).ConfigureAwait(false);
@@ -140,6 +148,43 @@ public sealed class McpServerHost : IAsyncDisposable
 
         return await entry.Client
             .CallToolAsync(tool, arguments, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<McpResourceInfo>> ListResourcesAsync(
+        string serverId,
+        CancellationToken cancellationToken = default)
+    {
+        Entry entry;
+        lock (_gate)
+        {
+            if (!_running.TryGetValue(serverId, out Entry? found))
+                throw new InvalidOperationException($"MCP server '{serverId}' is not connected.");
+            entry = found;
+            _running[serverId] = entry with { LastUsed = _time.GetUtcNow() };
+        }
+
+        return await entry.Client
+            .ListResourcesAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<McpResourceContent>> ReadResourceAsync(
+        string serverId,
+        string uri,
+        CancellationToken cancellationToken = default)
+    {
+        Entry entry;
+        lock (_gate)
+        {
+            if (!_running.TryGetValue(serverId, out Entry? found))
+                throw new InvalidOperationException($"MCP server '{serverId}' is not connected.");
+            entry = found;
+            _running[serverId] = entry with { LastUsed = _time.GetUtcNow() };
+        }
+
+        return await entry.Client
+            .ReadResourceAsync(uri, cancellationToken)
             .ConfigureAwait(false);
     }
 

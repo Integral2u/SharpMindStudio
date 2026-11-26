@@ -1,0 +1,298 @@
+@using System.Globalization
+@using System.Text.Json.Nodes
+@using SharpMind.Studio.Core.A2ui
+@using SharpMind.Studio.Services
+@inject MarkdownService Markdown
+
+@if (Host is null || Depth > A2uiProtocol.MaxDepth)
+{
+    <div class="a2ui-fallback">This interface is nested too deeply.</div>
+}
+else if (TryComponent(out A2uiComponent? component) && component is not null)
+{
+    @switch (component.Type)
+    {
+        case "Text":
+            <div class="a2ui-text @TextClass(component)">@((MarkupString)Markdown.ToHtml(TextOf(component)))</div>
+            break;
+
+        case "Column":
+            <div class="a2ui-column" style="@LayoutStyle(component)">
+                @foreach (A2uiChild child in Children(component))
+                {
+                    <A2uiNode ComponentId="@child.ComponentId" Scope="@child.Scope" Depth="@(Depth + 1)" @key="child.Key" />
+                }
+            </div>
+            break;
+
+        case "Row":
+            <div class="a2ui-row" style="@LayoutStyle(component)">
+                @foreach (A2uiChild child in Children(component))
+                {
+                    <A2uiNode ComponentId="@child.ComponentId" Scope="@child.Scope" Depth="@(Depth + 1)" @key="child.Key" />
+                }
+            </div>
+            break;
+
+        case "Card":
+            <div class="a2ui-card">
+                @if (FirstChild(component) is { } cardChild)
+                {
+                    <A2uiNode ComponentId="@cardChild.ComponentId" Scope="@cardChild.Scope"
+                              Depth="@(Depth + 1)" @key="cardChild.Key" />
+                }
+            </div>
+            break;
+
+        case "Divider":
+            <div class="a2ui-divider @(component.GetString("axis") == "vertical" ? "vertical" : "horizontal")"></div>
+            break;
+
+        case "List":
+            <div class="a2ui-list @(component.GetString("direction") == "horizontal" ? "horizontal" : "vertical")">
+                @foreach (A2uiChild child in Children(component))
+                {
+                    <A2uiNode ComponentId="@child.ComponentId" Scope="@child.Scope" Depth="@(Depth + 1)" @key="child.Key" />
+                }
+            </div>
+            break;
+
+        case "Button":
+            <button type="button" class="button a2ui-button @ButtonClass(component)"
+                    disabled="@Host.Disabled" @onclick="() => SubmitAsync(component)">
+                @if (FirstChild(component) is { } buttonChild)
+                {
+                    <A2uiNode ComponentId="@buttonChild.ComponentId" Scope="@buttonChild.Scope"
+                              Depth="@(Depth + 1)" @key="buttonChild.Key" />
+                }
+            </button>
+            break;
+
+        case "TextField":
+            <div class="a2ui-field">
+                @if (LabelOf(component) is { Length: > 0 } fieldLabel)
+                {
+                    <label class="field-label">@fieldLabel</label>
+                }
+                @if (component.GetString("variant") == "longText")
+                {
+                    <textarea class="input textarea" value="@ValueOf(component)"
+                              @oninput="e => SetText(component, e.Value)"></textarea>
+                }
+                else
+                {
+                    <input class="input" type="@InputType(component)" value="@ValueOf(component)"
+                           @oninput="e => SetText(component, e.Value)" />
+                }
+            </div>
+            break;
+
+        case "CheckBox":
+            <label class="a2ui-check">
+                <input type="checkbox"
+                       checked="@Host.Store.ResolveBool(component.GetNode("value"), Scope)"
+                       @onchange="e => SetBool(component, e.Value)" />
+                <span>@LabelOf(component)</span>
+            </label>
+            break;
+
+        case "ChoicePicker":
+            <div class="a2ui-choice">
+                @foreach ((string optionLabel, string optionValue) in Options(component))
+                {
+                    bool selected = SelectedValues(component).Contains(optionValue, StringComparer.Ordinal);
+                    <label class="a2ui-choice-option">
+                        <input type="@(IsMultiple(component) ? "checkbox" : "radio")"
+                               name="@ChoiceName(component)"
+                               checked="@selected"
+                               @onchange="e => ToggleChoice(component, optionValue, e.Value)" />
+                        <span>@optionLabel</span>
+                    </label>
+                }
+            </div>
+            break;
+
+        default:
+            <div class="a2ui-fallback">Unsupported component: @component.Type</div>
+            break;
+    }
+}
+else
+{
+    <div class="a2ui-fallback">Missing component: @ComponentId</div>
+}
+
+@code {
+    [CascadingParameter] private A2uiSurfaceView? Host { get; set; }
+
+    [Parameter] public string ComponentId { get; set; } = "";
+    [Parameter] public A2uiScope Scope { get; set; } = A2uiScope.ForSurface(new JsonObject());
+    [Parameter] public int Depth { get; set; }
+
+    private IReadOnlyList<A2uiChild> Children(A2uiComponent component) =>
+        Host?.Children(component, Scope) ?? [];
+
+    private bool TryComponent(out A2uiComponent? component)
+    {
+        component = null;
+        if (Host is null) return false;
+        if (!Host.Store.TryGet(Host.SurfaceId, out A2uiSurface? surface)) return false;
+        return surface.Components.TryGetValue(ComponentId, out component);
+    }
+
+    private A2uiChild? FirstChild(A2uiComponent component) => Children(component).FirstOrDefault();
+
+    private string TextOf(A2uiComponent component) =>
+        Host?.Store.ResolveString(component.GetNode("text"), Scope) ?? "";
+
+    private string? LabelOf(A2uiComponent component) =>
+        Host?.Store.ResolveString(component.GetNode("label"), Scope);
+
+    private string ValueOf(A2uiComponent component) =>
+        Host?.Store.ResolveString(component.GetNode("value"), Scope) ?? "";
+
+    private static string TextClass(A2uiComponent component) => component.GetString("variant") switch
+    {
+        "caption" => "a2ui-caption",
+        "h1" => "a2ui-h1",
+        "h2" => "a2ui-h2",
+        "h3" => "a2ui-h3",
+        _ => "",
+    };
+
+    private static string ButtonClass(A2uiComponent component) => component.GetString("variant") switch
+    {
+        "primary" => "primary",
+        "borderless" => "a2ui-button-borderless",
+        _ => "",
+    };
+
+    private static string InputType(A2uiComponent component) => component.GetString("variant") switch
+    {
+        "number" => "number",
+        "obscured" => "password",
+        _ => "text",
+    };
+
+    private static string LayoutStyle(A2uiComponent component)
+    {
+        var parts = new List<string>();
+        if (component.GetString("justify") is { } justify)
+            parts.Add("justify-content:" + MapJustify(justify));
+        if (component.GetString("align") is { } align)
+            parts.Add("align-items:" + MapAlign(align));
+        if (component.GetNumber("weight") is { } weight && weight > 0)
+            parts.Add("flex:" + weight.ToString(CultureInfo.InvariantCulture));
+        return string.Join(";", parts);
+    }
+
+    private static string MapJustify(string value) => value switch
+    {
+        "center" => "center",
+        "end" => "flex-end",
+        "spaceBetween" => "space-between",
+        "spaceAround" => "space-around",
+        "spaceEvenly" => "space-evenly",
+        _ => "flex-start",
+    };
+
+    private static string MapAlign(string value) => value switch
+    {
+        "center" => "center",
+        "end" => "flex-end",
+        "stretch" => "stretch",
+        _ => "flex-start",
+    };
+
+    private static bool IsMultiple(A2uiComponent component) =>
+        !string.Equals(component.GetString("variant"), "mutuallyExclusive",
+            StringComparison.OrdinalIgnoreCase);
+
+    private string ChoiceName(A2uiComponent component) =>
+        $"a2ui-{Host?.SurfaceId}-{component.Id}";
+
+    private IReadOnlyList<(string Label, string Value)> Options(A2uiComponent component)
+    {
+        if (component.Raw["options"] is not JsonArray options) return [];
+        var result = new List<(string Label, string Value)>();
+        foreach (JsonNode? node in options)
+        {
+            if (node is not JsonObject option) continue;
+            string? value = Host?.Store.ResolveString(option["value"], Scope);
+            if (string.IsNullOrWhiteSpace(value)) continue;
+            string? label = Host?.Store.ResolveString(option["label"], Scope);
+            result.Add((label ?? value, value));
+        }
+        return result;
+    }
+
+    private IReadOnlyList<string> SelectedValues(A2uiComponent component) =>
+        Host?.Store.ResolveStringList(component.GetNode("value"), Scope) ?? [];
+
+    private string? BindPath(A2uiComponent component) =>
+        component.Raw["value"] is JsonObject binding &&
+        binding["@path"] is JsonValue path &&
+        path.TryGetValue<string>(out string? value)
+            ? value
+            : null;
+
+    private void SetText(A2uiComponent component, object? value)
+    {
+        string? path = BindPath(component);
+        if (path is null || Host is null) return;
+
+        string text = value?.ToString() ?? "";
+        if (component.GetString("variant") == "number" &&
+            double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double number))
+        {
+            Host.SetValue(path, JsonValue.Create(number));
+            return;
+        }
+        Host.SetValue(path, JsonValue.Create(text));
+    }
+
+    private void SetBool(A2uiComponent component, object? value)
+    {
+        string? path = BindPath(component);
+        if (path is null || Host is null) return;
+        Host.SetValue(path, JsonValue.Create(value is bool flag && flag));
+    }
+
+    private void ToggleChoice(A2uiComponent component, string value, object? changed)
+    {
+        string? path = BindPath(component);
+        if (path is null || Host is null) return;
+
+        bool selected = changed is bool flag && flag;
+        var values = new JsonArray();
+        if (IsMultiple(component))
+        {
+            foreach (string current in SelectedValues(component))
+            {
+                if (string.Equals(current, value, StringComparison.Ordinal))
+                {
+                    if (selected) values.Add(current);
+                }
+                else
+                {
+                    values.Add(current);
+                }
+            }
+            if (selected && !SelectedValues(component).Contains(value, StringComparer.Ordinal))
+                values.Add(value);
+        }
+        else if (selected)
+        {
+            values.Add(value);
+        }
+
+        Host.SetValue(path, values);
+    }
+
+    private Task SubmitAsync(A2uiComponent component)
+    {
+        if (Host?.Surface is not { } surface) return Task.CompletedTask;
+        A2uiActionRequest? action = Host.Store.CreateAction(surface, component, Scope);
+        return action is null ? Task.CompletedTask : Host.SubmitAsync(action);
+    }
+}

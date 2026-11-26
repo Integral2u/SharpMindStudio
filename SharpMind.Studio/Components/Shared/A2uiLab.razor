@@ -1,0 +1,221 @@
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using SharpMind.Studio.Core.A2ui
+@using SharpMind.Studio.Services
+@inject ThemeService Theme
+
+<div class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Interface</div>
+            <h2>A2UI playground</h2>
+        </div>
+        <label class="field a2ui-enable">
+            <span class="field-label">Enable A2UI in Work</span>
+            <input type="checkbox" checked="@_enabled" @onchange="ToggleAsync" />
+        </label>
+    </div>
+    <div class="panel-body stack">
+        <p class="small faint">
+            A2UI is a declarative interface protocol: the model describes components and
+            data bindings, and Studio renders them with its own widgets. Nothing here is
+            executable; buttons only produce an event that can be sent back to the agent.
+            The Work integration is experimental and off until this is enabled.
+        </p>
+
+        <div class="row">
+            <button type="button" class="button primary" @onclick="RenderAsync">Render</button>
+            <button type="button" class="button" @onclick="LoadExample">Reset example</button>
+            <span class="status-line">@_status</span>
+        </div>
+
+        @if (_errors.Count > 0)
+        {
+            <div class="error-line">
+                @foreach (string error in _errors)
+                {
+                    <div>@error</div>
+                }
+            </div>
+        }
+
+        @if (_warnings.Count > 0)
+        {
+            <details class="settings-subgroup" open>
+                <summary class="settings-subgroup-head">Warnings (@_warnings.Count)</summary>
+                <div class="settings-subgroup-body stack">
+                    @foreach (string warning in _warnings)
+                    {
+                        <div class="small faint">@warning</div>
+                    }
+                </div>
+            </details>
+        }
+
+        <div class="field">
+            <label class="field-label" for="a2ui-json">A2UI 1.0 messages</label>
+            <textarea id="a2ui-json" class="textarea a2ui-json" spellcheck="false"
+                      @bind="_json" @bind:event="oninput"></textarea>
+        </div>
+
+        @if (_surfaceId.Length > 0)
+        {
+            <div class="a2ui-preview">
+                <A2uiSurfaceView Store="_store" SurfaceId="@_surfaceId" OnAction="OnAction" />
+            </div>
+        }
+
+        @if (_actionJson.Length > 0)
+        {
+            <div class="field">
+                <div class="spread">
+                    <span class="field-label">Last action</span>
+                    <span class="small faint">This is what a Work turn would send to the agent.</span>
+                </div>
+                <pre class="a2ui-action">@_actionJson</pre>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private const string Example = """
+        [
+          {
+            "version": "1.0",
+            "createSurface": {
+              "surfaceId": "lab_form",
+              "catalogId": "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json",
+              "sendDataModel": true,
+              "dataModel": { "name": "Ada", "agents": [ "Qwen" ], "notify": true }
+            }
+          },
+          {
+            "version": "1.0",
+            "updateComponents": {
+              "surfaceId": "lab_form",
+              "components": [
+                { "id": "root", "component": "Column", "children": [ "title", "intro", "name", "agents", "notify", "actions" ] },
+                { "id": "title", "component": "Text", "text": "## New agent", "variant": "h2" },
+                { "id": "intro", "component": "Text", "text": "Choose a name and a model family. This preview does not save anything.", "variant": "caption" },
+                { "id": "name", "component": "TextField", "label": "Name", "value": { "@path": "/name" } },
+                {
+                  "id": "agents",
+                  "component": "ChoicePicker",
+                  "label": "Model family",
+                  "variant": "mutuallyExclusive",
+                  "options": [
+                    { "label": "Qwen", "value": "Qwen" },
+                    { "label": "Llama", "value": "Llama" },
+                    { "label": "Gemma", "value": "Gemma" }
+                  ],
+                  "value": { "@path": "/agents" }
+                },
+                { "id": "notify", "component": "CheckBox", "label": "Notify when the run finishes", "value": { "@path": "/notify" } },
+                { "id": "actions", "component": "Row", "children": [ "save", "reset" ] },
+                {
+                  "id": "save",
+                  "component": "Button",
+                  "variant": "primary",
+                  "child": "save_text",
+                  "action": { "event": { "name": "save_agent", "context": { "name": { "@path": "/name" }, "agents": { "@path": "/agents" } } } }
+                },
+                { "id": "save_text", "component": "Text", "text": "Create agent" },
+                {
+                  "id": "reset",
+                  "component": "Button",
+                  "variant": "borderless",
+                  "child": "reset_text",
+                  "action": { "event": { "name": "reset", "context": {} } }
+                },
+                { "id": "reset_text", "component": "Text", "text": "Reset" }
+              ]
+            }
+          }
+        ]
+        """;
+
+    private A2uiSurfaceStore _store = new();
+    private string _surfaceId = "";
+    private string _json = Example;
+    private string _status = "Ready.";
+    private string _actionJson = "";
+    private IReadOnlyList<string> _errors = [];
+    private IReadOnlyList<string> _warnings = [];
+    private bool _enabled;
+
+    protected override void OnInitialized()
+    {
+        _enabled = Theme.A2uiEnabled;
+        Render();
+    }
+
+    private async Task ToggleAsync(ChangeEventArgs args)
+    {
+        _enabled = args.Value is bool enabled && enabled;
+        await Theme.SetA2uiEnabledAsync(_enabled);
+        _status = _enabled
+            ? "A2UI is enabled for Work."
+            : "A2UI is disabled; the preview still works.";
+    }
+
+    private Task RenderAsync()
+    {
+        Render();
+        return Task.CompletedTask;
+    }
+
+    private void Render()
+    {
+        _errors = [];
+        _warnings = [];
+        _actionJson = "";
+
+        A2uiParseResult parsed = A2uiParser.Parse(_json);
+        if (!parsed.Success)
+        {
+            _errors = parsed.Errors;
+            _status = "The payload could not be parsed.";
+            return;
+        }
+
+        var document = new A2uiDocument { Origin = "lab", Messages = parsed.Messages };
+        A2uiValidationResult validation = A2uiValidator.Validate(document);
+        _warnings = validation.Warnings;
+        if (!validation.Success)
+        {
+            _errors = validation.Errors;
+            _status = "The payload did not pass validation.";
+            return;
+        }
+
+        _store = new A2uiSurfaceStore();
+        _store.ApplyOnce(document);
+        _surfaceId = document.SurfaceId ?? "";
+        _status = _surfaceId.Length == 0
+            ? "The payload did not create a surface."
+            : $"Rendered surface '{_surfaceId}'.";
+    }
+
+    private void LoadExample()
+    {
+        _json = Example;
+        Render();
+    }
+
+    private void OnAction(A2uiActionRequest action)
+    {
+        var payload = new JsonObject
+        {
+            ["name"] = action.Name,
+            ["surfaceId"] = action.SurfaceId,
+            ["sourceComponentId"] = action.SourceComponentId,
+            ["context"] = action.Context.DeepClone(),
+        };
+        if (action.DataModel is not null)
+            payload["dataModel"] = action.DataModel.DeepClone();
+
+        _actionJson = payload.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        _status = $"Action '{action.Name}' received.";
+    }
+}

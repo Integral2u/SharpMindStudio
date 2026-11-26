@@ -56,6 +56,7 @@
             <a href="#command-line">Command line</a>
             <a href="#skills">Skills</a>
             <a href="#loop">The work loop</a>
+            <a href="#interfaces">A2UI interfaces</a>
             <a href="#providers">Model providers</a>
             <a href="#safety">Safety</a>
             <a href="#problems">Problems</a>
@@ -338,6 +339,22 @@
                 command, not everything the program touches. Keep Command access on
                 <strong>Restricted</strong> unless you deliberately need to run unlisted programs.
             </div>
+
+            <h2 id="interfaces">A2UI interfaces</h2>
+            <p>
+                When A2UI is enabled in <strong>Labs &gt; A2UI</strong>, the Work model can return
+                a small declarative interface instead of only prose: a form, a choice card or a
+                structured result. Studio renders it with native widgets and keeps the JSON in the
+                chat artifact. Fields use JSON Pointer bindings, and a button sends an event back
+                to the agent as a normal user turn; it never executes a tool by itself.
+            </p>
+            <p>
+                MCP tools that return <span class="mono">application/a2ui+json</span> resources are
+                rendered too, with the server name shown above the surface. Buttons call the
+                server's <span class="mono">a2ui_action</span> tool when it exists, otherwise the
+                action becomes an agent turn. The feature is experimental, off by default, and
+                limited to the basic catalog subset; unsupported components appear as a placeholder.
+            </p>
 
             <h2 id="providers">Model providers</h2>
             <div class="table-wrap">

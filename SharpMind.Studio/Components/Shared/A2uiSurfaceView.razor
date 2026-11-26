@@ -1,0 +1,87 @@
+@using System.Text.Json.Nodes
+@using SharpMind.Studio.Core.A2ui
+@implements IDisposable
+
+<div class="a2ui-surface @(Disabled ? "is-disabled" : "")" data-surface="@SurfaceId">
+    <div class="a2ui-origin">
+        <span class="eyebrow">Generated interface</span>
+        @if (surface is { Origin: "mcp", ServerId: { Length: > 0 } server })
+        {
+            <span class="a2ui-origin-badge">MCP: @server</span>
+        }
+    </div>
+    @if (surface?.Root is not null)
+    {
+        <div class="a2ui-body">
+            <CascadingValue Value="this" IsFixed="false">
+                <A2uiNode ComponentId="root" Scope="_scope" Depth="0" />
+            </CascadingValue>
+        </div>
+    }
+    else
+    {
+        <div class="a2ui-fallback">This interface could not be rendered.</div>
+    }
+</div>
+
+@code {
+    private A2uiSurfaceStore _store = new();
+    private A2uiScope _scope = A2uiScope.ForSurface(new JsonObject());
+    private A2uiSurface? surface;
+
+    [Parameter] public A2uiSurfaceStore Store { get; set; } = new();
+    [Parameter] public string SurfaceId { get; set; } = "";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback<A2uiActionRequest> OnAction { get; set; }
+
+    public A2uiSurface? Surface => surface;
+    public bool IsMcp => string.Equals(surface?.Origin, "mcp", StringComparison.OrdinalIgnoreCase);
+
+    protected override void OnInitialized() => Attach();
+
+    protected override void OnParametersSet() => Attach();
+
+    public void Dispose()
+    {
+        _store.Changed -= OnStoreChanged;
+    }
+
+    private void Attach()
+    {
+        if (!ReferenceEquals(_store, Store))
+        {
+            _store.Changed -= OnStoreChanged;
+            _store = Store;
+            _store.Changed += OnStoreChanged;
+        }
+        Refresh();
+    }
+
+    private void OnStoreChanged() => _ = InvokeAsync(() =>
+    {
+        Refresh();
+        StateHasChanged();
+    });
+
+    private void Refresh()
+    {
+        if (Store.TryGet(SurfaceId, out A2uiSurface found))
+        {
+            surface = found;
+            _scope = A2uiScope.ForSurface(found.DataModel);
+        }
+        else
+        {
+            surface = null;
+            _scope = A2uiScope.ForSurface(new JsonObject());
+        }
+    }
+
+    public IReadOnlyList<A2uiChild> Children(A2uiComponent component, A2uiScope scope) =>
+        surface is null ? [] : Store.Children(surface, component, scope);
+
+    public void SetValue(string path, JsonNode? value) =>
+        Store.SetDataModel(SurfaceId, path, value);
+
+    public Task SubmitAsync(A2uiActionRequest action) =>
+        Disabled ? Task.CompletedTask : OnAction.InvokeAsync(action);}

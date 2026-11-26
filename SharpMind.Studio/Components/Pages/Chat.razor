@@ -2,6 +2,7 @@
 @page "/chat/{ChatId}"
 @implements IDisposable
 @using SharpMind.Inference.Chat
+@using SharpMind.Studio.Core.A2ui
 @using SharpMind.Studio.Core.Chat
 @using SharpMind.Studio.Core.Compute
 @using SharpMind.Studio.Core.Inference
@@ -13,6 +14,7 @@
 @using SharpMind.Studio.Services
 @using System.Text
 @inject StudioChatService ChatService
+@inject StudioA2uiService A2ui
 @inject InferenceSettingsService Inference
 @inject OpenRouterSettingsService OpenRouter
 @inject ComputeProviderService Compute
@@ -537,37 +539,55 @@ else
                             {
                                 @if (streaming)
                                 {
-                                    <div class="chat-text chat-streaming">@message.Content</div>
+                                    <div class="chat-text chat-streaming">@A2uiText.HideStreaming(message.Content)</div>
                                 }
                                 else if (ShowAgentText(message) || message.Artifacts is { Length: > 0 })
                                 {
-                                    <div class="chat-text markdown">
-                                        @if (!string.IsNullOrWhiteSpace(message.Content))
+                                    ChatArtifact[] a2uiArtifacts =
+                                        [.. (message.Artifacts ?? []).Where(A2uiArtifact.IsA2ui)];
+                                    ChatArtifact[] fileArtifacts =
+                                        [.. (message.Artifacts ?? []).Where(item => !A2uiArtifact.IsA2ui(item))];
+                                    @if (ShowAgentText(message) || fileArtifacts.Length > 0)
+                                    {
+                                        <div class="chat-text markdown">
+                                            @if (!string.IsNullOrWhiteSpace(message.Content))
+                                            {
+                                                <button type="button" class="chat-copy"
+                                                        data-copy="@message.Content"
+                                                        onclick="studioChat.copyFrom(this)"
+                                                        title="Copy message"
+                                                        aria-label="Copy message">
+                                                    <svg class="copy-glyph" viewBox="0 0 16 16" width="14" height="14"
+                                                         fill="none" stroke="currentColor" stroke-width="1.3"
+                                                         stroke-linecap="round" stroke-linejoin="round"
+                                                         aria-hidden="true">
+                                                        <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+                                                        <path d="M10.5 5.5V3.5A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5h2" />
+                                                    </svg>
+                                                    <span class="copy-done" aria-hidden="true">&#10003;</span>
+                                                </button>
+                                            }
+                                            @if (fileArtifacts.Length > 0)
+                                            {
+                                                <ChatArtifacts Artifacts="fileArtifacts" />
+                                            }
+                                            @if (ShowAgentText(message))
+                                            {
+                                                @((MarkupString)Markdown.ToHtml(message.Content))
+                                            }
+                                        </div>
+                                    }
+                                    @foreach (ChatArtifact artifact in a2uiArtifacts)
+                                    {
+                                        if (!_latestA2ui.Contains(artifact)) continue;
+                                        if (A2uiArtifact.TryRead(artifact, out A2uiDocument document, out _))
                                         {
-                                            <button type="button" class="chat-copy"
-                                                    data-copy="@message.Content"
-                                                    onclick="studioChat.copyFrom(this)"
-                                                    title="Copy message"
-                                                    aria-label="Copy message">
-                                                <svg class="copy-glyph" viewBox="0 0 16 16" width="14" height="14"
-                                                     fill="none" stroke="currentColor" stroke-width="1.3"
-                                                     stroke-linecap="round" stroke-linejoin="round"
-                                                     aria-hidden="true">
-                                                    <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
-                                                    <path d="M10.5 5.5V3.5A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5h2" />
-                                                </svg>
-                                                <span class="copy-done" aria-hidden="true">&#10003;</span>
-                                            </button>
+                                            <A2uiSurfaceView Store="A2ui.Store"
+                                                             SurfaceId="@(document.SurfaceId ?? "")"
+                                                             Disabled="@(ChatService.IsStreaming || ChatService.IsLoading || ChatService.IsA2uiActionInFlight)"
+                                                             OnAction="SubmitA2uiActionAsync" />
                                         }
-                                        @if (message.Artifacts is { Length: > 0 })
-                                        {
-                                            <ChatArtifacts Artifacts="message.Artifacts" />
-                                        }
-                                        @if (ShowAgentText(message))
-                                        {
-                                            @((MarkupString)Markdown.ToHtml(message.Content))
-                                        }
-                                    </div>
+                                    }
                                 }
                             }
                             else
@@ -1192,6 +1212,8 @@ else
     private IReadOnlyList<ModelDescriptor> _models = [];
     private IReadOnlyList<RunSummary> _runs = [];
     private IReadOnlyList<ChatMessage> _messages = [];
+    private HashSet<ChatArtifact> _latestA2ui = [];
+    private string? _a2uiChatId;
     private RunSummary? _latestModelRun;
     private ToolCapabilityState _toolState = new(ToolCapability.Untested, null, null);
     private bool _allowUnverifiedTools;
@@ -1440,7 +1462,15 @@ else
 
     private void SyncFromChat()
     {
+        string? chatId = ChatService.Document?.Id;
+        if (!string.Equals(chatId, _a2uiChatId, StringComparison.Ordinal))
+        {
+            A2ui.Reset();
+            _a2uiChatId = chatId;
+        }
+
         _messages = ChatService.DisplayMessages;
+        LoadA2ui();
         _startingNew = ChatService.Document is null;
         if (ChatService.Document is not null)
         {
@@ -1470,6 +1500,26 @@ else
             UpdateLatestModelRun();
         }
     }
+
+    private void LoadA2ui()
+    {
+        var latest = new Dictionary<string, ChatArtifact>(StringComparer.Ordinal);
+        foreach (ChatMessage message in _messages)
+        {
+            foreach (ChatArtifact artifact in message.Artifacts ?? [])
+            {
+                if (!A2uiArtifact.IsA2ui(artifact)) continue;
+                if (!A2uiArtifact.TryRead(artifact, out A2uiDocument document, out _)) continue;
+                A2ui.Store.ApplyOnce(document);
+                if (document.SurfaceId is { Length: > 0 } surfaceId)
+                    latest[surfaceId] = artifact;
+            }
+        }
+        _latestA2ui = [.. latest.Values];
+    }
+
+    private Task SubmitA2uiActionAsync(A2uiActionRequest action) =>
+        ChatService.SubmitA2uiActionAsync(action);
 
     private async Task StartNewChatAsync()
     {

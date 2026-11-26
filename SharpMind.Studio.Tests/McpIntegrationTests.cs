@@ -23,7 +23,7 @@ public sealed class McpIntegrationTests
         await client.InitializeAsync();
         IReadOnlyList<McpToolInfo> tools = await client.ListToolsAsync();
 
-        Assert.Equal(6, tools.Count);
+        Assert.Equal(8, tools.Count);
         Assert.Contains(tools, tool => tool.Name == "echo");
         McpToolInfo echo = Assert.Single(tools, tool => tool.Name == "echo");
         Assert.Equal("Echoes the text argument", echo.Description);
@@ -35,6 +35,43 @@ public sealed class McpIntegrationTests
 
         Assert.False(result.IsError);
         Assert.Equal("hello", result.Text);
+    }
+
+    [Fact]
+    public async Task Client_ReadsA2uiMetadataContentPartsAndResources()
+    {
+        await using McpStdioClient client = McpStdioClient.Start(Server());
+        await client.InitializeAsync();
+
+        IReadOnlyList<McpToolInfo> tools = await client.ListToolsAsync();
+        McpToolInfo a2ui = Assert.Single(tools, tool => tool.Name == "a2ui");
+        Assert.NotNull(a2ui.Meta);
+        Assert.Equal("a2ui://card",
+            a2ui.Meta!["ui"]!["resourceUri"]!.GetValue<string>());
+
+        McpToolResult result = await client.CallToolAsync("a2ui", null);
+        Assert.False(result.IsError);
+        Assert.Contains("Rendered an A2UI card.", result.Text);
+        McpContentPart resource = Assert.Single(
+            result.Content, part => part.Type == "resource");
+        Assert.Equal("application/a2ui+json", resource.MimeType);
+        Assert.Contains("updateDataModel", resource.Text ?? "");
+        Assert.Equal("a2ui://card",
+            result.Meta!["ui"]!["resourceUri"]!.GetValue<string>());
+
+        IReadOnlyList<McpResourceInfo> resources = await client.ListResourcesAsync();
+        McpResourceInfo card = Assert.Single(resources);
+        Assert.Equal("a2ui://card", card.Uri);
+        Assert.Equal("application/a2ui+json", card.MimeType);
+
+        IReadOnlyList<McpResourceContent> contents =
+            await client.ReadResourceAsync("a2ui://card");
+        Assert.Contains("createSurface", Assert.Single(contents).Text ?? "");
+
+        McpToolResult action = await client.CallToolAsync(
+            "a2ui_action",
+            new JsonObject { ["name"] = "confirm", ["surfaceId"] = "fake-card" });
+        Assert.Equal("action confirm on fake-card", action.Text);
     }
 
     [Fact]
@@ -211,7 +248,7 @@ public sealed class McpIntegrationTests
         await client.InitializeAsync();
 
         IReadOnlyList<McpToolInfo> tools = await client.ListToolsAsync();
-        Assert.Equal(6, tools.Count);
+        Assert.Equal(8, tools.Count);
     }
 
     private static McpServerSettings Server(int idleSeconds = 300) =>

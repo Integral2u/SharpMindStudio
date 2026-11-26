@@ -4,6 +4,7 @@ using SharpMind.Studio.Services;
 using SharpMind.Studio.Services.Chat;
 using SharpMind.Studio.Core.Storage;
 using SharpMind.Studio.Core.Compute;
+using SharpMind.Studio.Core.A2ui;
 using SharpMind.Studio.Core.Gateway;
 using SharpMind.Studio.Core.HuggingFace;
 using SharpMind.Studio.Core.OpenRouter;
@@ -135,6 +136,7 @@ builder.Services.AddSingleton<StudioLatentService>();
 builder.Services.AddScoped<StudioDeviceAccess>();
 builder.Services.AddScoped<PathPickerService>();
 builder.Services.AddScoped<StudioWorkService>();
+builder.Services.AddScoped<StudioA2uiService>();
 builder.Services.AddScoped<StudioChatService>();
 builder.Services.AddScoped<DataFactoryService>();
 builder.Services.AddScoped<HuggingFaceService>();
@@ -144,6 +146,10 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var app = builder.Build();
+
+var mcpHost = app.Services.GetRequiredService<SharpMind.Studio.Core.Mcp.McpServerHost>();
+mcpHost.ClientCapabilities = A2uiMcp.Capabilities();
+mcpHost.CallMeta = A2uiMcp.CallMeta();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
