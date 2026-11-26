@@ -711,17 +711,19 @@ else
                         <div class="panel-head" style="margin-top:.75rem">
                             <div>
                                 <div class="eyebrow">Speech</div>
-                                <h2>LFM3-Audio TTS</h2>
+                                <h2>Text-to-Speech</h2>
                             </div>
                             <span class="faint small mono">empty fields use the checkpoint defaults</span>
                         </div>
                         <div class="row">
                             <div class="field">
                                 <label class="field-label">Voice</label>
-                                <select class="input" value="@(_sessionDraft.TtsVoice ?? "female")"
-                                        @onchange="e => _sessionDraft = _sessionDraft with { TtsVoice = e.Value?.ToString() }">
-                                    <option value="female">female</option>
-                                    <option value="male">male</option>
+                                <select class="input" value="@(_sessionDraft.TtsVoice ?? ChatService.DefaultTtsVoice)"
+                                        @onchange="e => _sessionDraft = _sessionDraft with { TtsVoice = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString() }">
+                                    @foreach (string voice in ChatService.TtsVoiceOptions)
+                                    {
+                                        <option value="@voice">@voice</option>
+                                    }
                                 </select>
                             </div>
                             <div class="field grow">
@@ -757,9 +759,8 @@ else
                             </div>
                         </div>
                         <div class="small faint">
-                            The LFM3-Audio checkpoint is trained on a female voice; male is
-                            available but less consistently covered. Empty fields keep the
-                            checkpoint defaults (female, American English, 128 frames).
+                            Choose a voice from the loaded model's projector. Empty fields keep
+                            the runtime defaults.
                         </div>
 
                         <div class="panel-head" style="margin-top:.75rem">

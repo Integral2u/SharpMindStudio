@@ -54,6 +54,7 @@ public sealed class StudioChatService : IAsyncDisposable
 #if SHARPMIND_AUDIO
     private Lfm3AudioRuntime? _audioRuntime;
     private ITtsRuntime? _ttsRuntime;
+    private IReadOnlyList<string>? _ttsVoiceOptions;
     private bool? _supportsAudio;
     private bool? _supportsTts;
     private bool? _isTtsModel;
@@ -147,6 +148,27 @@ public sealed class StudioChatService : IAsyncDisposable
     public bool SupportsAudio => false;
     public bool SupportsTts => false;
 #endif
+    /// <summary>Voices offered by the selected model's speech projector.</summary>
+    public IReadOnlyList<string> TtsVoiceOptions => _ttsVoiceOptions ??= ComputeTtsVoiceOptions();
+
+    /// <summary>The first (and default) voice of the selected model.</summary>
+    public string DefaultTtsVoice => TtsVoiceOptions[0];
+
+    private IReadOnlyList<string> ComputeTtsVoiceOptions()
+    {
+#if SHARPMIND_AUDIO
+        if (!IsRemote && _model is not null)
+        {
+            string? projector = TtsProjector.Find(_model.Path, Zonos3TtsRuntime.IsTtsProjector);
+            if (projector is not null)
+            {
+                IReadOnlyList<string> voices = Zonos3TtsRuntime.ListVoices(projector);
+                if (voices.Count > 0) return voices;
+            }
+        }
+#endif
+        return ["female", "male"];
+    }
 #if SHARPMIND_SOURCE
     public bool SupportsVision => _supportsVision ??= ComputeSupportsVision();
 #else
@@ -420,9 +442,6 @@ public sealed class StudioChatService : IAsyncDisposable
     {
         InferenceOverrides overrides = _document?.Overrides ?? new InferenceOverrides();
         bool zonos3 = runtime is Zonos3TtsRuntime;
-        runtime.Voice = string.IsNullOrWhiteSpace(overrides.TtsVoice)
-            ? (zonos3 ? Zonos3TtsRuntime.DefaultVoice : "female")
-            : overrides.TtsVoice!;
         runtime.MaxFrames = Math.Clamp(
             overrides.TtsMaxFrames ?? (zonos3 ? 256 : 128), 1, zonos3 ? 1024 : 512);
         runtime.Temperature = overrides.TtsTemperature is { } temperature
@@ -431,6 +450,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
         if (runtime is Lfm3TtsRuntime lfm)
         {
+            lfm.Voice = string.IsNullOrWhiteSpace(overrides.TtsVoice) ? "female" : overrides.TtsVoice!;
             lfm.Language = string.IsNullOrWhiteSpace(overrides.TtsLanguage)
                 ? "American English"
                 : overrides.TtsLanguage!;
@@ -439,6 +459,10 @@ public sealed class StudioChatService : IAsyncDisposable
         }
         else if (runtime is Zonos3TtsRuntime z3)
         {
+            string? requested = overrides.TtsVoice;
+            z3.Voice = !string.IsNullOrWhiteSpace(requested) && z3.Voices.Contains(requested)
+                ? requested
+                : Zonos3TtsRuntime.DefaultVoice;
             z3.Seed = overrides.TtsSeed;
         }
     }
@@ -698,6 +722,7 @@ public sealed class StudioChatService : IAsyncDisposable
 #if SHARPMIND_AUDIO
             _supportsAudio = null;
             _supportsTts = null;
+            _ttsVoiceOptions = null;
             _isTtsModel = null;
             _isAudioModel = null;
 #endif
@@ -2484,6 +2509,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _ttsRuntime = null;
         _supportsAudio = null;
         _supportsTts = null;
+        _ttsVoiceOptions = null;
         _isTtsModel = null;
         _isAudioModel = null;
 #endif
