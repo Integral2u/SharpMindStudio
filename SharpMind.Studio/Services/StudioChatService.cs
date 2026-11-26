@@ -337,9 +337,9 @@ public sealed class StudioChatService : IAsyncDisposable
 #endif
     }
     /// <summary>
-    /// Synthesizes text with the native LFM3-Audio depth decoder and LiquidCodec. The first
-    /// call loads the projector; later calls reuse it until the model or the other audio
-    /// runtime is released.
+    /// Synthesizes text with the loaded model's native speech runtime (ZONOS3's ZAC codec
+    /// or LFM3-Audio's depth decoder and LiquidCodec). The first call loads the projector;
+    /// later calls reuse it until the model or the other audio runtime is released.
     /// </summary>
     public async Task<ChatArtifact> SynthesizeAsync(
         string text,
@@ -493,7 +493,7 @@ public sealed class StudioChatService : IAsyncDisposable
     }
 
     /// <summary>
-    /// An LFM3-Audio text prompt is a text-to-speech request: the user's words are
+    /// A text prompt on a speech model is a text-to-speech request: the user's words are
     /// synthesized into the assistant's audio artifact, with no text reply and no
     /// manual Speak step.
     /// </summary>
@@ -510,7 +510,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
         if (_model is null)
         {
-            _error = "Load a local LFM3-Audio model before generating speech.";
+            _error = "Load a local speech model before generating speech.";
             _status = "No audio model is loaded.";
             Notify();
             return;
