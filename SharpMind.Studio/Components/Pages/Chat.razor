@@ -286,6 +286,18 @@
                                     }
                                 </select>
                             </div>
+                            @if (_landingVoices.Count > 0)
+                            {
+                                <div class="field">
+                                    <label class="field-label" for="chat-voice">Voice</label>
+                                    <select id="chat-voice" class="input" @bind="_landingVoice">
+                                        @foreach (string voice in _landingVoices)
+                                        {
+                                            <option value="@voice">@voice</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
                         }
                     }
                     else
@@ -302,7 +314,7 @@
                             {
                                 ComputeProvider? host = Compute.Resolve(_computeProviderId);
                                 <select id="chat-remote-model" class="input" @bind="_remoteModel"
-                                        @bind:after="SaveRemoteModelChoice">
+                                        @bind:after="OnRemoteModelChangedAsync">
                                     @if (host is null || host.Models.Count == 0)
                                     {
                                         <option value="">@(host is null ? "No host selected" : "No models on this host")</option>
@@ -317,7 +329,7 @@
                             else
                             {
                                 <select id="chat-remote-model" class="input" @bind="_remoteModel"
-                                        @bind:after="SaveRemoteModelChoice"
+                                        @bind:after="OnRemoteModelChangedAsync"
                                         @onfocus="EnsureActiveModels">
                                     @if (RemoteActiveModels.Count == 0)
                                     {
@@ -334,6 +346,19 @@
                                 }
                             }
                         </div>
+                        @if (_computeProviderId is null && _reasoningChoices.Count > 0)
+                        {
+                            <div class="field">
+                                <label class="field-label" for="chat-reasoning">Reasoning</label>
+                                <select id="chat-reasoning" class="input" @bind="_landingReasoningEffort">
+                                    <option value="">Default</option>
+                                    @foreach (string effort in _reasoningChoices)
+                                    {
+                                        <option value="@effort">@ReasoningLabel(effort)</option>
+                                    }
+                                </select>
+                            </div>
+                        }
                     }
                 </div>
 
@@ -507,6 +532,20 @@ else
                                 @foreach (string voice in ChatService.TtsVoiceOptions)
                                 {
                                     <option value="@voice">@voice</option>
+                                }
+                            </select>
+                        }
+                        @if (ChatService.IsRemote && _reasoningChoices.Count > 0)
+                        {
+                            <select class="input chat-voice-select"
+                                    value="@(_sessionDraft.ReasoningEffort ?? "")"
+                                    @onchange="SetReasoningEffortAsync"
+                                    disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"
+                                    title="@($"Reasoning: {(_sessionDraft.ReasoningEffort is { Length: > 0 } selectedEffort ? ReasoningLabel(selectedEffort) : "Default")}")">
+                                <option value="">Default</option>
+                                @foreach (string effort in _reasoningChoices)
+                                {
+                                    <option value="@effort">@ReasoningLabel(effort)</option>
                                 }
                             </select>
                         }
@@ -1237,6 +1276,11 @@ else
     private string _remoteProviderId = RemoteProviders.OpenRouter;
     private string _remoteModel = "";
     private string? _selectedModelPath;
+    private IReadOnlyList<string> _landingVoices = [];
+    private string? _landingVoice;
+    private IReadOnlyList<string> _reasoningChoices = [];
+    private string? _landingReasoningEffort;
+    private string? _reasoningKey;
     private string _input = "";
     private readonly List<ChatArtifact> _pendingArtifacts = [];
     private bool _showOverflow;
@@ -1378,6 +1422,8 @@ else
 
         _startingNew = ChatService.Document is null;
         SyncFromChat();
+        RefreshLandingVoices();
+        await RefreshRemoteReasoningAsync();
         RefreshTuneSelection();
         _wasStreaming = ChatService.IsStreaming;
         _initialized = true;
@@ -1394,6 +1440,7 @@ else
                 _selectedModelPath = _models.Any(model => model.Path == Theme.LastChatModel)
                     ? Theme.LastChatModel
                     : _models.FirstOrDefault()?.Path;
+            RefreshLandingVoices();
             UpdateLatestModelRun();
             await InvokeAsync(StateHasChanged);
         }
@@ -1424,6 +1471,7 @@ else
         {
             await ChatService.OpenAsync(ChatId);
             SyncFromChat();
+            await RefreshRemoteReasoningAsync();
         }
 
         TrySendPendingPrompt();
@@ -1468,6 +1516,7 @@ else
     {
         _wasStreaming = ChatService.IsStreaming;
         SyncFromChat();
+        await RefreshRemoteReasoningAsync();
         try { await JS.InvokeVoidAsync("studioChat.scrollToBottom", "chat-transcript"); }
         catch { }
 
@@ -1558,6 +1607,10 @@ else
                     _remoteModel.Trim(),
                     systemPrompt: null,
                     mode: _workMode ? "work" : "chat",
+                    overrides: new InferenceOverrides
+                    {
+                        ReasoningEffort = _landingReasoningEffort,
+                    },
                     providerId: _remoteProviderId);
             }
 
@@ -1597,7 +1650,10 @@ else
         TuneProfile? tune = _selectedTunePreset is { } selected
             ? Inference.TuneProfile(model.Path, target, selected)
             : null;
-        await ChatService.NewChatAsync(model, systemPrompt: null, overrides: tune?.Overrides,
+        InferenceOverrides overrides = tune?.Overrides ?? new InferenceOverrides();
+        if (_landingVoices.Count > 0 && !string.IsNullOrWhiteSpace(_landingVoice))
+            overrides = overrides with { TtsVoice = _landingVoice };
+        await ChatService.NewChatAsync(model, systemPrompt: null, overrides: overrides,
             mode: _workMode ? "work" : "chat",
             tunePreset: tune is null ? null : _selectedTunePreset?.ToString(),
             tuneTarget: target.ToString());
@@ -1620,8 +1676,16 @@ else
         await Theme.SetLastChatModelAsync(_selectedModelPath);
         _allowUnverifiedTools = false;
         _allowFailedTools = false;
+        RefreshLandingVoices();
         UpdateLatestModelRun();
         RefreshTuneSelection();
+    }
+
+    private async Task OnRemoteModelChangedAsync()
+    {
+        SaveRemoteModelChoice();
+        _landingReasoningEffort = null;
+        await RefreshRemoteReasoningAsync(force: true);
     }
 
     private void SaveRemoteModelChoice()
@@ -1632,6 +1696,109 @@ else
         else
             OpenRouter.SetDefaultModelFor(_remoteProviderId, _remoteModel);
     }
+
+    /// <summary>
+    /// Populates the welcome composer's voice picker before a chat document
+    /// exists. ZONOS3 voices come from its projector; LFM3 offers female/male.
+    /// </summary>
+    private void RefreshLandingVoices()
+    {
+        ModelDescriptor? descriptor = _models.FirstOrDefault(model =>
+            string.Equals(model.Path, _selectedModelPath, StringComparison.OrdinalIgnoreCase));
+        string? architecture = descriptor?.Architecture;
+        if (_remoteChat || string.IsNullOrWhiteSpace(_selectedModelPath) ||
+            !ChatService.SupportsTtsFor(_selectedModelPath, architecture))
+        {
+            _landingVoices = [];
+            _landingVoice = null;
+            return;
+        }
+
+        _landingVoices = ChatService.TtsVoiceOptionsFor(_selectedModelPath, architecture);
+        if (_landingVoices.Count == 0)
+        {
+            _landingVoice = null;
+            return;
+        }
+
+        if (_landingVoice is null ||
+            !_landingVoices.Contains(_landingVoice, StringComparer.Ordinal))
+        {
+            _landingVoice = _landingVoices[0];
+        }
+    }
+
+    /// <summary>
+    /// Loads the selected remote model's reasoning efforts from the provider
+    /// catalog. The same list drives the welcome composer and the chat header.
+    /// </summary>
+    private async Task RefreshRemoteReasoningAsync(bool force = false)
+    {
+        if (!_remoteChat || _computeProviderId is not null ||
+            string.IsNullOrWhiteSpace(_remoteModel) || !RemoteHasApiKey)
+        {
+            _reasoningChoices = [];
+            _reasoningKey = null;
+            _landingReasoningEffort = null;
+            return;
+        }
+
+        string providerId = _remoteProviderId;
+        string modelId = _remoteModel;
+        string key = $"{providerId}|{modelId}";
+        if (!force && string.Equals(_reasoningKey, key, StringComparison.OrdinalIgnoreCase))
+            return;
+        _reasoningKey = key;
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            OpenRouterModel? info = await OpenRouter
+                .DescribeModelAsync(providerId, modelId, timeout.Token);
+            if (!string.Equals(modelId, _remoteModel, StringComparison.Ordinal) ||
+                !string.Equals(providerId, _remoteProviderId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _reasoningChoices = info?.ReasoningEfforts ?? [];
+            if (_landingReasoningEffort is { Length: > 0 } landing &&
+                !_reasoningChoices.Contains(landing, StringComparer.OrdinalIgnoreCase))
+            {
+                _landingReasoningEffort = null;
+            }
+
+            if (_sessionDraft.ReasoningEffort is { Length: > 0 } current &&
+                !_reasoningChoices.Contains(current, StringComparer.OrdinalIgnoreCase))
+            {
+                _sessionDraft = _sessionDraft with { ReasoningEffort = null };
+                if (ChatService.Document is not null)
+                    await ChatService.ApplyOptionsAsync(_sessionDraft);
+            }
+        }
+        catch
+        {
+            _reasoningChoices = [];
+            _reasoningKey = null;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string ReasoningLabel(string effort) =>
+        effort switch
+        {
+            "none" => "None",
+            "minimal" => "Minimal",
+            "low" => "Low",
+            "medium" => "Medium",
+            "high" => "High",
+            "xhigh" => "XHigh",
+            "max" => "Max",
+            _ when effort.Length > 0 =>
+                char.ToUpperInvariant(effort[0]) + effort[1..],
+            _ => effort,
+        };
 
     private void UpdateLatestModelRun()
     {
@@ -1791,6 +1958,8 @@ else
             }
         }
 
+        _landingReasoningEffort = null;
+        RefreshLandingVoices();
         UpdateLatestModelRun();
         RefreshTuneSelection();
         await Theme.SetLastRemoteProviderAsync(
@@ -1798,6 +1967,7 @@ else
         await InvokeAsync(StateHasChanged);
         if (_remoteChat && _computeProviderId is null)
             await EnsureActiveModels();
+        await RefreshRemoteReasoningAsync(force: true);
     }
 
     private async Task EnsureActiveModels()
@@ -2980,6 +3150,15 @@ else
         await ChatService.ApplyOptionsAsync(_sessionDraft);
     }
 
+    private async Task SetReasoningEffortAsync(ChangeEventArgs args)
+    {
+        string? effort = string.IsNullOrWhiteSpace(args.Value?.ToString())
+            ? null
+            : args.Value!.ToString();
+        _sessionDraft = _sessionDraft with { ReasoningEffort = effort };
+        await ChatService.ApplyOptionsAsync(_sessionDraft);
+    }
+
     private async Task SwitchModelAsync(ChangeEventArgs args)
     {
         string? choice = args.Value?.ToString();
@@ -3004,6 +3183,7 @@ else
         {
             await ChatService.SwitchRemoteModelAsync(choice);
             _remoteModel = choice;
+            await RefreshRemoteReasoningAsync(force: true);
         }
 
         SyncFromChat();

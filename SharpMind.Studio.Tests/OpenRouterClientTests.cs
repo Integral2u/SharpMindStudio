@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using SharpMind.Inference.Chat;
 using SharpMind.Studio.Core.OpenRouter;
@@ -153,6 +154,74 @@ public sealed class OpenRouterClientTests
         Assert.Equal(131072, free.ContextLength);
         Assert.False(models[1].IsFree);
         Assert.True(models[1].SupportsTools);
+    }
+
+    [Fact]
+    public async Task ListModels_ParsesReasoningEfforts()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                {"data":[
+                  {"id":"deepseek/deepseek-v4","name":"DeepSeek V4",
+                   "supported_parameters":["tools","reasoning"],
+                   "reasoning":{"supports_effort":true,
+                                "default_effort":"high",
+                                "supported_efforts":["max","high","low"]}},
+                  {"id":"openai/gpt-5","name":"GPT-5",
+                   "supported_parameters":["reasoning_effort"]}
+                ]}
+                """,
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        IReadOnlyList<OpenRouterModel> models = await client.ListModelsAsync(Connection);
+
+        OpenRouterModel deepseek = models.Single(model => model.Id == "deepseek/deepseek-v4");
+        Assert.True(deepseek.SupportsReasoning);
+        Assert.Equal("high", deepseek.DefaultReasoningEffort);
+        Assert.Equal(new[] { "low", "high", "max" }, deepseek.ReasoningEfforts);
+
+        OpenRouterModel gpt = models.Single(model => model.Id == "openai/gpt-5");
+        Assert.True(gpt.SupportsReasoning);
+        Assert.Equal(new[] { "low", "medium", "high" }, gpt.ReasoningEfforts);
+    }
+
+    [Fact]
+    public async Task Stream_SendsReasoningEffort()
+    {
+        string? captured = null;
+        var handler = new StubHandler(request =>
+        {
+            captured = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+            };
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        await foreach (OpenRouterStreamEvent _ in client.StreamAsync(
+            new OpenRouterRequest
+            {
+                Model = "deepseek/deepseek-v4",
+                Messages = [OpenRouterMessageBuilder.User("hi")],
+                ReasoningEffort = "high",
+            },
+            Connection))
+        {
+        }
+
+        Assert.NotNull(captured);
+        using JsonDocument document = JsonDocument.Parse(captured!);
+        Assert.Equal(
+            "high",
+            document.RootElement.GetProperty("reasoning").GetProperty("effort").GetString());
     }
 
     [Fact]

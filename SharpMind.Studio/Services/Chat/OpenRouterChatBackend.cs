@@ -91,6 +91,7 @@ public sealed class OpenRouterChatBackend(
                     RepetitionPenalty = document.Overrides.RepetitionPenalty,
                     MaxTokens = document.Overrides.MaxNewTokens,
                     Seed = document.Overrides.Seed,
+                    ReasoningEffort = document.Overrides.ReasoningEffort,
                 },
                 connection,
                 cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))

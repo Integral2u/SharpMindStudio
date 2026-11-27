@@ -45,7 +45,17 @@ public sealed record OpenRouterModel(
     string? Name,
     int? ContextLength,
     bool IsFree = false,
-    bool SupportsTools = false);
+    bool SupportsTools = false)
+{
+    /// <summary>True when the provider accepts a <c>reasoning.effort</c> value.</summary>
+    public bool SupportsReasoning { get; init; }
+
+    /// <summary>Efforts the catalog says this model accepts, in canonical order.</summary>
+    public IReadOnlyList<string> ReasoningEfforts { get; init; } = [];
+
+    /// <summary>The provider's own default effort, when it reports one.</summary>
+    public string? DefaultReasoningEffort { get; init; }
+}
 
 /// <summary>Everything needed for one chat-completions request.</summary>
 public sealed class OpenRouterRequest
@@ -61,6 +71,9 @@ public sealed class OpenRouterRequest
     public int? Seed { get; init; }
     public bool ParallelToolCalls { get; init; }
     public IReadOnlyList<string>? Stop { get; init; }
+
+    /// <summary>Reasoning effort sent as <c>reasoning.effort</c>; null uses the provider default.</summary>
+    public string? ReasoningEffort { get; init; }
 }
 
 public sealed class OpenRouterException : Exception
@@ -134,7 +147,14 @@ public sealed class OpenRouterClient
                     || IsZeroPricing(item)
                     || HasZeroCost(item);
                 bool supportsTools = SupportsTools(item);
-                models.Add(new OpenRouterModel(modelId, name, context, isFree, supportsTools));
+                (bool supportsReasoning, string? defaultEffort, IReadOnlyList<string> efforts) =
+                    ReadReasoning(item);
+                models.Add(new OpenRouterModel(modelId, name, context, isFree, supportsTools)
+                {
+                    SupportsReasoning = supportsReasoning,
+                    DefaultReasoningEffort = defaultEffort,
+                    ReasoningEfforts = efforts,
+                });
             }
         }
 
@@ -254,6 +274,13 @@ public sealed class OpenRouterClient
         if (request.Seed is { } seed) body["seed"] = seed;
         if (request.Stop is { Count: > 0 } stop)
             body["stop"] = new JsonArray([.. stop.Select(value => JsonValue.Create(value))]);
+        if (!string.IsNullOrWhiteSpace(request.ReasoningEffort))
+        {
+            body["reasoning"] = new JsonObject
+            {
+                ["effort"] = request.ReasoningEffort.Trim().ToLowerInvariant(),
+            };
+        }
 
         return body;
     }
@@ -540,6 +567,88 @@ public sealed class OpenRouterClient
 
         return entry.TryGetProperty("price", out JsonElement price) ? price : default;
     }
+
+    private static readonly string[] CanonicalEfforts =
+        ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+    /// <summary>
+    /// Reads the catalog's reasoning block. OpenRouter reports
+    /// <c>reasoning.supported_efforts</c> (and a default); gateways that only
+    /// advertise the parameter still get the standard low/medium/high ladder.
+    /// </summary>
+    private static (bool Supports, string? DefaultEffort, IReadOnlyList<string> Efforts)
+        ReadReasoning(JsonElement item)
+    {
+        bool supports = false;
+        string? defaultEffort = null;
+        var efforts = new List<string>();
+
+        if (item.TryGetProperty("reasoning", out JsonElement reasoning)
+            && reasoning.ValueKind == JsonValueKind.Object)
+        {
+            if (reasoning.TryGetProperty("supported_efforts", out JsonElement supported)
+                && supported.ValueKind == JsonValueKind.Array)
+            {
+                supports = true;
+                foreach (JsonElement effort in supported.EnumerateArray())
+                {
+                    if (effort.ValueKind == JsonValueKind.String)
+                        AddEffort(efforts, effort.GetString());
+                }
+            }
+
+            if (reasoning.TryGetProperty("supports_effort", out JsonElement supportsEffort)
+                && supportsEffort.ValueKind is JsonValueKind.True)
+            {
+                supports = true;
+            }
+
+            if (reasoning.TryGetProperty("default_effort", out JsonElement defaultElement)
+                && defaultElement.ValueKind == JsonValueKind.String)
+            {
+                defaultEffort = NormalizeEffort(defaultElement.GetString());
+            }
+        }
+
+        if (item.TryGetProperty("supported_parameters", out JsonElement parameters)
+            && parameters.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement parameter in parameters.EnumerateArray())
+            {
+                if (parameter.ValueKind != JsonValueKind.String) continue;
+                string? value = parameter.GetString();
+                if (string.Equals(value, "reasoning", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(value, "reasoning_effort", StringComparison.OrdinalIgnoreCase))
+                {
+                    supports = true;
+                }
+            }
+        }
+
+        if (supports && efforts.Count == 0)
+            efforts.AddRange(["low", "medium", "high"]);
+
+        return (supports, defaultEffort, SortEfforts(efforts));
+    }
+
+    private static void AddEffort(List<string> efforts, string? effort)
+    {
+        string? normalized = NormalizeEffort(effort);
+        if (normalized is not null && !efforts.Contains(normalized, StringComparer.Ordinal))
+            efforts.Add(normalized);
+    }
+
+    private static string? NormalizeEffort(string? effort) =>
+        string.IsNullOrWhiteSpace(effort) ? null : effort.Trim().ToLowerInvariant();
+
+    private static IReadOnlyList<string> SortEfforts(List<string> efforts) =>
+        [.. efforts
+            .OrderBy(effort =>
+            {
+                int index = Array.IndexOf(CanonicalEfforts, effort);
+                return index < 0 ? int.MaxValue : index;
+            })
+            .ThenBy(effort => effort, StringComparer.Ordinal)];
 
     private static bool SupportsTools(JsonElement item)
     {

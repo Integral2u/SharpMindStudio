@@ -1,29 +1,32 @@
 @using System.Diagnostics
 @using System.Security.Cryptography
 @using System.Text
+@using Microsoft.JSInterop
 @using SharpMind.Inference.Chat
 @using SharpMind.Studio.Core.Storage
 @using SharpMind.Studio.Services
+@implements IDisposable
 @inject PathPickerService Picker
+@inject IJSRuntime JS
 
 @if (Artifacts is { Length: > 0 })
 {
     ChatArtifact[] items = Artifacts;
-    <div class="artifact-strip">
+    <div class="artifact-strip" @ref="_root">
         <div class="artifact-icons">
             @foreach (ChatArtifact artifact in items.Take(4))
             {
                 <button type="button" class="artifact-icon @IconClass(artifact)"
                         title="@Name(artifact) — @KindLabel(artifact) — @Size(artifact)"
                         aria-label="Actions for @Name(artifact)"
-                        @onclick="() => OpenMenu(artifact)">
+                        @onclick="() => OpenMenuAsync(artifact)">
                     @Icon(artifact)
                 </button>
             }
             @if (items.Length > 4)
             {
                 <button type="button" class="artifact-more" title="Show the other files"
-                        aria-label="Show the other files" @onclick="ToggleMore">
+                        aria-label="Show the other files" @onclick="ToggleMoreAsync">
                     &#9660;
                 </button>
             }
@@ -39,7 +42,7 @@
             <div class="artifact-popover artifact-more-list">
                 @foreach (ChatArtifact artifact in items.Skip(4))
                 {
-                    <button type="button" class="artifact-list-item" @onclick="() => OpenMenuFromMore(artifact)">
+                    <button type="button" class="artifact-list-item" @onclick="() => OpenMenuFromMoreAsync(artifact)">
                         <span class="artifact-icon small @IconClass(artifact)">@Icon(artifact)</span>
                         <span class="artifact-list-name">@Name(artifact)</span>
                         <span class="artifact-list-size">@Size(artifact)</span>
@@ -55,11 +58,11 @@
                     <span>@Name(menu)</span>
                     <span class="faint">@Size(menu)</span>
                 </div>
-                <button type="button" class="artifact-action" @onclick="() => Preview(menu)">Preview</button>
+                <button type="button" class="artifact-action" @onclick="() => PreviewAsync(menu)">Preview</button>
                 <button type="button" class="artifact-action" @onclick="() => SaveAsAsync(menu)">Save as...</button>
                 <button type="button" class="artifact-action" @onclick="() => OpenAsync(menu)">Open</button>
                 <button type="button" class="artifact-action" @onclick="() => OpenFolderAsync(menu)">Open folder</button>
-                <button type="button" class="artifact-action close" @onclick="CloseMenus">Close</button>
+                <button type="button" class="artifact-action close" @onclick="CloseMenusAsync">Close</button>
             </div>
         }
     </div>
@@ -114,39 +117,90 @@
     private ChatArtifact? _preview;
     private bool _moreOpen;
     private string? _notice;
+    private ElementReference _root;
+    private DotNetObjectReference<ChatArtifacts>? _outside;
 
-    private void OpenMenu(ChatArtifact artifact)
+    private async Task OpenMenuAsync(ChatArtifact artifact)
     {
         _menu = artifact;
         _moreOpen = false;
         _notice = null;
+        await WatchOutsideAsync();
     }
 
-    private void OpenMenuFromMore(ChatArtifact artifact)
+    private async Task OpenMenuFromMoreAsync(ChatArtifact artifact)
     {
         _menu = artifact;
         _moreOpen = false;
         _notice = null;
+        await WatchOutsideAsync();
     }
 
-    private void ToggleMore()
+    private async Task ToggleMoreAsync()
     {
         _moreOpen = !_moreOpen;
         _menu = null;
         _notice = null;
+        if (_moreOpen) await WatchOutsideAsync();
+        else await StopOutsideWatchAsync();
     }
 
-    private void CloseMenus()
+    private async Task CloseMenusAsync()
     {
         _menu = null;
         _moreOpen = false;
+        await StopOutsideWatchAsync();
     }
 
-    private void Preview(ChatArtifact artifact)
+    /// <summary>
+    /// A click outside closes the popover without swallowing the click, so the
+    /// prompt input still receives focus on the first try.
+    /// </summary>
+    [JSInvokable]
+    public Task CloseFromOutsideAsync()
+    {
+        if (_menu is null && !_moreOpen) return Task.CompletedTask;
+        _menu = null;
+        _moreOpen = false;
+        StateHasChanged();
+        return StopOutsideWatchAsync();
+    }
+
+    private async Task WatchOutsideAsync()
+    {
+        if (_outside is null)
+        {
+            _outside = DotNetObjectReference.Create(this);
+            try { await JS.InvokeVoidAsync("studioArtifacts.watchOutside", _root, _outside); }
+            catch { }
+        }
+    }
+
+    private async Task StopOutsideWatchAsync()
+    {
+        if (_outside is null) return;
+        try { await JS.InvokeVoidAsync("studioArtifacts.unwatchOutside", _root); }
+        catch { }
+        _outside.Dispose();
+        _outside = null;
+    }
+
+    public void Dispose()
+    {
+        if (_outside is null) return;
+        try { _ = JS.InvokeVoidAsync("studioArtifacts.unwatchOutside", _root); }
+        catch { }
+        _outside.Dispose();
+        _outside = null;
+    }
+
+    private async Task PreviewAsync(ChatArtifact artifact)
     {
         _preview = artifact;
         _menu = null;
+        _moreOpen = false;
         _notice = null;
+        await StopOutsideWatchAsync();
     }
 
     private void ClosePreview()
@@ -157,8 +211,10 @@
     private async Task SaveAsAsync(ChatArtifact artifact)
     {
         _menu = null;
+        _moreOpen = false;
         _preview = null;
         _notice = null;
+        await StopOutsideWatchAsync();
 
         PathPickerSelection? selection = await Picker.PickAsync(
             PathPickerMode.SaveFile,
@@ -180,7 +236,9 @@
     private async Task OpenAsync(ChatArtifact artifact)
     {
         _menu = null;
+        _moreOpen = false;
         _preview = null;
+        await StopOutsideWatchAsync();
         string? path = await MaterializeAsync(artifact);
         if (path is null) return;
 
@@ -198,7 +256,9 @@
     private async Task OpenFolderAsync(ChatArtifact artifact)
     {
         _menu = null;
+        _moreOpen = false;
         _preview = null;
+        await StopOutsideWatchAsync();
         string? path = await MaterializeAsync(artifact);
         if (path is null) return;
 

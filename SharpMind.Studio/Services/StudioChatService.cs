@@ -155,27 +155,16 @@ public sealed class StudioChatService : IAsyncDisposable
     /// <summary>The first (and default) voice of the selected model.</summary>
     public string DefaultTtsVoice => TtsVoiceOptions[0];
 
-    private IReadOnlyList<string> ComputeTtsVoiceOptions()
-    {
-#if SHARPMIND_AUDIO
-        if (!IsRemote && _model is not null)
-        {
-            string? projector = TtsProjector.Find(_model.Path, Zonos3TtsRuntime.IsTtsProjector);
-            if (projector is not null)
-            {
-                IReadOnlyList<string> voices = Zonos3TtsRuntime.ListVoices(projector);
-                if (voices.Count > 0) return voices;
-            }
-        }
-#endif
-        return ["female", "male"];
-    }
+    private IReadOnlyList<string> ComputeTtsVoiceOptions() =>
+        IsRemote || _model is null
+            ? ["female", "male"]
+            : TtsVoiceOptionsFor(_model.Path, _model.Architecture);
 #if SHARPMIND_SOURCE
     public bool SupportsVision => _supportsVision ??= ComputeSupportsVision();
 #else
     public bool SupportsVision => false;
 #endif
-    public string? ComputeProviderId => _document?.RemoteProvider;
+    public string? ComputeProviderId => IsCompute ? _document?.RemoteProvider : null;
     public string? RemoteProviderId => IsCompute
         ? null
         : IsOpenRouter
@@ -216,7 +205,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private bool ComputeSupportsTts()
     {
         if (IsRemote || _model is null) return false;
-        return TtsProjector.Find(_model.Path) is not null;
+        return SupportsTtsFor(_model.Path, _model.Architecture);
     }
 
     /// <summary>
@@ -228,6 +217,74 @@ public sealed class StudioChatService : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(modelPath)) return false;
         return Lfm3AudioRuntime.FindProjector(modelPath) is not null;
     }
+
+    /// <summary>
+    /// True when the model path has a speech-output projector for its own
+    /// architecture. The welcome composer uses this before NewChatAsync has
+    /// created the document.
+    /// </summary>
+    public bool SupportsTtsFor(string? modelPath, string? architecture = null)
+    {
+        if (string.IsNullOrWhiteSpace(modelPath)) return false;
+        return FindTtsProjector(modelPath, architecture) is not null;
+    }
+
+    /// <summary>
+    /// Voices for a model path, read from its own projector. ZONOS3 projectors
+    /// carry named voices; LFM3 uses the female/male voice phrase.
+    /// </summary>
+    public IReadOnlyList<string> TtsVoiceOptionsFor(
+        string? modelPath, string? architecture = null)
+    {
+        if (!string.IsNullOrWhiteSpace(modelPath))
+        {
+            if (IsZonos(architecture))
+            {
+                string? zonos = TtsProjector.Find(modelPath, Zonos3TtsRuntime.IsTtsProjector);
+                if (zonos is not null)
+                {
+                    IReadOnlyList<string> voices = Zonos3TtsRuntime.ListVoices(zonos);
+                    if (voices.Count > 0) return voices;
+                }
+            }
+            else if (IsLfm(architecture))
+            {
+                if (TtsProjector.Find(modelPath, Lfm3TtsRuntime.IsTtsProjector) is not null)
+                    return ["female", "male"];
+            }
+            else
+            {
+                // No architecture on the descriptor: accept either projector but
+                // only list voices when the projector matches the backbone name.
+                string? projector = FindTtsProjector(modelPath, architecture);
+                if (projector is not null &&
+                    Zonos3TtsRuntime.IsTtsProjector(projector) &&
+                    Path.GetFileName(projector).Contains(
+                        "zonos", StringComparison.OrdinalIgnoreCase))
+                {
+                    IReadOnlyList<string> voices = Zonos3TtsRuntime.ListVoices(projector);
+                    if (voices.Count > 0) return voices;
+                }
+            }
+        }
+
+        return ["female", "male"];
+    }
+
+    private static string? FindTtsProjector(string modelPath, string? architecture)
+    {
+        if (IsZonos(architecture))
+            return TtsProjector.Find(modelPath, Zonos3TtsRuntime.IsTtsProjector);
+        if (IsLfm(architecture))
+            return TtsProjector.Find(modelPath, Lfm3TtsRuntime.IsTtsProjector);
+        return TtsProjector.Find(modelPath);
+    }
+
+    private static bool IsZonos(string? architecture) =>
+        architecture?.StartsWith("zonos3", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static bool IsLfm(string? architecture) =>
+        architecture?.StartsWith("lfm3", StringComparison.OrdinalIgnoreCase) == true;
 
     /// <summary>
     /// True for an audio model whose projector carries the TTS weights. This only

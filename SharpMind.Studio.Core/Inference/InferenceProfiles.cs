@@ -40,6 +40,12 @@ public sealed record InferenceOverrides
     public bool? ShowThinking { get; init; }
     public bool? EnableThinking { get; init; }
 
+    /// <summary>
+    /// Remote reasoning effort (<c>minimal</c>, <c>low</c>, <c>medium</c>,
+    /// <c>high</c>, <c>max</c>); null uses the provider's default.
+    /// </summary>
+    public string? ReasoningEffort { get; init; }
+
     /// <summary>Use the model's multi-token prediction head when it has one.</summary>
     public bool? MtpDraft { get; init; }
 

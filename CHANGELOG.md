@@ -13,11 +13,24 @@ _Planned for 1.1.3._
 - **Voice selection in Chat and Work.** A local speech model now shows a voice selector
   beside the model picker, with the full voice list from the projector, and the
   Session options keep the language, frame cap, temperature, top-k and seed.
+  The welcome composer shows the same picker before the first message, so a new
+  ZONOS3 chat starts with its named voices and an LFM3 chat starts with
+  female/male; the chosen voice is stored in the new session. Projectors must
+  match the backbone architecture, so an LFM3 chat no longer lists ZONOS3 voices
+  (or the reverse).
   Speech models synthesize automatically in Work as well as Chat. ZONOS3 loads the
   float-resident backbone path used by the engine TTS probe instead of the quantized
   resident path, which could collapse speech into a low tonal output. Interrupt
   stops a speech run promptly, even during a long frame or codec pass, and a new
   speech run waits for any abandoned pass to finish.
+
+- **Reasoning effort for remote models.** Remote chats now offer a **Reasoning**
+  picker with only the efforts the selected model advertises (for example
+  Default / None / Medium / High, or Default / Low / High / Max). The provider
+  catalog is cached per app session, the welcome composer and chat header share
+  the same list, and a session stores its choice. Requests send
+  `reasoning: { effort }`; switching to a model that does not support the saved
+  effort clears it instead of sending an invalid value.
 
 - **CPU repack controls and faster first token.** Full local loads now prebuild the
   wide kernel repacks before the first token and show `Repacking weights x%` in the
@@ -185,6 +198,12 @@ _Planned for 1.1.3._
 
 ### Fixed
 
+- **Artifact popovers close on an outside click.** The per-message artifact menu
+  now closes when the prompt input, header or any other control is clicked, and
+  the click still reaches that control, so the composer focuses on the first try.
+- **OpenRouter chats are no longer mistaken for Compute chats.** The computed
+  provider id is exposed only for Compute sessions; an existing remote chat now
+  keeps its provider model picker, welcome composer and reasoning options.
 - **A missing Vault reference in a shell builtin is refused.** `echo
   %vault:NAME%` now reports the missing secret instead of printing the literal
   placeholder; the same check already guarded external commands.

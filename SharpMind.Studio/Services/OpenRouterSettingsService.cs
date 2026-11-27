@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using SharpMind.Studio.Core.OpenRouter;
 using SharpMind.Studio.Core.Storage;
 using SharpMind.Studio.Core.Vault;
@@ -14,6 +15,9 @@ public sealed class OpenRouterSettingsService
 {
     private readonly OpenRouterSettingsStore _store;
     private readonly OpenRouterClient _client;
+    private readonly ConcurrentDictionary<string, IReadOnlyList<OpenRouterModel>> _catalog =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _catalogGate = new(1, 1);
 
     public OpenRouterSettingsService(OpenRouterClient client, ISecretResolver secrets)
     {
@@ -159,10 +163,59 @@ public sealed class OpenRouterSettingsService
         CancellationToken cancellationToken = default) =>
         FetchModelsForAsync(RemoteProviders.OpenRouter, cancellationToken);
 
-    public Task<IReadOnlyList<OpenRouterModel>> FetchModelsForAsync(
+    public async Task<IReadOnlyList<OpenRouterModel>> FetchModelsForAsync(
         string? providerId,
-        CancellationToken cancellationToken = default) =>
-        _client.ListModelsAsync(ConnectionFor(providerId), cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        RemoteProviderPreset preset = RemoteProviders.Find(providerId);
+        IReadOnlyList<OpenRouterModel> models = await _client
+            .ListModelsAsync(ConnectionFor(preset.Id), cancellationToken)
+            .ConfigureAwait(false);
+        _catalog[preset.Id] = models;
+        return models;
+    }
+
+    /// <summary>
+    /// The model catalog, fetched once per provider per app session. The Chat
+    /// header uses it for per-model reasoning efforts without another round trip
+    /// every time the picker changes.
+    /// </summary>
+    public async Task<IReadOnlyList<OpenRouterModel>> CatalogForAsync(
+        string? providerId,
+        CancellationToken cancellationToken = default)
+    {
+        RemoteProviderPreset preset = RemoteProviders.Find(providerId);
+        if (_catalog.TryGetValue(preset.Id, out IReadOnlyList<OpenRouterModel>? cached))
+            return cached;
+
+        await _catalogGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_catalog.TryGetValue(preset.Id, out cached)) return cached;
+            IReadOnlyList<OpenRouterModel> models = await _client
+                .ListModelsAsync(ConnectionFor(preset.Id), cancellationToken)
+                .ConfigureAwait(false);
+            _catalog[preset.Id] = models;
+            return models;
+        }
+        finally
+        {
+            _catalogGate.Release();
+        }
+    }
+
+    /// <summary>One catalog entry for a model id, or null when it is unavailable.</summary>
+    public async Task<OpenRouterModel?> DescribeModelAsync(
+        string? providerId,
+        string? modelId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(modelId)) return null;
+        IReadOnlyList<OpenRouterModel> models =
+            await CatalogForAsync(providerId, cancellationToken).ConfigureAwait(false);
+        return models.FirstOrDefault(model =>
+            string.Equals(model.Id, modelId.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <summary>Adds every free model in the catalog to the active list.</summary>
     public Task<int> AddAllFreeAsync(CancellationToken cancellationToken = default) =>
