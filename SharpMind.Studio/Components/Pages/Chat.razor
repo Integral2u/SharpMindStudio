@@ -503,7 +503,7 @@ else
                                     value="@(_sessionDraft.TtsVoice ?? ChatService.DefaultTtsVoice)"
                                     @onchange="SetTtsVoiceAsync"
                                     disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"
-                                    title="Speech voice">
+                                    title="@(_sessionDraft.TtsVoice ?? ChatService.DefaultTtsVoice)">
                                 @foreach (string voice in ChatService.TtsVoiceOptions)
                                 {
                                     <option value="@voice">@voice</option>

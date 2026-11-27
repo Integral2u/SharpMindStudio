@@ -216,6 +216,7 @@ public sealed class StudioModelHost : IDisposable
         HardwareTier hardware = Enum.TryParse(profile.HardwareTier, ignoreCase: true, out HardwareTier tier)
             ? tier
             : HardwareTier.Auto;
+        bool zonosModel = IsZonosArchitecture(config.Architecture);
         SharpMindConfig sharpConfig = config.ForModel(hardware) with
         {
             Parallel = profile.UseParallelKernels,
@@ -226,7 +227,6 @@ public sealed class StudioModelHost : IDisposable
         // and was validated with float-resident weights; keeping it quantized
         // can turn speech into a low, tonal output. Load it unquantized and do
         // not build wide quantized repacks for it.
-        bool zonosModel = IsZonosArchitecture(config.Architecture);
         bool wideRepacks = loadMode == LoadMode.Full && !zonosModel;
 
         progress?.Report(new ModelLoadProgress($"Loading weights ({loadMode})", 0.1));

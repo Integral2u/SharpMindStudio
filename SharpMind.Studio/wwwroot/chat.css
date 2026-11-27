@@ -67,17 +67,31 @@
 }
 
 .chat-model-select {
-    max-width: 18rem;
+    max-width: 12rem;
     min-height: 2rem;
     padding: .3rem .5rem;
     font-size: .78rem;
 }
 
 .chat-voice-select {
-    max-width: 16rem;
+    max-width: 10rem;
     min-height: 2rem;
     padding: .3rem .5rem;
     font-size: .78rem;
+}
+
+.chat-head .button {
+    white-space: nowrap;
+}
+
+.chat-head > .row {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
+.chat-head > div:first-child {
+    min-width: 0;
 }
 
 .chat-head {

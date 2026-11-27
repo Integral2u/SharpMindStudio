@@ -15,7 +15,9 @@ _Planned for 1.1.3._
   Session options keep the language, frame cap, temperature, top-k and seed.
   Speech models synthesize automatically in Work as well as Chat. ZONOS3 loads the
   float-resident backbone path used by the engine TTS probe instead of the quantized
-  resident path, which could collapse speech into a low tonal output.
+  resident path, which could collapse speech into a low tonal output. Interrupt
+  stops a speech run promptly, even during a long frame or codec pass, and a new
+  speech run waits for any abandoned pass to finish.
 
 - **CPU repack controls and faster first token.** Full local loads now prebuild the
   wide kernel repacks before the first token and show `Repacking weights x%` in the

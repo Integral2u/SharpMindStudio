@@ -54,6 +54,7 @@ public sealed class StudioChatService : IAsyncDisposable
 #if SHARPMIND_AUDIO
     private Lfm3AudioRuntime? _audioRuntime;
     private ITtsRuntime? _ttsRuntime;
+    private Task? _abandonedTts;
     private IReadOnlyList<string>? _ttsVoiceOptions;
     private bool? _supportsAudio;
     private bool? _supportsTts;
@@ -364,6 +365,16 @@ public sealed class StudioChatService : IAsyncDisposable
                 "No speech-output projector (mmproj) was found next to this model. " +
                 "Put mmproj-*.gguf in the model folder or its sibling folder.");
 
+        // An interrupted run may still be finishing a codec pass. Do not start a
+        // second heavy speech task until it has released the runtime.
+        Task? abandoned = _abandonedTts;
+        if (abandoned is not null)
+        {
+            try { await abandoned.ConfigureAwait(false); }
+            catch { }
+            _abandonedTts = null;
+        }
+
         await _audioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -391,11 +402,13 @@ public sealed class StudioChatService : IAsyncDisposable
             ApplyTtsOptions(runtime);
             runtime.FrameSampled = (index, _) =>
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 _status = $"Synthesizing speech... frame {index}";
                 Notify();
             };
             runtime.EndOfSpeech = (index, _) =>
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 _status = $"Synthesizing speech... {index} frames";
                 Notify();
             };
@@ -403,8 +416,34 @@ public sealed class StudioChatService : IAsyncDisposable
             _error = null;
             Notify();
 
-            float[] audio = await Task.Run(
-                () => runtime.Synthesize(text, cancellationToken), cancellationToken).ConfigureAwait(false);
+            Task<float[]> synthesis = Task.Run(
+                () => runtime.Synthesize(text, cancellationToken), cancellationToken);
+            float[] audio;
+            try
+            {
+                audio = await synthesis.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The engine checks the token between frames, but a long codec
+                // pass or frame can outlive the interrupt. Stop waiting now and
+                // dispose the abandoned runtime when its work finally ends.
+                runtime.FrameSampled = null;
+                runtime.EndOfSpeech = null;
+                _ttsRuntime = null;
+                _abandonedTts = synthesis;
+                _ = synthesis.ContinueWith(
+                    _ =>
+                    {
+                        runtime.Dispose();
+                        Interlocked.Exchange(ref _abandonedTts, null);
+                    },
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+                throw;
+            }
+
             if (audio.Length == 0)
                 throw new InvalidOperationException("The model produced no speech for this text.");
 
@@ -417,6 +456,12 @@ public sealed class StudioChatService : IAsyncDisposable
                 FileName = fileName ?? "speech.wav",
                 Content = buffer.ToArray(),
             };
+        }
+        catch (OperationCanceledException)
+        {
+            _error = null;
+            _status = "Stopped.";
+            throw;
         }
         catch (Exception ex)
         {
@@ -443,7 +488,7 @@ public sealed class StudioChatService : IAsyncDisposable
         InferenceOverrides overrides = _document?.Overrides ?? new InferenceOverrides();
         bool zonos3 = runtime is Zonos3TtsRuntime;
         runtime.MaxFrames = Math.Clamp(
-            overrides.TtsMaxFrames ?? (zonos3 ? 256 : 128), 1, zonos3 ? 1024 : 512);
+            overrides.TtsMaxFrames ?? 128, 1, zonos3 ? 1024 : 512);
         runtime.Temperature = overrides.TtsTemperature is { } temperature
             ? Math.Clamp(temperature, 0.1f, 3f)
             : (zonos3 ? 0.75f : 1.0f);
