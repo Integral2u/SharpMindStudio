@@ -765,7 +765,7 @@ else
                                 <div class="eyebrow">Speech</div>
                                 <h2>Text-to-Speech</h2>
                             </div>
-                            <span class="faint small mono">empty fields use the checkpoint defaults</span>
+                            <span class="faint small mono" title="@ChatService.TtsRuntimeSummary">@ChatService.TtsRuntimeSummary</span>
                         </div>
                         <div class="row">
                             <div class="field">
@@ -778,15 +778,19 @@ else
                                     }
                                 </select>
                             </div>
-                            <div class="field grow">
-                                <label class="field-label">Language</label>
-                                <input class="input" value="@(_sessionDraft.TtsLanguage ?? "American English")"
-                                       @onchange="e => _sessionDraft = _sessionDraft with { TtsLanguage = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString() }" />
-                            </div>
+                            @if (ChatService.TtsUsesLfmOptions)
+                            {
+                                <div class="field grow">
+                                    <label class="field-label">Language</label>
+                                    <input class="input" value="@(_sessionDraft.TtsLanguage ?? "American English")"
+                                           @onchange="e => _sessionDraft = _sessionDraft with { TtsLanguage = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString() }" />
+                                </div>
+                            }
                             <div class="field">
-                                <label class="field-label">Max frames (80 ms each)</label>
+                                <label class="field-label">Max frames (@ChatService.TtsFrameMilliseconds ms each)</label>
                                 <input class="input" type="number" min="1" max="512"
-                                       value="@(_sessionDraft.TtsMaxFrames ?? 128)"
+                                       value="@(_sessionDraft.TtsMaxFrames?.ToString() ?? "")"
+                                       placeholder="@ChatService.DefaultTtsMaxFrames"
                                        @onchange="e => _sessionDraft = _sessionDraft with { TtsMaxFrames = int.TryParse(e.Value?.ToString(), out int value) ? value : null }" />
                             </div>
                         </div>
@@ -794,15 +798,20 @@ else
                             <div class="field">
                                 <label class="field-label">Temperature</label>
                                 <input class="input" type="number" min="0.1" max="3" step="0.05"
-                                       value="@(_sessionDraft.TtsTemperature ?? 1.0f)"
+                                       value="@(_sessionDraft.TtsTemperature?.ToString() ?? "")"
+                                       placeholder="@ChatService.DefaultTtsTemperature"
                                        @onchange="e => _sessionDraft = _sessionDraft with { TtsTemperature = float.TryParse(e.Value?.ToString(), out float value) ? value : null }" />
                             </div>
-                            <div class="field">
-                                <label class="field-label">Top-k</label>
-                                <input class="input" type="number" min="1" max="1024"
-                                       value="@(_sessionDraft.TtsTopK ?? 128)"
-                                       @onchange="e => _sessionDraft = _sessionDraft with { TtsTopK = int.TryParse(e.Value?.ToString(), out int value) ? value : null }" />
-                            </div>
+                            @if (ChatService.TtsUsesLfmOptions)
+                            {
+                                <div class="field">
+                                    <label class="field-label">Top-k</label>
+                                    <input class="input" type="number" min="1" max="1024"
+                                           value="@(_sessionDraft.TtsTopK?.ToString() ?? "")"
+                                           placeholder="128"
+                                           @onchange="e => _sessionDraft = _sessionDraft with { TtsTopK = int.TryParse(e.Value?.ToString(), out int value) ? value : null }" />
+                                </div>
+                            }
                             <div class="field">
                                 <label class="field-label">Seed (blank = random)</label>
                                 <input class="input" type="number"

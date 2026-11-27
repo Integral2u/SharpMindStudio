@@ -56,6 +56,8 @@ public sealed class StudioChatService : IAsyncDisposable
     private ITtsRuntime? _ttsRuntime;
     private Task? _abandonedTts;
     private IReadOnlyList<string>? _ttsVoiceOptions;
+    private string? _ttsRuntimeSummary;
+    private string? _ttsArchitecture;
     private bool? _supportsAudio;
     private bool? _supportsTts;
     private bool? _isTtsModel;
@@ -152,13 +154,63 @@ public sealed class StudioChatService : IAsyncDisposable
     /// <summary>Voices offered by the selected model's speech projector.</summary>
     public IReadOnlyList<string> TtsVoiceOptions => _ttsVoiceOptions ??= ComputeTtsVoiceOptions();
 
+    /// <summary>
+    /// One-line description of the speech path the selected model will use, so the
+    /// runtime, sample rate and projector are unambiguous before synthesizing.
+    /// </summary>
+    public string TtsRuntimeSummary => _ttsRuntimeSummary ??= ComputeTtsRuntimeSummary();
+
+    private string ComputeTtsRuntimeSummary()
+    {
+#if SHARPMIND_AUDIO
+        if (IsRemote) return "remote model — local speech unavailable";
+        if (_model is null) return "no model selected";
+        string? architecture = ResolveTtsArchitecture();
+        string? projector = FindTtsProjector(_model.Path, architecture);
+        if (projector is null) return "no speech projector (mmproj) found";
+        string name = Path.GetFileName(projector);
+        if (IsZonos(architecture)) return $"ZONOS3 · 44.1 kHz · {name}";
+        if (IsLfm(architecture)) return $"LFM3 · 24 kHz · {name}";
+        if (Zonos3TtsRuntime.IsTtsProjector(projector)) return $"ZONOS3 · 44.1 kHz · {name}";
+        if (Lfm3TtsRuntime.IsTtsProjector(projector)) return $"LFM3 · 24 kHz · {name}";
+        return name;
+#else
+        return "speech unavailable";
+#endif
+    }
+
     /// <summary>The first (and default) voice of the selected model.</summary>
     public string DefaultTtsVoice => TtsVoiceOptions[0];
 
     private IReadOnlyList<string> ComputeTtsVoiceOptions() =>
         IsRemote || _model is null
             ? ["female", "male"]
-            : TtsVoiceOptionsFor(_model.Path, _model.Architecture);
+            : TtsVoiceOptionsFor(_model.Path, ResolveTtsArchitecture());
+
+    /// <summary>True when the selected speech runtime is ZONOS3.</summary>
+    private bool IsZonosRuntime
+    {
+        get
+        {
+#if SHARPMIND_AUDIO
+            return IsZonos(ResolveTtsArchitecture());
+#else
+            return false;
+#endif
+        }
+    }
+
+    /// <summary>Effective frame budget when the override is blank.</summary>
+    public int DefaultTtsMaxFrames => IsZonosRuntime ? 256 : 128;
+
+    /// <summary>Effective sampling temperature when the override is blank.</summary>
+    public float DefaultTtsTemperature => IsZonosRuntime ? 0.75f : 1.0f;
+
+    /// <summary>Frame duration in milliseconds (ZONOS3 is 67 ms, LFM3 80 ms).</summary>
+    public int TtsFrameMilliseconds => IsZonosRuntime ? 67 : 80;
+
+    /// <summary>Language and top-k are LFM3-only settings.</summary>
+    public bool TtsUsesLfmOptions => !IsZonosRuntime && !IsRemote;
 #if SHARPMIND_SOURCE
     public bool SupportsVision => _supportsVision ??= ComputeSupportsVision();
 #else
@@ -205,7 +257,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private bool ComputeSupportsTts()
     {
         if (IsRemote || _model is null) return false;
-        return SupportsTtsFor(_model.Path, _model.Architecture);
+        return SupportsTtsFor(_model.Path, ResolveTtsArchitecture());
     }
 
     /// <summary>
@@ -280,6 +332,41 @@ public sealed class StudioChatService : IAsyncDisposable
         return TtsProjector.Find(modelPath);
     }
 
+    /// <summary>
+    /// The backbone architecture, from the loaded config when available, else the
+    /// catalog descriptor, else the GGUF header. Cached until the model changes.
+    /// </summary>
+    private string? ResolveTtsArchitecture()
+    {
+        if (_loaded is not null && !string.IsNullOrWhiteSpace(_loaded.Config.Architecture))
+            return _loaded.Config.Architecture;
+        if (!string.IsNullOrWhiteSpace(_model?.Architecture))
+            return _model.Architecture;
+        if (_ttsArchitecture is not null || _model is null) return _ttsArchitecture;
+        try
+        {
+            var meta = SharpMind.Model.Format.GgufLoader.LoadMeta(_model.Path);
+            _ttsArchitecture = SharpMind.Model.Format.GgufLoader.LoadConfig(meta)?.Architecture;
+        }
+        catch
+        {
+            // A missing/locked file leaves the architecture unknown; the projector
+            // classifier in the summary still names the runtime.
+        }
+        return _ttsArchitecture;
+    }
+
+    private void InvalidateTtsResolution()
+    {
+        _ttsRuntimeSummary = null;
+        _ttsArchitecture = null;
+#if SHARPMIND_AUDIO
+        _ttsVoiceOptions = null;
+        _supportsTts = null;
+        _isTtsModel = null;
+#endif
+    }
+
     private static bool IsZonos(string? architecture) =>
         architecture?.StartsWith("zonos3", StringComparison.OrdinalIgnoreCase) == true;
 
@@ -296,7 +383,7 @@ public sealed class StudioChatService : IAsyncDisposable
     private bool ComputeIsTtsModel()
     {
         if (IsRemote || _model is null) return false;
-        return TtsProjector.Find(_model.Path) is not null;
+        return FindTtsProjector(_model.Path, ResolveTtsArchitecture()) is not null;
     }
 
     /// <summary>True when the model has an audio encoder/projector, so attached audio can be transcribed.</summary>
@@ -415,9 +502,7 @@ public sealed class StudioChatService : IAsyncDisposable
         if (!zonos3 && !lfm3)
             throw new NotSupportedException("This model has no native speech-output path.");
 
-        string projector = TtsProjector.Find(
-                _model.Path,
-                zonos3 ? Zonos3TtsRuntime.IsTtsProjector : Lfm3TtsRuntime.IsTtsProjector)
+        string projector = FindTtsProjector(_model.Path, architecture)
             ?? throw new NotSupportedException(
                 "No speech-output projector (mmproj) was found next to this model. " +
                 "Put mmproj-*.gguf in the model folder or its sibling folder.");
@@ -824,7 +909,7 @@ public sealed class StudioChatService : IAsyncDisposable
 #if SHARPMIND_AUDIO
             _supportsAudio = null;
             _supportsTts = null;
-            _ttsVoiceOptions = null;
+            InvalidateTtsResolution();
             _isTtsModel = null;
             _isAudioModel = null;
 #endif
@@ -1870,6 +1955,7 @@ public sealed class StudioChatService : IAsyncDisposable
             LoadedStudioModel loaded = await _host.LoadAsync(
                 _model, _resolved, progress, _loadCts.Token).ConfigureAwait(false);
             _loaded = loaded;
+            InvalidateTtsResolution();
 
             _loadDetail = "Initializing chat";
             _loadProgress = 0.95;
@@ -1912,6 +1998,7 @@ public sealed class StudioChatService : IAsyncDisposable
         if (_document is null || _model is null || _resolved is null) return;
         LoadedStudioModel loaded = await _host.LoadAsync(_model, _resolved).ConfigureAwait(false);
         _loaded = loaded;
+        InvalidateTtsResolution();
         try
         {
             _session = await BuildWorkSessionAsync(loaded, _resolved, history).ConfigureAwait(false);
@@ -1952,6 +2039,7 @@ public sealed class StudioChatService : IAsyncDisposable
         if (_document is null || _model is null || _resolved is null) return;
         LoadedStudioModel loaded = await _host.LoadAsync(_model, _resolved).ConfigureAwait(false);
         _loaded = loaded;
+        InvalidateTtsResolution();
         try
         {
             _session = string.Equals(_document.Mode, "work", StringComparison.OrdinalIgnoreCase)
@@ -2612,7 +2700,7 @@ public sealed class StudioChatService : IAsyncDisposable
         _ttsRuntime = null;
         _supportsAudio = null;
         _supportsTts = null;
-        _ttsVoiceOptions = null;
+        InvalidateTtsResolution();
         _isTtsModel = null;
         _isAudioModel = null;
 #endif
