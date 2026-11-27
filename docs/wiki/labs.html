@@ -218,10 +218,17 @@
 
             <h2 id="audio-vision">Audio and vision</h2>
             <p>
-                An LFM3-Audio model treats a text prompt as a text-to-speech request: the words
-                are synthesized into the assistant's 24 kHz WAV artifact automatically. There is
-                no Speak button and no separate text reply. The audio card shows its duration and
-                the WAV is saved with the chat.
+                A native speech model (LFM3-Audio or ZONOS3) treats a text prompt as a
+                text-to-speech request: the words are synthesized into the assistant's WAV
+                artifact automatically, in Chat and in Work. There is no Speak button and no
+                separate text reply. The audio card shows its duration and the WAV is saved with
+                the chat.
+            </p>
+            <p>
+                A voice selector appears beside the model picker for a local speech model. The
+                Session options panel also has the voice, language, frame cap, temperature, top-k
+                and seed. ZONOS3 uses the float-resident backbone path validated by the engine's
+                TTS probe; the projector must still carry the selected voice.
             </p>
             <p>
                 An attached audio file is transcribed. On an audio model the transcript becomes

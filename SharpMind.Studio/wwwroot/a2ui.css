@@ -195,6 +195,16 @@
     gap: .45rem;
 }
 
+.a2ui-setting-row {
+    align-items: center;
+    gap: .55rem;
+    cursor: pointer;
+}
+
+.a2ui-setting-row input {
+    margin: 0;
+}
+
 .a2ui-json {
     min-height: 16rem;
     font-family: var(--mono);

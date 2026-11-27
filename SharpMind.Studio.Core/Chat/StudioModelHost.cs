@@ -1,4 +1,4 @@
-﻿using SharpMind.Core;
+using SharpMind.Core;
 using SharpMind.Core.Quantization;
 using SharpMind.Model;
 using SharpMind.Model.Config;
@@ -71,7 +71,8 @@ public sealed class StudioModelHost : IDisposable
         IProgress<ModelLoadProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        string key = KeyFor(descriptor.Path, profile);
+        bool zonosModel = IsZonosArchitecture(descriptor.Architecture);
+        string key = KeyFor(descriptor.Path, profile, zonosModel);
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -221,6 +222,13 @@ public sealed class StudioModelHost : IDisposable
         };
         var mapping = sharpConfig.ToJigSawMapping(null, null);
 
+        // ZONOS3 uses a custom Full AttnRes/latent-MoE forward path
+        // and was validated with float-resident weights; keeping it quantized
+        // can turn speech into a low, tonal output. Load it unquantized and do
+        // not build wide quantized repacks for it.
+        bool zonosModel = IsZonosArchitecture(config.Architecture);
+        bool wideRepacks = loadMode == LoadMode.Full && !zonosModel;
+
         progress?.Report(new ModelLoadProgress($"Loading weights ({loadMode})", 0.1));
         TransformerWeights? weights = null;
         try
@@ -228,7 +236,7 @@ public sealed class StudioModelHost : IDisposable
             weights = ModelFactory.CreateWeights(
                 config, sharpConfig, QuantizationFactory.Create(mapping), path,
                 loadMode,
-                quantizedResident: loadMode == LoadMode.Full,
+                quantizedResident: loadMode == LoadMode.Full && !zonosModel,
                 maxParallelLoadDegree: Math.Max(0, profile.MaxParallelLoadDegree));
             var weightProgress = progress is null
                 ? null
@@ -238,17 +246,19 @@ public sealed class StudioModelHost : IDisposable
 
             // These two knobs are process-wide in the engine. Apply them under
             // the host gate before the transformer builds any wide copies.
-            WideRepackBudget.MaxBytes = Math.Max(0, profile.MaxRepackBytes);
-            WideByteWeights.UseForQ4K = profile.UseByteQ4K;
+            if (wideRepacks)
+            {
+                WideRepackBudget.MaxBytes = Math.Max(0, profile.MaxRepackBytes);
+                WideByteWeights.UseForQ4K = profile.UseByteQ4K;
+            }
 
-            bool full = loadMode == LoadMode.Full;
-            if (full && profile.EvictRawAfterRepack)
+            if (wideRepacks && profile.EvictRawAfterRepack)
                 weights.ReleaseRawAfterRepack = true;
 
             progress?.Report(new ModelLoadProgress("Building transformer", 0.9));
             Transformer model = ModelFactory.CreateTransformer(weights, sharpConfig, mapping);
 
-            if (full && profile.PrebuildWideRepacks)
+            if (wideRepacks && profile.PrebuildWideRepacks)
             {
                 progress?.Report(new ModelLoadProgress("Repacking weights 0%", 0.90));
                 var repackProgress = progress is null
@@ -280,11 +290,15 @@ public sealed class StudioModelHost : IDisposable
         }
     }
 
-    private static string KeyFor(string path, ResolvedInference profile) =>
+    private static string KeyFor(string path, ResolvedInference profile, bool zonosModel) =>
         $"{Path.GetFullPath(path)}|{profile.LoadMode}|{profile.HardwareTier}|" +
         $"{profile.UseParallelKernels}|{profile.MaxParallelLoadDegree}|" +
         $"{profile.EvictRawAfterRepack}|{profile.PrebuildWideRepacks}|" +
-        $"{profile.UseByteQ4K}|{profile.MaxRepackBytes}";
+        $"{profile.UseByteQ4K}|{profile.MaxRepackBytes}|{zonosModel}";
+
+    private static bool IsZonosArchitecture(string? architecture) =>
+        !string.IsNullOrWhiteSpace(architecture) &&
+        architecture.StartsWith("zonos3", StringComparison.OrdinalIgnoreCase);
 }
 
 

@@ -10,6 +10,13 @@ _Planned for 1.1.3._
 
 ### Added
 
+- **Voice selection in Chat and Work.** A local speech model now shows a voice selector
+  beside the model picker, with the full voice list from the projector, and the
+  Session options keep the language, frame cap, temperature, top-k and seed.
+  Speech models synthesize automatically in Work as well as Chat. ZONOS3 loads the
+  float-resident backbone path used by the engine TTS probe instead of the quantized
+  resident path, which could collapse speech into a low tonal output.
+
 - **CPU repack controls and faster first token.** Full local loads now prebuild the
   wide kernel repacks before the first token and show `Repacking weights x%` in the
   load progress; Streaming loads skip the prebuild. The inference editor adds

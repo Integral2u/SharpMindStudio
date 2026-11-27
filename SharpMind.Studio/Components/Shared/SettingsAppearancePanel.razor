@@ -69,7 +69,7 @@
     </div>
 </details>
 
-<details class="panel settings-collapsible" open>
+<details class="panel settings-collapsible">
     <summary class="panel-head">
         <div>
             <div class="eyebrow">UI &amp; Appearance</div>
@@ -78,9 +78,9 @@
         <span class="faint small mono">@(Theme.A2uiEnabled ? "On" : "Off")</span>
     </summary>
     <div class="panel-body stack">
-        <label class="field grow">
-            <span class="field-label">A2UI interfaces in Chat and Work</span>
+        <label class="row a2ui-setting-row">
             <input type="checkbox" checked="@Theme.A2uiEnabled" @onchange="SetA2uiAsync" />
+            <span class="small">A2UI interfaces in Chat and Work</span>
         </label>
         <span class="small faint">
             Agents can render small forms, choice cards and structured results with

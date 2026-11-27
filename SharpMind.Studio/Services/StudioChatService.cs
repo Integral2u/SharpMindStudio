@@ -976,11 +976,12 @@ public sealed class StudioChatService : IAsyncDisposable
                 return;
             }
 
-            // An LFM3-Audio model is a speech model: a text prompt generates audio
-            // directly instead of a text reply plus a manual Speak button. Audio
-            // attachments still go through transcription above.
+            // A native speech model is a TTS request: a text prompt generates
+            // audio directly instead of a text reply plus a manual Speak button.
+            // Audio attachments still go through transcription above. Work uses
+            // the same path so a speech model works there too.
 #if SHARPMIND_AUDIO
-            if (IsTtsModel() && !IsWorkMode && !HasAudioArtifact(artifacts))
+            if (IsTtsModel() && !HasAudioArtifact(artifacts))
             {
                 await SendSpeechTurnAsync(text.Trim(), artifacts).ConfigureAwait(false);
                 return;
