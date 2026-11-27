@@ -66,18 +66,25 @@
     color: var(--accent);
 }
 
+.chat-source-select {
+    max-width: 8.5rem;
+    min-height: 2rem;
+    padding: .3rem .45rem;
+    font-size: .72rem;
+}
+
 .chat-model-select {
-    max-width: 12rem;
+    max-width: 10rem;
     min-height: 2rem;
     padding: .3rem .5rem;
     font-size: .78rem;
 }
 
 .chat-voice-select {
-    max-width: 10rem;
+    max-width: 8.5rem;
     min-height: 2rem;
-    padding: .3rem .5rem;
-    font-size: .78rem;
+    padding: .3rem .45rem;
+    font-size: .74rem;
 }
 
 .chat-head .button {

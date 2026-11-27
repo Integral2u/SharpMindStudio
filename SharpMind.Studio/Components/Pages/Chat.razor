@@ -514,6 +514,20 @@ else
                 @if (!DeviceAccess.IsMobile)
                 {
                     <div class="row">
+                        <select class="input chat-source-select" value="@ProviderValue"
+                                @onchange="SwitchSourceAsync"
+                                disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"
+                                title="Change the provider source. The transcript stays.">
+                            <option value="local">Local model</option>
+                            @foreach (RemoteProviderPreset provider in RemoteProviders.All)
+                            {
+                                <option value="@provider.Id">@provider.Name</option>
+                            }
+                            @foreach (ComputeProviderSettings host in Compute.Providers)
+                            {
+                                <option value="@($"compute:{host.Id}")">@host.Name</option>
+                            }
+                        </select>
                         <select class="input chat-model-select" @onchange="SwitchModelAsync"
                                 disabled="@(ChatService.IsStreaming || ChatService.IsLoading)"
                                 title="Switch model. The transcript stays; the next turn uses the new model.">
@@ -3172,6 +3186,62 @@ else
             : args.Value!.ToString();
         _sessionDraft = _sessionDraft with { ReasoningEffort = effort };
         await ChatService.ApplyOptionsAsync(_sessionDraft);
+    }
+
+    private async Task SwitchSourceAsync(ChangeEventArgs args)
+    {
+        if (ChatService.IsStreaming || ChatService.IsLoading) return;
+
+        string value = args.Value?.ToString() ?? "local";
+        bool switched;
+        if (value.StartsWith("compute:", StringComparison.OrdinalIgnoreCase))
+        {
+            string hostId = value["compute:".Length..];
+            ComputeProvider? host = Compute.Resolve(hostId);
+            if (host is null) return;
+            string? model = host.DefaultModel ?? host.Models.FirstOrDefault();
+            switched = await ChatService.SwitchSourceAsync("compute", model, hostId);
+        }
+        else if (RemoteProviders.IsRemote(value))
+        {
+            string providerId = RemoteProviders.NormalizeId(value);
+            _remoteChat = true;
+            _computeProviderId = null;
+            _remoteProviderId = providerId;
+            _remoteModel = OpenRouter.DefaultModelFor(providerId)
+                ?? OpenRouter.ActiveModelsFor(providerId).FirstOrDefault()
+                ?? RemoteProviders.Find(providerId).DefaultModelId
+                ?? "";
+            if (string.IsNullOrWhiteSpace(_remoteModel))
+            {
+                await EnsureActiveModels();
+                _remoteModel = OpenRouter.DefaultModelFor(providerId)
+                    ?? OpenRouter.ActiveModelsFor(providerId).FirstOrDefault()
+                    ?? RemoteProviders.Find(providerId).DefaultModelId
+                    ?? "";
+            }
+            if (string.IsNullOrWhiteSpace(_remoteModel)) return;
+            switched = await ChatService.SwitchSourceAsync(
+                "openrouter", _remoteModel, providerId);
+        }
+        else
+        {
+            ModelDescriptor? model = _models.FirstOrDefault(item =>
+                    string.Equals(item.Path, _selectedModelPath, StringComparison.OrdinalIgnoreCase))
+                ?? _models.FirstOrDefault(item =>
+                    string.Equals(item.Path, Theme.LastChatModel, StringComparison.OrdinalIgnoreCase))
+                ?? _models.FirstOrDefault();
+            if (model is null) return;
+            switched = await ChatService.SwitchSourceAsync("local", model.Path);
+        }
+
+        if (!switched) return;
+        SyncFromChat();
+        RefreshLandingVoices();
+        await RefreshRemoteReasoningAsync(force: true);
+        RefreshTuneSelection();
+        UpdateLatestModelRun();
+        StateHasChanged();
     }
 
     private async Task SwitchModelAsync(ChangeEventArgs args)

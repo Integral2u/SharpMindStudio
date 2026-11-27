@@ -38,10 +38,10 @@ _Planned for 1.1.3._
   saved effort clears it instead of sending an invalid value.
 
 - **Per-agent voice.** An agent with a local speech model in its chain now has a
-  **Voice for spoken replies** picker in Labs > Agents. When that same speech
-  model is the loaded chat model, a delegated turn also attaches a WAV copy of
-  the agent's answer to the chat. Agents with no speech model keep the previous
-  text-only behaviour.
+  **Voice for spoken replies** picker directly under the model-chain rows in
+  Labs > Agents. When that same speech model is the loaded chat model, a
+  delegated turn also attaches a WAV copy of the agent's answer to the chat.
+  Agents with no speech model keep the previous text-only behaviour.
 
 - **CPU repack controls and faster first token.** Full local loads now prebuild the
   wide kernel repacks before the first token and show `Repacking weights x%` in the
@@ -219,6 +219,10 @@ _Planned for 1.1.3._
   now render the provider picker from one value instead of per-option
   `selected` attributes, so choosing Local, a remote router or a Compute host
   updates the model list instead of snapping back to the previous source.
+- **An open chat can change source.** Chat and Work now have a source picker in
+  the header beside the model. Switching Local, a remote router or a Compute
+  host keeps the transcript, system prompt and session settings; speech voice
+  overrides survive the round trip.
 - **A missing Vault reference in a shell builtin is refused.** `echo
   %vault:NAME%` now reports the missing secret instead of printing the literal
   placeholder; the same check already guarded external commands.

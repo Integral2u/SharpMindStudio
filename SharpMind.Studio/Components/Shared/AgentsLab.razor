@@ -261,12 +261,6 @@
                         </div>
                     }
                 </div>
-                <div class="row" style="margin-top:.35rem;">
-                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Inherit)">Add inherit</button>
-                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Local)">Add local</button>
-                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Remote)">Add remote</button>
-                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Compute)">Add compute</button>
-                </div>
                 @{
                     IReadOnlyList<string> agentVoices = AgentVoiceOptions(editing);
                     string? agentVoice = editing.TtsVoice is { Length: > 0 } configured &&
@@ -300,6 +294,12 @@
                         voice chooser, or use the Chat/Work header voice.
                     </div>
                 }
+                <div class="row" style="margin-top:.35rem;">
+                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Inherit)">Add inherit</button>
+                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Local)">Add local</button>
+                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Remote)">Add remote</button>
+                    <button type="button" class="button" @onclick="() => _editing = AddChain(editing, AgentModelKind.Compute)">Add compute</button>
+                </div>
             </div>
             <div class="row">
                 <div class="field">

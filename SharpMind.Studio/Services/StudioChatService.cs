@@ -962,6 +962,138 @@ public sealed class StudioChatService : IAsyncDisposable
     }
 
     /// <summary>
+    /// Moves an open chat to another provider source without clearing the
+    /// transcript. <paramref name="source"/> is "local", "openrouter" or
+    /// "compute"; a remote router still uses the openrouter backend.
+    /// </summary>
+    public async Task<bool> SwitchSourceAsync(
+        string source,
+        string? modelId,
+        string? providerId = null,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_document is null || _streaming || _loading) return false;
+            EndSession();
+            _error = null;
+            _cacheWarning = null;
+            _document.UpdatedUtc = DateTimeOffset.UtcNow;
+            _document.LastCost = null;
+            _document.LastCostCurrency = null;
+            _document.LastTokensPerSecond = null;
+            _document.LastPromptTokens = null;
+            _document.LastCompletionTokens = null;
+            _document.LastToolCalls = null;
+
+            if (string.Equals(source, "local", StringComparison.OrdinalIgnoreCase))
+            {
+                ModelDescriptor? model = _catalog.Find(modelId);
+                if (model is null)
+                {
+                    _error = "That local model was not found.";
+                    return false;
+                }
+
+                TuneTarget target = string.Equals(
+                    _document.Mode, "work", StringComparison.OrdinalIgnoreCase)
+                    ? TuneTarget.Work
+                    : TuneTarget.Chat;
+                TuneProfile? tune = _inference.TuneProfile(
+                    model.Path, target, TunePreset.Balanced);
+                InferenceOverrides previous = _document.Overrides;
+
+                _document.Provider = "local";
+                _document.ModelPath = model.Path;
+                _document.RemoteModel = null;
+                _document.RemoteProvider = null;
+                _document.FamilyId = model.Family.Id;
+                _document.FamilyName = model.Family.DisplayName;
+                _document.ModelFingerprint = TuneFingerprint.ForModel(model.Path);
+                _document.Overrides = (tune?.Overrides ?? new InferenceOverrides()) with
+                {
+                    TtsVoice = previous.TtsVoice,
+                    TtsLanguage = previous.TtsLanguage,
+                    TtsMaxFrames = previous.TtsMaxFrames,
+                    TtsTemperature = previous.TtsTemperature,
+                    TtsTopK = previous.TtsTopK,
+                    TtsSeed = previous.TtsSeed,
+                };
+                _document.TunePreset = tune is null ? null : TunePreset.Balanced.ToString();
+                _document.TuneTarget = tune is null ? null : target.ToString();
+
+                _model = model;
+                _resolved = ResolveInference(model.Family.Id, model.Path, _document.Overrides);
+                await _theme.SetLastRemoteProviderAsync(null).ConfigureAwait(false);
+                _status = "Ready.";
+            }
+            else if (string.Equals(source, "compute", StringComparison.OrdinalIgnoreCase))
+            {
+                ComputeProvider? host = _compute.Resolve(providerId)
+                    ?? throw new InvalidOperationException("The Compute host was not found.");
+                string model = string.IsNullOrWhiteSpace(modelId)
+                    ? host.DefaultModel ?? host.Models.FirstOrDefault() ?? ""
+                    : modelId.Trim();
+
+                _document.Provider = "compute";
+                _document.ModelPath = "compute";
+                _document.RemoteProvider = host.Id;
+                _document.RemoteModel = model;
+                _document.FamilyId = host.Id;
+                _document.FamilyName = host.Name;
+                _document.ModelFingerprint = null;
+                _document.TunePreset = null;
+                _document.TuneTarget = null;
+
+                _model = null;
+                _resolved = null;
+                if (model.Length > 0)
+                    _compute.RememberModel(host.Id, model);
+                await _theme.SetLastRemoteProviderAsync(null).ConfigureAwait(false);
+                _status = model.Length > 0
+                    ? $"Ready ({host.Name})."
+                    : $"{host.Name} has no models yet. Add one in Settings.";
+            }
+            else
+            {
+                RemoteProviderPreset preset = RemoteProviders.Find(providerId ?? source);
+                string model = modelId?.Trim() ?? "";
+                if (model.Length == 0)
+                {
+                    _error = $"Choose a {preset.Name} model first.";
+                    return false;
+                }
+
+                _document.Provider = "openrouter";
+                _document.ModelPath = "openrouter";
+                _document.RemoteProvider = preset.Id;
+                _document.RemoteModel = model;
+                _document.FamilyId = preset.Id;
+                _document.FamilyName = preset.Name;
+                _document.ModelFingerprint = null;
+                _document.TunePreset = null;
+                _document.TuneTarget = null;
+
+                _model = null;
+                _resolved = null;
+                _openRouter.RememberModelFor(preset.Id, model);
+                _openRouter.SetDefaultModelFor(preset.Id, model);
+                await _theme.SetLastRemoteProviderAsync(preset.Id).ConfigureAwait(false);
+                _status = $"Ready ({preset.Name}).";
+            }
+
+            _store.Save(_document);
+            Notify();
+            return true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
     /// Starts a chat backed by a SharpMind Compute host. The host streams an
     /// OpenAI-compatible completion; no local weights are loaded.
     /// </summary>
