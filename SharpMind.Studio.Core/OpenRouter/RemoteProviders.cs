@@ -17,7 +17,8 @@ public sealed record RemoteProviderPreset(
     string Currency = "USD",
     string? SessionHeader = null,
     bool KeyTestUsesModels = false,
-    bool AppendsApiV1 = true)
+    bool AppendsApiV1 = true,
+    ReasoningRequestStyle ReasoningStyle = ReasoningRequestStyle.OpenRouter)
 {
     public bool HasSignup => !string.IsNullOrWhiteSpace(SignupUrl);
 }
@@ -61,7 +62,8 @@ public static class RemoteProviders
         Currency: "USD",
         SessionHeader: "x-opencode-session",
         KeyTestUsesModels: true,
-        AppendsApiV1: false);
+        AppendsApiV1: false,
+        ReasoningStyle: ReasoningRequestStyle.OpenAiEffort);
 
     public static IReadOnlyList<RemoteProviderPreset> All { get; } =
         [OpenRouterPreset, EuroRouterPreset, OpenCodeGoPreset];

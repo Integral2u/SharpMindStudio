@@ -201,7 +201,7 @@
         </button>
     </div>
 
-    <div class="welcome-controls">
+    <div class="welcome-controls @(_mode == "work" ? "has-project" : "") @(HasLandingExtra ? "has-extra" : "")">
         @if (_mode == "work")
         {
             <div class="field welcome-project">
@@ -218,7 +218,7 @@
         }
         <div class="field">
             <label class="field-label" for="welcome-provider">Provider</label>
-            <select id="welcome-provider" class="input" @onchange="SetProvider">
+            <select id="welcome-provider" class="input" value="@ProviderValue" @onchange="SetProvider">
                 <option value="local" selected="@(!_remoteChat)">Local model</option>
                 @{
                     List<RemoteProviderPreset> configuredProviders =
@@ -294,7 +294,7 @@
                     }
                 </div>
                 <select id="welcome-remote-model" class="input" @bind="_remoteModel"
-                        @bind:after="SaveRemoteModelChoice"
+                        @bind:after="OnRemoteModelChangedAsync"
                         @onfocus="EnsureActiveModels">
                     @if (RemoteActiveModels.Count == 0)
                     {
@@ -327,6 +327,32 @@
                     @foreach (var model in _models)
                     {
                         <option value="@model.Path">@model.FileName - @model.Family.DisplayName</option>
+                    }
+                </select>
+            </div>
+        }
+
+        @if (_landingVoices.Count > 0)
+        {
+            <div class="field welcome-extra">
+                <label class="field-label" for="welcome-voice">Voice</label>
+                <select id="welcome-voice" class="input" @bind="_landingVoice">
+                    @foreach (string voice in _landingVoices)
+                    {
+                        <option value="@voice">@voice</option>
+                    }
+                </select>
+            </div>
+        }
+        else if (_computeProviderId is null && _reasoningChoices.Count > 0)
+        {
+            <div class="field welcome-extra">
+                <label class="field-label" for="welcome-reasoning">Reasoning</label>
+                <select id="welcome-reasoning" class="input" @bind="_landingReasoningEffort">
+                    <option value="">Default</option>
+                    @foreach (string effort in _reasoningChoices)
+                    {
+                        <option value="@effort">@ReasoningLabel(effort)</option>
                     }
                 </select>
             </div>
@@ -490,6 +516,11 @@
     private string? _computeProviderId;
     private string _remoteProviderId = RemoteProviders.OpenRouter;
     private string _remoteModel = "";
+    private IReadOnlyList<string> _landingVoices = [];
+    private string? _landingVoice;
+    private IReadOnlyList<string> _reasoningChoices = [];
+    private string? _landingReasoningEffort;
+    private string? _reasoningKey;
     private string _prompt = "";
     private readonly List<ChatArtifact> _pendingArtifacts = [];
     private bool _showOverflow;
@@ -557,6 +588,14 @@
     private IReadOnlyList<string> RemoteActiveModels => OpenRouter.ActiveModelsFor(_remoteProviderId);
     private bool RemoteHasApiKey => OpenRouter.HasApiKeyFor(_remoteProviderId);
 
+    private string ProviderValue => _computeProviderId is { } computeId
+        ? $"compute:{computeId}"
+        : _remoteChat ? _remoteProviderId : "local";
+
+    private bool HasLandingExtra =>
+        _landingVoices.Count > 0 ||
+        (_computeProviderId is null && _reasoningChoices.Count > 0);
+
     private bool RemoteReady => _remoteChat
         && !string.IsNullOrWhiteSpace(_remoteModel)
         && (_computeProviderId is { } computeId
@@ -586,6 +625,8 @@
             ? Theme.LastChatModel
             : _models.FirstOrDefault()?.Path;
         ApplyLastRemoteProvider();
+        RefreshLandingVoices();
+        await RefreshRemoteReasoningAsync();
         UpdateLatestRun();
         RefreshTuneSelection();
     }
@@ -1581,8 +1622,16 @@
     private async Task SaveDefaultModelAsync()
     {
         await Theme.SetLastChatModelAsync(_selectedModelPath);
+        RefreshLandingVoices();
         UpdateLatestRun();
         RefreshTuneSelection();
+    }
+
+    private async Task OnRemoteModelChangedAsync()
+    {
+        SaveRemoteModelChoice();
+        _landingReasoningEffort = null;
+        await RefreshRemoteReasoningAsync(force: true);
     }
 
     private void SaveRemoteModelChoice()
@@ -1596,6 +1645,101 @@
         if (_computeProviderId is { } id && !string.IsNullOrWhiteSpace(_remoteModel))
             Compute.RememberModel(id, _remoteModel);
     }
+
+    /// <summary>
+    /// The landing page chooses the voice before a chat document exists. ZONOS3
+    /// voices come from its projector; LFM3 offers female/male.
+    /// </summary>
+    private void RefreshLandingVoices()
+    {
+        ModelDescriptor? descriptor = _models.FirstOrDefault(model =>
+            string.Equals(model.Path, _selectedModelPath, StringComparison.OrdinalIgnoreCase));
+        string? architecture = descriptor?.Architecture;
+        if (_remoteChat || string.IsNullOrWhiteSpace(_selectedModelPath) ||
+            !ChatService.SupportsTtsFor(_selectedModelPath, architecture))
+        {
+            _landingVoices = [];
+            _landingVoice = null;
+            return;
+        }
+
+        _landingVoices = ChatService.TtsVoiceOptionsFor(_selectedModelPath, architecture);
+        if (_landingVoices.Count == 0)
+        {
+            _landingVoice = null;
+            return;
+        }
+
+        if (_landingVoice is null ||
+            !_landingVoices.Contains(_landingVoice, StringComparer.Ordinal))
+        {
+            _landingVoice = _landingVoices[0];
+        }
+    }
+
+    /// <summary>
+    /// Loads the selected remote model's reasoning efforts. OpenRouter reports
+    /// supported_efforts; OpenCode reports capabilities.reasoning.effort.
+    /// </summary>
+    private async Task RefreshRemoteReasoningAsync(bool force = false)
+    {
+        if (!_remoteChat || _computeProviderId is not null ||
+            string.IsNullOrWhiteSpace(_remoteModel) || !RemoteHasApiKey)
+        {
+            _reasoningChoices = [];
+            _reasoningKey = null;
+            _landingReasoningEffort = null;
+            return;
+        }
+
+        string providerId = _remoteProviderId;
+        string modelId = _remoteModel;
+        string key = $"{providerId}|{modelId}";
+        if (!force && string.Equals(_reasoningKey, key, StringComparison.OrdinalIgnoreCase))
+            return;
+        _reasoningKey = key;
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            OpenRouterModel? info = await OpenRouter
+                .DescribeModelAsync(providerId, modelId, timeout.Token);
+            if (!string.Equals(modelId, _remoteModel, StringComparison.Ordinal) ||
+                !string.Equals(providerId, _remoteProviderId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _reasoningChoices = info?.ReasoningEfforts ?? [];
+            if (_landingReasoningEffort is { Length: > 0 } landing &&
+                !_reasoningChoices.Contains(landing, StringComparer.OrdinalIgnoreCase))
+            {
+                _landingReasoningEffort = null;
+            }
+        }
+        catch
+        {
+            _reasoningChoices = [];
+            _reasoningKey = null;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string ReasoningLabel(string effort) =>
+        effort switch
+        {
+            "none" => "None",
+            "minimal" => "Minimal",
+            "low" => "Low",
+            "medium" => "Medium",
+            "high" => "High",
+            "xhigh" => "XHigh",
+            "max" => "Max",
+            _ when effort.Length > 0 =>
+                char.ToUpperInvariant(effort[0]) + effort[1..],
+            _ => effort,
+        };
 
     private void UpdateLatestRun()
     {
@@ -1652,6 +1796,10 @@
                         _remoteModel.Trim(),
                         systemPrompt: null,
                         mode: _mode,
+                        overrides: new InferenceOverrides
+                        {
+                            ReasoningEffort = _landingReasoningEffort,
+                        },
                         providerId: _remoteProviderId);
                 }
 
@@ -1693,7 +1841,10 @@
             TuneProfile? tune = _selectedTunePreset is { } selected
                 ? Inference.TuneProfile(model.Path, target, selected)
                 : null;
-            await ChatService.NewChatAsync(model, systemPrompt: null, overrides: tune?.Overrides,
+            InferenceOverrides overrides = tune?.Overrides ?? new InferenceOverrides();
+            if (_landingVoices.Count > 0 && !string.IsNullOrWhiteSpace(_landingVoice))
+                overrides = overrides with { TtsVoice = _landingVoice };
+            await ChatService.NewChatAsync(model, systemPrompt: null, overrides: overrides,
                 mode: _mode,
                 tunePreset: tune is null ? null : _selectedTunePreset?.ToString(),
                 tuneTarget: target.ToString());
@@ -1811,6 +1962,8 @@
             }
         }
 
+        _landingReasoningEffort = null;
+        RefreshLandingVoices();
         UpdateLatestRun();
         RefreshTuneSelection();
         await Theme.SetLastRemoteProviderAsync(
@@ -1818,6 +1971,7 @@
         await InvokeAsync(StateHasChanged);
         if (_remoteChat && _computeProviderId is null)
             await EnsureActiveModels();
+        await RefreshRemoteReasoningAsync(force: true);
     }
 
     private async Task EnsureActiveModels()

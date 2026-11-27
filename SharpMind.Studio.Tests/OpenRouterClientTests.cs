@@ -225,6 +225,63 @@ public sealed class OpenRouterClientTests
     }
 
     [Fact]
+    public async Task ListModels_ParsesOpenCodeReasoningCapabilities()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                {"data":[{"id":"deepseek-v4.1-flash","name":"DeepSeek V4.1 Flash",
+                  "capabilities":{
+                    "tools":{"supported":true},
+                    "reasoning":{"supported":true,"effort":["low","high","max"]}}}]}
+                """,
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        OpenRouterModel model = Assert.Single(await client.ListModelsAsync(Connection));
+
+        Assert.True(model.SupportsReasoning);
+        Assert.Equal(new[] { "low", "high", "max" }, model.ReasoningEfforts);
+    }
+
+    [Fact]
+    public async Task Stream_SendsOpenAiReasoningEffortWhenRequested()
+    {
+        string? captured = null;
+        var handler = new StubHandler(request =>
+        {
+            captured = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+            };
+        });
+        using var http = new HttpClient(handler);
+        var client = new OpenRouterClient(http);
+
+        await foreach (OpenRouterStreamEvent _ in client.StreamAsync(
+            new OpenRouterRequest
+            {
+                Model = "deepseek-v4.1-flash",
+                Messages = [OpenRouterMessageBuilder.User("hi")],
+                ReasoningEffort = "max",
+                ReasoningStyle = ReasoningRequestStyle.OpenAiEffort,
+            },
+            Connection))
+        {
+        }
+
+        Assert.NotNull(captured);
+        using JsonDocument document = JsonDocument.Parse(captured!);
+        Assert.Equal("max", document.RootElement.GetProperty("reasoning_effort").GetString());
+        Assert.False(document.RootElement.TryGetProperty("reasoning", out _));
+    }
+
+    [Fact]
     public async Task Stream_SendsThePresetSessionHeaderWhenSet()
     {
         HttpRequestMessage? captured = null;

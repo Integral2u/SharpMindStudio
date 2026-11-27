@@ -278,6 +278,9 @@ public sealed class StudioChatService : IAsyncDisposable
     public bool SupportsTtsFor(string? modelPath, string? architecture = null)
     {
         if (string.IsNullOrWhiteSpace(modelPath)) return false;
+        // Synthesis itself only supports these architectures. A projector in the
+        // shared model folder must not make an unrelated chat model look like TTS.
+        if (!IsZonos(architecture) && !IsLfm(architecture)) return false;
         return FindTtsProjector(modelPath, architecture) is not null;
     }
 
@@ -304,20 +307,6 @@ public sealed class StudioChatService : IAsyncDisposable
                 if (TtsProjector.Find(modelPath, Lfm3TtsRuntime.IsTtsProjector) is not null)
                     return ["female", "male"];
             }
-            else
-            {
-                // No architecture on the descriptor: accept either projector but
-                // only list voices when the projector matches the backbone name.
-                string? projector = FindTtsProjector(modelPath, architecture);
-                if (projector is not null &&
-                    Zonos3TtsRuntime.IsTtsProjector(projector) &&
-                    Path.GetFileName(projector).Contains(
-                        "zonos", StringComparison.OrdinalIgnoreCase))
-                {
-                    IReadOnlyList<string> voices = Zonos3TtsRuntime.ListVoices(projector);
-                    if (voices.Count > 0) return voices;
-                }
-            }
         }
 
         return ["female", "male"];
@@ -329,7 +318,7 @@ public sealed class StudioChatService : IAsyncDisposable
             return TtsProjector.Find(modelPath, Zonos3TtsRuntime.IsTtsProjector);
         if (IsLfm(architecture))
             return TtsProjector.Find(modelPath, Lfm3TtsRuntime.IsTtsProjector);
-        return TtsProjector.Find(modelPath);
+        return null;
     }
 
     /// <summary>
@@ -489,7 +478,8 @@ public sealed class StudioChatService : IAsyncDisposable
     public async Task<ChatArtifact> SynthesizeAsync(
         string text,
         string? fileName = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        InferenceOverrides? speechOverrides = null)
     {
 #if SHARPMIND_AUDIO
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
@@ -541,7 +531,7 @@ public sealed class StudioChatService : IAsyncDisposable
 
             ITtsRuntime runtime = _ttsRuntime
                 ?? throw new InvalidOperationException("The speech runtime was not created.");
-            ApplyTtsOptions(runtime);
+            ApplyTtsOptions(runtime, speechOverrides);
             runtime.FrameSampled = (index, _) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -625,9 +615,9 @@ public sealed class StudioChatService : IAsyncDisposable
 
 #if SHARPMIND_AUDIO
     /// <summary>Applies the chat's speech overrides to the cached TTS runtime.</summary>
-    private void ApplyTtsOptions(ITtsRuntime runtime)
+    private void ApplyTtsOptions(ITtsRuntime runtime, InferenceOverrides? speechOverrides = null)
     {
-        InferenceOverrides overrides = _document?.Overrides ?? new InferenceOverrides();
+        InferenceOverrides overrides = speechOverrides ?? _document?.Overrides ?? new InferenceOverrides();
         bool zonos3 = runtime is Zonos3TtsRuntime;
         runtime.MaxFrames = Math.Clamp(
             overrides.TtsMaxFrames ?? 128, 1, zonos3 ? 1024 : 512);
@@ -2409,7 +2399,7 @@ public sealed class StudioChatService : IAsyncDisposable
                 }
 
                 if (_loaded is null) return null;
-                return await _agentRunner.RunAsync(
+                string? inherited = await _agentRunner.RunAsync(
                     definition with
                     {
                         ModelPath = null,
@@ -2422,6 +2412,10 @@ public sealed class StudioChatService : IAsyncDisposable
                     sessionId: _document?.Id,
                     sessionCommands: _document?.CommandLine,
                     workMode: IsWorkMode).ConfigureAwait(false);
+                return inherited is null
+                    ? null
+                    : await SpeakAgentReplyAsync(
+                        definition, choice, inherited, cancellationToken).ConfigureAwait(false);
 
             case AgentModelKind.Local:
             {
@@ -2433,7 +2427,7 @@ public sealed class StudioChatService : IAsyncDisposable
                     string.Equals(model.FileName, choice.Model, StringComparison.OrdinalIgnoreCase));
                 if (descriptor is null || !File.Exists(descriptor.Path)) return null;
 
-                return await _agentRunner.RunAsync(
+                string? local = await _agentRunner.RunAsync(
                     definition with
                     {
                         ModelPath = descriptor.Path,
@@ -2453,6 +2447,10 @@ public sealed class StudioChatService : IAsyncDisposable
                     sessionId: _document?.Id,
                     sessionCommands: _document?.CommandLine,
                     workMode: IsWorkMode).ConfigureAwait(false);
+                return local is null
+                    ? null
+                    : await SpeakAgentReplyAsync(
+                        definition, choice, local, cancellationToken).ConfigureAwait(false);
             }
 
             case AgentModelKind.Remote:
@@ -2466,6 +2464,73 @@ public sealed class StudioChatService : IAsyncDisposable
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// When an agent names a voice and runs on the same local speech model as the
+    /// chat, add a spoken WAV of its reply to the current assistant message.
+    /// A different model can still answer, but its voice list would not match the
+    /// loaded projector, so it stays text-only.
+    /// </summary>
+    private async Task<string> SpeakAgentReplyAsync(
+        StudioAgentDefinition definition,
+        AgentModelChoice choice,
+        string answer,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(definition.TtsVoice) ||
+            string.IsNullOrWhiteSpace(answer) ||
+            IsRemote || _loaded is null || _model is null || !SupportsTts)
+        {
+            return answer;
+        }
+
+        bool sameModel = choice.Kind == AgentModelKind.Inherit ||
+            string.Equals(choice.Model, _model.Path, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(
+                Path.GetFileName(choice.Model),
+                _model.FileName,
+                StringComparison.OrdinalIgnoreCase);
+        if (!sameModel) return answer;
+
+        string previousStatus = _status;
+        try
+        {
+            InferenceOverrides speech = (_document?.Overrides ?? new InferenceOverrides())
+                with { TtsVoice = definition.TtsVoice };
+            string safeName = new([.. definition.Name.Where(char.IsLetterOrDigit)]);
+            if (safeName.Length == 0) safeName = "agent";
+            ChatArtifact audio = await SynthesizeAsync(
+                answer,
+                $"agent-{safeName}-{DateTime.Now:HHmmss}.wav",
+                cancellationToken,
+                speech).ConfigureAwait(false);
+
+            ChatMessage? assistant = _document?.Messages
+                .LastOrDefault(message => message.Role == ChatRole.Agent);
+            if (assistant is not null)
+            {
+                assistant.Artifacts = [.. (assistant.Artifacts ?? []), audio];
+                if (_document is not null) _store.Save(_document);
+                Notify();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // The agent's text is still the tool result; a missing voice must not
+            // turn a successful delegation into a failed turn.
+            _error = null;
+        }
+        finally
+        {
+            _status = previousStatus;
+        }
+
+        return answer;
     }
 
     private async Task<string?> RunRemoteAgentAsync(

@@ -212,10 +212,10 @@
                     <div class="small faint command-result">@_commandStatus</div>
                 }
 
-                <div class="welcome-controls chat-welcome-controls">
+                <div class="welcome-controls chat-welcome-controls @(HasLandingExtra ? "has-extra" : "")">
                     <div class="field">
                         <label class="field-label" for="chat-provider">Provider</label>
-                        <select id="chat-provider" class="input" @onchange="SetProvider">
+                        <select id="chat-provider" class="input" value="@ProviderValue" @onchange="SetProvider">
                             <option value="local" selected="@(!_remoteChat)">Local model</option>
                             @{
                                 List<RemoteProviderPreset> configuredProviders =
@@ -1310,6 +1310,12 @@ else
     private RemoteProviderPreset RemotePreset => RemoteProviders.Find(_remoteProviderId);
     private IReadOnlyList<string> RemoteActiveModels => OpenRouter.ActiveModelsFor(_remoteProviderId);
     private bool RemoteHasApiKey => OpenRouter.HasApiKeyFor(_remoteProviderId);
+    private bool HasLandingExtra =>
+        _landingVoices.Count > 0 ||
+        (_computeProviderId is null && _reasoningChoices.Count > 0);
+    private string ProviderValue => _computeProviderId is { } computeId
+        ? $"compute:{computeId}"
+        : _remoteChat ? _remoteProviderId : "local";
 
     private bool RemoteReady => _remoteChat
         && !string.IsNullOrWhiteSpace(_remoteModel)

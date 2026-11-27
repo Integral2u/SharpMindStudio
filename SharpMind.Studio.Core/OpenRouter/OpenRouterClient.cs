@@ -57,6 +57,16 @@ public sealed record OpenRouterModel(
     public string? DefaultReasoningEffort { get; init; }
 }
 
+/// <summary>How a provider expects reasoning effort on a chat-completions request.</summary>
+public enum ReasoningRequestStyle
+{
+    /// <summary>OpenRouter's <c>reasoning: { effort }</c> object.</summary>
+    OpenRouter,
+
+    /// <summary>OpenAI's top-level <c>reasoning_effort</c> field.</summary>
+    OpenAiEffort,
+}
+
 /// <summary>Everything needed for one chat-completions request.</summary>
 public sealed class OpenRouterRequest
 {
@@ -72,8 +82,11 @@ public sealed class OpenRouterRequest
     public bool ParallelToolCalls { get; init; }
     public IReadOnlyList<string>? Stop { get; init; }
 
-    /// <summary>Reasoning effort sent as <c>reasoning.effort</c>; null uses the provider default.</summary>
+    /// <summary>Reasoning effort; null uses the provider default.</summary>
     public string? ReasoningEffort { get; init; }
+
+    /// <summary>Wire shape used for <see cref="ReasoningEffort"/>.</summary>
+    public ReasoningRequestStyle ReasoningStyle { get; init; } = ReasoningRequestStyle.OpenRouter;
 }
 
 public sealed class OpenRouterException : Exception
@@ -276,10 +289,11 @@ public sealed class OpenRouterClient
             body["stop"] = new JsonArray([.. stop.Select(value => JsonValue.Create(value))]);
         if (!string.IsNullOrWhiteSpace(request.ReasoningEffort))
         {
-            body["reasoning"] = new JsonObject
-            {
-                ["effort"] = request.ReasoningEffort.Trim().ToLowerInvariant(),
-            };
+            string effort = request.ReasoningEffort.Trim().ToLowerInvariant();
+            if (request.ReasoningStyle == ReasoningRequestStyle.OpenAiEffort)
+                body["reasoning_effort"] = effort;
+            else
+                body["reasoning"] = new JsonObject { ["effort"] = effort };
         }
 
         return body;
@@ -586,27 +600,31 @@ public sealed class OpenRouterClient
         if (item.TryGetProperty("reasoning", out JsonElement reasoning)
             && reasoning.ValueKind == JsonValueKind.Object)
         {
-            if (reasoning.TryGetProperty("supported_efforts", out JsonElement supported)
-                && supported.ValueKind == JsonValueKind.Array)
+            ReadReasoningBlock(reasoning, ref supports, ref defaultEffort, efforts);
+        }
+
+        // OpenCode and models.dev use capabilities.reasoning.effort instead of
+        // OpenRouter's reasoning.supported_efforts.
+        if (item.TryGetProperty("capabilities", out JsonElement capabilities)
+            && capabilities.ValueKind == JsonValueKind.Object
+            && capabilities.TryGetProperty("reasoning", out JsonElement capabilityReasoning)
+            && capabilityReasoning.ValueKind == JsonValueKind.Object)
+        {
+            if (capabilityReasoning.TryGetProperty("supported", out JsonElement supportedFlag)
+                && supportedFlag.ValueKind is JsonValueKind.True)
             {
                 supports = true;
-                foreach (JsonElement effort in supported.EnumerateArray())
+            }
+
+            if (capabilityReasoning.TryGetProperty("effort", out JsonElement effortArray)
+                && effortArray.ValueKind == JsonValueKind.Array)
+            {
+                supports = true;
+                foreach (JsonElement effort in effortArray.EnumerateArray())
                 {
                     if (effort.ValueKind == JsonValueKind.String)
                         AddEffort(efforts, effort.GetString());
                 }
-            }
-
-            if (reasoning.TryGetProperty("supports_effort", out JsonElement supportsEffort)
-                && supportsEffort.ValueKind is JsonValueKind.True)
-            {
-                supports = true;
-            }
-
-            if (reasoning.TryGetProperty("default_effort", out JsonElement defaultElement)
-                && defaultElement.ValueKind == JsonValueKind.String)
-            {
-                defaultEffort = NormalizeEffort(defaultElement.GetString());
             }
         }
 
@@ -629,6 +647,36 @@ public sealed class OpenRouterClient
             efforts.AddRange(["low", "medium", "high"]);
 
         return (supports, defaultEffort, SortEfforts(efforts));
+    }
+
+    private static void ReadReasoningBlock(
+        JsonElement reasoning,
+        ref bool supports,
+        ref string? defaultEffort,
+        List<string> efforts)
+    {
+        if (reasoning.TryGetProperty("supported_efforts", out JsonElement supported)
+            && supported.ValueKind == JsonValueKind.Array)
+        {
+            supports = true;
+            foreach (JsonElement effort in supported.EnumerateArray())
+            {
+                if (effort.ValueKind == JsonValueKind.String)
+                    AddEffort(efforts, effort.GetString());
+            }
+        }
+
+        if (reasoning.TryGetProperty("supports_effort", out JsonElement supportsEffort)
+            && supportsEffort.ValueKind is JsonValueKind.True)
+        {
+            supports = true;
+        }
+
+        if (reasoning.TryGetProperty("default_effort", out JsonElement defaultElement)
+            && defaultElement.ValueKind == JsonValueKind.String)
+        {
+            defaultEffort = NormalizeEffort(defaultElement.GetString());
+        }
     }
 
     private static void AddEffort(List<string> efforts, string? effort)

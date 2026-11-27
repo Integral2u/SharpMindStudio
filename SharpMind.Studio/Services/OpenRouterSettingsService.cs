@@ -192,9 +192,25 @@ public sealed class OpenRouterSettingsService
         try
         {
             if (_catalog.TryGetValue(preset.Id, out cached)) return cached;
-            IReadOnlyList<OpenRouterModel> models = await _client
-                .ListModelsAsync(ConnectionFor(preset.Id), cancellationToken)
-                .ConfigureAwait(false);
+            OpenRouterConnection connection = ConnectionFor(preset.Id);
+            IReadOnlyList<OpenRouterModel> models;
+            try
+            {
+                // Model metadata is public on OpenRouter and OpenCode. Prefer the
+                // public catalog so a stale or restricted key cannot hide the
+                // reasoning menu; fall back to the authenticated list when the
+                // provider requires it.
+                models = await _client
+                    .ListModelsAsync(connection with { ApiKey = "" }, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch when (!string.IsNullOrWhiteSpace(connection.ApiKey))
+            {
+                models = await _client
+                    .ListModelsAsync(connection, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             _catalog[preset.Id] = models;
             return models;
         }

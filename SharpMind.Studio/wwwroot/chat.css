@@ -485,13 +485,34 @@
 
 .welcome-controls {
     display: grid;
-    grid-template-columns: minmax(14rem, 1.8fr) minmax(9rem, .7fr) minmax(13rem, 1fr);
+    grid-template-columns: minmax(12rem, 1.2fr) minmax(15rem, 1.8fr) minmax(10rem, .8fr);
     gap: .75rem;
     align-items: start;
 }
 
+.welcome-controls.has-extra {
+    grid-template-columns:
+        minmax(10rem, 1fr) minmax(13rem, 1.6fr) minmax(9rem, .9fr) minmax(9rem, .8fr);
+}
+
+.welcome-controls.has-project {
+    grid-template-columns:
+        minmax(9rem, .9fr) minmax(9rem, .9fr) minmax(13rem, 1.5fr) minmax(9rem, .8fr);
+}
+
+.welcome-controls.has-project.has-extra {
+    grid-template-columns:
+        minmax(8rem, .8fr) minmax(8rem, .8fr) minmax(11rem, 1.4fr) minmax(8rem, .8fr)
+        minmax(8rem, .7fr);
+}
+
 .chat-welcome-controls {
     grid-template-columns: minmax(16rem, 2fr) minmax(16rem, 1fr);
+}
+
+.chat-welcome-controls.has-extra {
+    grid-template-columns:
+        minmax(13rem, 1.2fr) minmax(15rem, 1.5fr) minmax(10rem, .9fr);
 }
 
 .welcome-model-status {

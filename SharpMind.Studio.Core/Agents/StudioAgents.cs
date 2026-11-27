@@ -58,6 +58,12 @@ public sealed record StudioAgentDefinition
     public float? Temperature { get; init; }
     public int? Seed { get; init; }
 
+    /// <summary>
+    /// Optional voice for a spoken copy of this agent's reply. The chat model
+    /// must be the same local speech model; null inherits the chat voice.
+    /// </summary>
+    public string? TtsVoice { get; init; }
+
     /// <summary>When true a work agent also receives the parent project's tools.</summary>
     public bool InheritTools { get; init; } = true;
 

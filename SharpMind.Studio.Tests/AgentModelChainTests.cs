@@ -71,6 +71,35 @@ public sealed class AgentModelChainTests
     }
 
     [Fact]
+    public void Store_PreservesAgentVoice()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(), $"sharp-mind-agents-voice-{Guid.NewGuid():n}");
+        try
+        {
+            var store = new StudioAgentStore(root);
+            store.Save(new StudioAgentsDocument
+            {
+                Agents =
+                [
+                    new StudioAgentDefinition
+                    {
+                        Name = "speaker",
+                        TtsVoice = "Ananya_hi_F_1",
+                    },
+                ],
+            });
+
+            StudioAgentDefinition loaded = Assert.Single(store.Load().Agents);
+            Assert.Equal("Ananya_hi_F_1", loaded.TtsVoice);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Store_PreservesAvailabilityFlags()
     {
         string root = Path.Combine(

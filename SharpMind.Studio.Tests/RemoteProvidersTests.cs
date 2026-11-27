@@ -28,6 +28,7 @@ public sealed class RemoteProvidersTests
         Assert.False(preset.Beta);
         Assert.Equal("openrouter/free", preset.DefaultModelId);
         Assert.Equal("USD", preset.Currency);
+        Assert.Equal(ReasoningRequestStyle.OpenRouter, preset.ReasoningStyle);
     }
 
     [Fact]
@@ -46,6 +47,7 @@ public sealed class RemoteProvidersTests
         Assert.Equal("x-opencode-session", preset.SessionHeader);
         Assert.True(preset.KeyTestUsesModels);
         Assert.Equal("USD", preset.Currency);
+        Assert.Equal(ReasoningRequestStyle.OpenAiEffort, preset.ReasoningStyle);
     }
 
     [Fact]

@@ -13,11 +13,13 @@ _Planned for 1.1.3._
 - **Voice selection in Chat and Work.** A local speech model now shows a voice selector
   beside the model picker, with the full voice list from the projector, and the
   Session options keep the language, frame cap, temperature, top-k and seed.
-  The welcome composer shows the same picker before the first message, so a new
-  ZONOS3 chat starts with its named voices and an LFM3 chat starts with
-  female/male; the chosen voice is stored in the new session. Projectors must
-  match the backbone architecture, so an LFM3 chat no longer lists ZONOS3 voices
-  (or the reverse).
+  The Home landing page and the Chat/Work welcome composer show the same picker
+  before the first message, so a new ZONOS3 chat starts with its named voices and
+  an LFM3 chat starts with female/male; the chosen voice is stored in the new
+  session. Projectors must match the backbone architecture, so an LFM3 chat no
+  longer lists ZONOS3 voices (or the reverse), and a non-speech model such as
+  TinyLlama no longer shows a voice picker at all. Provider, model, voice (or
+  reasoning) and session stay on one row at desktop widths.
   Speech models synthesize automatically in Work as well as Chat. ZONOS3 loads the
   float-resident backbone path used by the engine TTS probe instead of the quantized
   resident path, which could collapse speech into a low tonal output. Interrupt
@@ -26,11 +28,20 @@ _Planned for 1.1.3._
 
 - **Reasoning effort for remote models.** Remote chats now offer a **Reasoning**
   picker with only the efforts the selected model advertises (for example
-  Default / None / Medium / High, or Default / Low / High / Max). The provider
-  catalog is cached per app session, the welcome composer and chat header share
-  the same list, and a session stores its choice. Requests send
-  `reasoning: { effort }`; switching to a model that does not support the saved
-  effort clears it instead of sending an invalid value.
+  Default / None / Medium / High, or Default / Low / High / Max). The selector is
+  on the Home landing page, the Chat/Work welcome composer and the chat header.
+  Both catalog shapes are read: OpenRouter's `reasoning.supported_efforts` and
+  OpenCode's `capabilities.reasoning.effort`. The catalog is cached per app
+  session and fetched without a key first, so a stale key cannot hide the menu.
+  Requests send `reasoning: { effort }` on OpenRouter and
+  `reasoning_effort` on OpenCode. Switching to a model that does not support the
+  saved effort clears it instead of sending an invalid value.
+
+- **Per-agent voice.** An agent with a local speech model in its chain now has a
+  **Voice for spoken replies** picker in Labs > Agents. When that same speech
+  model is the loaded chat model, a delegated turn also attaches a WAV copy of
+  the agent's answer to the chat. Agents with no speech model keep the previous
+  text-only behaviour.
 
 - **CPU repack controls and faster first token.** Full local loads now prebuild the
   wide kernel repacks before the first token and show `Repacking weights x%` in the
@@ -204,6 +215,10 @@ _Planned for 1.1.3._
 - **OpenRouter chats are no longer mistaken for Compute chats.** The computed
   provider id is exposed only for Compute sessions; an existing remote chat now
   keeps its provider model picker, welcome composer and reasoning options.
+- **Provider switches bind to state.** Home and the Chat/Work welcome composer
+  now render the provider picker from one value instead of per-option
+  `selected` attributes, so choosing Local, a remote router or a Compute host
+  updates the model list instead of snapping back to the previous source.
 - **A missing Vault reference in a shell builtin is refused.** `echo
   %vault:NAME%` now reports the missing secret instead of printing the literal
   placeholder; the same check already guarded external commands.
