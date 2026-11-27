@@ -140,6 +140,7 @@ builder.Services.AddScoped<StudioA2uiService>();
 builder.Services.AddScoped<StudioChatService>();
 builder.Services.AddScoped<DataFactoryService>();
 builder.Services.AddScoped<HuggingFaceService>();
+builder.Services.AddScoped<HuggingFacePublishService>();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()

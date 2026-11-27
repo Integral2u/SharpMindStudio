@@ -18,6 +18,12 @@ public partial class Training
     [SupplyParameterFromQuery(Name = "tab")]
     public string? TabQuery { get; set; }
 
+    [SupplyParameterFromQuery(Name = "source")]
+    public string? SourceQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "run")]
+    public string? RunQuery { get; set; }
+
     private string _tab = "new";
     private TrainingJobSettings _job = null!;
     private string _selectedJobPath = "";
@@ -196,7 +202,7 @@ public partial class Training
 
     protected override void OnParametersSet()
     {
-        _tab = TabQuery is "new" or "improve" or "playbooks" or "data" or "runs" or "models"
+        _tab = TabQuery is "new" or "improve" or "playbooks" or "data" or "runs" or "models" or "publish"
             ? TabQuery
             : "new";
         if (_tab == "runs") EnsureCompareSelection();
@@ -304,6 +310,10 @@ public partial class Training
 
     private string ModelListPath(FileInfo file) =>
         InModelsFolder(file) ? file.FullName : Path.Combine(Catalog.Folder, file.Name);
+
+    private void PublishModel(FileInfo file) =>
+        Nav.NavigateTo(
+            $"/training?tab=publish&source={Uri.EscapeDataString(file.FullName)}");
 
     private async Task AddModelClickedAsync(FileInfo file) => await AddModelToCatalogAsync(file);
 
@@ -927,6 +937,21 @@ public partial class Training
            && run.Record.ExportPath is { } export
            && export.EndsWith(".smm", StringComparison.OrdinalIgnoreCase)
            && File.Exists(export);
+
+    private static bool CanPublishRun(TrainingRunSummary run)
+        => run.Record.Success
+           && run.Record.ExportPath is { } export
+           && File.Exists(export)
+           && (export.EndsWith(".smm", StringComparison.OrdinalIgnoreCase)
+               || export.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase));
+
+    private void PublishRun(TrainingRunSummary run)
+    {
+        if (!CanPublishRun(run)) return;
+        Nav.NavigateTo(
+            $"/training?tab=publish&source={Uri.EscapeDataString(run.Record.ExportPath!)}" +
+            $"&run={Uri.EscapeDataString(run.Record.Id)}");
+    }
 
     private static bool CanExamine(TrainingRunSummary run)
         => run.Record.Success

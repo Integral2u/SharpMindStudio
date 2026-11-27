@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using SharpMind.Studio.Core.HuggingFace;
 using Xunit;
 
@@ -178,6 +181,199 @@ public sealed class HuggingFaceClientTests
         store.SetToken("hf_other");
         Assert.Null(store.TokenSecret);
         Assert.Equal("hf_other", store.ApiToken);
+    }
+
+    [Fact]
+    public async Task WhoAmI_ParsesAccountAndOrganizations()
+    {
+        var handler = new StubHandler(_ => JsonResponse(
+            """
+            {"name":"alice","fullname":"Alice","orgs":[{"name":"acme"},{"name":"research"}]}
+            """));
+        using var http = new HttpClient(handler);
+        var client = new HuggingFaceClient(http);
+
+        HuggingFaceUser user = await client.WhoAmIAsync("hf_token");
+
+        Assert.Equal("alice", user.Name);
+        Assert.Equal("Alice", user.FullName);
+        Assert.Equal(new[] { "acme", "research" }, user.Organizations);
+        Assert.Equal(new[] { "alice", "acme", "research" }, user.Namespaces);
+    }
+
+    [Fact]
+    public async Task CreateModelRepo_SendsOrganizationAndVisibility()
+    {
+        string? body = null;
+        var handler = new StubHandler(request =>
+        {
+            body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent("""{"url":"https://huggingface.co/acme/model"}"""),
+            };
+        });
+        using var http = new HttpClient(handler);
+        var client = new HuggingFaceClient(http);
+
+        await client.CreateModelRepoAsync("acme/model", "hf_token", privateRepo: true);
+
+        Assert.NotNull(body);
+        using JsonDocument document = JsonDocument.Parse(body!);
+        Assert.Equal("model", document.RootElement.GetProperty("type").GetString());
+        Assert.Equal("model", document.RootElement.GetProperty("name").GetString());
+        Assert.Equal("acme", document.RootElement.GetProperty("organization").GetString());
+        Assert.Equal("private", document.RootElement.GetProperty("visibility").GetString());
+    }
+
+    [Fact]
+    public async Task UploadFiles_CommitsRegularFiles()
+    {
+        string? commitBody = null;
+        var handler = new StubHandler(request =>
+        {
+            string url = request.RequestUri!.ToString();
+            if (url.EndsWith("/preupload/main", StringComparison.Ordinal))
+            {
+                return JsonResponse(
+                    """{"files":[{"path":"README.md","uploadMode":"regular","shouldIgnore":false}]}""");
+            }
+            if (url.EndsWith("/commit/main", StringComparison.Ordinal))
+            {
+                commitBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                return JsonResponse(
+                    """{"commitUrl":"https://huggingface.co/acme/model/commit/abc","commitOid":"abc"}""");
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        using var http = new HttpClient(handler);
+        var client = new HuggingFaceClient(http);
+
+        HuggingFaceCommitResult result = await client.UploadFilesAsync(
+            "acme/model",
+            [HuggingFaceUploadFile.FromText("README.md", "hello")],
+            "hf_token");
+
+        Assert.Equal("acme/model", result.RepoId);
+        Assert.Equal("abc", result.CommitOid);
+        Assert.NotNull(commitBody);
+        Assert.Contains("\"key\":\"file\"", commitBody);
+        Assert.Contains(Convert.ToBase64String(Encoding.UTF8.GetBytes("hello")), commitBody);
+    }
+
+    [Fact]
+    public async Task UploadFiles_UsesLfsAndCommitsPointer()
+    {
+        const string content = "large model bytes";
+        byte[] bytes = Encoding.UTF8.GetBytes(content);
+        string oid = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        bool put = false;
+        string? commitBody = null;
+
+        var handler = new StubHandler(request =>
+        {
+            string url = request.RequestUri!.ToString();
+            if (url.EndsWith("/preupload/main", StringComparison.Ordinal))
+            {
+                return JsonResponse(
+                    """{"files":[{"path":"model.gguf","uploadMode":"lfs","shouldIgnore":false}]}""");
+            }
+            if (url.EndsWith("/info/lfs/objects/batch", StringComparison.Ordinal))
+            {
+                string batch = """
+                    {"objects":[{"oid":"__OID__","size":__SIZE__,"actions":{"upload":{"href":"https://upload.test/model"}}}]}
+                    """
+                    .Replace("__OID__", oid)
+                    .Replace("__SIZE__", bytes.Length.ToString());
+                return JsonResponse(batch);
+            }
+            if (url == "https://upload.test/model")
+            {
+                put = true;
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+            if (url.EndsWith("/commit/main", StringComparison.Ordinal))
+            {
+                commitBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                return JsonResponse(
+                    """{"commitUrl":"https://huggingface.co/acme/model/commit/abc","commitOid":"abc"}""");
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        using var http = new HttpClient(handler);
+        var client = new HuggingFaceClient(http);
+
+        await client.UploadFilesAsync(
+            "acme/model",
+            [new HuggingFaceUploadFile { PathInRepo = "model.gguf", Content = bytes }],
+            "hf_token");
+
+        Assert.True(put);
+        Assert.NotNull(commitBody);
+        Assert.Contains("\"key\":\"lfsFile\"", commitBody);
+        Assert.Contains(oid, commitBody);
+    }
+
+    [Fact]
+    public async Task UploadFiles_CompletesLfsMultipartParts()
+    {
+        using var temp = new TempDirectory();
+        string source = temp.Combine("model.gguf");
+        byte[] bytes = Encoding.UTF8.GetBytes("0123456789");
+        await File.WriteAllBytesAsync(source, bytes);
+        string oid = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        string? completionBody = null;
+        var parts = new List<int>();
+
+        var handler = new StubHandler(request =>
+        {
+            string url = request.RequestUri!.ToString();
+            if (url.EndsWith("/preupload/main", StringComparison.Ordinal))
+            {
+                return JsonResponse(
+                    """{"files":[{"path":"model.gguf","uploadMode":"lfs","shouldIgnore":false}]}""");
+            }
+            if (url.EndsWith("/info/lfs/objects/batch", StringComparison.Ordinal))
+            {
+                string batch = """
+                    {"objects":[{"oid":"__OID__","size":10,"actions":{"upload":{"href":"https://upload.test/complete","header":{"chunk_size":"4","1":"https://upload.test/1","2":"https://upload.test/2","3":"https://upload.test/3"}}}}]}
+                    """
+                    .Replace("__OID__", oid);
+                return JsonResponse(batch);
+            }
+            if (url.StartsWith("https://upload.test/", StringComparison.Ordinal) &&
+                url != "https://upload.test/complete")
+            {
+                parts.Add(int.Parse(url[^1..]));
+                var response = new HttpResponseMessage(HttpStatusCode.OK);
+                response.Headers.ETag = new EntityTagHeaderValue($"\"etag-{parts[^1]}\"");
+                return response;
+            }
+            if (url == "https://upload.test/complete")
+            {
+                completionBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+            if (url.EndsWith("/commit/main", StringComparison.Ordinal))
+            {
+                return JsonResponse(
+                    """{"commitUrl":"https://huggingface.co/acme/model/commit/abc","commitOid":"abc"}""");
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        using var http = new HttpClient(handler);
+        var client = new HuggingFaceClient(http);
+
+        await client.UploadFilesAsync(
+            "acme/model",
+            [new HuggingFaceUploadFile { PathInRepo = "model.gguf", LocalPath = source }],
+            "hf_token");
+
+        Assert.Equal([1, 2, 3], parts);
+        Assert.NotNull(completionBody);
+        Assert.Contains("\"partNumber\":1", completionBody);
+        Assert.Contains("etag-3", completionBody);
+        Assert.Contains(oid, completionBody);
     }
 
     private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)

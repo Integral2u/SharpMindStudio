@@ -1,0 +1,515 @@
+@using SharpMind.Studio.Core.HuggingFace
+@using SharpMind.Studio.Core.Inference
+@using SharpMind.Studio.Core.Storage
+@using SharpMind.Studio.Core.Training
+@using SharpMind.Studio.Services
+@implements IDisposable
+@inject HuggingFacePublishService Publish
+@inject HuggingFaceService HuggingFace
+@inject StudioTrainingService Training
+@inject ModelCatalogService Catalog
+@inject NavigationManager Nav
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <div class="eyebrow">Publish</div>
+            <h2>HuggingFace</h2>
+        </div>
+        <span class="faint small mono">
+            @(HuggingFace.HasToken ? "write token ready" : "no write token")
+        </span>
+    </div>
+    <div class="panel-body stack">
+        @if (!HuggingFace.HasToken)
+        {
+            <div class="tool-warning">
+                <div>
+                    <strong>Add a HuggingFace write token first.</strong>
+                    <span class="small faint">
+                        Settings → HuggingFace. A read-only token can download models but
+                        cannot create or update a repository.
+                    </span>
+                </div>
+                <div class="row">
+                    <button type="button" class="button" @onclick="OpenSettings">Open Settings</button>
+                </div>
+            </div>
+        }
+        else if (_user is not null)
+        {
+            <div class="small faint">
+                Signed in as <span class="mono">@_user.Name</span>.
+                @if (_user.Organizations.Count > 0)
+                {
+                    <span>Organizations: @string.Join(", ", _user.Organizations).</span>
+                }
+            </div>
+        }
+        else if (_userError is { Length: > 0 })
+        {
+            <div class="small faint">@_userError</div>
+        }
+
+        <div class="training-form">
+            <div class="field training-form-wide">
+                <label class="field-label" for="publish-source">Model file</label>
+                <select id="publish-source" class="input" value="@_sourcePath" @onchange="SelectSource"
+                        disabled="@Publish.IsRunning">
+                    <option value="">Choose an .smm or .gguf file...</option>
+                    @foreach (ModelPublishSource source in _sources)
+                    {
+                        <option value="@source.Path">@source.Name - @source.Kind</option>
+                    }
+                    @if (_metadata is { } selected && !_sources.Any(source =>
+                        string.Equals(source.Path, selected.SourcePath, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        <option value="@selected.SourcePath">@selected.FileName - @selected.Format.ToUpperInvariant()</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label class="field-label" for="publish-quant">GGUF quantization</label>
+                <select id="publish-quant" class="input" value="@_quantization" @onchange="SelectQuantization"
+                        disabled="@Publish.IsRunning">
+                    @foreach (string quant in HuggingFacePublishService.Quantizations)
+                    {
+                        <option value="@quant">@quant</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field grow">
+                <label class="field-label" for="publish-artifact">Published GGUF name</label>
+                <input id="publish-artifact" class="input" @bind="_artifactName"
+                       placeholder="model_Q8_0.gguf" disabled="@Publish.IsRunning" />
+            </div>
+
+            <div class="field">
+                <label class="field-label" for="publish-owner">Owner</label>
+                @if (_namespaces.Count > 0)
+                {
+                    <select id="publish-owner" class="input" @bind="_owner" disabled="@Publish.IsRunning">
+                        @foreach (string ns in _namespaces)
+                        {
+                            <option value="@ns">@ns</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    <input id="publish-owner" class="input" @bind="_owner"
+                           placeholder="username" disabled="@Publish.IsRunning" />
+                }
+            </div>
+
+            <div class="field grow">
+                <label class="field-label" for="publish-repo">Repository name</label>
+                <input id="publish-repo" class="input" @bind="_repoName"
+                       placeholder="my-model" disabled="@Publish.IsRunning" />
+            </div>
+
+            <div class="field">
+                <label class="field-label" for="publish-visibility">Visibility</label>
+                <select id="publish-visibility" class="input" value="@(_private ? "private" : "public")"
+                        @onchange="SelectVisibility" disabled="@Publish.IsRunning">
+                    <option value="private">Private</option>
+                    <option value="public">Public</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label class="field-label" for="publish-license">License</label>
+                <select id="publish-license" class="input" @bind="_license" disabled="@Publish.IsRunning">
+                    <option value="apache-2.0">Apache-2.0</option>
+                    <option value="mit">MIT</option>
+                    <option value="cc-by-4.0">CC BY 4.0</option>
+                    <option value="cc-by-sa-4.0">CC BY-SA 4.0</option>
+                    <option value="other">Other (explain in the card)</option>
+                </select>
+            </div>
+
+            <div class="field grow">
+                <label class="field-label" for="publish-title">Model title</label>
+                <input id="publish-title" class="input" @bind="_title" disabled="@Publish.IsRunning" />
+            </div>
+
+            <div class="field grow">
+                <label class="field-label" for="publish-base">Base model on HuggingFace (optional)</label>
+                <input id="publish-base" class="input" @bind="_baseModel"
+                       placeholder="owner/base-model" disabled="@Publish.IsRunning" />
+            </div>
+
+            <div class="field training-form-wide">
+                <label class="field-label" for="publish-tags">Tags</label>
+                <input id="publish-tags" class="input" @bind="_tags"
+                       placeholder="sharp-mind, smm, gguf, text-generation" disabled="@Publish.IsRunning" />
+            </div>
+
+            <div class="field training-form-wide">
+                <label class="field-label" for="publish-description">Description</label>
+                <textarea id="publish-description" class="input" rows="4" @bind="_description"
+                          disabled="@Publish.IsRunning"></textarea>
+            </div>
+        </div>
+
+        @if (_metadata is { } metadata)
+        {
+            <div class="training-subsection">
+                <div class="training-subsection-head">
+                    <div class="eyebrow">Detected model</div>
+                </div>
+                <div class="small faint">
+                    @(metadata.Architecture ?? "unknown architecture")
+                    · @FormatCount(metadata.ParameterCount) parameters
+                    · @metadata.NumLayers layers
+                    · @metadata.ContextLength context
+                    · @FormatBytes(metadata.SizeBytes)
+                    · @metadata.Format.ToUpperInvariant()
+                </div>
+                @if (!string.IsNullOrWhiteSpace(metadata.Checksum))
+                {
+                    <div class="small faint mono">dataset @metadata.Checksum</div>
+                }
+                @if (metadata.Lineage.Count > 0)
+                {
+                    <div class="small faint mono">
+                        @string.Join(" · ", metadata.Lineage.OrderBy(pair => pair.Key)
+                            .Select(pair => $"{pair.Key}={pair.Value}"))
+                    </div>
+                }
+                @if (_runInfo is { } run)
+                {
+                    <div class="small faint">
+                        Training: step @run.FinalStep / @run.TotalSteps
+                        @if (run.FinalLoss is { } loss) { <span> · loss @loss.ToString("0.####")</span> }
+                        @if (run.BestValLoss is { } best) { <span> · best val @best.ToString("0.####")</span> }
+                        @if (run.ExamLoss is { } exam) { <span> · exam @exam.ToString("0.####")</span> }
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_metadata is { HasEmbeddedExtras: true } embedded)
+        {
+            <div class="note">
+                <strong>This .smm carries extra content.</strong>
+                @if (embedded.Plugins.Count > 0)
+                {
+                    <div class="small faint">Plugins: @string.Join(", ", embedded.Plugins)</div>
+                }
+                @if (embedded.Skills.Count > 0)
+                {
+                    <div class="small faint">Skills: @string.Join(", ", embedded.Skills)</div>
+                }
+                @if (embedded.HasSystemPrompt)
+                {
+                    <div class="small faint">An embedded system prompt</div>
+                }
+                <div class="small faint">
+                    The GGUF copy does not include these. Tick “Also upload the .smm source”
+                    to publish them as well.
+                </div>
+            </div>
+        }
+
+        @if (_metadata is { Format: "smm" })
+        {
+            <label class="small faint training-check">
+                <input type="checkbox" @bind="_includeSmm" disabled="@Publish.IsRunning" />
+                Also upload the .smm source
+            </label>
+            @if (_includeSmm && _metadata.HasEmbeddedExtras)
+            {
+                <label class="small faint training-check">
+                    <input type="checkbox" @bind="_confirmEmbedded" disabled="@Publish.IsRunning" />
+                    I understand the embedded plugins, skills and prompt will be published.
+                </label>
+            }
+        }
+
+        <div class="training-actions">
+            <button type="button" class="button primary" @onclick="StartPublishAsync"
+                    disabled="@(!CanPublish)">
+                @(Publish.IsRunning ? "Publishing..." : "Publish to HuggingFace")
+            </button>
+            @if (Publish.IsRunning)
+            {
+                <button type="button" class="button danger" @onclick="Publish.Cancel">Cancel</button>
+            }
+            <span class="small faint">@Publish.Stage · @((Publish.Progress * 100).ToString("0"))%</span>
+        </div>
+
+        @if (Publish.IsRunning || Publish.Progress > 0)
+        {
+            <div class="progress-track">
+                <div class="progress-fill" style="width:@((Publish.Progress * 100).ToString("0"))%"></div>
+            </div>
+            <div class="small faint">@Publish.Status</div>
+        }
+
+        @if (_validationError is { Length: > 0 })
+        {
+            <div class="error-line">@_validationError</div>
+        }
+        @if (Publish.Error is { Length: > 0 })
+        {
+            <div class="error-line">@Publish.Error</div>
+        }
+        @if (Publish.Result is { } result)
+        {
+            <div class="status-line">
+                Published <span class="mono">@result.ArtifactFileName</span>
+                @if (result.SmmFileName is { Length: > 0 } smm)
+                {
+                    <span> and <span class="mono">@smm</span></span>
+                }
+                to <a href="@result.RepoUrl" target="_blank" rel="noopener">@result.RepoUrl</a>.
+                <a href="@result.CommitUrl" target="_blank" rel="noopener">Commit</a>.
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter] public string? SourceQuery { get; set; }
+    [Parameter] public string? RunQuery { get; set; }
+
+    private readonly record struct ModelPublishSource(string Path, string Name, string Kind);
+
+    private IReadOnlyList<ModelPublishSource> _sources = [];
+    private IReadOnlyList<string> _namespaces = [];
+    private HuggingFaceUser? _user;
+    private string? _userError;
+    private string? _validationError;
+    private string _sourcePath = "";
+    private string _owner = "";
+    private string _repoName = "";
+    private string _title = "";
+    private string _description = "";
+    private string _tags = "sharp-mind, smm, gguf, text-generation";
+    private string _license = "apache-2.0";
+    private string _quantization = "Q8_0";
+    private string _artifactName = "";
+    private string? _baseModel;
+    private bool _private = true;
+    private bool _includeSmm;
+    private bool _confirmEmbedded;
+    private ModelPublishMetadata? _metadata;
+    private ModelPublishRunInfo? _runInfo;
+    private string? _appliedSourceQuery;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Publish.Changed += OnPublishChanged;
+        RefreshSources();
+        _appliedSourceQuery = SourceQuery;
+        ApplyQuery();
+        if (_sourcePath.Length == 0)
+        {
+            string? latest = Training.ExportPath;
+            if (latest is { Length: > 0 } && File.Exists(latest))
+                SelectPath(latest);
+        }
+        await LoadAccountAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!string.Equals(SourceQuery, _appliedSourceQuery, StringComparison.OrdinalIgnoreCase))
+        {
+            _appliedSourceQuery = SourceQuery;
+            ApplyQuery();
+        }
+    }
+
+    public void Dispose() => Publish.Changed -= OnPublishChanged;
+
+    private void OnPublishChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void ApplyQuery()
+    {
+        if (SourceQuery is { Length: > 0 } source && File.Exists(source))
+            SelectPath(source);
+    }
+
+    private void RefreshSources()
+    {
+        string[] files = [.. ModelFileList.Find(
+                StudioPaths.Models, Training.Folder, TrainingJobSettings.AdapterExtension)
+            .Where(file => file.Extension.Equals(".smm", StringComparison.OrdinalIgnoreCase)
+                || file.Extension.Equals(".gguf", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(file => file.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(file => file.FullName)];
+
+        _sources = [.. files.Select(path => new ModelPublishSource(
+            path, Path.GetFileName(path),
+            Path.GetExtension(path).TrimStart('.').ToUpperInvariant()))];
+    }
+
+    private async Task LoadAccountAsync()
+    {
+        if (!HuggingFace.HasToken) return;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            _user = await Publish.WhoAmIAsync(timeout.Token);
+            if (_user is not null)
+            {
+                _namespaces = _user.Namespaces;
+                _owner = _namespaces.FirstOrDefault() ?? _user.Name;
+            }
+        }
+        catch (Exception ex)
+        {
+            _userError = $"Could not read the HuggingFace account: {ex.Message}";
+        }
+    }
+
+    private void SelectSource(ChangeEventArgs args) =>
+        SelectPath(args.Value?.ToString() ?? "");
+
+    private void SelectPath(string path)
+    {
+        _sourcePath = path;
+        _metadata = null;
+        _runInfo = null;
+        _validationError = null;
+        _includeSmm = false;
+        _confirmEmbedded = false;
+
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+        try
+        {
+            _metadata = ModelPublishMetadata.Read(path);
+        }
+        catch (Exception ex)
+        {
+            _validationError = $"Could not read the model: {ex.Message}";
+            return;
+        }
+
+        _title = Path.GetFileNameWithoutExtension(path);
+        _artifactName = HuggingFacePublishService.DefaultArtifactName(path, _quantization);
+        _repoName = NormalizeRepoName(Path.GetFileNameWithoutExtension(path));
+        _description = $"A {(_metadata.Architecture ?? "SharpMind")} model exported from SharpMind Studio.";
+        _baseModel = LooksLikeHubRepo(_metadata.Lineage.GetValueOrDefault("base"))
+            ? _metadata.Lineage["base"]
+            : null;
+
+        _runInfo = FindRun(path);
+    }
+
+    private void SelectQuantization(ChangeEventArgs args)
+    {
+        _quantization = args.Value?.ToString() ?? "Q8_0";
+        if (!string.IsNullOrWhiteSpace(_sourcePath))
+        {
+            _artifactName = HuggingFacePublishService.DefaultArtifactName(
+                _sourcePath, _quantization);
+        }
+    }
+
+    private void SelectVisibility(ChangeEventArgs args) =>
+        _private = !string.Equals(args.Value?.ToString(), "public", StringComparison.OrdinalIgnoreCase);
+
+    private ModelPublishRunInfo? FindRun(string sourcePath)
+    {
+        string fullSource = Path.GetFullPath(sourcePath);
+        TrainingRunSummary? match = !string.IsNullOrWhiteSpace(RunQuery)
+            ? Training.RunHistory.FirstOrDefault(run =>
+                string.Equals(run.Record.Id, RunQuery, StringComparison.OrdinalIgnoreCase) &&
+                run.Record.ExportPath is { Length: > 0 } export &&
+                string.Equals(Path.GetFullPath(export), fullSource,
+                    StringComparison.OrdinalIgnoreCase))
+            : null;
+        match ??= Training.RunHistory.FirstOrDefault(run =>
+            run.Record.ExportPath is { Length: > 0 } export &&
+            string.Equals(Path.GetFullPath(export), fullSource,
+                StringComparison.OrdinalIgnoreCase));
+        return ModelPublishRunInfo.From(match?.Record);
+    }
+
+    private bool CanPublish =>
+        !Publish.IsRunning &&
+        HuggingFace.HasToken &&
+        _metadata is not null &&
+        !string.IsNullOrWhiteSpace(_sourcePath) &&
+        File.Exists(_sourcePath) &&
+        IsRepoPart(_owner) &&
+        IsRepoPart(_repoName) &&
+        _artifactName.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(_artifactName, Path.GetFileName(_artifactName), StringComparison.Ordinal) &&
+        (!_includeSmm || _metadata is not { HasEmbeddedExtras: true } || _confirmEmbedded);
+
+    private string RepoId => $"{_owner.Trim()}/{_repoName.Trim()}";
+
+    private void StartPublishAsync()
+    {
+        _validationError = null;
+        if (!CanPublish || _metadata is null)
+        {
+            _validationError = "Choose a model, a repository and a GGUF name first.";
+            return;
+        }
+
+        var request = new PublishModelRequest(
+            _sourcePath,
+            RepoId,
+            _private,
+            _license,
+            _title,
+            _description,
+            [.. _tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
+            _artifactName.Trim(),
+            _quantization,
+            _includeSmm,
+            _confirmEmbedded,
+            string.IsNullOrWhiteSpace(_baseModel) ? null : _baseModel.Trim(),
+            _runInfo);
+
+        if (!Publish.Start(request))
+            _validationError = "A publish is already running.";
+    }
+
+    private void OpenSettings() => Nav.NavigateTo("/settings?tab=huggingface");
+
+    private static bool IsRepoPart(string value) =>
+        value.Length is > 0 and <= 96 &&
+        !value.StartsWith('.') &&
+        !value.Contains("..", StringComparison.Ordinal) &&
+        value.All(character =>
+            char.IsLetterOrDigit(character) || character is '-' or '_' or '.');
+
+    private static string NormalizeRepoName(string value)
+    {
+        string name = new([.. value.Trim().ToLowerInvariant().Select(character =>
+            char.IsLetterOrDigit(character) || character is '-' or '_' or '.'
+                ? character
+                : '-')]);
+        name = name.Trim('-', '.');
+        return name.Length == 0 ? "model" : name;
+    }
+
+    private static bool LooksLikeHubRepo(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Contains('/')
+        && !Path.IsPathRooted(value)
+        && !value.Contains('\\');
+
+    private static string FormatCount(long value) => value switch
+    {
+        >= 1_000_000_000 => (value / 1_000_000_000d).ToString("0.##") + "B",
+        >= 1_000_000 => (value / 1_000_000d).ToString("0.##") + "M",
+        >= 1_000 => (value / 1_000d).ToString("0.##") + "K",
+        _ => value.ToString(),
+    };
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        >= 1L << 30 => (bytes / (double)(1L << 30)).ToString("0.0") + " GB",
+        >= 1L << 20 => (bytes / (double)(1L << 20)).ToString("0.0") + " MB",
+        _ => (bytes / 1024d).ToString("0") + " KB",
+    };
+}

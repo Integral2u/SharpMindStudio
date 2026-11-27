@@ -43,6 +43,7 @@
     <a class="settings-tab @(_tab == "data" ? "selected" : "")" href="/training?tab=data" data-enhance-nav="false">Data</a>
     <a class="settings-tab @(_tab == "runs" ? "selected" : "")" href="/training?tab=runs" data-enhance-nav="false">Runs</a>
     <a class="settings-tab @(_tab == "models" ? "selected" : "")" href="/training?tab=models" data-enhance-nav="false">Models</a>
+    <a class="settings-tab @(_tab == "publish" ? "selected" : "")" href="/training?tab=publish" data-enhance-nav="false">Publish</a>
     <span style="margin-left:auto">
         <WikiGuideLink Page="training" Label="Training guide" Class="settings-tab" />
     </span>
@@ -916,6 +917,13 @@ else if (_tab == "runs")
                                         disabled="@(!CanUseAsBase(run))">
                                     Use as base
                                 </button>
+                                @if (CanPublishRun(run))
+                                {
+                                    <button type="button" class="button" @onclick="() => PublishRun(run)"
+                                            title="Convert to GGUF and publish this run to HuggingFace.">
+                                        Publish
+                                    </button>
+                                }
                                 <button type="button" class="button" @onclick="() => DeleteRun(run)"
                                         disabled="@Lab.IsRunning">
                                     Delete
@@ -1058,6 +1066,10 @@ else if (_tab == "runs")
             }
         </div>
     </section>
+}
+else if (_tab == "publish")
+{
+    <TrainingPublishPanel SourceQuery="@SourceQuery" RunQuery="@RunQuery" />
 }
 else if (_tab == "models")
 {
@@ -1211,6 +1223,15 @@ else if (_tab == "models")
                                             disabled="@(_modelBusy is not null)"
                                             title="Add it to the model list and open a chat with it.">
                                         Chat
+                                    </button>
+                                }
+                                @if (file.Extension.Equals(".smm", StringComparison.OrdinalIgnoreCase) ||
+                                     file.Extension.Equals(".gguf", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <button type="button" class="button"
+                                            @onclick="() => PublishModel(file)"
+                                            title="Convert to GGUF and publish this model to HuggingFace.">
+                                        Publish
                                     </button>
                                 }
                             </div>

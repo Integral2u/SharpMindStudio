@@ -10,6 +10,16 @@ _Planned for 1.1.3._
 
 ### Added
 
+- **Publish trained models to HuggingFace.** Training has a new **Publish** tab.
+  It converts an `.smm` export to GGUF, quantizes it (F16, Q8_0, Q6_K, Q5_K,
+  Q4_K, Q4_0 or Q2_K), and uploads it under a configurable name such as
+  `model_Q8_0.gguf`. The commit also contains a generated model card, a
+  `sharp-mind.json` metadata sidecar and a `.gitattributes` with LFS rules.
+  Repositories are private by default with public as an option. The optional
+  source `.smm` upload is off by default and requires an explicit confirmation
+  when it contains plugins, skills or a system prompt. Publish buttons on
+  finished runs and model rows open the tab with the export preselected.
+
 - **Voice selection in Chat and Work.** A local speech model now shows a voice selector
   beside the model picker, with the full voice list from the projector, and the
   Session options keep the language, frame cap, temperature, top-k and seed.

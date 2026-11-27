@@ -77,8 +77,14 @@
 
         @if (Training.ExportPath is { } export)
         {
-            <div class="small faint">
-                Saved model: <span class="mono">@export</span>
+            <div class="row" style="align-items:center; gap:.5rem;">
+                <span class="small faint">
+                    Saved model: <span class="mono">@export</span>
+                </span>
+                <button type="button" class="button" @onclick="() => Publish(export)"
+                        title="Convert this export to GGUF and open the Publish tab.">
+                    Publish
+                </button>
             </div>
         }
 
@@ -119,6 +125,11 @@
                                             disabled="@(_busyPath is not null)"
                                             title="Add it to the model list and open a chat with it.">
                                         Chat
+                                    </button>
+                                    <button type="button" class="button"
+                                            @onclick="() => Publish(entry.Path)"
+                                            title="Convert to GGUF and publish this model to HuggingFace.">
+                                        Publish
                                     </button>
                                     @if (_hostId is not null)
                                     {
@@ -354,6 +365,9 @@
             _busyPath = null;
         }
     }
+
+    private void Publish(string path) =>
+        Nav.NavigateTo($"/training?tab=publish&source={Uri.EscapeDataString(path)}");
 
     private async Task ChatAsync(string path, string? fileName = null)
     {

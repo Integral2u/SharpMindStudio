@@ -18,8 +18,9 @@
         <p class="small faint">
             Browse and download GGUF models under <strong>Training -> Models</strong>.
             Public GGUF downloads work without a token; a token is only needed for
-            gated repositories. The token is encrypted with the same local key box as
-            the other provider secrets.
+            gated repositories. Publishing under <strong>Training -> Publish</strong>
+            needs a token with write access to the target repository. The token is
+            encrypted with the same local key box as the other provider secrets.
         </p>
         <div class="field">
             <label class="field-label">Use a Vault secret</label>
@@ -48,6 +49,7 @@
             <button type="button" class="button danger" @onclick="DeleteAsync"
                     disabled="@(!HuggingFace.HasToken)">Delete token</button>
             <a class="button" href="/training?tab=models">Find GGUF models</a>
+            <a class="button" href="/training?tab=publish">Publish a model</a>
         </div>
         @if (_status is { Length: > 0 })
         {

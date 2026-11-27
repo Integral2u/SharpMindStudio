@@ -277,6 +277,22 @@ Retrying on the CPU. Set SHARPMIND_ACCELERATOR_FALLBACK=false to fail instead.</
                 the Models folder only shows <strong>Chat</strong>.
             </p>
 
+            <h2 id="publish">Publish to HuggingFace</h2>
+            <p>
+                The <strong>Publish</strong> tab turns an exported <span class="mono">.smm</span>
+                into a GGUF and uploads it with a generated model card, LFS attributes and a
+                <span class="mono">sharp-mind.json</span> sidecar. Choose F16, Q8_0, Q6_K,
+                Q5_K, Q4_K, Q4_0 or Q2_K; the default file name carries the suffix, for
+                example <span class="mono">mymodel_Q8_0.gguf</span>.
+            </p>
+            <ul class="checklist">
+                <li>Repositories are private by default. Public is an explicit choice.</li>
+                <li>A HuggingFace token with write access is required in Settings &gt; HuggingFace.</li>
+                <li>The optional <span class="mono">.smm</span> source upload is off by default. If the container carries plugins, skills or a system prompt, Studio warns first and requires confirmation.</li>
+                <li><strong>Publish</strong> on a finished run, a run-history row or a model row opens this tab with that file selected.</li>
+                <li>The GGUF is converted and quantized in a temporary folder and removed after the commit; publish the <span class="mono">.smm</span> too if you want to keep the SharpMind package in the repository.</li>
+            </ul>
+
             <h2 id="errors">Accelerator errors</h2>
             <table>
                 <thead><tr><th>Message</th><th>Meaning</th></tr></thead>
