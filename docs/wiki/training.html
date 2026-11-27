@@ -291,7 +291,16 @@ Retrying on the CPU. Set SHARPMIND_ACCELERATOR_FALLBACK=false to fail instead.</
                 <li>The optional <span class="mono">.smm</span> source upload is off by default. If the container carries plugins, skills or a system prompt, Studio warns first and requires confirmation.</li>
                 <li><strong>Publish</strong> on a finished run, a run-history row or a model row opens this tab with that file selected.</li>
                 <li>The GGUF is converted and quantized in a temporary folder and removed after the commit; publish the <span class="mono">.smm</span> too if you want to keep the SharpMind package in the repository.</li>
+                <li>Use <strong>Check</strong> beside the repository name to see whether it exists and whether it is public or private. A private repository is not visible anonymously and its page returns 404 until you sign in as its owner.</li>
+                <li>Successful publishes are kept in <span class="mono">Training/publish-history.json</span>. The Publish tab shows the last repository and commit with direct links, and a longer history below it, so the commit URL is not lost after a tab switch or restart.</li>
+                <li>To publish another quantization, keep the same owner and repository name and change the quantization and GGUF file name. The previous files stay and the refreshed model card lists them.</li>
             </ul>
+            <p>
+                A token that can read and download models is not necessarily allowed to create
+                repositories. Use a token with write access, or create the repository on
+                huggingface.co first; publishing to an existing repository then only needs
+                write access to that repository.
+            </p>
 
             <h2 id="errors">Accelerator errors</h2>
             <table>

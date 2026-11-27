@@ -22,7 +22,11 @@ _Planned for 1.1.3._
   files, and lists them in the refreshed model card. A token that cannot create
   repositories can still publish to an existing repository; the error otherwise
   explains the missing Write/create permission. Publish buttons on finished
-  runs and model rows open the tab with the export preselected.
+  runs and model rows open the tab with the export preselected. Successful
+  publishes are recorded in `Training/publish-history.json`, so the last
+  repository and commit links remain visible after a restart; **Check** reports
+  whether a repository exists and whether it is public or private, with a direct
+  visibility-settings link.
 
 - **Voice selection in Chat and Work.** A local speech model now shows a voice selector
   beside the model picker, with the full voice list from the projector, and the

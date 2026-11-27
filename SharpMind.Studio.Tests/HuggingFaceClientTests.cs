@@ -264,6 +264,27 @@ public sealed class HuggingFaceClientTests
     }
 
     [Fact]
+    public async Task GetModelInfo_ReadsVisibilityAndLastModified()
+    {
+        var handler = new StubHandler(_ => JsonResponse(
+            """
+            {"id":"integral2u/tinystories-large","private":false,"gated":false,
+             "lastModified":"2026-11-27T22:50:18.000Z"}
+            """));
+        using var http = new HttpClient(handler);
+        var client = new HuggingFaceClient(http);
+
+        HuggingFaceRepoInfo? info =
+            await client.GetModelInfoAsync("integral2u/tinystories-large", "hf_token");
+
+        Assert.NotNull(info);
+        Assert.Equal("integral2u/tinystories-large", info!.Id);
+        Assert.False(info.Private);
+        Assert.False(info.Gated);
+        Assert.Equal(2026, info.LastModified?.Year);
+    }
+
+    [Fact]
     public async Task ListModelFiles_ReadsTreePathsAndSizes()
     {
         var handler = new StubHandler(_ => JsonResponse(

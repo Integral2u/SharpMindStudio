@@ -51,6 +51,13 @@ public sealed record HuggingFaceCommitResult(
 /// <summary>A file already committed to a model repository.</summary>
 public sealed record HuggingFaceRepoFile(string Path, long? Size);
 
+/// <summary>Visibility and freshness of an existing model repository.</summary>
+public sealed record HuggingFaceRepoInfo(
+    string Id,
+    bool Private,
+    bool Gated,
+    DateTimeOffset? LastModified);
+
 public sealed record HuggingFaceFile(
     string RepoId,
     string FileName,
@@ -265,6 +272,46 @@ public sealed class HuggingFaceClient
         if (!response.IsSuccessStatusCode)
             await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
         return true;
+    }
+
+    /// <summary>Reads visibility and last-modified time, or null when the repo is missing.</summary>
+    public async Task<HuggingFaceRepoInfo?> GetModelInfoAsync(
+        string repoId,
+        string token,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, $"{FileRoot}/api/models/{EscapeRepo(repoId)}");
+        ApplyAuth(request, token);
+        using HttpResponseMessage response = await _http
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode is HttpStatusCode.NotFound
+            or HttpStatusCode.Unauthorized
+            or HttpStatusCode.Forbidden)
+        {
+            return null;
+        }
+
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        await using Stream stream = await response.Content
+            .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using JsonDocument document = await JsonDocument
+            .ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        JsonElement root = document.RootElement;
+        string? id = ReadString(root, "id");
+        bool isPrivate = root.TryGetProperty("private", out JsonElement privateElement)
+            && privateElement.ValueKind is JsonValueKind.True;
+        bool gated = root.TryGetProperty("gated", out JsonElement gatedElement)
+            && gatedElement.ValueKind is JsonValueKind.True;
+        DateTimeOffset? modified = null;
+        if (ReadString(root, "lastModified") is { } lastModified
+            && DateTimeOffset.TryParse(lastModified, out DateTimeOffset parsed))
+        {
+            modified = parsed;
+        }
+
+        return new HuggingFaceRepoInfo(id ?? repoId, isPrivate, gated, modified);
     }
 
     /// <summary>Lists committed files, or an empty list when the repository is new.</summary>

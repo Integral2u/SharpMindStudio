@@ -28,7 +28,20 @@ public sealed record PublishModelResult(
     string ArtifactFileName,
     string? SmmFileName,
     long ArtifactBytes,
-    long SmmBytes);
+    long SmmBytes,
+    ModelPublishRecord Record);
+
+/// <summary>Result of an explicit repository check.</summary>
+public sealed record ModelRepositoryCheck(
+    string RepoId,
+    bool Exists,
+    bool Private,
+    bool Gated,
+    DateTimeOffset? LastModified)
+{
+    public string RepoUrl => $"https://huggingface.co/{RepoId}";
+    public string SettingsUrl => $"{RepoUrl}/settings";
+}
 
 /// <summary>
 /// Owns the one publish operation Studio can run at a time. The source model
@@ -42,6 +55,7 @@ public sealed class HuggingFacePublishService : IDisposable
 
     private readonly HuggingFaceClient _client;
     private readonly HuggingFaceService _huggingFace;
+    private readonly ModelPublishHistoryStore _historyStore = new();
     private readonly Lock _gate = new();
     private CancellationTokenSource? _cts;
     private bool _running;
@@ -50,6 +64,7 @@ public sealed class HuggingFacePublishService : IDisposable
     private string _status = "Pick a model to publish.";
     private string? _error;
     private PublishModelResult? _result;
+    private IReadOnlyList<ModelPublishRecord> _history;
 
     public HuggingFacePublishService(
         HuggingFaceClient client,
@@ -57,6 +72,7 @@ public sealed class HuggingFacePublishService : IDisposable
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _huggingFace = huggingFace ?? throw new ArgumentNullException(nameof(huggingFace));
+        _history = _historyStore.Load();
     }
 
     public event Action? Changed;
@@ -67,8 +83,33 @@ public sealed class HuggingFacePublishService : IDisposable
     public string Status { get { lock (_gate) return _status; } }
     public string? Error { get { lock (_gate) return _error; } }
     public PublishModelResult? Result { get { lock (_gate) return _result; } }
+    public IReadOnlyList<ModelPublishRecord> History { get { lock (_gate) return _history; } }
 
     public bool HasToken => _huggingFace.HasToken;
+
+    public void ClearHistory()
+    {
+        _historyStore.Clear();
+        lock (_gate) _history = [];
+        Changed?.Invoke();
+    }
+
+    public async Task<ModelRepositoryCheck?> CheckRepositoryAsync(
+        string repoId,
+        CancellationToken cancellationToken = default)
+    {
+        string? token = _huggingFace.Token;
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(repoId))
+            return null;
+
+        HuggingFaceRepoInfo? info = await _client
+            .GetModelInfoAsync(repoId.Trim(), token, cancellationToken)
+            .ConfigureAwait(false);
+        return info is null
+            ? new ModelRepositoryCheck(repoId.Trim(), false, false, false, null)
+            : new ModelRepositoryCheck(
+                info.Id, true, info.Private, info.Gated, info.LastModified);
+    }
 
     public async Task<HuggingFaceUser?> WhoAmIAsync(CancellationToken cancellationToken = default)
     {
@@ -278,16 +319,48 @@ public sealed class HuggingFacePublishService : IDisposable
                 progress: progress,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
+            HuggingFaceRepoInfo? repoInfo = null;
+            try
+            {
+                repoInfo = await _client.GetModelInfoAsync(
+                    request.RepoId.Trim(), token, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // The upload already succeeded; visibility is best-effort here.
+            }
+
+            long artifactBytes = new FileInfo(artifact).Length;
+            long smmBytes = smmName is null ? 0 : new FileInfo(source).Length;
+            var record = new ModelPublishRecord
+            {
+                RepoId = request.RepoId.Trim(),
+                RepoUrl = commit.RepoUrl,
+                CommitUrl = commit.CommitUrl,
+                CommitOid = commit.CommitOid,
+                ArtifactFileName = artifactName,
+                SmmFileName = smmName,
+                Quantization = request.Quantization,
+                Private = repoInfo?.Private ?? request.Private,
+                PublishedUtc = DateTimeOffset.UtcNow,
+                SourceFileName = Path.GetFileName(source),
+                SourceChecksum = sourceInfo.Checksum,
+                ArtifactBytes = artifactBytes,
+                SmmBytes = smmBytes,
+            };
+            _historyStore.Add(record);
             var result = new PublishModelResult(
                 commit.RepoUrl,
                 commit.CommitUrl,
                 artifactName,
                 smmName,
-                new FileInfo(artifact).Length,
-                smmName is null ? 0 : new FileInfo(source).Length);
+                artifactBytes,
+                smmBytes,
+                record);
 
             lock (_gate)
             {
+                _history = _historyStore.Load();
                 _result = result;
                 _error = null;
                 _progress = 1;
