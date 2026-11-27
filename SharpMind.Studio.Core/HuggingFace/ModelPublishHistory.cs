@@ -73,9 +73,20 @@ public sealed class ModelPublishHistoryStore
         if (!File.Exists(FilePath)) return [];
         try
         {
+            string json = File.ReadAllText(FilePath).TrimStart('\uFEFF');
+            // Accept a single object as well as the normal array, so a manually
+            // seeded or older one-entry file still appears in the UI.
+            if (json.TrimStart().StartsWith('{'))
+            {
+                ModelPublishRecord? single =
+                    JsonSerializer.Deserialize<ModelPublishRecord>(json, JsonOptions);
+                return single is null || string.IsNullOrWhiteSpace(single.RepoId)
+                    ? []
+                    : [single];
+            }
+
             List<ModelPublishRecord>? records =
-                JsonSerializer.Deserialize<List<ModelPublishRecord>>(
-                    File.ReadAllText(FilePath), JsonOptions);
+                JsonSerializer.Deserialize<List<ModelPublishRecord>>(json, JsonOptions);
             return [.. (records ?? [])
                 .Where(record => !string.IsNullOrWhiteSpace(record.RepoId))
                 .OrderByDescending(record => record.PublishedUtc)

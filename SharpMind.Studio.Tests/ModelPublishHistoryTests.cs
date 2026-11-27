@@ -1,3 +1,4 @@
+using System.Text;
 using SharpMind.Studio.Core.HuggingFace;
 using Xunit;
 
@@ -39,5 +40,23 @@ public sealed class ModelPublishHistoryTests
 
         store.Clear();
         Assert.Empty(new ModelPublishHistoryStore(path).Load());
+    }
+
+    [Fact]
+    public void Store_AcceptsSingleObjectAndUtf8Bom()
+    {
+        using var temp = new TempDirectory();
+        string path = temp.Combine("publish-history.json");
+        const string json = """
+            {"repoId":"integral2u/one","repoUrl":"https://huggingface.co/integral2u/one",
+             "commitUrl":"https://huggingface.co/integral2u/one/commit/a",
+             "artifactFileName":"one_Q8_0.gguf","private":false,
+             "publishedUtc":"2026-11-27T22:50:18+00:00"}
+            """;
+        File.WriteAllText(path, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        ModelPublishRecord record =
+            Assert.Single(new ModelPublishHistoryStore(path).Load());
+        Assert.Equal("integral2u/one", record.RepoId);
     }
 }
