@@ -162,6 +162,32 @@ public sealed class HuggingFacePublishService : IDisposable
                     "This .smm contains embedded plugins, skills or a system prompt. " +
                     "Confirm that they may be uploaded.");
 
+            // Check the repository before spending minutes converting and quantizing.
+            // An existing repository is also how a second quantization is added.
+            Report("Creating repository", 0.02f, $"Checking {request.RepoId}...");
+            await _client.CreateModelRepoAsync(
+                request.RepoId.Trim(), token, request.Private, cancellationToken)
+                .ConfigureAwait(false);
+
+            IReadOnlyList<string> otherArtifacts = [];
+            try
+            {
+                IReadOnlyList<HuggingFaceRepoFile> committed =
+                    await _client.ListModelFilesAsync(
+                        request.RepoId.Trim(), token, cancellationToken)
+                        .ConfigureAwait(false);
+                otherArtifacts = [.. committed
+                    .Where(file =>
+                        (file.Path.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase) ||
+                         file.Path.EndsWith(".smm", StringComparison.OrdinalIgnoreCase)) &&
+                        !string.Equals(file.Path, artifactName, StringComparison.OrdinalIgnoreCase))
+                    .Select(file => file.Path)];
+            }
+            catch
+            {
+                // A write-only token may not be able to list the repo; publishing still works.
+            }
+
             Directory.CreateDirectory(temp);
             string converted = Path.Combine(temp, "source.gguf");
             string artifact = Path.Combine(temp, artifactName);
@@ -217,7 +243,8 @@ public sealed class HuggingFacePublishService : IDisposable
                 request.Quantization,
                 request.IncludeSmm,
                 request.IncludeSmm ? Path.GetFileName(source) : null,
-                request.Run);
+                request.Run,
+                otherArtifacts);
 
             string readme = ModelPublishCardBuilder.BuildReadme(cardInfo, card);
             string metadataJson = ModelPublishCardBuilder.BuildMetadataJson(cardInfo, card);
@@ -236,11 +263,6 @@ public sealed class HuggingFacePublishService : IDisposable
                 smmName = Path.GetFileName(source);
                 files.Add(HuggingFaceUploadFile.FromPath(smmName, source));
             }
-
-            Report("Creating repository", 0.66f, $"Creating {request.RepoId}...");
-            await _client.CreateModelRepoAsync(
-                request.RepoId.Trim(), token, request.Private, cancellationToken)
-                .ConfigureAwait(false);
 
             Report("Uploading", 0.70f, "Uploading files...");
             var progress = new Progress<HuggingFaceUploadProgress>(report =>

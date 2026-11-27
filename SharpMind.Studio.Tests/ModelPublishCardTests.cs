@@ -73,6 +73,20 @@ public sealed class ModelPublishCardTests
     }
 
     [Fact]
+    public void Readme_ListsOtherQuantizations()
+    {
+        ModelPublishCard card = Card() with
+        {
+            OtherArtifacts = ["my-model_Q4_K.gguf"],
+        };
+
+        string readme = ModelPublishCardBuilder.BuildReadme(Metadata(), card);
+
+        Assert.Contains("Other model files in this repository", readme);
+        Assert.Contains("my-model_Q4_K.gguf", readme);
+    }
+
+    [Fact]
     public void Readme_DoesNotExposeLocalLineagePaths()
     {
         ModelPublishMetadata metadata = Metadata() with

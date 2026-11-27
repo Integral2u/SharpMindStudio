@@ -48,6 +48,9 @@ public sealed record HuggingFaceCommitResult(
     string CommitUrl,
     string? CommitOid);
 
+/// <summary>A file already committed to a model repository.</summary>
+public sealed record HuggingFaceRepoFile(string Path, long? Size);
+
 public sealed record HuggingFaceFile(
     string RepoId,
     string FileName,
@@ -210,7 +213,102 @@ public sealed class HuggingFaceClient
             .SendAsync(request, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
         if (response.StatusCode == HttpStatusCode.Conflict) return;
+
+        if (response.StatusCode is HttpStatusCode.Unauthorized
+            or HttpStatusCode.Forbidden
+            or HttpStatusCode.PaymentRequired)
+        {
+            // A token can lack the "create repository" permission while still having
+            // write access to an existing repository. Continue when the repo already
+            // exists, which is the normal path for a second quantization.
+            if (await RepoExistsAsync(repoId, token, cancellationToken).ConfigureAwait(false))
+                return;
+
+            string body = "";
+            try
+            {
+                body = await response.Content
+                    .ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+
+            string detail = body.Length > 500 ? body[..500] : body;
+            throw new HttpRequestException(
+                "HuggingFace refused to create the repository. The token needs Write access "
+                + "and permission to create repositories in this namespace. "
+                + "Create the repository on huggingface.co first, or use a token with write access."
+                + (string.IsNullOrWhiteSpace(detail) ? "" : $" HuggingFace said: {detail.Trim()}"),
+                inner: null,
+                response.StatusCode);
+        }
+
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>True when the model repository is visible to this token.</summary>
+    public async Task<bool> RepoExistsAsync(
+        string repoId,
+        string token,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, $"{FileRoot}/api/models/{EscapeRepo(repoId)}");
+        ApplyAuth(request, token);
+        using HttpResponseMessage response = await _http
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound) return false;
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            return false;
+        if (!response.IsSuccessStatusCode)
+            await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>Lists committed files, or an empty list when the repository is new.</summary>
+    public async Task<IReadOnlyList<HuggingFaceRepoFile>> ListModelFilesAsync(
+        string repoId,
+        string token,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{FileRoot}/api/models/{EscapeRepo(repoId)}/tree/main?recursive=true");
+        ApplyAuth(request, token);
+        using HttpResponseMessage response = await _http
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound) return [];
+
+        await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
+        await using Stream stream = await response.Content
+            .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using JsonDocument document = await JsonDocument
+            .ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (document.RootElement.ValueKind != JsonValueKind.Array) return [];
+
+        var files = new List<HuggingFaceRepoFile>();
+        foreach (JsonElement item in document.RootElement.EnumerateArray())
+        {
+            if (ReadString(item, "type") is { } type &&
+                !string.Equals(type, "file", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string? path = ReadString(item, "path");
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            long? size = item.TryGetProperty("size", out JsonElement sizeElement)
+                && sizeElement.ValueKind == JsonValueKind.Number
+                && sizeElement.TryGetInt64(out long parsed)
+                    ? parsed
+                    : null;
+            files.Add(new HuggingFaceRepoFile(path, size));
+        }
+
+        return files;
     }
 
     /// <summary>

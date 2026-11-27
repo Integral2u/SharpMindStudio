@@ -227,6 +227,63 @@ public sealed class HuggingFaceClientTests
     }
 
     [Fact]
+    public async Task CreateModelRepo_ContinuesWhenForbiddenButRepoExists()
+    {
+        var handler = new StubHandler(request =>
+        {
+            if (request.Method == HttpMethod.Post)
+                return new HttpResponseMessage(HttpStatusCode.Forbidden);
+            return JsonResponse("""{"id":"acme/model"}""");
+        });
+        using var http = new HttpClient(handler);
+        var client = new HuggingFaceClient(http);
+
+        await client.CreateModelRepoAsync("acme/model", "hf_token", privateRepo: true);
+    }
+
+    [Fact]
+    public async Task CreateModelRepo_ExplainsMissingCreatePermission()
+    {
+        var handler = new StubHandler(request => request.Method == HttpMethod.Post
+            ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new StringContent(
+                    """{"error":"You don't have the rights to create a model under the namespace \"acme\""}""",
+                    Encoding.UTF8,
+                    "application/json"),
+            }
+            : new HttpResponseMessage(HttpStatusCode.NotFound));
+        using var http = new HttpClient(handler);
+        var client = new HuggingFaceClient(http);
+
+        HttpRequestException error = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            client.CreateModelRepoAsync("acme/model", "hf_token", privateRepo: true));
+
+        Assert.Contains("Create the repository", error.Message);
+        Assert.Contains("Write access", error.Message);
+    }
+
+    [Fact]
+    public async Task ListModelFiles_ReadsTreePathsAndSizes()
+    {
+        var handler = new StubHandler(_ => JsonResponse(
+            """
+            [{"type":"file","path":"model_Q8_0.gguf","size":123},
+             {"type":"file","path":"README.md","size":45},
+             {"type":"directory","path":"folder"}]
+            """));
+        using var http = new HttpClient(handler);
+        var client = new HuggingFaceClient(http);
+
+        IReadOnlyList<HuggingFaceRepoFile> files =
+            await client.ListModelFilesAsync("acme/model", "hf_token");
+
+        Assert.Equal(2, files.Count);
+        Assert.Equal("model_Q8_0.gguf", files[0].Path);
+        Assert.Equal(123, files[0].Size);
+    }
+
+    [Fact]
     public async Task UploadFiles_CommitsRegularFiles()
     {
         string? commitBody = null;

@@ -17,8 +17,12 @@ _Planned for 1.1.3._
   `sharp-mind.json` metadata sidecar and a `.gitattributes` with LFS rules.
   Repositories are private by default with public as an option. The optional
   source `.smm` upload is off by default and requires an explicit confirmation
-  when it contains plugins, skills or a system prompt. Publish buttons on
-  finished runs and model rows open the tab with the export preselected.
+  when it contains plugins, skills or a system prompt. Publishing a second
+  quantization to the same repository adds the new GGUF, keeps the previous
+  files, and lists them in the refreshed model card. A token that cannot create
+  repositories can still publish to an existing repository; the error otherwise
+  explains the missing Write/create permission. Publish buttons on finished
+  runs and model rows open the tab with the export preselected.
 
 - **Voice selection in Chat and Work.** A local speech model now shows a voice selector
   beside the model picker, with the full voice list from the projector, and the

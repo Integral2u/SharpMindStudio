@@ -84,6 +84,10 @@
                 <label class="field-label" for="publish-artifact">Published GGUF name</label>
                 <input id="publish-artifact" class="input" @bind="_artifactName"
                        placeholder="model_Q8_0.gguf" disabled="@Publish.IsRunning" />
+                <span class="small faint">
+                    Publishing to an existing repository adds this file and refreshes the
+                    model card; earlier quantizations stay in the repository.
+                </span>
             </div>
 
             <div class="field">
@@ -108,6 +112,12 @@
                 <label class="field-label" for="publish-repo">Repository name</label>
                 <input id="publish-repo" class="input" @bind="_repoName"
                        placeholder="my-model" disabled="@Publish.IsRunning" />
+                <span class="small faint">
+                    <a href="https://huggingface.co/new" target="_blank" rel="noopener">
+                        Create the repository on HuggingFace
+                    </a>
+                    if the token cannot create it.
+                </span>
             </div>
 
             <div class="field">

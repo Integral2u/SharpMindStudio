@@ -126,7 +126,8 @@ public sealed record ModelPublishCard(
     string? Quantization,
     bool IncludesSmm,
     string? SmmFileName,
-    ModelPublishRunInfo? Run);
+    ModelPublishRunInfo? Run,
+    IReadOnlyList<string>? OtherArtifacts = null);
 
 /// <summary>Builds the README and machine-readable sidecar for an uploaded model.</summary>
 public static class ModelPublishCardBuilder
@@ -228,6 +229,15 @@ public static class ModelPublishCardBuilder
         body.AppendLine("Chat or Work.");
         body.AppendLine();
 
+        if (card.OtherArtifacts is { Count: > 0 } otherArtifacts)
+        {
+            body.AppendLine("### Other model files in this repository");
+            body.AppendLine();
+            foreach (string artifact in otherArtifacts.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+                body.Append("- `").Append(artifact).AppendLine("`");
+            body.AppendLine();
+        }
+
         if (!string.IsNullOrWhiteSpace(card.BaseModel))
         {
             body.AppendLine("## Base model");
@@ -294,6 +304,7 @@ public static class ModelPublishCardBuilder
             quantization = card.Quantization,
             includesSmm = card.IncludesSmm,
             smmFile = card.SmmFileName,
+            otherArtifacts = card.OtherArtifacts ?? [],
             source = new
             {
                 format = metadata.Format,
