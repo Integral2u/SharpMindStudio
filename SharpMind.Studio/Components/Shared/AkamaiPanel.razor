@@ -76,13 +76,21 @@
             }
         </div>
         <div class="field">
-            <label class="field-label" for="akamai-image-@ProviderId">Image</label>
+            <label class="field-label" for="akamai-image-@ProviderId">Linode OS image</label>
             <select id="akamai-image-@ProviderId" class="input" @bind="_imageId">
+                @if (_images.All(image => image.Id != "linode/ubuntu24.04"))
+                {
+                    <option value="linode/ubuntu24.04">Ubuntu 24.04 LTS (linode/ubuntu24.04)</option>
+                }
                 @foreach (AkamaiImage image in _images)
                 {
                     <option value="@image.Id">@image.Label</option>
                 }
             </select>
+            <span class="small faint">
+                This is the base Linux image, normally Ubuntu 24.04. The SharpMind server
+                image is the separate <strong>Server image</strong> field under Edit.
+            </span>
         </div>
         <div class="field">
             <label class="field-label" for="akamai-ssh-@ProviderId">Linode SSH key</label>
