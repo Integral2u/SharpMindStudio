@@ -78,9 +78,9 @@
         <div class="field">
             <label class="field-label" for="akamai-image-@ProviderId">Linode OS image</label>
             <select id="akamai-image-@ProviderId" class="input" @bind="_imageId">
-                @if (_images.All(image => image.Id != "linode/ubuntu24.04"))
+                @if (_images.All(image => image.Id != FallbackImageId))
                 {
-                    <option value="linode/ubuntu24.04">Ubuntu 24.04 LTS (linode/ubuntu24.04)</option>
+                    <option value="@FallbackImageId">Ubuntu 24.04 LTS (@FallbackImageId)</option>
                 }
                 @foreach (AkamaiImage image in _images)
                 {
@@ -189,6 +189,8 @@
     private string? _apiKeySecret;
     private string _region = "";
     private string _typeId = "";
+    private const string FallbackImageId = "linode/ubuntu24.04";
+
     private string _imageId = "";
     private string _sshKeyId = "";
     private int _idleMinutes = ComputeIdleTracker.DefaultTimeoutMinutes;
@@ -268,7 +270,9 @@
         _loaded = true;
         _region = provider.AkamaiRegion ?? "";
         _typeId = provider.AkamaiTypeId ?? "";
-        _imageId = provider.AkamaiImageId ?? "";
+        _imageId = string.IsNullOrWhiteSpace(provider.AkamaiImageId)
+            ? FallbackImageId
+            : provider.AkamaiImageId;
         _apiKeySecret = provider.AkamaiApiKeySecret;
         _sshKeyId = provider.AkamaiSshKeyId ?? "";
         _idleMinutes = provider.IdleTeardownMinutes;
@@ -348,7 +352,7 @@
                     ?? _images.FirstOrDefault(image =>
                         image.Id.Contains("ubuntu", StringComparison.OrdinalIgnoreCase))?.Id
                     ?? _images.FirstOrDefault()?.Id
-                    ?? "";
+                    ?? FallbackImageId;
             }
             if (_sshKeyId.Length == 0 || _keys.All(key => key.Id != _sshKeyId))
             {
@@ -362,7 +366,11 @@
         }
         catch (AkamaiException ex)
         {
-            _error = ex.Message;
+            _error = ex.StatusCode == 401
+                ? "The Akamai Cloud token was rejected. Create a new Personal Access Token "
+                    + "in Cloud Manager with Account: Read Only, Images: Read Only, "
+                    + "Linodes: Read/Write and Firewalls: Read/Write, then paste it here."
+                : ex.Message;
         }
         catch (Exception ex)
         {
