@@ -854,6 +854,15 @@ else if (_tab == "openrouter")
                             </div>
                         </div>
                     }
+                    else if ((provider.Prefab is ComputeProviderPrefabs.Vultr
+                                  or ComputeProviderPrefabs.Akamai)
+                             && string.IsNullOrWhiteSpace(provider.SshHost))
+                    {
+                        <div class="small faint">
+                            Deploy the cloud instance from the provider panel above. SSH setup
+                            appears here after Studio has a public address for the host.
+                        </div>
+                    }
                     else
                     {
                         <div class="training-subsection">

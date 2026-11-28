@@ -106,6 +106,12 @@ public sealed class AkamaiService
         }
         if (string.IsNullOrWhiteSpace(options.ImageId))
             throw new AkamaiException("Choose a Linode image.");
+        if (SshSetupScript.LooksUnpublished(options.Image))
+        {
+            throw new AkamaiException(
+                $"The server image {options.Image} has no registry prefix, so the host cannot pull it. "
+                + "Press Edit and enter the full name, for example your-name/sharpmind-server:gpu.");
+        }
 
         _compute.SetAkamai(
             id,

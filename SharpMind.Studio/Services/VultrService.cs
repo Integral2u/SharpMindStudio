@@ -103,6 +103,12 @@ public sealed class VultrService
             throw new VultrException("Choose a Vultr plan and region.");
         if (options.OsId <= 0)
             throw new VultrException("Choose a Vultr operating system.");
+        if (SshSetupScript.LooksUnpublished(options.Image))
+        {
+            throw new VultrException(
+                $"The server image {options.Image} has no registry prefix, so the host cannot pull it. "
+                + "Press Edit and enter the full name, for example your-name/sharpmind-server:gpu.");
+        }
 
         _compute.SetVultr(
             id,

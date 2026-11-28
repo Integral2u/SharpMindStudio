@@ -126,10 +126,15 @@
             <ol class="steps">
                 <li><strong>Settings &rarr; Providers &rarr; Compute &rarr; Add host.</strong></li>
                 <li>Choose <strong>Akamai Cloud (Linode)</strong>.</li>
-                <li>Name the host, generate the sharpMind bearer token, and set the server image.</li>
+                <li>Name the host, generate the SharpMind bearer token, and set the server image.
+                    The image needs a registry prefix, for example
+                    <span class="mono">integral2u/sharpmind-server:gpu</span>; a local tag such as
+                    <span class="mono">sharpmind-server:gpu</span> cannot be pulled.</li>
                 <li>Set the SSH login: user <span class="mono">root</span>, port 22, and the local private key that matches the Linode profile key.</li>
                 <li>Tick <strong>GPU host</strong> when the selected type has a GPU. Save the host.</li>
                 <li>On the host card, load the account, then choose the region, type, image and SSH key.</li>
+                <li>Press <strong>Deploy instance</strong> in the Akamai panel. The generic SSH buttons stay
+                    hidden until the instance has a public address; do not use them before deploying.</li>
             </ol>
 
             <h2 id="deploy">Deploy from the API</h2>

@@ -108,6 +108,14 @@
         </div>
     </div>
 
+    @if (!ImageReady)
+    {
+        <div class="error-line">
+            The server image <span class="mono">@ServerImage</span> has no registry prefix.
+            Press Edit and enter the full name, for example
+            <span class="mono">your-name/sharpmind-server:gpu</span>.
+        </div>
+    }
     <div class="small faint">@CostLabel</div>
     @if (Purpose == "training")
     {
@@ -218,6 +226,9 @@
     private AkamaiType? SelectedType =>
         _types.FirstOrDefault(type => type.Id == _typeId);
 
+    private string ServerImage => Compute.SshImage(ProviderId);
+    private bool ImageReady => !SshSetupScript.LooksUnpublished(ServerImage);
+
     private bool CanDeploy =>
         !string.IsNullOrWhiteSpace(ProviderId)
         && (HasSavedKey || !string.IsNullOrWhiteSpace(_apiKey))
@@ -225,7 +236,8 @@
         && !string.IsNullOrWhiteSpace(_typeId)
         && !string.IsNullOrWhiteSpace(_imageId)
         && !string.IsNullOrWhiteSpace(_sshKeyId)
-        && !string.IsNullOrWhiteSpace(Provider?.SshKeyPath);
+        && !string.IsNullOrWhiteSpace(Provider?.SshKeyPath)
+        && ImageReady;
 
     private string CostLabel
     {
