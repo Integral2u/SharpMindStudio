@@ -258,6 +258,38 @@ public sealed class ComputeSettingsStoreTests
     }
 
     [Fact]
+    public void AkamaiKeyAndDeployment_RoundTripEncrypted()
+    {
+        using var temp = new TempDirectory();
+        string settings = temp.Combine("compute.json");
+        string key = temp.Combine("compute.key");
+        var store = new ComputeSettingsStore(settings, key);
+        ComputeProviderSettings provider = store.Add(
+            "Akamai", ComputeProviderKinds.Remote, "http://127.0.0.1:8080",
+            null, ComputeProviderPrefabs.Akamai);
+
+        store.SetAkamai(
+            provider.Id, "linode-secret", "g1-gpu-rtx6000-1", "us-east",
+            "linode/ubuntu24.04", "42", "laptop", 1.5);
+        store.SetAkamaiInstance(
+            provider.Id, "123", "running", "sharpmind-abc",
+            DateTimeOffset.UtcNow, "9000");
+
+        string json = File.ReadAllText(settings);
+        Assert.DoesNotContain("linode-secret", json);
+
+        var reopened = new ComputeSettingsStore(settings, key);
+        Assert.Equal("linode-secret", reopened.AkamaiApiKey(provider.Id));
+        ComputeProviderSettings saved = reopened.Find(provider.Id)!;
+        Assert.Equal(ComputeProviderPrefabs.Akamai, saved.Prefab);
+        Assert.Equal("g1-gpu-rtx6000-1", saved.AkamaiTypeId);
+        Assert.Equal("us-east", saved.AkamaiRegion);
+        Assert.Equal("123", saved.AkamaiInstanceId);
+        Assert.Equal("9000", saved.AkamaiFirewallId);
+        Assert.Equal(1.5, saved.AkamaiHourlyCost);
+    }
+
+    [Fact]
     public void MissingVaultSecret_ReadsAsNoCredential()
     {
         using var temp = new TempDirectory();

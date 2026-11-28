@@ -17,9 +17,9 @@
         <div class="eyebrow">Compute</div>
         <h1>Rent the machine.</h1>
         <p>
-            Vultr instances created here run the SharpMind Server image, train and serve a model,
-            and bill by the hour until they are destroyed. Closing Studio warns about anything
-            still running.
+            Vultr and Akamai Cloud (Linode) instances created here run the SharpMind Server image,
+            train and serve a model, and bill by the hour until they are destroyed. Vultr instances
+            appear in the dashboard above; Akamai instances are managed in the panel below.
         </p>
     </div>
     <div class="row">
@@ -197,6 +197,32 @@ else
     }
 }
 
+@if (AkamaiProviders.Count > 0)
+{
+    <div class="settings-tabs training-tabs" style="margin-top: 1.4rem;">
+        <span class="settings-tab selected">Akamai Cloud</span>
+        <span class="small faint" style="margin-left:auto; align-self:center;">
+            Existing Linode SSH keys only; Studio never uploads a key.
+        </span>
+    </div>
+    @foreach (ComputeProviderSettings provider in AkamaiProviders)
+    {
+        <section class="panel">
+            <div class="panel-head">
+                <div>
+                    <div class="eyebrow">Akamai Cloud (Linode)</div>
+                    <h2>@provider.Name</h2>
+                </div>
+                <span class="small faint mono">@provider.BaseUrl</span>
+            </div>
+            <div class="panel-body">
+                <AkamaiPanel ProviderId="@provider.Id" Purpose="@Purpose"
+                             OnChanged="RefreshFromPanelAsync" />
+            </div>
+        </section>
+    }
+}
+
 @code {
     private bool _busy;
     private string? _error;
@@ -208,4 +234,7 @@ else
 
     private IReadOnlyList<ComputeProviderSettings> VultrProviders =>
         [.. Hosts.Providers.Where(provider => provider.Prefab == ComputeProviderPrefabs.Vultr)];
+
+    private IReadOnlyList<ComputeProviderSettings> AkamaiProviders =>
+        [.. Hosts.Providers.Where(provider => provider.Prefab == ComputeProviderPrefabs.Akamai)];
 }

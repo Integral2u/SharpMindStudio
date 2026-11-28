@@ -235,9 +235,10 @@ else if (_tab == "openrouter")
                 <div class="settings-subgroup-body stack">
             <p class="small faint">
                 A Compute host is the SharpMind server image: one model, chat completions and
-                training jobs. Use <strong>Local Docker</strong> for a container on this PC and
-                <strong>Remote host</strong> for Runpod or any other machine. The token is encrypted
-                with the same local key box as the other provider secrets.
+                training jobs. Use <strong>Local Docker</strong> for a container on this PC,
+                <strong>Vultr</strong> or <strong>Akamai Cloud (Linode)</strong> for a cloud
+                instance, or <strong>Remote host</strong> for any other machine. The token is
+                encrypted with the same local key box as the other provider secrets.
             </p>
 
             <div class="row">
@@ -622,6 +623,10 @@ else if (_tab == "openrouter")
                         {
                             <text>1. Deploy pod · 2. Upload a model for Chat · 3. Train (no model needed)</text>
                         }
+                        else if (provider.Prefab == ComputeProviderPrefabs.Akamai)
+                        {
+                            <text>1. Load account and deploy, 2. upload a model for Chat, 3. train (no model needed)</text>
+                        }
                         else if (provider.Prefab == ComputeProviderPrefabs.Vultr)
                         {
                             <text>1. Set up &amp; deploy over SSH · 2. Upload a model for Chat · 3. Train (no model needed)</text>
@@ -639,6 +644,10 @@ else if (_tab == "openrouter")
                     @if (provider.Prefab == ComputeProviderPrefabs.Vultr)
                     {
                         <VultrPanel ProviderId="@provider.Id" OnChanged="RefreshComputeView" />
+                    }
+                    @if (provider.Prefab == ComputeProviderPrefabs.Akamai)
+                    {
+                        <AkamaiPanel ProviderId="@provider.Id" OnChanged="RefreshComputeView" />
                     }
                     @if (needsDeploy)
                     {

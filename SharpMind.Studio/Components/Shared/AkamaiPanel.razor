@@ -1,0 +1,490 @@
+@using SharpMind.Studio.Core.Compute
+@using SharpMind.Studio.Services
+@inject ComputeProviderService Compute
+@inject AkamaiService Akamai
+@inject ComputeActivityService Activity
+@inject IJSRuntime JS
+
+<div class="training-subsection">
+    <div class="training-subsection-head">
+        <label class="field-label">Akamai Cloud (Linode) API</label>
+        <div class="row" style="align-items:center; gap:.5rem;">
+            <span class="small mono">@StatusLabel</span>
+            @if (_busy)
+            {
+                <span class="spinner-ring" title="Working"></span>
+            }
+            <button type="button" class="button" @onclick="LoadAsync" disabled="@_busy">
+                @(_busy ? "Working..." : "Load account")
+            </button>
+        </div>
+    </div>
+
+    <div class="training-form">
+        <div class="field training-form-wide">
+            <label class="field-label" for="akamai-key-@ProviderId">API token</label>
+            <input id="akamai-key-@ProviderId" class="input" type="password"
+                   @bind="_apiKey" @bind:event="oninput" autocomplete="off"
+                   disabled="@(!string.IsNullOrWhiteSpace(_apiKeySecret))"
+                   placeholder="@(HasSavedKey ? "saved; leave blank to keep" : "Linode personal access token")" />
+            <SecretSelect Value="@_apiKeySecret" ValueChanged="OnApiKeySecretChanged"
+                          EmptyLabel="Type a token"
+                          Title="Use a named Akamai token from Settings > Vault." />
+            <span class="small faint">
+                Stored encrypted. Create a token at
+                <a href="https://cloud.linode.com/profile/tokens" target="_blank" rel="noopener">
+                    cloud.linode.com/profile/tokens
+                </a>
+                with Account, Profile and Images read access, plus Linodes, Firewalls and Tags read/write.
+            </span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="akamai-region-@ProviderId">Region</label>
+            <select id="akamai-region-@ProviderId" class="input"
+                    @bind="_region" @bind:after="OnRegionChanged">
+                @foreach (AkamaiRegion region in _regions)
+                {
+                    <option value="@region.Id">@region.Display</option>
+                }
+            </select>
+            @if (_region.Length > 0 && !RegionSupportsGpu)
+            {
+                <span class="small faint">
+                    This region does not advertise GPU Linodes. GPU types are hidden.
+                </span>
+            }
+        </div>
+        <div class="field">
+            <label class="field-label" for="akamai-type-search-@ProviderId">Find a type</label>
+            <input id="akamai-type-search-@ProviderId" class="input" @bind="_typeSearch"
+                   @bind:event="oninput" placeholder="gpu, shared, 32, g6" />
+        </div>
+        <div class="field">
+            <label class="field-label" for="akamai-type-@ProviderId">Linode type</label>
+            <select id="akamai-type-@ProviderId" class="input" @bind="_typeId">
+                @foreach (AkamaiType type in VisibleTypes)
+                {
+                    <option value="@type.Id">@TypeLabel(type)</option>
+                }
+            </select>
+            @if (_types.Count > 0)
+            {
+                <span class="small faint">
+                    @VisibleTypes.Count() of @_types.Count type(s) shown.
+                </span>
+            }
+        </div>
+        <div class="field">
+            <label class="field-label" for="akamai-image-@ProviderId">Image</label>
+            <select id="akamai-image-@ProviderId" class="input" @bind="_imageId">
+                @foreach (AkamaiImage image in _images)
+                {
+                    <option value="@image.Id">@image.Label</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="akamai-ssh-@ProviderId">Linode SSH key</label>
+            <select id="akamai-ssh-@ProviderId" class="input" @bind="_sshKeyId">
+                @foreach (AkamaiSshKey key in _keys)
+                {
+                    <option value="@key.Id">@key.Label</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="small faint">@CostLabel</div>
+    @if (Purpose == "training")
+    {
+        <div class="small faint">
+            Training preselected the cheapest GPU type in this region. Change the type if you want
+            more VRAM. The instance is billed hourly until it is destroyed.
+        </div>
+    }
+    <div class="small faint">
+        @if (_account is { } account)
+        {
+            <text>
+                Balance $@account.Balance.ToString("0.00") A -  pending $@account.PendingCharges.ToString("0.00").
+            </text>
+        }
+        else if (HasSavedKey)
+        {
+            <text>Press Load account to read the account, regions, types and SSH keys.</text>
+        }
+        else
+        {
+            <text>Save an Akamai Cloud API token, then load the account.</text>
+        }
+    </div>
+
+    <div class="row">
+        <button type="button" class="button primary" @onclick="DeployAsync"
+                disabled="@(_busy || !CanDeploy)">
+            Deploy instance
+        </button>
+        <button type="button" class="button" @onclick="RefreshAsync"
+                disabled="@(_busy || !HasInstance)">
+            Refresh
+        </button>
+        <button type="button" class="button danger" @onclick="DestroyAsync"
+                disabled="@(_busy || !HasInstance)">
+            Destroy instance
+        </button>
+    </div>
+
+    @if (_status is { Length: > 0 })
+    {
+        <div class="status-line">@_status</div>
+    }
+    @if (_error is not null)
+    {
+        <div class="error-line">@_error</div>
+    }
+    @if (_lines.Count > 0)
+    {
+        <pre class="small mono" style="max-height:14rem;overflow:auto;">@string.Join("\n", _lines)</pre>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string ProviderId { get; set; } = "";
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>Set to <c>training</c> to preselect the cheapest GPU type.</summary>
+    [Parameter] public string? Purpose { get; set; }
+
+    private string _apiKey = "";
+    private string? _apiKeySecret;
+    private string _region = "";
+    private string _typeId = "";
+    private string _imageId = "";
+    private string _sshKeyId = "";
+    private string _typeSearch = "";
+    private string? _status;
+    private string? _error;
+    private bool _busy;
+    private bool _loaded;
+    private AkamaiAccount? _account;
+    private IReadOnlyList<AkamaiRegion> _regions = [];
+    private IReadOnlyList<AkamaiType> _types = [];
+    private IReadOnlyList<AkamaiImage> _images = [];
+    private IReadOnlyList<AkamaiSshKey> _keys = [];
+    private readonly List<string> _lines = [];
+
+    private ComputeProviderSettings? Provider => Compute.Find(ProviderId);
+    private bool HasSavedKey => Akamai.HasApiKey(ProviderId);
+    private bool HasInstance => !string.IsNullOrWhiteSpace(Provider?.AkamaiInstanceId);
+    private string StatusLabel => Provider?.AkamaiInstanceStatus ?? "no instance";
+
+    private AkamaiRegion? SelectedRegion =>
+        _regions.FirstOrDefault(region => region.Id == _region);
+
+    private bool RegionSupportsGpu => SelectedRegion?.SupportsGpu == true;
+
+    private bool InRegion(AkamaiType type) => !type.IsGpu || RegionSupportsGpu;
+
+    private IEnumerable<AkamaiType> VisibleTypes
+    {
+        get
+        {
+            string query = _typeSearch.Trim();
+            return _types.Where(type =>
+                InRegion(type)
+                && (type.Id == _typeId
+                    || query.Length == 0
+                    || type.Id.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || type.Label.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || type.Class.Contains(query, StringComparison.OrdinalIgnoreCase)));
+        }
+    }
+
+    private AkamaiType? SelectedType =>
+        _types.FirstOrDefault(type => type.Id == _typeId);
+
+    private bool CanDeploy =>
+        !string.IsNullOrWhiteSpace(ProviderId)
+        && (HasSavedKey || !string.IsNullOrWhiteSpace(_apiKey))
+        && !string.IsNullOrWhiteSpace(_region)
+        && !string.IsNullOrWhiteSpace(_typeId)
+        && !string.IsNullOrWhiteSpace(_imageId)
+        && !string.IsNullOrWhiteSpace(_sshKeyId)
+        && !string.IsNullOrWhiteSpace(Provider?.SshKeyPath);
+
+    private string CostLabel
+    {
+        get
+        {
+            AkamaiType? type = SelectedType;
+            return type is null
+                ? "No Linode type selected."
+                : $"${type.HourlyCost:0.000}/hour A -  ${type.MonthlyCost:0.00}/month A -  "
+                  + $"{type.Vcpus} vCPU, {type.MemoryMb / 1024.0:0.#} GB RAM"
+                  + (type.Gpus > 0 ? $", {type.Gpus} GPU" : "");
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_loaded) return;
+        ComputeProviderSettings? provider = Provider;
+        if (provider is null) return;
+        _loaded = true;
+        _region = provider.AkamaiRegion ?? "";
+        _typeId = provider.AkamaiTypeId ?? "";
+        _imageId = provider.AkamaiImageId ?? "";
+        _apiKeySecret = provider.AkamaiApiKeySecret;
+        _sshKeyId = provider.AkamaiSshKeyId ?? "";
+    }
+
+    private void OnApiKeySecretChanged(string? name)
+    {
+        _apiKeySecret = name;
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            Compute.SetAkamaiApiKeySecret(ProviderId, name);
+            _apiKey = "";
+            _error = null;
+            _status = $"Using Vault secret {name}. Press Load account.";
+            return;
+        }
+
+        if (Provider?.AkamaiApiKeySecret is not null)
+        {
+            Compute.SetAkamaiApiKeySecret(ProviderId, null);
+            _status = "Vault reference removed. Type a token or choose a secret.";
+            _error = null;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        _status = null;
+        try
+        {
+            if (Provider is null)
+            {
+                _error = "This host entry was not found. Reload the page and try again.";
+                return;
+            }
+
+            string? typed = string.IsNullOrWhiteSpace(_apiKey) ? null : _apiKey.Trim();
+            if (typed is null && !HasSavedKey)
+            {
+                _error = "Paste an Akamai Cloud API token, then press Load account.";
+                return;
+            }
+
+            _account = await Akamai.ValidateAsync(ProviderId, typed);
+            _regions = await Akamai.ListRegionsAsync(ProviderId, typed);
+            _types = await Akamai.ListTypesAsync(ProviderId, typed);
+            _images = await Akamai.ListImagesAsync(ProviderId, typed);
+            _keys = await Akamai.ListSshKeysAsync(ProviderId, typed);
+
+            if (typed is not null)
+            {
+                Compute.SetAkamai(ProviderId, typed, null, null, null, null, null, null);
+                _apiKey = "";
+            }
+
+            if (_region.Length == 0 || _regions.All(region => region.Id != _region))
+            {
+                _region = (_regions.FirstOrDefault(region => region.SupportsGpu)
+                    ?? _regions.FirstOrDefault())?.Id ?? "";
+            }
+            if (_typeId.Length == 0 || !VisibleTypes.Any(type => type.Id == _typeId))
+                _typeId = DefaultTypeId();
+            if (_imageId.Length == 0 || _images.All(image => image.Id != _imageId))
+            {
+                _imageId = _images.FirstOrDefault(image =>
+                        image.Id.Contains("ubuntu24.04", StringComparison.OrdinalIgnoreCase))?.Id
+                    ?? _images.FirstOrDefault(image =>
+                        image.Id.Contains("ubuntu", StringComparison.OrdinalIgnoreCase))?.Id
+                    ?? _images.FirstOrDefault()?.Id
+                    ?? "";
+            }
+            if (_sshKeyId.Length == 0 || _keys.All(key => key.Id != _sshKeyId))
+            {
+                _sshKeyId = _keys.FirstOrDefault()?.Id
+                    ?? Provider?.AkamaiSshKeyId
+                    ?? "";
+            }
+
+            _status = $"Loaded {_types.Count} type(s), {_regions.Count} region(s), "
+                + $"{_images.Count} image(s), {_keys.Count} SSH key(s).";
+        }
+        catch (AkamaiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OnRegionChanged()
+    {
+        if (!VisibleTypes.Any(type => type.Id == _typeId))
+            _typeId = DefaultTypeId();
+    }
+
+    private string DefaultTypeId()
+    {
+        if (Purpose == "training")
+        {
+            AkamaiType? gpu = VisibleTypes.FirstOrDefault(type => type.IsGpu);
+            if (gpu is not null) return gpu.Id;
+        }
+
+        AkamaiType? cheap = VisibleTypes
+            .Where(type => !type.IsGpu)
+            .OrderBy(type => type.HourlyCost)
+            .FirstOrDefault();
+        return cheap?.Id ?? VisibleTypes.FirstOrDefault()?.Id ?? "";
+    }
+
+    private async Task DeployAsync()
+    {
+        if (_busy) return;
+        ComputeProviderSettings? provider = Provider;
+        if (provider is null) return;
+        if (string.IsNullOrWhiteSpace(provider.SshKeyPath))
+        {
+            _error = "Press Edit and add the local private key that matches the selected Linode SSH key.";
+            return;
+        }
+
+        AkamaiType? type = SelectedType;
+        AkamaiSshKey? sshKey = _keys.FirstOrDefault(key => key.Id == _sshKeyId);
+        if (type is null)
+        {
+            _error = "Choose a Linode type.";
+            return;
+        }
+        if (sshKey is null)
+        {
+            _error = "Choose a Linode SSH key. Create one in the Linode profile first.";
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _status = "Creating the Akamai Cloud instance...";
+        _lines.Clear();
+        Activity.BeginOperation(ProviderId);
+        try
+        {
+            var options = new AkamaiDeployOptions(
+                type.Id,
+                _region,
+                _imageId,
+                sshKey.Id,
+                sshKey.PublicKey,
+                type.HourlyCost,
+                Compute.SshImage(ProviderId),
+                provider.SshContainerName ?? "sharpmind",
+                provider.UseGpu || type.IsGpu);
+
+            var progress = new Progress<SshProgress>(update =>
+            {
+                _lines.Add($"[{update.Stage}] {update.Line}");
+                _ = InvokeAsync(StateHasChanged);
+            });
+
+            AkamaiInstance instance = await Akamai.DeployAsync(
+                ProviderId, options, progress);
+            _status = $"Instance {instance.Id} is {instance.Status}"
+                + (string.IsNullOrWhiteSpace(instance.PublicIpv4)
+                    ? "."
+                    : $" at {instance.PublicIpv4}.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (AkamaiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            Activity.EndOperation(ProviderId);
+            _busy = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            AkamaiInstance instance = await Akamai.RefreshAsync(ProviderId);
+            _status = $"Instance {instance.Id}: {instance.Status}"
+                + (string.IsNullOrWhiteSpace(instance.PublicIpv4)
+                    ? "."
+                    : $", {instance.PublicIpv4}.");
+            await OnChanged.InvokeAsync();
+        }
+        catch (AkamaiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DestroyAsync()
+    {
+        if (_busy || !HasInstance) return;
+        bool confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            "Destroy this Akamai Cloud instance? The instance disk is deleted and billing stops. "
+            + "Download any exported models first.");
+        if (!confirmed) return;
+
+        _busy = true;
+        _error = null;
+        _status = "Destroying the instance...";
+        try
+        {
+            await Akamai.DestroyAsync(ProviderId);
+            _status = "Instance destroyed.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (AkamaiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = $"{ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string TypeLabel(AkamaiType type) =>
+        $"{type.Id} A -  {type.Vcpus} vCPU A -  {type.MemoryMb / 1024.0:0.#} GB RAM"
+        + (type.Gpus > 0 ? $" A -  {type.Gpus} GPU" : "")
+        + $" A -  ${type.HourlyCost:0.000}/h";
+}

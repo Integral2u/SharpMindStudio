@@ -317,6 +317,7 @@ public partial class Settings
         _computeToken = "";
         _computeTokenSecret = provider.TokenSecret;
         _computeImage = provider.Prefab is ComputeProviderPrefabs.Vultr
+                or ComputeProviderPrefabs.Akamai
                 or ComputeProviderPrefabs.VastAi
                 or ComputeProviderPrefabs.MaxCloudOn
                 or ComputeProviderPrefabs.Novita
@@ -441,6 +442,7 @@ public partial class Settings
                 ComputeProviderPrefabs.LocalDocker => "Local Docker",
                 ComputeProviderPrefabs.Runpod => "Runpod GPU",
                 ComputeProviderPrefabs.Vultr => "Vultr",
+                ComputeProviderPrefabs.Akamai => "Akamai Cloud",
                 ComputeProviderPrefabs.VastAi => "Vast.ai GPU",
                 ComputeProviderPrefabs.MaxCloudOn => "MaxCloudOn GPU",
                 ComputeProviderPrefabs.Novita => "Novita GPU",
@@ -451,6 +453,7 @@ public partial class Settings
         if (_computePrefab == ComputeProviderPrefabs.LocalDocker)
             SyncComputeStudioUrl();
         else if (_computePrefab is ComputeProviderPrefabs.Vultr
+                     or ComputeProviderPrefabs.Akamai
                      or ComputeProviderPrefabs.VastAi
                      or ComputeProviderPrefabs.MaxCloudOn
                      or ComputeProviderPrefabs.Novita

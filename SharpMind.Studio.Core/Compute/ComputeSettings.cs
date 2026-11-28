@@ -90,6 +90,23 @@ public sealed class ComputeProviderSettings
     public string? VultrFirewallGroupId { get; set; }
     public string? VultrLabel { get; set; }
 
+    // --- Akamai Cloud (Linode) helper -----------------------------------
+    // Optional: lets Studio create and destroy a Linode through the Linode API
+    // and then run the existing SSH setup against it.
+    public string? AkamaiApiKeyProtected { get; set; }
+    public string? AkamaiApiKeySecret { get; set; }
+    public string? AkamaiInstanceId { get; set; }
+    public string? AkamaiInstanceStatus { get; set; }
+    public string? AkamaiTypeId { get; set; }
+    public string? AkamaiRegion { get; set; }
+    public string? AkamaiImageId { get; set; }
+    public string? AkamaiSshKeyId { get; set; }
+    public string? AkamaiSshKeyName { get; set; }
+    public double? AkamaiHourlyCost { get; set; }
+    public DateTimeOffset? AkamaiCreatedUtc { get; set; }
+    public string? AkamaiFirewallId { get; set; }
+    public string? AkamaiLabel { get; set; }
+
     /// <summary>
     /// Minutes of no training or chat before Studio offers to destroy the
     /// instance; 0 means never. Only instances this Studio created are eligible.
@@ -136,6 +153,7 @@ public static class ComputeProviderPrefabs
     public const string LocalDocker = "local-docker";
     public const string Runpod = "runpod";
     public const string Vultr = "vultr";
+    public const string Akamai = "akamai";
     public const string VastAi = "vast-ai";
     public const string MaxCloudOn = "maxcloudon";
     public const string Novita = "novita";
@@ -151,6 +169,10 @@ public static class ComputeProviderPrefabs
         new(Vultr, "Vultr cloud server", ComputeProviderKinds.Remote,
             "A Vultr instance running the SharpMind Server image.", Docker: false, Runpod: false,
             ReferralUrl: "https://www.vultr.com/?ref=9933964"),
+        new(Akamai, "Akamai Cloud (Linode)", ComputeProviderKinds.Remote,
+            "An Akamai Cloud (Linode) instance running the SharpMind Server image. Studio creates and destroys it through the Linode API.",
+            Docker: false, Runpod: false,
+            ReferralUrl: "https://www.akamai.com/cloud"),
         new(VastAi, "Vast.ai GPU", ComputeProviderKinds.Remote,
             "A Vast.ai GPU instance running the SharpMind Server image. Paste its public URL and token.",
             Docker: false, Runpod: false,
@@ -706,6 +728,99 @@ public sealed class ComputeSettingsStore
             provider.VultrFirewallGroupId = string.IsNullOrWhiteSpace(firewallGroupId)
                 ? null
                 : firewallGroupId.Trim();
+            SaveLocked();
+            return true;
+        }
+    }
+
+    /// <summary>The decrypted Akamai Cloud (Linode) API key, or null when none is saved.</summary>
+    public string? AkamaiApiKey(string id)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            return provider is null
+                ? null
+                : ResolveSecret(provider.AkamaiApiKeySecret, provider.AkamaiApiKeyProtected);
+        }
+    }
+
+    /// <summary>Uses a named Vault secret for the Akamai key, dropping the inline value.</summary>
+    public bool SetAkamaiApiKeySecret(string id, string? secretName)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.AkamaiApiKeySecret = string.IsNullOrWhiteSpace(secretName)
+                ? null
+                : secretName.Trim();
+            provider.AkamaiApiKeyProtected = null;
+            SaveLocked();
+            return true;
+        }
+    }
+
+    /// <summary>Stores the Akamai deployment defaults. A null key keeps the current one.</summary>
+    public bool SetAkamai(
+        string id,
+        string? apiKey,
+        string? typeId,
+        string? region,
+        string? imageId,
+        string? sshKeyId,
+        string? sshKeyName,
+        double? hourlyCost)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            if (apiKey is not null)
+            {
+                provider.AkamaiApiKeySecret = null;
+                provider.AkamaiApiKeyProtected = string.IsNullOrWhiteSpace(apiKey)
+                    ? null
+                    : GatewaySecretBox.Protect(apiKey.Trim(), _keyFile);
+            }
+
+            if (!string.IsNullOrWhiteSpace(typeId)) provider.AkamaiTypeId = typeId.Trim();
+            if (!string.IsNullOrWhiteSpace(region)) provider.AkamaiRegion = region.Trim();
+            if (!string.IsNullOrWhiteSpace(imageId)) provider.AkamaiImageId = imageId.Trim();
+            if (!string.IsNullOrWhiteSpace(sshKeyId)) provider.AkamaiSshKeyId = sshKeyId.Trim();
+            if (!string.IsNullOrWhiteSpace(sshKeyName)) provider.AkamaiSshKeyName = sshKeyName.Trim();
+            if (hourlyCost is > 0) provider.AkamaiHourlyCost = hourlyCost;
+            SaveLocked();
+            return true;
+        }
+    }
+
+    public bool SetAkamaiInstance(
+        string id,
+        string? instanceId,
+        string? status,
+        string? label,
+        DateTimeOffset? createdUtc,
+        string? firewallId)
+    {
+        lock (_gate)
+        {
+            ComputeProviderSettings? provider = _document.Providers.FirstOrDefault(value =>
+                value.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (provider is null) return false;
+
+            provider.AkamaiInstanceId = string.IsNullOrWhiteSpace(instanceId) ? null : instanceId.Trim();
+            provider.AkamaiInstanceStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+            provider.AkamaiLabel = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
+            provider.AkamaiCreatedUtc = instanceId is null ? null : createdUtc;
+            provider.AkamaiFirewallId = string.IsNullOrWhiteSpace(firewallId)
+                ? null
+                : firewallId.Trim();
             SaveLocked();
             return true;
         }

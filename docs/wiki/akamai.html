@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Akamai Cloud (Linode) - SharpMind Studio Wiki</title>
+    <meta name="description" content="Create an Akamai Cloud (Linode) instance and let SharpMind Studio install Docker, the NVIDIA toolkit and the server image over SSH." />
+    <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+<div class="top-links">
+    <a href="https://github.com/Integral2u/SharpMind" target="_blank" rel="noopener">Powered by SharpMind</a>
+    <a class="sponsor" href="https://github.com/sponsors/Integral2u" target="_blank" rel="noopener">&#9829; Sponsor</a>
+</div>
+<aside class="sidebar">
+    <a class="brand" href="../index.html">
+        <span class="brand-mark">S</span>
+        <span>SharpMind <em>Studio</em></span>
+    </a>
+    <nav class="nav">
+        <a href="../index.html"><span class="nav-index">01</span> Home</a>
+        <a class="active" href="index.html"><span class="nav-index">02</span> Wiki</a>
+        <span class="nav-group">Set up</span>
+        <a href="providers.html">Providers</a>
+        <a href="local-docker.html">Local Docker</a>
+        <a href="runpod.html">Runpod</a>
+        <a href="vultr.html">Vultr + SSH</a>
+        <a class="active" href="akamai.html">Akamai Cloud</a>
+        <span class="nav-group">Use</span>
+        <a href="training.html">Training</a>
+        <a href="inference.html">Models &amp; chat</a>
+        <a href="huggingface.html">HuggingFace</a>
+        <a href="openrouter.html">OpenRouter</a>
+        <a href="work.html">Work</a>
+        <a href="labs.html">Labs</a>
+        <a href="settings.html">Settings</a>
+        <a href="pairing.html">Phone pairing</a>
+        <a href="troubleshooting.html">Troubleshooting</a>
+        <a href="privacy.html">Privacy</a>
+    </nav>
+    <div class="sidebar-foot">
+        <span class="pill"><span class="dot"></span> 1.1.3</span>
+        <span>Local-first.<br />GPU when you need it.</span>
+        <a class="github-link" href="https://github.com/Integral2u/SharpMindStudio">github.com/Integral2u/SharpMindStudio</a>
+    </div>
+</aside>
+
+<main class="main">
+    <div class="wrap wiki-layout">
+        <aside class="toc">
+            <strong>On this page</strong>
+            <a href="#before">Before you start</a>
+            <a href="#token">Create the API token</a>
+            <a href="#ssh">Add an SSH key</a>
+            <a href="#host">Add the host in Studio</a>
+            <a href="#deploy">Deploy from the API</a>
+            <a href="#verify">Verify and train</a>
+            <a href="#cost">Cost and cleanup</a>
+            <a href="#problems">Common problems</a>
+        </aside>
+
+        <article class="wiki-content">
+            <div class="breadcrumb"><a href="../index.html">Home</a><span>/</span><a href="index.html">Wiki</a><span>/</span><span>Akamai Cloud</span></div>
+            <span class="eyebrow">Compute - GPU</span>
+            <h1>Akamai Cloud (Linode)</h1>
+            <p class="lead">
+                Akamai Cloud Computing is the Linode platform. Studio can create a Linode through
+                the Linode API v4, attach a cloud firewall, wait for its public address and run the
+                same SSH setup used by Vultr. Existing Linode SSH keys only: Studio never uploads
+                a private key.
+            </p>
+            <div class="badge-row">
+                <span class="badge gpu">GPU types where the region offers them</span>
+                <span class="badge blue">ports 5117 + 8080</span>
+                <span class="badge">hourly billing</span>
+            </div>
+
+            <div class="signup-row">
+                <span class="referral-label">No Akamai Cloud account?</span>
+                <a class="button primary" href="https://www.akamai.com/cloud" target="_blank" rel="noopener">Open Akamai Cloud</a>
+            </div>
+
+            <div class="callout warn">
+                <strong>Billing does not stop when the Linode is powered off.</strong>
+                Destroy the instance when the run is done. Studio shows a Destroy button on the
+                host card and on the Compute page.
+            </div>
+
+            <h2 id="before">Before you start</h2>
+            <ul class="checklist">
+                <li>An <a href="https://www.akamai.com/cloud">Akamai Cloud</a> account with billing enabled.</li>
+                <li>A Linode personal access token with Account, Profile and Images read access, plus Linodes, Firewalls and Tags read/write.</li>
+                <li>An SSH key already saved in the Linode profile.</li>
+                <li>The SharpMind server image in a registry the instance can pull, for example <span class="mono">integral2u/sharpmind-server:gpu</span>.</li>
+                <li>A region that advertises GPU Linodes when you want GPU training. CPU-only types work in every region.</li>
+            </ul>
+
+            <h2 id="token">Create the API token</h2>
+            <ol class="steps">
+                <li>Open <a href="https://cloud.linode.com/profile/tokens" target="_blank" rel="noopener">cloud.linode.com/profile/tokens</a>.</li>
+                <li>Create a personal access token. Give it <strong>Account</strong>, <strong>Profile</strong> and <strong>Images: Read Only</strong>, plus <strong>Linodes</strong>, <strong>Firewalls</strong> and <strong>Tags: Read/Write</strong>.</li>
+                <li>Paste the token into the Akamai panel on the host card and press <strong>Load account</strong>. The token is stored encrypted and is checked before it is saved.</li>
+            </ol>
+
+            <h2 id="ssh">Add an SSH key</h2>
+            <p>
+                Add the public half of the key to the Linode profile, not to an individual
+                instance. In Studio, edit the host and select the matching local private key under
+                <strong>SSH key file</strong>. The Akamai panel lists the keys already in the
+                profile; Deploy stays disabled until one is selected and the private key is set.
+            </p>
+            <p>
+                Add a key at <a href="https://cloud.linode.com/profile/sshkeys" target="_blank" rel="noopener">cloud.linode.com/profile/sshkeys</a>.
+                The private key never leaves this PC.
+            </p>
+
+            <h2 id="host">Add the host in Studio</h2>
+            <ol class="steps">
+                <li><strong>Settings &rarr; Providers &rarr; Compute &rarr; Add host.</strong></li>
+                <li>Choose <strong>Akamai Cloud (Linode)</strong>.</li>
+                <li>Name the host, generate the sharpMind bearer token, and set the server image.</li>
+                <li>Set the SSH login: user <span class="mono">root</span>, port 22, and the local private key that matches the Linode profile key.</li>
+                <li>Tick <strong>GPU host</strong> when the selected type has a GPU. Save the host.</li>
+                <li>On the host card, load the account, then choose the region, type, image and SSH key.</li>
+            </ol>
+
+            <h2 id="deploy">Deploy from the API</h2>
+            <p>
+                Studio creates a cloud firewall for TCP 22, 8080 and 5117, creates the Linode with
+                the selected profile key, attaches the firewall, waits for the public IPv4 address,
+                then waits for SSH and runs the installer. The instance is tracked before the wait,
+                so a failed setup still leaves a destroyable record.
+            </p>
+            <div class="callout">
+                <strong>GPU types are region-specific.</strong>
+                The panel hides GPU types when the selected region does not advertise GPU Linodes.
+                Pick a GPU region first when the purpose is training.
+            </div>
+
+            <h2 id="verify">Verify and train</h2>
+            <ul class="checklist">
+                <li><strong>Refresh</strong> reads the Linode status and updates the Base URL and Studio URL when the public address is available.</li>
+                <li>The host card's <strong>Test</strong> checks <span class="mono">/health</span> and reads the model list.</li>
+                <li>In <strong>Training &rarr; Run on</strong>, choose the Akamai host. Training from scratch needs no model on the host.</li>
+                <li>For Chat, upload a model to the host and select it in the model chooser.</li>
+            </ul>
+
+            <h2 id="cost">Cost and cleanup</h2>
+            <p>
+                Linode bills hourly. A powered-off Linode still bills until it is deleted. Press
+                <strong>Destroy instance</strong> on the Akamai panel to delete the Linode and its
+                firewall. Export any trained model before destroying the host.
+            </p>
+            <p>
+                Unlike Vultr, Akamai instances are not included in the top Compute dashboard or the
+                automatic idle-teardown countdown yet. Destroy them from their panel when the run
+                finishes.
+            </p>
+
+            <h2 id="problems">Common problems</h2>
+            <table>
+                <thead><tr><th>Message</th><th>Meaning</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="mono">401 Invalid Token</span></td><td>The token is wrong, expired, or missing a required scope. Create a new token with Account/Profile read and Linodes/Firewalls read/write.</td></tr>
+                    <tr><td>No SSH key</td><td>Add a public key to the Linode profile, then press Load account and select it.</td></tr>
+                    <tr><td>GPU types are missing</td><td>The selected region does not advertise GPU Linodes. Choose a GPU region or a CPU type.</td></tr>
+                    <tr><td>SSH did not open</td><td>The Linode is running but port 22 is blocked. Check the cloud firewall and the host's SSH key.</td></tr>
+                    <tr><td>The instance did not boot in 20 minutes</td><td>Refresh to check the Linode status, or Destroy it to stop billing and try another region/type.</td></tr>
+                </tbody>
+            </table>
+        </article>
+    </div>
+</main>
+</body>
+</html>

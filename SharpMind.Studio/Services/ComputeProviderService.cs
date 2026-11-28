@@ -209,6 +209,48 @@ public sealed class ComputeProviderService
             Changed?.Invoke();
     }
 
+    public string? AkamaiApiKey(string id) => _store.AkamaiApiKey(id);
+
+    public bool HasAkamaiApiKey(string id) =>
+        !string.IsNullOrWhiteSpace(_store.AkamaiApiKey(id));
+
+    public void SetAkamai(
+        string id,
+        string? apiKey,
+        string? typeId,
+        string? region,
+        string? imageId,
+        string? sshKeyId,
+        string? sshKeyName,
+        double? hourlyCost)
+    {
+        if (_store.SetAkamai(
+            id, apiKey, typeId, region, imageId, sshKeyId, sshKeyName, hourlyCost))
+        {
+            Changed?.Invoke();
+        }
+    }
+
+    public void SetAkamaiApiKeySecret(string id, string? secretName)
+    {
+        if (_store.SetAkamaiApiKeySecret(id, secretName)) Changed?.Invoke();
+    }
+
+    public void SetAkamaiInstance(
+        string id,
+        string? instanceId,
+        string? status,
+        string? label,
+        DateTimeOffset? createdUtc,
+        string? firewallId)
+    {
+        if (_store.SetAkamaiInstance(
+            id, instanceId, status, label, createdUtc, firewallId))
+        {
+            Changed?.Invoke();
+        }
+    }
+
     public void SetSsh(
         string id,
         string? host,

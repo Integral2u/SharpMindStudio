@@ -37,6 +37,7 @@ builder.Services.AddSingleton<ComputeChatBackend>();
 builder.Services.AddSingleton<DockerHostService>();
 builder.Services.AddSingleton<RunpodService>();
 builder.Services.AddSingleton<VultrService>();
+builder.Services.AddSingleton<AkamaiService>();
 builder.Services.AddSingleton<ComputeDashboardService>();
 builder.Services.AddSingleton<ComputeActivityService>();
 builder.Services.AddSingleton<ComputeIdleService>();
@@ -56,6 +57,10 @@ builder.Services.AddHttpClient<RunpodClient>(client =>
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
 builder.Services.AddHttpClient<VultrClient>(client =>
+{
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddHttpClient<AkamaiClient>(client =>
 {
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
