@@ -85,7 +85,6 @@ public sealed class AkamaiCreateInstanceRequest
     public required string ImageId { get; init; }
     public required string Label { get; init; }
     public required string SshPublicKey { get; init; }
-    public string Tag { get; init; } = "sharpmind";
 }
 
 public sealed class AkamaiException : Exception
@@ -310,7 +309,6 @@ public sealed class AkamaiClient
             ["label"] = request.Label,
             ["booted"] = true,
             ["authorized_keys"] = new JsonArray(request.SshPublicKey),
-            ["tags"] = new JsonArray(request.Tag),
         };
         using var content = JsonContent(body);
         using HttpResponseMessage response = await SendAsync(

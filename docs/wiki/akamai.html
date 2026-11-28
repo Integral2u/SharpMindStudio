@@ -89,7 +89,7 @@
             <h2 id="before">Before you start</h2>
             <ul class="checklist">
                 <li>An <a href="https://www.akamai.com/cloud">Akamai Cloud</a> account with billing enabled.</li>
-                <li>A Linode personal access token with Account, Profile and Images read access, plus Linodes, Firewalls and Tags read/write.</li>
+                <li>A Linode personal access token with <strong>Account: Read Only</strong>, <strong>Images: Read Only</strong>, <strong>Linodes: Read/Write</strong> and <strong>Firewalls: Read/Write</strong>.</li>
                 <li>An SSH key already saved in the Linode profile.</li>
                 <li>The SharpMind server image in a registry the instance can pull, for example <span class="mono">integral2u/sharpmind-server:gpu</span>.</li>
                 <li>A region that advertises GPU Linodes when you want GPU training. CPU-only types work in every region.</li>
@@ -98,7 +98,15 @@
             <h2 id="token">Create the API token</h2>
             <ol class="steps">
                 <li>Open <a href="https://cloud.linode.com/profile/tokens" target="_blank" rel="noopener">cloud.linode.com/profile/tokens</a>.</li>
-                <li>Create a personal access token. Give it <strong>Account</strong>, <strong>Profile</strong> and <strong>Images: Read Only</strong>, plus <strong>Linodes</strong>, <strong>Firewalls</strong> and <strong>Tags: Read/Write</strong>.</li>
+                <li>Create a personal access token with exactly these categories:
+                    <ul class="checklist">
+                        <li><strong>Account: Read Only</strong> - account balance and the profile SSH keys.</li>
+                        <li><strong>Images: Read Only</strong> - the Ubuntu image list.</li>
+                        <li><strong>Linodes: Read/Write</strong> - create, read and delete the instance.</li>
+                        <li><strong>Firewalls: Read/Write</strong> - create, attach and delete the cloud firewall.</li>
+                    </ul>
+                    Leave the other categories at <strong>None</strong>.
+                </li>
                 <li>Paste the token into the Akamai panel on the host card and press <strong>Load account</strong>. The token is stored encrypted and is checked before it is saved.</li>
             </ol>
 

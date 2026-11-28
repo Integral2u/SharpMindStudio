@@ -110,7 +110,7 @@ public sealed class AkamaiClientTests
         JsonElement json = body!.Value;
         Assert.Equal("us-east", json.GetProperty("region").GetString());
         Assert.False(json.TryGetProperty("firewall_id", out _));
-        Assert.Equal("sharpmind", json.GetProperty("tags")[0].GetString());
+        Assert.False(json.TryGetProperty("tags", out _));
         Assert.Equal(
             "ssh-ed25519 AAAA test",
             json.GetProperty("authorized_keys")[0].GetString());
