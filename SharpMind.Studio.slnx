@@ -11,6 +11,7 @@
   <Project Path="../SharpMind/SharpMind.Training/SharpMind.Training.csproj" />
   <Project Path="SharpMind.Studio.Cli/SharpMind.Studio.Cli.csproj" />
   <Project Path="SharpMind.Studio.ComputeHost/SharpMind.Studio.ComputeHost.csproj" />
+  <Project Path="SharpMind.Studio.Contracts/SharpMind.Studio.Contracts.csproj" />
   <Project Path="SharpMind.Studio.Core/SharpMind.Studio.Core.csproj" />
   <Project Path="SharpMind.Studio.Tests/SharpMind.Studio.Tests.csproj" />
   <Project Path="SharpMind.Studio.Tests.FakeMcp/SharpMind.Studio.Tests.FakeMcp.csproj" />

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SharpMind.Studio.Contracts</RootNamespace>
+    <AssemblyName>SharpMind.Studio.Contracts</AssemblyName>
+    <IsPackable>true</IsPackable>
+    <Description>Wire contracts shared by SharpMind Studio and the SharpMind service. No logic, no feature-id constants.</Description>
+  </PropertyGroup>
+
+</Project>
