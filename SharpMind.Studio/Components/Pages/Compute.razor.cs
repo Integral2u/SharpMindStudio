@@ -30,8 +30,8 @@ public partial class Compute : IDisposable
         try
         {
             await Dashboard.RefreshAsync(force: true);
-            _error = Dashboard.Error;
-            int inUse = Dashboard.Instances.Count(instance => ActivityFor(instance) is not null);
+            int inUse = Dashboard.Instances.Count(instance => ActivityFor(instance) is not null)
+                + Dashboard.AkamaiInstances.Count(instance => ActivityFor(instance) is not null);
             _status = Dashboard.RunningCount == 0
                 ? "No compute is billed right now."
                 : $"{Dashboard.RunningCount} instance(s) running at "
@@ -49,7 +49,6 @@ public partial class Compute : IDisposable
     private async Task RefreshFromPanelAsync()
     {
         await Dashboard.RefreshAsync(force: true);
-        _error = Dashboard.Error;
         StateHasChanged();
     }
 
@@ -119,9 +118,50 @@ public partial class Compute : IDisposable
         }
     }
 
+    private async Task DestroyAkamaiAsync(AkamaiComputeInstance instance)
+    {
+        if (_busy) return;
+        string? activity = ActivityFor(instance);
+        string message = activity is null
+            ? $"Destroy {instance.Label} ({instance.InstanceId})? The Linode and its firewall "
+              + "are deleted and billing stops. Download any exported models first."
+            : $"{instance.Label} is in active use ({activity}). Destroying it interrupts that work, "
+              + "deletes the Linode and stops billing. Destroy anyway?";
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", message);
+        if (!confirmed) return;
+
+        _busy = true;
+        _error = null;
+        _status = $"Destroying {instance.Label}...";
+        StateHasChanged();
+        try
+        {
+            await Dashboard.DestroyAkamaiAsync(instance);
+            _status = $"Destroyed {instance.Label}. Billing stopped.";
+            await Dashboard.RefreshAsync(force: true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _error = $"Could not destroy {instance.Label}: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
     private string? ActivityFor(VultrComputeInstance instance) =>
         ComputeUsage.Activity(
             instance,
+            Training.RemoteProviderId,
+            Training.IsRunning || Rehearsal.IsRunning || Exam.IsRunning,
+            ChatService.IsCompute ? ChatService.ComputeProviderId : null,
+            ChatService.IsChatActive || ChatService.IsWorkActive);
+
+    private string? ActivityFor(AkamaiComputeInstance instance) =>
+        ComputeUsage.Activity(
+            instance.ProviderId,
             Training.RemoteProviderId,
             Training.IsRunning || Rehearsal.IsRunning || Exam.IsRunning,
             ChatService.IsCompute ? ChatService.ComputeProviderId : null,

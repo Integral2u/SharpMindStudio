@@ -18,8 +18,9 @@
         <h1>Rent the machine.</h1>
         <p>
             Vultr and Akamai Cloud (Linode) instances created here run the SharpMind Server image,
-            train and serve a model, and bill by the hour until they are destroyed. Vultr instances
-            appear in the dashboard above; Akamai instances are managed in the panel below.
+            train and serve a model, and bill by the hour until they are destroyed. Both appear in
+            the instance list below and in the left menu; each provider's hosts are grouped in a
+            collapsed section further down.
         </p>
     </div>
     <div class="row">
@@ -67,7 +68,7 @@
                 ? when.ToLocalTime().ToString("HH:mm:ss")
                 : "-")
         </div>
-        <div class="small faint">Vultr API</div>
+        <div class="small faint">Vultr + Akamai</div>
     </div>
 </section>
 
@@ -84,14 +85,14 @@
     <div class="panel-head">
         <div>
             <div class="eyebrow">Instances</div>
-            <h2>@Dashboard.Instances.Count listed</h2>
+            <h2>@Dashboard.InstanceCount listed</h2>
         </div>
-        <span class="small faint">Tagged <span class="mono">sharpmind</span> instances are listed even without a saved host.</span>
+        <span class="small faint">Only instances this Studio created or tagged <span class="mono">sharpmind</span> are shown.</span>
     </div>
-    @if (Dashboard.Instances.Count == 0)
+    @if (Dashboard.InstanceCount == 0)
     {
         <div class="panel-body">
-            <div class="empty">No Vultr instances yet. Deploy one below.</div>
+            <div class="empty">No Vultr or Akamai instances yet. Deploy one below.</div>
         </div>
     }
     else
@@ -101,7 +102,7 @@
                 <thead>
                     <tr>
                         <th>Instance</th>
-                        <th>Host</th>
+                        <th>Provider</th>
                         <th>Status</th>
                         <th>Uptime</th>
                         <th class="num">Hourly</th>
@@ -153,74 +154,139 @@
                             </td>
                         </tr>
                     }
+                    @foreach (AkamaiComputeInstance instance in Dashboard.AkamaiInstances)
+                    {
+                        <tr>
+                            <td>
+                                <div>@instance.Label</div>
+                                <div class="small faint mono">@instance.InstanceId</div>
+                            </td>
+                            <td>@instance.OwnerName</td>
+                            <td>
+                                <span class="status @(instance.IsRunning ? "ok" : "running")">
+                                    @instance.StatusLabel
+                                </span>
+                                @if (!string.IsNullOrWhiteSpace(instance.MainIp))
+                                {
+                                    <div class="small faint mono">@instance.MainIp</div>
+                                }
+                                @if (ActivityFor(instance) is { } activity)
+                                {
+                                    <div class="use-pill">in use · @activity</div>
+                                }
+                            </td>
+                            <td class="num">@FormatUptime(instance.Uptime)</td>
+                            <td class="num">$@instance.HourlyCost.ToString("0.000")</td>
+                            <td class="num">$@instance.EstimatedCost.ToString("0.00")</td>
+                            <td>
+                                <button type="button" class="button danger"
+                                        @onclick="() => DestroyAkamaiAsync(instance)"
+                                        disabled="@_busy">
+                                    Destroy
+                                </button>
+                            </td>
+                        </tr>
+                    }
                 </tbody>
             </table>
         </div>
     }
 </section>
 
-<div class="settings-tabs training-tabs" style="margin-top: 1.4rem;">
-    <span class="settings-tab selected">Provision</span>
-    <span class="small faint" style="margin-left:auto; align-self:center;">
-        Existing Vultr SSH keys only; Studio never uploads a key.
-    </span>
-</div>
-
-@if (VultrProviders.Count == 0)
+@if (VultrProviders.Count == 0 && AkamaiProviders.Count == 0)
 {
     <section class="panel">
         <div class="panel-body stack">
             <p class="small faint">
-                Add a Vultr host under <a href="/settings">Settings &rarr; Providers</a>, save an
-                API key, then come back here to deploy an instance.
+                Add a Vultr or Akamai host under <a href="/settings">Settings &rarr; Providers</a>,
+                save an API key, then come back here to deploy an instance.
             </p>
         </div>
     </section>
 }
 else
 {
-    @foreach (ComputeProviderSettings provider in VultrProviders)
-    {
-        <section class="panel">
-            <div class="panel-head">
-                <div>
-                    <div class="eyebrow">Vultr</div>
-                    <h2>@provider.Name</h2>
-                </div>
-                <span class="small faint mono">@provider.BaseUrl</span>
+    <details class="panel settings-collapsible" style="margin-top: 1.2rem;">
+        <summary class="panel-head">
+            <div>
+                <div class="eyebrow">Vultr</div>
+                <h2>@VultrProviders.Count host@(VultrProviders.Count == 1 ? "" : "s")</h2>
             </div>
-            <div class="panel-body">
+            <span class="small faint">
+                Existing Vultr SSH keys only; Studio never uploads a key.
+            </span>
+            @if (Dashboard.VultrError is not null)
+            {
+                <span class="status running" title="@Dashboard.VultrError">API error</span>
+            }
+        </summary>
+        <div class="panel-body stack">
+            @if (Dashboard.VultrError is { Length: > 0 } vultrError)
+            {
+                <div class="error-line">@vultrError</div>
+            }
+            @if (VultrProviders.Count == 0)
+            {
+                <p class="small faint">
+                    Add a Vultr host under <a href="/settings">Settings &rarr; Providers</a>,
+                    save an API key, then come back here to deploy an instance.
+                </p>
+            }
+            @foreach (ComputeProviderSettings provider in VultrProviders)
+            {
+                <div class="spread">
+                    <div>
+                        <div class="eyebrow">Vultr</div>
+                        <h3>@provider.Name</h3>
+                    </div>
+                    <span class="small faint mono">@provider.BaseUrl</span>
+                </div>
                 <VultrPanel ProviderId="@provider.Id" Purpose="@Purpose"
                             OnChanged="RefreshFromPanelAsync" />
-            </div>
-        </section>
-    }
-}
+            }
+        </div>
+    </details>
 
-@if (AkamaiProviders.Count > 0)
-{
-    <div class="settings-tabs training-tabs" style="margin-top: 1.4rem;">
-        <span class="settings-tab selected">Akamai Cloud</span>
-        <span class="small faint" style="margin-left:auto; align-self:center;">
-            Existing Linode SSH keys only; Studio never uploads a key.
-        </span>
-    </div>
-    @foreach (ComputeProviderSettings provider in AkamaiProviders)
-    {
-        <section class="panel">
-            <div class="panel-head">
-                <div>
-                    <div class="eyebrow">Akamai Cloud (Linode)</div>
-                    <h2>@provider.Name</h2>
-                </div>
-                <span class="small faint mono">@provider.BaseUrl</span>
+    <details class="panel settings-collapsible" style="margin-top: 1rem;">
+        <summary class="panel-head">
+            <div>
+                <div class="eyebrow">Akamai Cloud (Linode)</div>
+                <h2>@AkamaiProviders.Count host@(AkamaiProviders.Count == 1 ? "" : "s")</h2>
             </div>
-            <div class="panel-body">
+            <span class="small faint">
+                Existing Linode SSH keys only; Studio never uploads a key.
+            </span>
+            @if (Dashboard.AkamaiError is not null)
+            {
+                <span class="status running" title="@Dashboard.AkamaiError">API error</span>
+            }
+        </summary>
+        <div class="panel-body stack">
+            @if (Dashboard.AkamaiError is { Length: > 0 } akamaiError)
+            {
+                <div class="error-line">@akamaiError</div>
+            }
+            @if (AkamaiProviders.Count == 0)
+            {
+                <p class="small faint">
+                    Add an Akamai Cloud host under <a href="/settings">Settings &rarr; Providers</a>,
+                    save a token, then come back here to deploy an instance.
+                </p>
+            }
+            @foreach (ComputeProviderSettings provider in AkamaiProviders)
+            {
+                <div class="spread">
+                    <div>
+                        <div class="eyebrow">Akamai Cloud (Linode)</div>
+                        <h3>@provider.Name</h3>
+                    </div>
+                    <span class="small faint mono">@provider.BaseUrl</span>
+                </div>
                 <AkamaiPanel ProviderId="@provider.Id" Purpose="@Purpose"
                              OnChanged="RefreshFromPanelAsync" />
-            </div>
-        </section>
-    }
+            }
+        </div>
+    </details>
 }
 
 @code {

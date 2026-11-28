@@ -219,7 +219,8 @@ public sealed record ComputeProvider(
     string BaseUrl,
     string Token,
     string? DefaultModel,
-    IReadOnlyList<string> Models)
+    IReadOnlyList<string> Models,
+    string? Prefab = null)
 {
     public bool HasToken => !string.IsNullOrWhiteSpace(Token);
 
@@ -313,7 +314,8 @@ public sealed class ComputeSettingsStore
             provider.BaseUrl,
             token,
             provider.DefaultModel,
-            [.. provider.Models]);
+            [.. provider.Models],
+            provider.Prefab);
     }
 
     public ComputeProviderSettings Add(

@@ -244,7 +244,7 @@
                 @if (_computeExpanded)
                 {
                     <div class="nav-chats">
-                        @if (Compute.Instances.Count == 0)
+                        @if (Compute.InstanceCount == 0)
                         {
                             <div class="nav-chat-empty">No instances yet</div>
                         }
@@ -284,6 +284,33 @@
                                         not tracked
                                     </span>
                                 }
+                                </div>
+                            }
+                            @foreach (SharpMind.Studio.Core.Compute.AkamaiComputeInstance instance
+                                in Compute.AkamaiInstances)
+                            {
+                                string? activity = ComputeActivity(instance);
+                                <div class="nav-chat-item">
+                                    <div class="nav-chat-main">
+                                        <a href="compute" class="nav-chat-link" title="@instance.Label">
+                                            @instance.Label
+                                        </a>
+                                        <div class="nav-chat-preview">
+                                            @instance.StatusLabel · $@instance.HourlyCost.ToString("0.000")/h
+                                            @if (activity is not null)
+                                            {
+                                                <span class="nav-use"> · in use: @activity</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <button type="button" class="nav-instance-stop"
+                                            @onclick="() => DestroyAkamaiFromNavAsync(instance)"
+                                            disabled="@(_computeBusy)"
+                                            title="@(activity is null
+                                                ? "Destroy this Linode and stop billing"
+                                                : $"In active use ({activity}); destroying interrupts it")">
+                                        @(_destroyingId == instance.InstanceId ? "..." : "Destroy")
+                                    </button>
                                 </div>
                             }
                         }
@@ -572,7 +599,8 @@
     }
 
     private bool AnyComputeInUse =>
-        Compute.Instances.Any(instance => ComputeActivity(instance) is not null);
+        Compute.Instances.Any(instance => ComputeActivity(instance) is not null)
+        || Compute.AkamaiInstances.Any(instance => ComputeActivity(instance) is not null);
 
     private string? ComputeActivity(VultrComputeInstance instance) =>
         ComputeUsage.Activity(
@@ -581,6 +609,47 @@
             Training.IsRunning || Rehearsal.IsRunning || Exam.IsRunning,
             ChatService.IsCompute ? ChatService.ComputeProviderId : null,
             ChatService.IsChatActive || ChatService.IsWorkActive);
+
+    private string? ComputeActivity(AkamaiComputeInstance instance) =>
+        ComputeUsage.Activity(
+            instance.ProviderId,
+            Training.RemoteProviderId,
+            Training.IsRunning || Rehearsal.IsRunning || Exam.IsRunning,
+            ChatService.IsCompute ? ChatService.ComputeProviderId : null,
+            ChatService.IsChatActive || ChatService.IsWorkActive);
+
+    private async Task DestroyAkamaiFromNavAsync(AkamaiComputeInstance instance)
+    {
+        if (_computeBusy) return;
+
+        string? activity = ComputeActivity(instance);
+        string message = activity is null
+            ? $"Destroy {instance.Label}? The Linode and its firewall are deleted and billing "
+              + "stops. Download any exported models first."
+            : $"{instance.Label} is in active use ({activity}). Destroying it interrupts that "
+              + "work, deletes the Linode and stops billing. Destroy anyway?";
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", message);
+        if (!confirmed) return;
+
+        _computeBusy = true;
+        _destroyingId = instance.InstanceId;
+        _computeError = null;
+        StateHasChanged();
+        try
+        {
+            await Compute.DestroyAkamaiAsync(instance);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _computeError = $"{instance.Label}: {ex.Message}";
+        }
+        finally
+        {
+            _computeBusy = false;
+            _destroyingId = null;
+            StateHasChanged();
+        }
+    }
 
     private async Task DestroyFromNavAsync(VultrComputeInstance instance)
     {

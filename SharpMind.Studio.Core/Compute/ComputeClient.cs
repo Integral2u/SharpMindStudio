@@ -510,8 +510,13 @@ public sealed class ComputeClient
         }
         catch (HttpRequestException ex)
         {
+            string hint = provider.Prefab is ComputeProviderPrefabs.Vultr
+                    or ComputeProviderPrefabs.Akamai
+                ? " The cloud instance may still be starting; press Refresh on the Compute "
+                    + "page and try again."
+                : "";
             throw new ComputeException(
-                $"Could not reach {provider.Name} at {provider.BaseUrl}: {ex.Message}");
+                $"Could not reach {provider.Name} at {provider.BaseUrl}: {ex.Message}{hint}");
         }
 
         if (!response.IsSuccessStatusCode)

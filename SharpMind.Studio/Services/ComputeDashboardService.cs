@@ -14,42 +14,71 @@ public sealed class ComputeDashboardService
 
     private readonly ComputeProviderService _compute;
     private readonly VultrClient _client;
+    private readonly AkamaiService _akamai;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IReadOnlyList<VultrComputeInstance> _instances = [];
+    private IReadOnlyList<AkamaiComputeInstance> _akamaiInstances = [];
     private DateTimeOffset _refreshedUtc;
-    private string? _error;
+    private string? _vultrError;
+    private string? _akamaiError;
     private bool _refreshing;
 
-    public ComputeDashboardService(ComputeProviderService compute, VultrClient client)
+    public ComputeDashboardService(
+        ComputeProviderService compute,
+        VultrClient client,
+        AkamaiService akamai)
     {
         _compute = compute ?? throw new ArgumentNullException(nameof(compute));
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _akamai = akamai ?? throw new ArgumentNullException(nameof(akamai));
     }
 
     public event Action? Changed;
 
     public IReadOnlyList<VultrComputeInstance> Instances => _instances;
 
+    public IReadOnlyList<AkamaiComputeInstance> AkamaiInstances => _akamaiInstances;
+
+    public int InstanceCount => _instances.Count + _akamaiInstances.Count;
+
     public IReadOnlyList<VultrComputeInstance> Running =>
         [.. _instances.Where(instance => instance.IsRunning)];
 
-    public int RunningCount => _instances.Count(instance => instance.IsRunning);
+    public int RunningCount =>
+        _instances.Count(instance => instance.IsRunning)
+        + _akamaiInstances.Count(instance => instance.IsRunning);
 
-    public int OwnedRunningCount => _instances.Count(instance =>
-        instance.IsRunning && ComputeTeardown.IsOwned(instance));
+    public int OwnedRunningCount =>
+        _instances.Count(instance => instance.IsRunning && ComputeTeardown.IsOwned(instance))
+        + _akamaiInstances.Count(instance => instance.IsRunning);
 
     public int UntrackedRunningCount => _instances.Count(instance =>
         instance.IsRunning && !ComputeTeardown.IsOwned(instance));
 
-    public double HourlyCost => Running.Sum(instance => instance.HourlyCost);
+    public double HourlyCost =>
+        Running.Sum(instance => instance.HourlyCost)
+        + _akamaiInstances.Where(instance => instance.IsRunning)
+            .Sum(instance => instance.HourlyCost);
 
-    public double OwnedHourlyCost => Running
-        .Where(ComputeTeardown.IsOwned)
-        .Sum(instance => instance.HourlyCost);
+    public double OwnedHourlyCost =>
+        Running.Where(ComputeTeardown.IsOwned).Sum(instance => instance.HourlyCost)
+        + _akamaiInstances.Where(instance => instance.IsRunning)
+            .Sum(instance => instance.HourlyCost);
 
-    public double EstimatedCost => Running.Sum(instance => instance.EstimatedCost);
+    public double EstimatedCost =>
+        Running.Sum(instance => instance.EstimatedCost)
+        + _akamaiInstances.Where(instance => instance.IsRunning)
+            .Sum(instance => instance.EstimatedCost);
 
-    public string? Error => _error;
+    /// <summary>The Vultr account error, shown inside the Vultr group.</summary>
+    public string? VultrError => _vultrError;
+
+    /// <summary>The Akamai account error, shown inside the Akamai group.</summary>
+    public string? AkamaiError => _akamaiError;
+
+    public string? Error => string.Join(
+        " ",
+        new[] { _vultrError, _akamaiError }.Where(value => !string.IsNullOrWhiteSpace(value)));
 
     public DateTimeOffset? RefreshedUtc => _refreshedUtc == default ? null : _refreshedUtc;
 
@@ -186,10 +215,15 @@ public sealed class ComputeDashboardService
             }
 
             _instances = inventory.Instances;
-            _refreshedUtc = DateTimeOffset.UtcNow;
-            _error = inventory.Failures.Count == 0
+            _vultrError = inventory.Failures.Count == 0
                 ? null
                 : string.Join(" ", inventory.Failures.Select(failure => failure.Message));
+
+            (IReadOnlyList<AkamaiComputeInstance> akamaiRows, string? akamaiError) =
+                await LoadAkamaiAsync(cancellationToken).ConfigureAwait(false);
+            _akamaiInstances = akamaiRows;
+            _akamaiError = akamaiError;
+            _refreshedUtc = DateTimeOffset.UtcNow;
         }
         finally
         {
@@ -244,6 +278,19 @@ public sealed class ComputeDashboardService
         Notify();
     }
 
+    /// <summary>Destroys one Akamai instance and its cloud firewall.</summary>
+    public async Task DestroyAkamaiAsync(
+        AkamaiComputeInstance view,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+
+        await _akamai.DestroyAsync(view.ProviderId, cancellationToken).ConfigureAwait(false);
+        _akamaiInstances = [.. _akamaiInstances
+            .Where(instance => instance.ProviderId != view.ProviderId)];
+        Notify();
+    }
+
     /// <summary>
     /// Destroys every running instance, tracked or orphaned. Returns the number
     /// destroyed and one message per instance that could not be deleted.
@@ -274,9 +321,89 @@ public sealed class ComputeDashboardService
             }
         }
 
+        foreach (AkamaiComputeInstance view in _akamaiInstances
+            .Where(instance => instance.IsRunning)
+            .ToList())
+        {
+            try
+            {
+                await DestroyAkamaiAsync(view, cancellationToken).ConfigureAwait(false);
+                destroyed++;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{view.Label}: {ex.Message}");
+            }
+        }
+
         await RefreshAsync(cancellationToken, force: true).ConfigureAwait(false);
         return (destroyed, failures);
     }
+
+    /// <summary>
+    /// Lists the Akamai hosts this Studio created. The live Linode status is
+    /// refreshed when an API key is saved; a rejected token is reported without
+    /// hiding the instance that is already recorded.
+    /// </summary>
+    private async Task<(IReadOnlyList<AkamaiComputeInstance> Rows, string? Error)> LoadAkamaiAsync(
+        CancellationToken cancellationToken)
+    {
+        var rows = new List<AkamaiComputeInstance>();
+        var failures = new List<string>();
+
+        foreach (ComputeProviderSettings provider in _compute.Providers.ToList())
+        {
+            if (provider.Prefab != ComputeProviderPrefabs.Akamai ||
+                string.IsNullOrWhiteSpace(provider.AkamaiInstanceId))
+            {
+                continue;
+            }
+
+            AkamaiInstance? live = null;
+            if (_akamai.HasApiKey(provider.Id))
+            {
+                try
+                {
+                    live = await _akamai.RefreshAsync(provider.Id, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{provider.Name}: {ex.Message}");
+                }
+            }
+
+            ComputeProviderSettings current = _compute.Find(provider.Id) ?? provider;
+            rows.Add(new AkamaiComputeInstance(
+                current.Id,
+                current.Name,
+                current.AkamaiInstanceId!,
+                live?.Label ?? current.AkamaiLabel ?? current.Name,
+                live?.Status ?? current.AkamaiInstanceStatus ?? "",
+                live?.PublicIpv4 ?? HostFromUrl(current.BaseUrl),
+                live?.Region ?? current.AkamaiRegion ?? "",
+                live?.TypeId ?? current.AkamaiTypeId ?? "",
+                current.AkamaiHourlyCost ?? 0,
+                live?.CreatedUtc ?? current.AkamaiCreatedUtc));
+        }
+
+        return (
+            [.. rows
+                .OrderByDescending(row => row.IsRunning)
+                .ThenBy(row => row.Label, StringComparer.OrdinalIgnoreCase)],
+            failures.Count == 0 ? null : string.Join(" ", failures));
+    }
+
+    private static string? HostFromUrl(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) ? uri.Host : null;
 
     private void Notify() => Changed?.Invoke();
 }

@@ -16,9 +16,11 @@ _Planned for 1.1.3._
   for TCP 22/8080/5117, deploys a Linode with an existing SSH key, attaches the
   firewall, waits for the public IPv4 address, and runs the normal Docker/NVIDIA
   SSH setup. The host card can refresh or destroy the instance, and the idle
-  teardown countdown now covers Akamai as well as Vultr. GPU types are shown only
-  in regions that advertise GPU Linodes. The wiki has a new Akamai guide and the
-  provider comparison lists the new host type.
+  teardown countdown now covers Akamai as well as Vultr. Akamai instances appear
+  on the Compute page and in the left menu beside Vultr instances, with hourly
+  and spent totals. GPU types are shown only in regions that advertise GPU
+  Linodes. The wiki has a new Akamai guide and the provider comparison lists the
+  new host type.
 
 - **Publish trained models to HuggingFace.** Training has a new **Publish** tab.
   It converts an `.smm` export to GGUF, quantizes it (F16, Q8_0, Q6_K, Q5_K,
