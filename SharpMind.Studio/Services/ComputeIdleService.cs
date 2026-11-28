@@ -20,12 +20,14 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
 {
     private readonly ComputeDashboardService _dashboard;
     private readonly ComputeProviderService _compute;
+    private readonly AkamaiService _akamai;
     private readonly StudioTrainingService _training;
     private readonly StudioRehearsalService _rehearsal;
     private readonly StudioExamService _exam;
     private readonly ComputeActivityService _activity;
     private readonly ComputeIdleTracker _tracker = new();
     private readonly Dictionary<string, JobProbe> _jobProbes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, AkamaiProbe> _akamaiProbes = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
     private readonly HashSet<string> _destroying = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<ComputeIdleNotice> _notices = [];
@@ -36,6 +38,7 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
     public ComputeIdleService(
         ComputeDashboardService dashboard,
         ComputeProviderService compute,
+        AkamaiService akamai,
         StudioTrainingService training,
         StudioRehearsalService rehearsal,
         StudioExamService exam,
@@ -43,6 +46,7 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
     {
         _dashboard = dashboard;
         _compute = compute;
+        _akamai = akamai;
         _training = training;
         _rehearsal = rehearsal;
         _exam = exam;
@@ -102,9 +106,33 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
     {
         VultrComputeInstance? instance = _dashboard.Instances.FirstOrDefault(value =>
             string.Equals(value.OwnerProviderId, providerId, StringComparison.OrdinalIgnoreCase));
-        if (instance is null || !ComputeTeardown.IsOwned(instance)) return;
+        if (instance is not null && ComputeTeardown.IsOwned(instance))
+        {
+            await DestroyAsync(instance, CancellationToken.None).ConfigureAwait(false);
+            RemoveNotice(providerId);
+            Notify();
+            return;
+        }
 
-        await DestroyAsync(instance, CancellationToken.None).ConfigureAwait(false);
+        ComputeProviderSettings? provider = _compute.Find(providerId);
+        if (provider is not { Prefab: ComputeProviderPrefabs.Akamai } ||
+            string.IsNullOrWhiteSpace(provider.AkamaiInstanceId))
+        {
+            return;
+        }
+
+        try
+        {
+            await _akamai.DestroyAsync(providerId, CancellationToken.None).ConfigureAwait(false);
+            _tracker.Forget(providerId);
+            _akamaiProbes.Remove(providerId);
+            SetError(null);
+        }
+        catch (Exception ex)
+        {
+            SetError($"{provider.Name}: {ex.Message}");
+        }
+
         RemoveNotice(providerId);
         Notify();
     }
@@ -184,6 +212,54 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
             }
         }
 
+        foreach (ComputeProviderSettings provider in _compute.Providers)
+        {
+            if (provider.Prefab != ComputeProviderPrefabs.Akamai ||
+                string.IsNullOrWhiteSpace(provider.AkamaiInstanceId))
+            {
+                continue;
+            }
+
+            seen.Add(provider.Id);
+            if (IsDestroying(provider.Id)) continue;
+
+            AkamaiInstance? instance = await AkamaiInstanceAsync(
+                provider, now, cancellationToken).ConfigureAwait(false);
+            if (instance is null)
+            {
+                _tracker.Forget(provider.Id);
+                continue;
+            }
+            if (!instance.IsRunning)
+            {
+                _tracker.Forget(provider.Id);
+                continue;
+            }
+
+            bool hostJob = await HasActiveJobAsync(
+                provider.Id, now, cancellationToken).ConfigureAwait(false);
+            bool chatBusy = _activity.IsChatActive(provider.Id);
+            bool inUse = hostJob
+                || _activity.IsActive(provider.Id)
+                || (training && string.Equals(
+                    trainingProvider, provider.Id, StringComparison.OrdinalIgnoreCase));
+
+            ComputeIdleObservation observation = _tracker.Observe(
+                provider.Id, provider.IdleTeardownMinutes, inUse, now);
+            if (observation.Phase == ComputeIdlePhase.Destroy)
+            {
+                await DestroyAkamaiAsync(
+                    provider, instance, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            if (observation.Phase == ComputeIdlePhase.Countdown)
+            {
+                notices.Add(new ComputeIdleNotice(
+                    provider.Id, instance.Id, instance.Label, observation.Remaining));
+            }
+        }
+
         foreach (string provider in _tracker.Providers)
         {
             if (!seen.Contains(provider)) _tracker.Forget(provider);
@@ -192,8 +268,77 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
         {
             if (!seen.Contains(provider)) _jobProbes.Remove(provider);
         }
+        foreach (string provider in _akamaiProbes.Keys.ToList())
+        {
+            if (!seen.Contains(provider)) _akamaiProbes.Remove(provider);
+        }
 
         SetNotices(notices);
+    }
+
+    private async Task<AkamaiInstance?> AkamaiInstanceAsync(
+        ComputeProviderSettings provider,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (_akamaiProbes.TryGetValue(provider.Id, out AkamaiProbe? probe)
+            && probe is not null
+            && now - probe.At < TimeSpan.FromSeconds(30))
+        {
+            return probe.Instance;
+        }
+
+        try
+        {
+            AkamaiInstance instance = await _akamai
+                .RefreshAsync(provider.Id, cancellationToken)
+                .ConfigureAwait(false);
+            _akamaiProbes[provider.Id] = new AkamaiProbe(now, instance);
+            return instance;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // An unreachable API is not a reason to destroy a host.
+            _akamaiProbes[provider.Id] = new AkamaiProbe(now, null);
+            SetError($"{provider.Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private async Task DestroyAkamaiAsync(
+        ComputeProviderSettings provider,
+        AkamaiInstance instance,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (!_destroying.Add(provider.Id)) return;
+        }
+
+        try
+        {
+            await _akamai.DestroyAsync(provider.Id, cancellationToken)
+                .ConfigureAwait(false);
+            _tracker.Forget(provider.Id);
+            _akamaiProbes.Remove(provider.Id);
+            SetError(null);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SetError($"{instance.Label}: {ex.Message}");
+        }
+        finally
+        {
+            lock (_gate) _destroying.Remove(provider.Id);
+        }
     }
 
     /// <summary>
@@ -316,6 +461,8 @@ public sealed class ComputeIdleService : IHostedService, IDisposable
     private void Notify() => Changed?.Invoke();
 
     private sealed record JobProbe(DateTimeOffset At, bool Active);
+
+    private sealed record AkamaiProbe(DateTimeOffset At, AkamaiInstance? Instance);
 
     public void Dispose()
     {

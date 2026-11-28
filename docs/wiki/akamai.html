@@ -152,9 +152,11 @@
                 firewall. Export any trained model before destroying the host.
             </p>
             <p>
-                Unlike Vultr, Akamai instances are not included in the top Compute dashboard or the
-                automatic idle-teardown countdown yet. Destroy them from their panel when the run
-                finishes.
+                The panel's <strong>Destroy when idle</strong> setting starts a 10-minute Keep
+                countdown after the host has been idle for the selected window. The sidebar warning
+                offers <strong>Keep</strong> or <strong>Destroy now</strong>, and destroying removes
+                the Linode and its firewall. The top Compute dashboard still counts Vultr instances
+                only.
             </p>
 
             <h2 id="problems">Common problems</h2>

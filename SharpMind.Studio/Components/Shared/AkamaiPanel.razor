@@ -92,6 +92,19 @@
                 }
             </select>
         </div>
+        <div class="field">
+            <label class="field-label" for="akamai-idle-@ProviderId">Destroy when idle</label>
+            <select id="akamai-idle-@ProviderId" class="input"
+                    value="@_idleMinutes" @onchange="OnIdleChanged">
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="60">60 minutes</option>
+                <option value="0">Never</option>
+            </select>
+            <span class="small faint">
+                Only instances this Studio created. A 10-minute Keep countdown starts first.
+            </span>
+        </div>
     </div>
 
     <div class="small faint">@CostLabel</div>
@@ -161,6 +174,7 @@
     private string _typeId = "";
     private string _imageId = "";
     private string _sshKeyId = "";
+    private int _idleMinutes = ComputeIdleTracker.DefaultTimeoutMinutes;
     private string _typeSearch = "";
     private string? _status;
     private string? _error;
@@ -236,6 +250,14 @@
         _imageId = provider.AkamaiImageId ?? "";
         _apiKeySecret = provider.AkamaiApiKeySecret;
         _sshKeyId = provider.AkamaiSshKeyId ?? "";
+        _idleMinutes = provider.IdleTeardownMinutes;
+    }
+
+    private void OnIdleChanged(ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out int minutes)) return;
+        _idleMinutes = Math.Clamp(minutes, 0, 24 * 60);
+        Compute.SetAkamaiIdle(ProviderId, _idleMinutes);
     }
 
     private void OnApiKeySecretChanged(string? name)
